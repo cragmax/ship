@@ -6,6 +6,7 @@
  *
  * Three target checks:
  *
+ * drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
  * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
  *    `renderEslintTemplate()`.
  * 2. `paper-harness/lib/README.md` — content equals
@@ -30,6 +31,7 @@ import {
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
 
 const ROOT_DIR = resolve(import.meta.dirname, '..');
+// drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
 const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
 const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/lib/README.md');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/lib-readme.md');
@@ -42,9 +44,11 @@ async function checkEslintTemplate(): Promise<CheckResult> {
   const expected = renderEslintTemplate();
   const actual = await readFile(ESLINT_TEMPLATE, 'utf-8');
   if (expected === actual) {
+    // drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
     return { target: 'src/init/templates/eslint-config.mjs', ok: true };
   }
   return {
+    // drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
     target: 'src/init/templates/eslint-config.mjs',
     ok: false,
     reason: 'rendered output differs from on-disk file',
