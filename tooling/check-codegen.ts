@@ -4,7 +4,7 @@
  * but simpler — no AST walking, no checker context, just exact-string equality
  * (RESEARCH.md Pattern 3).
  *
- * Three target checks:
+ * Four target checks:
  *
  * drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
  * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
@@ -12,6 +12,10 @@
  * 2. `paper-harness/lib/README.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
  * 3. `src/init/templates/lib-readme.md` — same marker check.
+ * 4. `src/tools/promote-script.ts` — `buildTestFile` destructure between
+ *    `// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->` ... `// <!-- END-CONTEXT-BAG-DESTRUCTURE -->`
+ *    matches `renderPromoteScriptDestructure()` output (13 names from
+ *    `CONTEXT_BAG_NAMES` joined as `bot, expect, server, ...`).
  *
  * On drift, prints a per-target failure line and the hint
  * "Run `npm run codegen` to regenerate." then exits 1.
@@ -24,8 +28,10 @@ import { resolve } from 'node:path';
 
 import {
   renderEslintTemplate,
+  renderPromoteScriptDestructure,
   renderReservedNamesMarkdown,
   replaceBetweenMarkers,
+  replaceBetweenMarkersWith,
 } from './generate-reserved-names-targets.js';
 
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
@@ -35,6 +41,10 @@ const ROOT_DIR = resolve(import.meta.dirname, '..');
 const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
 const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/lib/README.md');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/lib-readme.md');
+const PROMOTE_SCRIPT = resolve(ROOT_DIR, 'src/tools/promote-script.ts');
+
+const PROMOTE_MARKER_START = '// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->';
+const PROMOTE_MARKER_END = '// <!-- END-CONTEXT-BAG-DESTRUCTURE -->';
 
 // ── Check results ──────────────────────────────────────────────────────────
 
@@ -71,6 +81,27 @@ async function checkMarkersFile(absPath: string, displayPath: string): Promise<C
   };
 }
 
+async function checkPromoteScript(): Promise<CheckResult> {
+  const onDisk = await readFile(PROMOTE_SCRIPT, 'utf-8');
+  // Computing the expected: take the on-disk file, splice in the freshly
+  // rendered destructure between the markers. If the on-disk content
+  // already matches the rendered output, this is a no-op and equality holds.
+  const expected = replaceBetweenMarkersWith(
+    onDisk,
+    renderPromoteScriptDestructure(),
+    PROMOTE_MARKER_START,
+    PROMOTE_MARKER_END,
+  );
+  if (expected === onDisk) {
+    return { target: 'src/tools/promote-script.ts', ok: true };
+  }
+  return {
+    target: 'src/tools/promote-script.ts',
+    ok: false,
+    reason: 'buildTestFile destructure differs from CONTEXT_BAG_NAMES rendering',
+  };
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -78,6 +109,7 @@ async function main(): Promise<void> {
     checkEslintTemplate(),
     checkMarkersFile(DOGFOOD_README, 'paper-harness/lib/README.md'),
     checkMarkersFile(SCAFFOLD_README, 'src/init/templates/lib-readme.md'),
+    checkPromoteScript(),
   ]);
 
   const failures = results.filter((r) => !r.ok);
@@ -89,7 +121,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('codegen-check: OK (3 targets)');
+  console.log('codegen-check: OK (4 targets)');
 }
 
 await main();
