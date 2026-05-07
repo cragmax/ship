@@ -9,9 +9,9 @@
  * drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
  * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
  *    `renderEslintTemplate()`.
- * 2. `paper-harness/lib/README.md` — content equals
+ * 2. `paper-harness/helpers/README.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
- * 3. `src/init/templates/lib-readme.md` — same marker check.
+ * 3. `src/init/templates/helpers-readme.md` — same marker check.
  * 4. `src/tools/promote-script.ts` — `buildTestFile` destructure between
  *    `// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->` ... `// <!-- END-CONTEXT-BAG-DESTRUCTURE -->`
  *    matches `renderPromoteScriptDestructure()` output (13 names from
@@ -39,8 +39,8 @@ import {
 const ROOT_DIR = resolve(import.meta.dirname, '..');
 // drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
 const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
-const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/lib/README.md');
-const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/lib-readme.md');
+const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/helpers/README.md');
+const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/helpers-readme.md');
 const PROMOTE_SCRIPT = resolve(ROOT_DIR, 'src/tools/promote-script.ts');
 
 const PROMOTE_MARKER_START = '// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->';
@@ -107,8 +107,8 @@ async function checkPromoteScript(): Promise<CheckResult> {
 async function main(): Promise<void> {
   const results = await Promise.all([
     checkEslintTemplate(),
-    checkMarkersFile(DOGFOOD_README, 'paper-harness/lib/README.md'),
-    checkMarkersFile(SCAFFOLD_README, 'src/init/templates/lib-readme.md'),
+    checkMarkersFile(DOGFOOD_README, 'paper-harness/helpers/README.md'),
+    checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md'),
     checkPromoteScript(),
   ]);
 
