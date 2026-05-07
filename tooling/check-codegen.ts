@@ -1,12 +1,11 @@
 /**
  * Drift gate: render `RESERVED_NAMES`-derived artifacts in-memory and string-
  * compare to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
- * but simpler — no AST walking, no checker context, just exact-string equality
- * (RESEARCH.md Pattern 3).
+ * but simpler — no AST walking, no checker context, just exact-string equality.
  *
  * Four target checks:
  *
- * drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
+ * drift-check-allow: .mjs — codegen-tool target filename
  * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
  *    `renderEslintTemplate()`.
  * 2. `paper-harness/helpers/README.md` — content equals
@@ -37,7 +36,7 @@ import {
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
 
 const ROOT_DIR = resolve(import.meta.dirname, '..');
-// drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
+// drift-check-allow: .mjs — codegen-tool target filename
 const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
 const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/helpers/README.md');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/helpers-readme.md');
@@ -54,11 +53,11 @@ async function checkEslintTemplate(): Promise<CheckResult> {
   const expected = renderEslintTemplate();
   const actual = await readFile(ESLINT_TEMPLATE, 'utf-8');
   if (expected === actual) {
-    // drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
+    // drift-check-allow: .mjs — codegen-tool target filename
     return { target: 'src/init/templates/eslint-config.mjs', ok: true };
   }
   return {
-    // drift-check-allow: .mjs — codegen-tool target filename per Phase 1 D-08
+    // drift-check-allow: .mjs — codegen-tool target filename
     target: 'src/init/templates/eslint-config.mjs',
     ok: false,
     reason: 'rendered output differs from on-disk file',
