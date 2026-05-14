@@ -3,15 +3,14 @@
  * compare to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
  * but simpler — no AST walking, no checker context, just exact-string equality.
  *
- * Four target checks:
+ * Three target checks:
  *
  * drift-check-allow: .mjs — codegen-tool target filename
  * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
  *    `renderEslintTemplate()`.
- * 2. `paper-harness/helpers/readme.md` — content equals
+ * 2. `src/init/templates/helpers-readme.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
- * 3. `src/init/templates/helpers-readme.md` — same marker check.
- * 4. `src/tools/promote-script.ts` — `buildTestFile` destructure between
+ * 3. `src/tools/promote-script.ts` — `buildTestFile` destructure between
  *    `// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->` ... `// <!-- END-CONTEXT-BAG-DESTRUCTURE -->`
  *    matches `renderPromoteScriptDestructure()` output (13 names from
  *    `CONTEXT_BAG_NAMES` joined as `bot, expect, server, ...`).
@@ -38,7 +37,6 @@ import {
 const ROOT_DIR = resolve(import.meta.dirname, '..');
 // drift-check-allow: .mjs — codegen-tool target filename
 const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
-const DOGFOOD_README = resolve(ROOT_DIR, 'paper-harness/helpers/readme.md');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/helpers-readme.md');
 const PROMOTE_SCRIPT = resolve(ROOT_DIR, 'src/tools/promote-script.ts');
 
@@ -106,7 +104,6 @@ async function checkPromoteScript(): Promise<CheckResult> {
 async function main(): Promise<void> {
   const results = await Promise.all([
     checkEslintTemplate(),
-    checkMarkersFile(DOGFOOD_README, 'paper-harness/helpers/readme.md'),
     checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md'),
     checkPromoteScript(),
   ]);
@@ -120,7 +117,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('codegen-check: OK (4 targets)');
+  console.log('codegen-check: OK (3 targets)');
 }
 
 await main();
