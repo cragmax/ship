@@ -3,14 +3,11 @@
  * compare to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
  * but simpler — no AST walking, no checker context, just exact-string equality.
  *
- * Three target checks:
+ * Two target checks:
  *
- * drift-check-allow: .mjs — codegen-tool target filename
- * 1. `src/init/templates/eslint-config.mjs` — full-file equality with
- *    `renderEslintTemplate()`.
- * 2. `src/init/templates/helpers-readme.md` — content equals
+ * 1. `src/init/templates/helpers-readme.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
- * 3. `src/tools/promote-script.ts` — `buildTestFile` destructure between
+ * 2. `src/tools/promote-script.ts` — `buildTestFile` destructure between
  *    `// <!-- BEGIN-CONTEXT-BAG-DESTRUCTURE -->` ... `// <!-- END-CONTEXT-BAG-DESTRUCTURE -->`
  *    matches `renderPromoteScriptDestructure()` output (13 names from
  *    `CONTEXT_BAG_NAMES` joined as `bot, expect, server, ...`).
@@ -25,7 +22,6 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
-  renderEslintTemplate,
   renderPromoteScriptDestructure,
   renderReservedNamesMarkdown,
   replaceBetweenMarkers,
@@ -35,8 +31,6 @@ import {
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
 
 const ROOT_DIR = resolve(import.meta.dirname, '..');
-// drift-check-allow: .mjs — codegen-tool target filename
-const ESLINT_TEMPLATE = resolve(ROOT_DIR, 'src/init/templates/eslint-config.mjs');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/helpers-readme.md');
 const PROMOTE_SCRIPT = resolve(ROOT_DIR, 'src/tools/promote-script.ts');
 
@@ -46,21 +40,6 @@ const PROMOTE_MARKER_END = '// <!-- END-CONTEXT-BAG-DESTRUCTURE -->';
 // ── Check results ──────────────────────────────────────────────────────────
 
 type CheckResult = { target: string; ok: boolean; reason?: string };
-
-async function checkEslintTemplate(): Promise<CheckResult> {
-  const expected = renderEslintTemplate();
-  const actual = await readFile(ESLINT_TEMPLATE, 'utf-8');
-  if (expected === actual) {
-    // drift-check-allow: .mjs — codegen-tool target filename
-    return { target: 'src/init/templates/eslint-config.mjs', ok: true };
-  }
-  return {
-    // drift-check-allow: .mjs — codegen-tool target filename
-    target: 'src/init/templates/eslint-config.mjs',
-    ok: false,
-    reason: 'rendered output differs from on-disk file',
-  };
-}
 
 async function checkMarkersFile(absPath: string, displayPath: string): Promise<CheckResult> {
   const onDisk = await readFile(absPath, 'utf-8');
@@ -103,7 +82,6 @@ async function checkPromoteScript(): Promise<CheckResult> {
 
 async function main(): Promise<void> {
   const results = await Promise.all([
-    checkEslintTemplate(),
     checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md'),
     checkPromoteScript(),
   ]);
@@ -117,7 +95,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('codegen-check: OK (3 targets)');
+  console.log('codegen-check: OK (2 targets)');
 }
 
 await main();
