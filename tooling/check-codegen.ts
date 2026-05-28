@@ -10,8 +10,8 @@
  *
  * The former `src/tools/promote-script.ts` destructure target was retired
  * by #580; the body→suite-of-one wrapper at
- * `src/tools/util/wrap-body-as-suite.ts` imports `CONTEXT_BAG_NAMES` at
- * runtime and is drift-proof by construction.
+ * `src/tools/script-ingest/wrap-body-as-suite.ts` imports `CONTEXT_BAG_NAMES`
+ * at runtime and is drift-proof by construction.
  *
  * On drift, prints a per-target failure line and the hint
  * "Run `npm run codegen` to regenerate." then exits 1.
