@@ -13,6 +13,8 @@
 
 import { existsSync } from 'node:fs';
 
+import { z } from 'zod';
+
 import { compareStrings } from '../shared.js';
 
 import { runCaptured } from './exec.js';
@@ -54,6 +56,9 @@ const RUN_BASE_BRANCH = 'master';
 
 /** `gh`'s PR states in precedence order: a reopened branch's live PR wins. */
 const PR_STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
+
+/** `gh pr list --json number,state` output; unknown keys are tolerated. */
+const PrListSchema = z.array(z.object({ number: z.number(), state: z.string() }));
 
 /** What {@link lookupPr} found. */
 interface PrLookup {
@@ -206,23 +211,13 @@ function unknownPr(error: string): PrLookup {
  * Parse `gh pr list --json number,state` output.
  *
  * @param stdout - `gh`'s stdout.
- * @returns The entries, or `null` unless it is an array of
- *   `{ number: number, state: string }`.
+ * @returns The entries, or `null` unless it is JSON matching {@link PrListSchema}.
  */
-function parsePrList(stdout: string): { number: number; state: string }[] | null {
-  let parsed: unknown;
+function parsePrList(stdout: string): z.infer<typeof PrListSchema> | null {
   try {
-    parsed = JSON.parse(stdout);
+    const parsed = PrListSchema.safeParse(JSON.parse(stdout));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed)) return null;
-  const valid = parsed.every(
-    (p: unknown) =>
-      typeof p === 'object' &&
-      p !== null &&
-      typeof (p as { number?: unknown }).number === 'number' &&
-      typeof (p as { state?: unknown }).state === 'string',
-  );
-  return valid ? (parsed as { number: number; state: string }[]) : null;
 }

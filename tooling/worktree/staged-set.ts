@@ -10,7 +10,7 @@
  * win32, observed 2026-09-28), and a case-folded compare passes that loss.
  */
 
-import { compareStrings } from '../shared.js';
+import { compareStrings, toPosix } from '../shared.js';
 
 import { gitPaths, requireWorktreeRoot } from './git.js';
 import { Refusal, recordFailure, type StagedGuardResult } from './types.js';
@@ -32,7 +32,7 @@ export interface SetDifference {
  * @returns The path in git's spelling.
  */
 export function normaliseRepoPath(path: string): string {
-  let out = path.replaceAll('\\', '/');
+  let out = toPosix(path);
   while (out.startsWith('./')) out = out.slice(2);
   return out;
 }
