@@ -2,8 +2,9 @@
  * Result envelope of the worktree CLI (`tooling/worktree.ts`): the single
  * JSON object every command prints on one stdout line, plus the error
  * classes a step throws to end its command early. The envelopes of the
- * run-branch commands (`cut-batch`, `cut-slice`, `preflight`, `land`) are
- * in `types-run.ts`.
+ * run-branch commands (`cut-batch`, `cut-slice`, `preflight`, `land`) and
+ * the epic-end commands (`sync-master`, `bump`, `publish`, `server-tier`)
+ * are in `types-run.ts`.
  *
  * Status semantics (the envelope's `status`):
  *
@@ -13,14 +14,16 @@
  * - `failed` — a step failed; `errors[0].step` names it. Thrown as
  *   {@link StepFailure}; any other throw is step `internal`, and a bad
  *   command line is step `usage`.
- * - `conflict` — `harvest` and `land` only: the change cannot apply to the
+ * - `conflict` — `harvest` and `land`: the change cannot apply to the
  *   batch's current head; the batch is back at a verified-clean `HEAD`.
- *   Thrown as {@link Conflict}.
+ *   `sync-master`: the merge stopped on doc-index conflicts a resolver must
+ *   edit, its merge kept in progress. Thrown as {@link Conflict}.
  *
  * Every filesystem path in an envelope is absolute with forward slashes;
- * the path lists of `harvest`, `land`, `staged-guard` and `live-runs`
- * (`files`, `conflicts`, `expected`, `staged`, `missing`, `unexpected`,
- * `landed`) are repository-relative, as git spells them.
+ * the path lists of `harvest`, `land`, `staged-guard`, `live-runs`,
+ * `sync-master` and `server-tier` (`files`, `conflicts`, `pending`,
+ * `expected`, `staged`, `missing`, `unexpected`, `landed`) are
+ * repository-relative, as git spells them.
  */
 
 /** The envelope's outcome. */
@@ -35,7 +38,10 @@ export type RefusalReason =
   | 'source-shrank'
   /** Teardown: another registered worktree lies inside the target; the message names each. */
   | 'nested-worktree'
-  /** Harvest: the batch has uncommitted changes, or a merge, cherry-pick or revert in progress. */
+  /**
+   * Harvest, land, sync-master, bump: the batch has uncommitted changes, or
+   * a merge, cherry-pick or revert in progress.
+   */
   | 'batch-dirty'
   /** Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree. */
   | 'unregistered-worktree'
@@ -45,14 +51,28 @@ export type RefusalReason =
   | 'slice-not-single-commit'
   /** Cut-batch, preflight: the target is not the repository's main worktree. */
   | 'not-main-worktree'
-  /** Cut-slice, land: the target is a linked worktree, but not on a `ship/` run branch. */
+  /** Cut-slice, land, bump, publish: the target is a linked worktree, but not on a `ship/` run branch. */
   | 'not-run-batch'
   /** Cut-batch, cut-slice: the branch to create exists already. */
   | 'branch-exists'
   /** Cut-batch, cut-slice: the directory to create exists already. */
   | 'path-exists'
   /** Preflight: a check failed; the envelope's `problems` names each. */
-  | 'preflight-failed';
+  | 'preflight-failed'
+  /** Sync-master: another worktree's `node_modules` links into the batch's; the message names each. */
+  | 'slices-live'
+  /** Sync-master: the merge would conflict outside the lockfile and the doc indexes; nothing merged. */
+  | 'code-conflict'
+  /** Sync-master `--continue`: the batch has no merge in progress. */
+  | 'no-merge-in-progress'
+  /** Sync-master `--continue`: a conflicted path is outside the doc indexes or still holds markers. */
+  | 'unresolved'
+  /** Bump: the batch has no commits of its own since `origin/master`. */
+  | 'nothing-to-bump'
+  /** Bump: the batch's commits already include a bump commit. */
+  | 'already-bumped'
+  /** Publish: the run branch already has an open PR; the message names it. */
+  | 'pr-exists';
 
 /** One entry of the envelope's `errors` list. */
 export interface StepError {

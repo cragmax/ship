@@ -15,9 +15,13 @@
  * die with it (probe 2026-09-28, git 2.55 win32).
  */
 
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { execaSync } from 'execa';
+
+import { toPosix } from '../shared.js';
 
 import { StepFailure } from './types.js';
 
@@ -38,6 +42,12 @@ export const FETCH_TIMEOUT_MS = 120_000;
 
 /** Budget for one `gh` call. */
 export const GH_TIMEOUT_MS = 120_000;
+
+/** Budget for one `git push` whose pre-push hook runs the full gate. */
+export const PUSH_TIMEOUT_MS = 2_700_000;
+
+/** Budget for one engine's leased server-tier run (lease wait included). */
+export const SERVER_TIER_TIMEOUT_MS = 5_400_000;
 
 /** Budget for any child without an explicit one. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -61,6 +71,8 @@ export interface CaptureOptions {
   readonly cwd: string;
   /** Kill the child after this many ms. */
   readonly timeoutMs?: number;
+  /** Variables laid over the child's environment (after the `GIT_*` strip). */
+  readonly env?: Readonly<Record<string, string>>;
   /**
    * Also write the whole output {@link outputOf} composes here (created or
    * overwritten) after the child exits — even when it failed, timed out or
@@ -84,9 +96,10 @@ function lastLines(text: string): string {
  * `.cmd` shims (`npm` on Windows) resolve through execa.
  *
  * @remarks
- * The child gets this process's environment minus every `GIT_*` variable.
- * The CLI names each repository by explicit path (`git -C`), so an inherited
- * repository-location variable is always wrong: a git hook exports
+ * The child gets this process's environment minus every `GIT_*` variable,
+ * with `options.env` laid over it; an overlay must not set a `GIT_*`
+ * variable. The CLI names each repository by explicit path (`git -C`), so
+ * an inherited repository-location variable is always wrong: a git hook exports
  * `GIT_DIR`, and under it `git -C <worktree>` resolves the hook's
  * repository instead — its worktree list, its main checkout, its
  * `worktree remove`. A prefix rule rather than a list, so no name that
@@ -95,7 +108,7 @@ function lastLines(text: string): string {
  *
  * @param file - Executable name or path.
  * @param args - Argument vector, passed without a shell.
- * @param options - Working directory, optional timeout and log file.
+ * @param options - Working directory, optional timeout, env overlay and log file.
  * @returns Exit code, stdout, and the output tail.
  */
 export function runCaptured(
@@ -103,9 +116,10 @@ export function runCaptured(
   args: readonly string[],
   options: CaptureOptions,
 ): Captured {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
-  );
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+    ...options.env,
+  };
   const r = execaSync(file, args, {
     cwd: options.cwd,
     env,
@@ -152,6 +166,19 @@ function writeLog(file: string, output: string): string {
   } catch (err) {
     return `\nlog not written to ${file}: ${err instanceof Error ? err.message : String(err)}`;
   }
+}
+
+/**
+ * Create a fresh directory for a command's own log and message files, in
+ * the OS temp dir — outside every worktree, so nothing written there can be
+ * staged. For the commands whose argv names no log file. The CLI never
+ * removes it: the envelope names its files for the caller to read.
+ *
+ * @param command - The subcommand, used as the directory's name prefix.
+ * @returns The new directory, absolute with forward slashes.
+ */
+export function freshLogDir(command: string): string {
+  return toPosix(mkdtempSync(join(tmpdir(), `ph-worktree-${command}-`)));
 }
 
 /**
