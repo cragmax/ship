@@ -67,7 +67,12 @@ export interface ProvisionResult extends ResultBase {
   dist: string | null;
   /** Vitest config files this call wrote that are still in place. */
   vitestConfigs: string[];
-  /** Environment a lease run in the slice needs; `null` unless `ok`. */
+  /**
+   * The slice-specific part of a lease run's environment; `null` unless `ok`.
+   * Not the whole of it: `PH_POOL_REGISTRY` comes from the batch's
+   * `provision-batch` `env` — without it a lease run reads the full registry,
+   * cold servers included.
+   */
   env: { PH_PROJECT_DIR: string } | null;
   /** Paths this call created and removed again after a failure. */
   rolledBack: string[];
@@ -93,7 +98,7 @@ export interface ProvisionBatchResult extends ResultBase {
   registry: string | null;
   /** The warm members the trimmed registry holds. */
   warm: WarmMember[];
-  /** Environment the batch's lease runs need; `null` unless `ok`. */
+  /** Environment lease runs in the batch and its slices need; `null` unless `ok`. */
   env: { PH_PROJECT_DIR: string; PH_POOL_REGISTRY: string } | null;
 }
 

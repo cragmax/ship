@@ -20,7 +20,7 @@
  * `(a, b) => a - b`. A text guard test enforces the forbidden-token list.
  */
 
-/** One epic's slice of a run (`epic: null` = an explicit issue list). */
+/** One entry of a run set: one epic's issues, or an explicit issue list (`epic: null`). */
 export interface RunSetEntry {
   /** The epic whose open sub-issues these are, or `null` for an explicit list. */
   readonly epic: number | null;

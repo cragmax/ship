@@ -358,6 +358,9 @@ describe('usage errors', () => {
     expect(run.code).toBe(2);
     expect(run.json.status).toBe('failed');
     expect(run.json.errors[0]?.step).toBe('usage');
+    const message = run.json.errors[0]?.message ?? '';
+    expect(message).not.toBe('');
+    expect(run.stderr).toContain(`worktree: ${message}`);
   });
 });
 

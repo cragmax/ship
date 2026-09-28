@@ -19,9 +19,12 @@
  * cwd.
  *
  * Exit codes: `0` ok, `1` failed or refused (the envelope's `status` tells
- * which), `2` usage error ({@link UsageError}). No npm script wraps this
- * CLI: `npm run` prints a banner on stdout, which would break the
- * one-object contract.
+ * which), `2` usage error ({@link UsageError}). The runner rule shared with
+ * `tooling/run-gate.ts`: on `0` / `1` parse stdout; `2` is a tool or usage
+ * error whose human message is on stderr (`worktree: <reason>`). Here the
+ * `usage` envelope is on stdout too, where `run-gate.ts` leaves stdout
+ * empty. No npm script wraps this CLI: `npm run` prints a banner on stdout,
+ * which would break the one-object contract.
  */
 
 import { resolve } from 'node:path';
@@ -172,5 +175,6 @@ export function runWorktreeCli(argv: readonly string[]): { result: ResultBase; e
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const { result, exitCode } = runWorktreeCli(process.argv.slice(2));
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (exitCode === 2) process.stderr.write(`worktree: ${result.errors[0]?.message ?? 'usage'}\n`);
   process.exitCode = exitCode;
 }
