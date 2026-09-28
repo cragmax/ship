@@ -1,0 +1,570 @@
+/**
+ * Fixture repos (per-test `mkdtemp` roots, never this repository's own
+ * worktrees) carry the real `.gitignore`, so the clean-status assertions run
+ * against the actual patterns. Link-dependent cases are win32-only: junction
+ * and ignore behaviour has been observed there alone.
+ *
+ * @integrationTier standalone
+ */
+
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { loadPoolRegistry } from '../../src/server-pool/index.js';
+import { toPosix } from '../../tooling/shared.js';
+import { unlinkLink } from '../../tooling/worktree/links.js';
+import { teardownWorktree } from '../../tooling/worktree/teardown.js';
+import type {
+  ProvisionBatchResult,
+  ProvisionResult,
+  TeardownResult,
+} from '../../tooling/worktree/types.js';
+import {
+  addWorktree,
+  isJunction,
+  isRegistered,
+  listTree,
+  makeFixtureRepo,
+  porcelain,
+  prepareTemplate,
+  runCli,
+  runIn,
+  seedBatch,
+  type FixtureRepoOptions,
+} from '../helpers/worktree-fixture.js';
+
+const WIN32 = process.platform === 'win32';
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const TIMEOUT = { timeout: 60_000 };
+
+let templateRoot: string;
+let template: string;
+let root: string;
+
+beforeAll(() => {
+  templateRoot = mkdtempSync(join(tmpdir(), 'ph-wt-template-'));
+  template = prepareTemplate(templateRoot);
+}, 120_000);
+
+afterAll(() => {
+  rmSync(templateRoot, { recursive: true, force: true });
+});
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'ph-wt-'));
+});
+
+afterEach(() => {
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    // Windows occasionally holds a lock on a just-used directory; the leak
+    // is a bounded temp dir. rmSync does not follow junctions.
+  }
+});
+
+interface Layout {
+  readonly main: string;
+  readonly batch: string;
+  readonly slice: string;
+}
+
+/** A fixture main checkout plus a seeded batch worktree and one slice worktree. */
+function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
+  const main = makeFixtureRepo(root, template, options);
+  const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
+  seedBatch(batch);
+  const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
+  return { main, batch, slice };
+}
+
+/** The real `.gitignore` with its scaffold-config line replaced, or dropped when `null`. */
+function gitignoreWithScaffoldLine(replacement: string | null): string {
+  return readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      if (line.trim() !== 'vitest.worktree*.config.ts') return [line];
+      return replacement === null ? [] : [replacement];
+    })
+    .join('\n');
+}
+
+describe.skipIf(!WIN32)('provision + teardown round trip', () => {
+  it(
+    'provisions a slice against the batch and tears it down leaving the batch untouched',
+    TIMEOUT,
+    () => {
+      const { main, batch, slice } = batchAndSlice();
+      const batchModules = join(batch, 'node_modules');
+      const before = listTree(batchModules);
+
+      const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+      expect(prov.json.status, JSON.stringify(prov.json)).toBe('ok');
+      expect(prov.code).toBe(0);
+      const sliceModules = join(slice, 'node_modules');
+      expect(lstatSync(sliceModules).isSymbolicLink()).toBe(true);
+      expect(realpathSync(sliceModules)).toBe(realpathSync(batchModules));
+      expect(existsSync(join(slice, 'dist', 'index.js'))).toBe(true);
+      expect(lstatSync(join(slice, 'dist')).isSymbolicLink()).toBe(false);
+      const config = readFileSync(join(slice, 'vitest.worktree.config.ts'), 'utf8');
+      expect(config).toContain("from './vitest.config'");
+      expect(config).toContain("cacheDir: './.vitest-cache'");
+      expect(prov.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch) });
+      expect(runIn('npm', ['test'], slice).exitCode).toBe(0);
+
+      const down = runCli<TeardownResult>(['teardown', slice]);
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+      expect(down.code).toBe(0);
+      expect(down.json.removed).toBe(true);
+      expect(existsSync(slice)).toBe(false);
+      expect(isRegistered(main, slice)).toBe(false);
+      expect(listTree(batchModules)).toEqual(before);
+    },
+  );
+
+  it(
+    'never follows the junction: a nested junction inside the batch survives teardown',
+    TIMEOUT,
+    () => {
+      const { batch, slice } = batchAndSlice();
+      const nested = join(batch, 'node_modules', 'linked-pkg');
+      const nestedTarget = realpathSync(nested);
+      const nestedFiles = listTree(nestedTarget);
+      const before = listTree(join(batch, 'node_modules'));
+
+      expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
+      expect(isJunction(join(slice, 'node_modules'))).toBe(true);
+      const down = runCli<TeardownResult>(['teardown', slice]);
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+
+      expect(isJunction(nested)).toBe(true);
+      expect(listTree(nestedTarget)).toEqual(nestedFiles);
+      expect(listTree(join(batch, 'node_modules'))).toEqual(before);
+      expect(existsSync(slice)).toBe(false);
+    },
+  );
+
+  // Bites on Windows only: a process there cannot remove a directory that is
+  // its own cwd, while POSIX may remove it regardless.
+  it('removes the worktree even when the CLI starts with its cwd inside it', TIMEOUT, () => {
+    const { main, batch, slice } = batchAndSlice();
+    expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
+
+    const down = runCli<TeardownResult>(['teardown', slice], { cwd: join(slice, 'src') });
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(existsSync(slice)).toBe(false);
+    expect(isRegistered(main, slice)).toBe(false);
+  });
+
+  it('refuses to tear down the main worktree and leaves its links alone', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    seedBatch(main);
+    const link = join(main, 'node_modules', 'linked-pkg');
+    const before = listTree(main);
+
+    const down = runCli<TeardownResult>(['teardown', main]);
+    expect(down.code).toBe(1);
+    expect(down.json.status).toBe('refused');
+    expect(down.json.reason).toBe('main-worktree');
+    expect(down.json.registered).toBe(true);
+    expect(down.json.unlinked).toEqual([]);
+    expect(isJunction(link)).toBe(true);
+    expect(listTree(main)).toEqual(before);
+  });
+});
+
+describe('provision-batch', () => {
+  it(
+    'installs, builds, creates the workspace and writes the trimmed warm registry',
+    TIMEOUT,
+    () => {
+      const main = makeFixtureRepo(root, template);
+      const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
+      const reportDir = join(root, 'reports');
+
+      const run = runCli<ProvisionBatchResult>([
+        'provision-batch',
+        batch,
+        '--report-dir',
+        reportDir,
+      ]);
+      expect(run.json.status, JSON.stringify(run.json)).toBe('ok');
+      expect(run.code).toBe(0);
+      expect(lstatSync(join(batch, 'node_modules', 'fake-dep')).isDirectory()).toBe(true);
+      expect(lstatSync(join(batch, 'node_modules')).isSymbolicLink()).toBe(false);
+      expect(existsSync(join(batch, 'dist', 'index.js'))).toBe(true);
+      expect(lstatSync(join(batch, 'paper-harness', 'helpers')).isDirectory()).toBe(true);
+      expect(lstatSync(join(batch, 'paper-harness', 'tests')).isDirectory()).toBe(true);
+      const registry = toPosix(join(reportDir, 'pool-registry.batch.json'));
+      expect(run.json.registry).toBe(registry);
+      const loaded = loadPoolRegistry(registry);
+      expect(loaded.ok).toBe(true);
+      expect(
+        (loaded.ok ? loaded.value : []).map((e) => ({
+          type: e.type,
+          host: e.host,
+          rconPort: e.rconPort,
+        })),
+      ).toEqual([
+        { type: 'paper', host: 'localhost', rconPort: 25701 },
+        { type: 'folia', host: 'localhost', rconPort: 25711 },
+      ]);
+      expect(run.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch), PH_POOL_REGISTRY: registry });
+      expect(porcelain(batch)).toBe('');
+    },
+  );
+
+  interface BatchCase {
+    readonly batch: string;
+    readonly reportDir: string;
+    readonly sentinel?: string;
+  }
+
+  it.each([
+    {
+      name: 'the batch is the main checkout',
+      arrange: (main: string, _batch: string): BatchCase => {
+        mkdirSync(join(main, 'node_modules'));
+        const sentinel = join(main, 'node_modules', 'sentinel.txt');
+        writeFileSync(sentinel, '');
+        return { batch: main, reportDir: join(root, 'reports'), sentinel };
+      },
+      status: 'refused',
+      reason: 'main-worktree',
+    },
+    {
+      name: 'the report dir is inside a worktree',
+      arrange: (_main: string, batch: string): BatchCase => ({
+        batch,
+        reportDir: join(batch, 'reports'),
+      }),
+      status: 'refused',
+      reason: 'report-dir-inside-worktree',
+    },
+    {
+      name: 'the registry lacks the folia warm member',
+      arrange: (_main: string, batch: string): BatchCase => {
+        const path = join(batch, 'src', 'server-pool', 'registry', 'pool-registry.json');
+        const entries = JSON.parse(readFileSync(path, 'utf8')) as { type: string }[];
+        writeFileSync(path, JSON.stringify(entries.filter((e) => e.type !== 'folia')));
+        return { batch, reportDir: join(root, 'reports') };
+      },
+      status: 'failed',
+      step: 'registry',
+    },
+  ])('guards: $name', TIMEOUT, ({ arrange, status, reason, step }) => {
+    const main = makeFixtureRepo(root, template);
+    const c = arrange(main, addWorktree(main, join(root, 'batch'), 'ship/batch'));
+
+    const run = runCli<ProvisionBatchResult>([
+      'provision-batch',
+      c.batch,
+      '--report-dir',
+      c.reportDir,
+    ]);
+    expect(run.code).toBe(1);
+    expect(run.json.status).toBe(status);
+    if (reason !== undefined) expect(run.json.reason).toBe(reason);
+    if (step !== undefined) expect(run.json.errors[0]?.step).toBe(step);
+    expect(existsSync(join(c.reportDir, 'pool-registry.batch.json'))).toBe(false);
+    if (c.sentinel !== undefined) expect(existsSync(c.sentinel)).toBe(true);
+  });
+});
+
+describe('usage errors', () => {
+  it.each([
+    { name: 'an unknown subcommand', args: ['frobnicate', 'x'] },
+    { name: 'provision without --batch', args: ['provision', 'x'] },
+  ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
+    const run = runCli(args, { cwd: root });
+    expect(run.code).toBe(2);
+    expect(run.json.status).toBe('failed');
+    expect(run.json.errors[0]?.step).toBe('usage');
+  });
+});
+
+describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
+  /** A provisioned slice, ready for an in-process teardown. */
+  function provisioned(): Layout {
+    const layout = batchAndSlice();
+    expect(runCli(['provision', layout.slice, '--batch', layout.batch]).json.status).toBe('ok');
+    return layout;
+  }
+
+  it('refuses when the link source shrank, leaving the worktree in place', TIMEOUT, () => {
+    const { main, batch, slice } = provisioned();
+    const unlink = (path: string): void => {
+      unlinkLink(path);
+      rmSync(join(batch, 'node_modules', 'fake-dep', 'lib', 'f0.js'));
+    };
+
+    const down = teardownWorktree(toPosix(slice), { unlink });
+    expect(down.status).toBe('refused');
+    expect(down.reason).toBe('source-shrank');
+    const source = down.sources.find((s) => s.path === toPosix(join(batch, 'node_modules')));
+    expect(source?.before).toBeTypeOf('number');
+    expect(source?.after).toBe((source?.before ?? 0) - 1);
+    expect(down.removed).toBe(false);
+    expect(existsSync(slice)).toBe(true);
+    expect(isRegistered(main, slice)).toBe(true);
+  });
+
+  it('refuses when a link survives the unlink step, before git sees the worktree', TIMEOUT, () => {
+    const { main, batch, slice } = provisioned();
+
+    const down = teardownWorktree(toPosix(slice), { unlink: () => undefined });
+    expect(down.status).toBe('refused');
+    expect(down.reason).toBe('links-remain');
+    expect(realpathSync(join(slice, 'node_modules'))).toBe(
+      realpathSync(join(batch, 'node_modules')),
+    );
+    expect(isRegistered(main, slice)).toBe(true);
+    expect(down.registered).toBe(true);
+  });
+
+  it('ignores churn in a volatile top-level cache of the source', TIMEOUT, () => {
+    const { main, batch, slice } = provisioned();
+    const unlink = (path: string): void => {
+      unlinkLink(path);
+      rmSync(join(batch, 'node_modules', '.vite-temp', 'x.js'));
+    };
+
+    const down = teardownWorktree(toPosix(slice), { unlink });
+    expect(down.status, JSON.stringify(down)).toBe('ok');
+    expect(down.removed).toBe(true);
+    expect(isRegistered(main, slice)).toBe(false);
+  });
+
+  it('refuses a CLI hosted inside the worktree it would remove', TIMEOUT, () => {
+    const { main, batch, slice } = provisioned();
+
+    const down = teardownWorktree(toPosix(slice), {
+      selfPath: toPosix(join(slice, 'tooling', 'worktree.ts')),
+    });
+    expect(down.status).toBe('refused');
+    expect(down.reason).toBe('self-hosted');
+    expect(down.registered).toBe(true);
+    expect(down.unlinked).toEqual([]);
+    expect(realpathSync(join(slice, 'node_modules'))).toBe(
+      realpathSync(join(batch, 'node_modules')),
+    );
+    expect(isRegistered(main, slice)).toBe(true);
+  });
+});
+
+describe('inherited git environment', () => {
+  it(
+    'tears down the named worktree despite a foreign GIT_DIR, as a git hook exports',
+    TIMEOUT,
+    () => {
+      const main = makeFixtureRepo(root, template);
+      const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
+      const foreignMain = makeFixtureRepo(join(root, 'foreign'), template);
+      const foreignWt = addWorktree(foreignMain, join(root, 'foreign-wt'), 'other');
+      const foreignGitDir = runIn(
+        'git',
+        ['rev-parse', '--absolute-git-dir'],
+        foreignWt,
+      ).stdout.trim();
+      const saved = process.env.GIT_DIR;
+      process.env.GIT_DIR = foreignGitDir;
+      let down: TeardownResult;
+      try {
+        down = teardownWorktree(toPosix(slice));
+      } finally {
+        if (saved === undefined) delete process.env.GIT_DIR;
+        else process.env.GIT_DIR = saved;
+      }
+
+      expect(down.status, JSON.stringify(down)).toBe('ok');
+      expect(down.removed).toBe(true);
+      expect(existsSync(slice)).toBe(false);
+      expect(isRegistered(main, slice)).toBe(false);
+      expect(isRegistered(foreignMain, foreignWt)).toBe(true);
+    },
+  );
+});
+
+describe('teardown with other worktrees nearby', () => {
+  it('refuses while another registered worktree lies inside the target', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const outer = addWorktree(main, join(root, 'outer'), 'outer');
+    const nested = addWorktree(main, join(outer, 'nested', 'inner'), 'inner');
+    writeFileSync(join(nested, 'uncommitted.txt'), 'work in progress\n');
+    const before = listTree(outer);
+
+    const down = runCli<TeardownResult>(['teardown', outer]);
+    expect(down.code).toBe(1);
+    expect(down.json.status).toBe('refused');
+    expect(down.json.reason).toBe('nested-worktree');
+    expect(down.json.errors[0]?.message).toContain(toPosix(nested));
+    expect(down.json.registered).toBe(true);
+    expect(down.json.unlinked).toEqual([]);
+    expect(listTree(outer)).toEqual(before);
+    expect(readFileSync(join(nested, 'uncommitted.txt'), 'utf8')).toBe('work in progress\n');
+    expect(isRegistered(main, outer)).toBe(true);
+    expect(isRegistered(main, nested)).toBe(true);
+  });
+
+  it('tears down a worktree beside a sibling whose name extends its own', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const wt = addWorktree(main, join(root, 'wt'), 'wt');
+    const sibling = addWorktree(main, join(root, 'wt2'), 'wt2');
+
+    const down = runCli<TeardownResult>(['teardown', wt]);
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(down.code).toBe(0);
+    expect(existsSync(wt)).toBe(false);
+    expect(isRegistered(main, wt)).toBe(false);
+    expect(existsSync(sibling)).toBe(true);
+    expect(isRegistered(main, sibling)).toBe(true);
+  });
+});
+
+describe.skipIf(!WIN32)('provision', () => {
+  it(
+    'leaves the slice status clean, and a --server re-provision reuses the junction',
+    TIMEOUT,
+    () => {
+      const { batch, slice } = batchAndSlice();
+
+      const first = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+      expect(first.json.status, JSON.stringify(first.json)).toBe('ok');
+      expect(porcelain(slice)).toBe('');
+      expect(existsSync(join(slice, 'vitest.worktree.integration.config.ts'))).toBe(false);
+
+      const again = runCli<ProvisionResult>(['provision', slice, '--batch', batch, '--server']);
+      expect(again.json.status, JSON.stringify(again.json)).toBe('ok');
+      expect(again.json.junctions).toEqual([
+        {
+          path: toPosix(join(slice, 'node_modules')),
+          target: toPosix(join(batch, 'node_modules')),
+        },
+      ]);
+      expect(realpathSync(join(slice, 'node_modules'))).toBe(
+        realpathSync(join(batch, 'node_modules')),
+      );
+      const twin = readFileSync(join(slice, 'vitest.worktree.integration.config.ts'), 'utf8');
+      expect(twin).toContain("from './vitest.integration.config'");
+      expect(twin).toContain("cacheDir: './.vitest-cache-integration'");
+      expect(porcelain(slice)).toBe('');
+    },
+  );
+
+  it('fails the post-check and rolls back when a scaffold file is not ignored', TIMEOUT, () => {
+    const { batch, slice } = batchAndSlice({ gitignore: gitignoreWithScaffoldLine(null) });
+
+    const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+    expect(prov.code).toBe(1);
+    expect(prov.json.status).toBe('failed');
+    expect(prov.json.errors[0]?.step).toBe('post-check');
+    expect(prov.json.errors[0]?.message).toContain('vitest.worktree.config.ts');
+    expect(existsSync(join(slice, 'node_modules'))).toBe(false);
+    expect(existsSync(join(slice, 'vitest.worktree.config.ts'))).toBe(false);
+    expect(existsSync(join(slice, 'dist'))).toBe(false);
+  });
+
+  it('fails loudly on a build failure and rolls back everything it created', TIMEOUT, () => {
+    const { batch, slice } = batchAndSlice();
+    writeFileSync(join(slice, 'FAIL_BUILD'), '');
+    const before = listTree(join(batch, 'node_modules'));
+
+    const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+    expect(prov.code).toBe(1);
+    expect(prov.json.status).toBe('failed');
+    expect(prov.json.errors[0]?.step).toBe('build');
+    expect(prov.json.errors[0]?.detail).toContain(
+      'fixture build failed: FAIL_BUILD marker present',
+    );
+    expect(prov.json.rolledBack).toEqual([toPosix(join(slice, 'node_modules'))]);
+    expect(existsSync(join(slice, 'node_modules'))).toBe(false);
+    expect(existsSync(join(slice, 'dist'))).toBe(false);
+    expect(existsSync(join(slice, 'vitest.worktree.config.ts'))).toBe(false);
+    expect(listTree(join(batch, 'node_modules'))).toEqual(before);
+  });
+
+  it('keeps an earlier provision intact when a re-provision fails', TIMEOUT, () => {
+    const { batch, slice } = batchAndSlice();
+    expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
+    writeFileSync(join(slice, 'FAIL_BUILD'), '');
+
+    const again = runCli<ProvisionResult>(['provision', slice, '--batch', batch, '--server']);
+    expect(again.json.status).toBe('failed');
+    expect(again.json.errors[0]?.step).toBe('build');
+    expect(again.json.rolledBack).toEqual([]);
+    expect(realpathSync(join(slice, 'node_modules'))).toBe(
+      realpathSync(join(batch, 'node_modules')),
+    );
+    expect(existsSync(join(slice, 'vitest.worktree.config.ts'))).toBe(true);
+    expect(existsSync(join(slice, 'vitest.worktree.integration.config.ts'))).toBe(false);
+  });
+
+  it('rolls back only the twin when a --server re-provision fails its post-check', TIMEOUT, () => {
+    // Only the unit config is ignored: the first provision passes, the
+    // re-provision rewrites it, then fails on the twin it created.
+    const { batch, slice } = batchAndSlice({
+      gitignore: gitignoreWithScaffoldLine('vitest.worktree.config.ts'),
+    });
+    expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
+
+    const again = runCli<ProvisionResult>(['provision', slice, '--batch', batch, '--server']);
+    expect(again.json.status).toBe('failed');
+    expect(again.json.errors[0]?.step).toBe('post-check');
+    expect(again.json.rolledBack).toEqual([
+      toPosix(join(slice, 'vitest.worktree.integration.config.ts')),
+    ]);
+    expect(realpathSync(join(slice, 'node_modules'))).toBe(
+      realpathSync(join(batch, 'node_modules')),
+    );
+    expect(existsSync(join(slice, 'dist', 'index.js'))).toBe(true);
+    expect(existsSync(join(slice, 'vitest.worktree.config.ts'))).toBe(true);
+    expect(existsSync(join(slice, 'vitest.worktree.integration.config.ts'))).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'the batch has no node_modules',
+      arrange: (f: Layout) => {
+        rmSync(join(f.batch, 'node_modules'), { recursive: true, force: true });
+        return f;
+      },
+    },
+    {
+      name: '--batch is the main checkout',
+      arrange: (f: Layout) => {
+        seedBatch(f.main);
+        return { ...f, batch: f.main };
+      },
+    },
+    {
+      name: 'the slice is a plain directory, not a worktree',
+      arrange: (f: Layout) => {
+        const plain = join(root, 'plain');
+        mkdirSync(plain);
+        return { ...f, slice: plain };
+      },
+    },
+  ])('fails preconditions and creates nothing when $name', TIMEOUT, ({ arrange }) => {
+    const { batch, slice } = arrange(batchAndSlice());
+    const before = listTree(slice);
+
+    const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+    expect(prov.code).toBe(1);
+    expect(prov.json.status).toBe('failed');
+    expect(prov.json.errors[0]?.step).toBe('preconditions');
+    expect(listTree(slice)).toEqual(before);
+  });
+});
