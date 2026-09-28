@@ -515,6 +515,14 @@ describe('evaluateRunGate — failure messages', () => {
   });
 });
 
+describe('evaluateRunGate — caller bugs throw', () => {
+  it('an out-of-set blocker with no state throws naming it, never counts as satisfied', () => {
+    expect(() => gate([{ epic: null, issues: [3] }], [issue(3, { blockedBy: [70] })])).toThrow(
+      '#70',
+    );
+  });
+});
+
 describe('resolveRunSet', () => {
   it('an issues spec becomes one epic-less entry, ascending', () => {
     expect(resolveRunSet({ kind: 'issues', issues: [1032, 1027, 1031] }, new Map())).toEqual([

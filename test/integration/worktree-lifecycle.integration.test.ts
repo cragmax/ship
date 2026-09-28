@@ -15,6 +15,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,6 +27,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { loadPoolRegistry } from '../../src/server-pool/index.js';
 import { toPosix } from '../../tooling/shared.js';
 import { unlinkLink } from '../../tooling/worktree/links.js';
+import { provisionBatch } from '../../tooling/worktree/provision-batch.js';
+import { provision } from '../../tooling/worktree/provision.js';
 import { teardownWorktree } from '../../tooling/worktree/teardown.js';
 import type {
   ProvisionBatchResult,
@@ -91,16 +94,18 @@ function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
   return { main, batch, slice };
 }
 
-/** The real `.gitignore` with its scaffold-config line replaced, or dropped when `null`. */
-function gitignoreWithScaffoldLine(replacement: string | null): string {
+/** The real `.gitignore` with its `pattern` line replaced, or dropped when `null`. */
+function gitignoreReplacing(pattern: string, replacement: string | null): string {
   return readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
     .split(/\r?\n/u)
     .flatMap((line) => {
-      if (line.trim() !== 'vitest.worktree*.config.ts') return [line];
+      if (line.trim() !== pattern) return [line];
       return replacement === null ? [] : [replacement];
     })
     .join('\n');
 }
+
+const SCAFFOLD_PATTERN = 'vitest.worktree*.config.ts';
 
 describe.skipIf(!WIN32)('provision + teardown round trip', () => {
   it(
@@ -123,12 +128,20 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
       expect(config).toContain("from './vitest.config'");
       expect(config).toContain("cacheDir: './.vitest-cache'");
       expect(prov.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch) });
+      const junction = { path: toPosix(sliceModules), target: toPosix(batchModules) };
+      expect(prov.json.batch).toBe(toPosix(batch));
+      expect(prov.json.junctions).toEqual([junction]);
+      expect(prov.json.dist).toBe(toPosix(join(slice, 'dist')));
+      expect(prov.json.vitestConfigs).toEqual([toPosix(join(slice, 'vitest.worktree.config.ts'))]);
+      expect(prov.json.rolledBack).toEqual([]);
       expect(runIn('npm', ['test'], slice).exitCode).toBe(0);
 
       const down = runCli<TeardownResult>(['teardown', slice]);
       expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
       expect(down.code).toBe(0);
+      expect(down.json.unlinked).toEqual([junction]);
       expect(down.json.removed).toBe(true);
+      expect(down.json.registered).toBe(false);
       expect(existsSync(slice)).toBe(false);
       expect(isRegistered(main, slice)).toBe(false);
       expect(listTree(batchModules)).toEqual(before);
@@ -222,6 +235,13 @@ describe('provision-batch', () => {
         { type: 'paper', host: 'localhost', rconPort: 25701 },
         { type: 'folia', host: 'localhost', rconPort: 25711 },
       ]);
+      expect(run.json.warm).toEqual([
+        { type: 'paper', host: 'localhost', rconPort: 25701 },
+        { type: 'folia', host: 'localhost', rconPort: 25711 },
+      ]);
+      expect(run.json.nodeModules).toBe(toPosix(join(batch, 'node_modules')));
+      expect(run.json.dist).toBe(toPosix(join(batch, 'dist')));
+      expect(run.json.workspace).toBe(toPosix(join(batch, 'paper-harness')));
       expect(run.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch), PH_POOL_REGISTRY: registry });
       expect(porcelain(batch)).toBe('');
     },
@@ -282,6 +302,51 @@ describe('provision-batch', () => {
     expect(existsSync(join(c.reportDir, 'pool-registry.batch.json'))).toBe(false);
     if (c.sentinel !== undefined) expect(existsSync(c.sentinel)).toBe(true);
   });
+
+  it('fails the post-check when the build output is not ignored', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template, { gitignore: gitignoreReplacing('dist/', null) });
+    const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
+
+    const run = runCli<ProvisionBatchResult>([
+      'provision-batch',
+      batch,
+      '--report-dir',
+      join(root, 'reports'),
+    ]);
+    expect(run.code).toBe(1);
+    expect(run.json.status).toBe('failed');
+    expect(run.json.errors[0]?.step).toBe('post-check');
+    expect(run.json.errors[0]?.message).toContain('dist/');
+    expect(run.json.env).toBeNull();
+  });
+
+  it.skipIf(!WIN32)(
+    'fails preconditions and never runs npm ci when the batch node_modules is a link',
+    TIMEOUT,
+    () => {
+      const main = makeFixtureRepo(root, template);
+      const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
+      const target = join(root, 'other-modules');
+      mkdirSync(target);
+      writeFileSync(join(target, 'sentinel.txt'), 'keep\n');
+      symlinkSync(target, join(batch, 'node_modules'), 'junction');
+      const before = listTree(target);
+
+      const run = runCli<ProvisionBatchResult>([
+        'provision-batch',
+        batch,
+        '--report-dir',
+        join(root, 'reports'),
+      ]);
+      expect(run.code).toBe(1);
+      expect(run.json.status).toBe('failed');
+      expect(run.json.errors[0]?.step).toBe('preconditions');
+      expect(run.json.errors[0]?.message).toContain('node_modules is a link');
+      expect(run.json.nodeModules).toBeNull();
+      expect(realpathSync(join(batch, 'node_modules'))).toBe(realpathSync(target));
+      expect(listTree(target)).toEqual(before);
+    },
+  );
 });
 
 describe('usage errors', () => {
@@ -365,6 +430,37 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
   });
 });
 
+describe('self-hosted guard on the provision commands (in-process)', () => {
+  it('provision-batch refuses a CLI hosted inside the batch and installs nothing', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const batch = toPosix(addWorktree(main, join(root, 'batch'), 'ship/batch'));
+    const reportDir = toPosix(join(root, 'reports'));
+
+    const run = provisionBatch({ batch, reportDir, selfPath: `${batch}/tooling/worktree.ts` });
+    expect(run.status).toBe('refused');
+    expect(run.reason).toBe('self-hosted');
+    expect(existsSync(join(batch, 'node_modules'))).toBe(false);
+    expect(existsSync(reportDir)).toBe(false);
+  });
+
+  it('provision refuses a CLI hosted inside the slice and creates nothing', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const batch = toPosix(addWorktree(main, join(root, 'batch'), 'ship/batch'));
+    const slice = toPosix(addWorktree(main, join(root, 'slice'), 'slice-1'));
+    const before = listTree(slice);
+
+    const run = provision({
+      slice,
+      batch,
+      server: false,
+      selfPath: `${slice}/tooling/worktree.ts`,
+    });
+    expect(run.status).toBe('refused');
+    expect(run.reason).toBe('self-hosted');
+    expect(listTree(slice)).toEqual(before);
+  });
+});
+
 describe('inherited git environment', () => {
   it(
     'tears down the named worktree despite a foreign GIT_DIR, as a git hook exports',
@@ -391,6 +487,7 @@ describe('inherited git environment', () => {
 
       expect(down.status, JSON.stringify(down)).toBe('ok');
       expect(down.removed).toBe(true);
+      expect(down.registered).toBe(false);
       expect(existsSync(slice)).toBe(false);
       expect(isRegistered(main, slice)).toBe(false);
       expect(isRegistered(foreignMain, foreignWt)).toBe(true);
@@ -427,6 +524,7 @@ describe('teardown with other worktrees nearby', () => {
     const down = runCli<TeardownResult>(['teardown', wt]);
     expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
     expect(down.code).toBe(0);
+    expect(down.json.registered).toBe(false);
     expect(existsSync(wt)).toBe(false);
     expect(isRegistered(main, wt)).toBe(false);
     expect(existsSync(sibling)).toBe(true);
@@ -465,16 +563,40 @@ describe.skipIf(!WIN32)('provision', () => {
   );
 
   it('fails the post-check and rolls back when a scaffold file is not ignored', TIMEOUT, () => {
-    const { batch, slice } = batchAndSlice({ gitignore: gitignoreWithScaffoldLine(null) });
+    const { batch, slice } = batchAndSlice({
+      gitignore: gitignoreReplacing(SCAFFOLD_PATTERN, null),
+    });
 
     const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
     expect(prov.code).toBe(1);
     expect(prov.json.status).toBe('failed');
     expect(prov.json.errors[0]?.step).toBe('post-check');
     expect(prov.json.errors[0]?.message).toContain('vitest.worktree.config.ts');
+    expect(prov.json.rolledBack).toEqual([
+      toPosix(join(slice, 'vitest.worktree.config.ts')),
+      toPosix(join(slice, 'dist')),
+      toPosix(join(slice, 'node_modules')),
+    ]);
+    expect(prov.json.junctions).toEqual([]);
+    expect(prov.json.dist).toBeNull();
+    expect(prov.json.vitestConfigs).toEqual([]);
     expect(existsSync(join(slice, 'node_modules'))).toBe(false);
     expect(existsSync(join(slice, 'vitest.worktree.config.ts'))).toBe(false);
     expect(existsSync(join(slice, 'dist'))).toBe(false);
+  });
+
+  it('fails the junction step when node_modules already links elsewhere', TIMEOUT, () => {
+    const { batch, slice } = batchAndSlice();
+    const elsewhere = join(root, 'elsewhere-modules');
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(slice, 'node_modules'), 'junction');
+
+    const prov = runCli<ProvisionResult>(['provision', slice, '--batch', batch]);
+    expect(prov.code).toBe(1);
+    expect(prov.json.status).toBe('failed');
+    expect(prov.json.errors[0]?.step).toBe('junction');
+    expect(prov.json.rolledBack).toEqual([]);
+    expect(realpathSync(join(slice, 'node_modules'))).toBe(realpathSync(elsewhere));
   });
 
   it('fails loudly on a build failure and rolls back everything it created', TIMEOUT, () => {
@@ -516,7 +638,7 @@ describe.skipIf(!WIN32)('provision', () => {
     // Only the unit config is ignored: the first provision passes, the
     // re-provision rewrites it, then fails on the twin it created.
     const { batch, slice } = batchAndSlice({
-      gitignore: gitignoreWithScaffoldLine('vitest.worktree.config.ts'),
+      gitignore: gitignoreReplacing(SCAFFOLD_PATTERN, 'vitest.worktree.config.ts'),
     });
     expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
 

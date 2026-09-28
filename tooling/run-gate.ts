@@ -222,7 +222,7 @@ async function ghJson(args: readonly string[]): Promise<unknown> {
  * @param argv - `process.argv.slice(2)`.
  * @param gh - The `gh` port.
  */
-async function main(argv: readonly string[], gh: GhJson): Promise<void> {
+export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
   try {
     const args = parseRunGateArgs(argv);
     const result =
