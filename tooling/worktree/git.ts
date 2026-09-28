@@ -18,6 +18,8 @@ export interface WorktreeEntry {
   readonly path: string;
   /** Checked-out branch ref, or `null` when detached or bare. */
   readonly branch: string | null;
+  /** Git marks the entry prunable: its directory no longer exists. */
+  readonly prunable: boolean;
 }
 
 /** Where a worktree sits in its repository. */
@@ -63,9 +65,45 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
     const path = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
     if (path === undefined) continue;
     const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch '.length) ?? null;
-    entries.push({ path, branch });
+    const prunable = lines.some((l) => l === 'prunable' || l.startsWith('prunable '));
+    entries.push({ path, branch, prunable });
   }
   return entries;
+}
+
+/**
+ * Run a path-listing git command with `-z` and split its output: without
+ * `-z` git C-quotes a non-ASCII or otherwise unusual path, which would then
+ * never equal the caller's spelling of it.
+ *
+ * @param dir - Directory git operates on.
+ * @param args - Git subcommand first, then its options (`-z` is inserted
+ *   right after the subcommand).
+ * @param step - Step name reported on failure.
+ * @returns The listed paths in git's order, empty entries dropped.
+ * @throws StepFailure for `step` when git fails.
+ */
+export function gitPaths(dir: string, args: readonly string[], step: string): string[] {
+  const [subcommand = '', ...rest] = args;
+  return git(dir, [subcommand, '-z', ...rest], step)
+    .split('\0')
+    .filter((path) => path !== '');
+}
+
+/**
+ * Whether a ref resolves in a checkout — for the per-worktree in-progress
+ * refs (`MERGE_HEAD`, …), which {@link git} cannot probe since it throws on
+ * the non-zero exit an absent ref gives.
+ *
+ * @param dir - The checkout.
+ * @param ref - The ref to look up.
+ * @returns `true` when `git rev-parse -q --verify` resolves it.
+ */
+export function refExists(dir: string, ref: string): boolean {
+  return (
+    runCaptured('git', ['-C', dir, 'rev-parse', '-q', '--verify', ref], { cwd: process.cwd() })
+      .exitCode === 0
+  );
 }
 
 /**

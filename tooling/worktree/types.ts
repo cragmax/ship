@@ -11,12 +11,18 @@
  * - `failed` — a step failed; `errors[0].step` names it. Thrown as
  *   {@link StepFailure}; any other throw is step `internal`, and a bad
  *   command line is step `usage`.
+ * - `conflict` — `harvest` only: the change cannot apply to the batch's
+ *   current head; the batch is back at a verified-clean `HEAD`. Thrown as
+ *   {@link Conflict}.
  *
- * Every path in an envelope is absolute with forward slashes.
+ * Every filesystem path in an envelope is absolute with forward slashes;
+ * the path lists of `harvest`, `staged-guard` and `live-runs` (`files`,
+ * `conflicts`, `expected`, `staged`, `missing`, `unexpected`, `landed`) are
+ * repository-relative, as git spells them.
  */
 
 /** The envelope's outcome. */
-export type CommandStatus = 'ok' | 'failed' | 'refused';
+export type CommandStatus = 'ok' | 'failed' | 'refused' | 'conflict';
 
 /** Which safety guard produced a `refused` envelope. */
 export type RefusalReason =
@@ -26,7 +32,13 @@ export type RefusalReason =
   | 'links-remain'
   | 'source-shrank'
   /** Teardown: another registered worktree lies inside the target; the message names each. */
-  | 'nested-worktree';
+  | 'nested-worktree'
+  /** Harvest: the batch has uncommitted changes, or a merge, cherry-pick or revert in progress. */
+  | 'batch-dirty'
+  /** Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree. */
+  | 'unregistered-worktree'
+  /** Staged-guard: the staged set differs from the expected list; the envelope names both sides. */
+  | 'staged-mismatch';
 
 /** One entry of the envelope's `errors` list. */
 export interface StepError {
@@ -130,6 +142,75 @@ export interface TeardownResult extends ResultBase {
   registered: boolean;
 }
 
+/** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */
+export interface HarvestResult extends ResultBase {
+  /** The slice commit's full sha; `null` until it resolves. */
+  sha: string | null;
+  /**
+   * Every path the slice commit changes, both endpoints of a rename, in
+   * code-unit order — the list a caller hands `staged-guard` next.
+   */
+  files: string[];
+  /**
+   * Paths that would not apply; non-empty only on a conflict — `status`
+   * `conflict`, or `failed` when the rollback after it failed.
+   */
+  conflicts: string[];
+  /** Whether a started pick was reset and the batch verified clean afterwards. */
+  rolledBack: boolean;
+}
+
+/** Envelope of `staged-guard <worktree> <file>…`; every list is sorted. */
+export interface StagedGuardResult extends ResultBase {
+  /** The expected paths, normalised and deduplicated. */
+  expected: string[];
+  /** The paths staged in the worktree, a rename as both endpoints. */
+  staged: string[];
+  /** Expected but not staged. */
+  missing: string[];
+  /** Staged but not expected. */
+  unexpected: string[];
+}
+
+/** A run branch's pull request as `gh` reports it. */
+export interface PrInfo {
+  /**
+   * `none`: `gh` found no PR for the branch; `unknown`: `gh` could not be
+   * asked or answered unreadably — never read as `none`.
+   */
+  readonly state: 'open' | 'merged' | 'closed' | 'none' | 'unknown';
+  /** The PR number; `null` for `none` and `unknown`. */
+  readonly number: number | null;
+}
+
+/** One live unattended run: a registered worktree on a run branch. */
+export interface LiveRun {
+  /** The worktree root as git lists it. */
+  readonly path: string;
+  /** The short branch name, e.g. `ship/epic-1025`. */
+  readonly branch: string;
+  /** Commits on the branch not on the base branch. */
+  readonly ahead: number;
+  /** `git merge-base` of the base branch and the run branch. */
+  readonly mergeBase: string;
+  /** Paths the run changed since the merge-base, both endpoints of a rename, sorted. */
+  readonly landed: string[];
+  /** Uncommitted changes in the worktree; `null` when its directory is missing. */
+  readonly dirty: boolean | null;
+  /** The branch's pull request. */
+  readonly pr: PrInfo;
+  /** The PR is merged or closed — the run is over and awaits cleanup. */
+  readonly spent: boolean;
+  /** Registered worktrees (any branch) strictly inside this one. */
+  readonly nested: string[];
+}
+
+/** Envelope of `live-runs <main>`; `worktree` is the main checkout. */
+export interface LiveRunsResult extends ResultBase {
+  /** Every live run, sorted by branch. */
+  runs: LiveRun[];
+}
+
 /**
  * A step failed; the command stops and reports `failed`.
  */
@@ -178,6 +259,40 @@ export class Refusal extends StepFailure {
 }
 
 /**
+ * A change would not apply to the batch; the command reports `conflict`
+ * with {@link Conflict.files}.
+ */
+export class Conflict extends StepFailure {
+  override readonly name: string = 'Conflict';
+  /** The paths that would not apply. */
+  readonly files: readonly string[];
+
+  /**
+   * Create a conflict.
+   *
+   * @param step - The step that detected it.
+   * @param message - One-line cause.
+   * @param files - The paths that would not apply.
+   * @param detail - Optional child-output tail.
+   */
+  constructor(step: string, message: string, files: readonly string[], detail?: string) {
+    super(step, message, detail);
+    this.files = files;
+  }
+}
+
+/**
+ * The status a {@link StepFailure} maps to.
+ *
+ * @param err - The failure.
+ * @returns `conflict`, `refused` or `failed` by the failure's class.
+ */
+function statusOf(err: StepFailure): CommandStatus {
+  if (err instanceof Conflict) return 'conflict';
+  return err instanceof Refusal ? 'refused' : 'failed';
+}
+
+/**
  * Record a caught throw on an envelope, mapped to a status as the file
  * header describes.
  *
@@ -186,7 +301,7 @@ export class Refusal extends StepFailure {
  */
 export function recordFailure(result: ResultBase, err: unknown): void {
   if (err instanceof StepFailure) {
-    result.status = err instanceof Refusal ? 'refused' : 'failed';
+    result.status = statusOf(err);
     if (err instanceof Refusal) result.reason = err.reason;
     result.errors.push({
       step: err.step,

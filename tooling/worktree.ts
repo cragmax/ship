@@ -1,38 +1,49 @@
 /**
- * Worktree lifecycle CLI — provisions and tears down the batch and slice
- * worktrees of an unattended run (ADR-0045). Each command prints exactly one
- * JSON object on one stdout line — the envelope in `worktree/types.ts` — and
- * nothing else.
+ * Worktree lifecycle CLI — provisions, harvests into and tears down the
+ * batch and slice worktrees of an unattended run, and lists the live runs
+ * (ADR-0045). Each command prints exactly one JSON object on one stdout
+ * line — the envelope in `worktree/types.ts` — and nothing else.
  *
- * Usage (square brackets = optional):
+ * Usage (square brackets = optional, `...` = one or more):
  *
  * ```
  * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
  * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
  * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
+ * npx tsx <main-checkout>/tooling/worktree.ts harvest BATCH SLICE-SHA
+ * npx tsx <main-checkout>/tooling/worktree.ts staged-guard WORKTREE FILE...
+ * npx tsx <main-checkout>/tooling/worktree.ts live-runs MAIN
  * ```
  *
+ * The commit queue runs `harvest`, then `staged-guard` over the harvest's
+ * `files`, then commits.
+ *
  * Always run it from a checkout other than the one it mutates — normally
- * the main checkout: every command refuses (`self-hosted`, see
+ * the main checkout: every command that mutates a worktree (provision,
+ * provision-batch, teardown, harvest) refuses (`self-hosted`, see
  * `assertNotSelfHosted` in `worktree/git.ts`) when the CLI lies inside its
  * target. Target paths come only from argv, resolved against the starting
- * cwd.
+ * cwd; the arguments after the target (a sha, repo-relative paths) are kept
+ * verbatim.
  *
- * Exit codes: `0` ok, `1` failed or refused (the envelope's `status` tells
- * which), `2` usage error ({@link UsageError}). The runner rule shared with
- * `tooling/run-gate.ts`: on `0` / `1` parse stdout; `2` is a tool or usage
- * error whose human message is on stderr (`worktree: <reason>`). Here the
- * `usage` envelope is on stdout too, where `run-gate.ts` leaves stdout
- * empty. No npm script wraps this CLI: `npm run` prints a banner on stdout,
- * which would break the one-object contract.
+ * Exit codes: `0` ok, `1` failed, refused or conflict (the envelope's
+ * `status` tells which), `2` usage error ({@link UsageError}). The runner
+ * rule shared with `tooling/run-gate.ts`: on `0` / `1` parse stdout; `2` is
+ * a tool or usage error whose human message is on stderr
+ * (`worktree: <reason>`). Here the `usage` envelope is on stdout too, where
+ * `run-gate.ts` leaves stdout empty. No npm script wraps this CLI: `npm run`
+ * prints a banner on stdout, which would break the one-object contract.
  */
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { toPosix } from './shared.js';
+import { harvest } from './worktree/harvest.js';
+import { liveRuns } from './worktree/live-runs.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
+import { stagedGuard } from './worktree/staged-set.js';
 import { teardownWorktree } from './worktree/teardown.js';
 import { recordFailure, type ResultBase } from './worktree/types.js';
 
@@ -43,6 +54,8 @@ class UsageError extends Error {}
 interface ParsedArgs {
   /** The resolved positional path. */
   readonly target: string;
+  /** The positionals after the target, verbatim. */
+  readonly rest: readonly string[];
   /** Value flags (`--batch X`) by name. */
   readonly values: ReadonlyMap<string, string>;
   /** Boolean flags present (`--server`). */
@@ -55,9 +68,14 @@ interface CommandSpec {
   readonly valueFlags: readonly string[];
   /** Flags taking no value. */
   readonly switchFlags: readonly string[];
+  /** How many positionals may follow the target (`max` may be `Infinity`). */
+  readonly rest: { readonly min: number; readonly max: number };
   /** Run the command. */
   readonly run: (args: ParsedArgs) => ResultBase;
 }
+
+/** Arity of a command taking only its target. */
+const NO_REST = { min: 0, max: 0 } as const;
 
 /**
  * Resolve a CLI path against the starting cwd into envelope form.
@@ -84,6 +102,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   provision: {
     valueFlags: ['--batch'],
     switchFlags: ['--server'],
+    rest: NO_REST,
     run: (args) =>
       provision({
         slice: args.target,
@@ -94,13 +113,35 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   'provision-batch': {
     valueFlags: ['--report-dir'],
     switchFlags: [],
+    rest: NO_REST,
     run: (args) =>
       provisionBatch({ batch: args.target, reportDir: pathFlag(args, '--report-dir') }),
   },
   teardown: {
     valueFlags: [],
     switchFlags: [],
+    rest: NO_REST,
     run: (args) => teardownWorktree(args.target),
+  },
+  harvest: {
+    valueFlags: [],
+    switchFlags: [],
+    rest: { min: 1, max: 1 },
+    run: (args) => harvest({ batch: args.target, sha: args.rest[0] ?? '' }),
+  },
+  // At least one file: an empty expected set never precedes a real commit,
+  // and accepting it would let an empty-list bug pass on an empty index.
+  'staged-guard': {
+    valueFlags: [],
+    switchFlags: [],
+    rest: { min: 1, max: Infinity },
+    run: (args) => stagedGuard({ worktree: args.target, files: args.rest }),
+  },
+  'live-runs': {
+    valueFlags: [],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) => liveRuns({ main: args.target }),
   },
 };
 
@@ -108,10 +149,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
  * Parse one subcommand's arguments against its spec.
  *
  * @param argv - Arguments after the subcommand name.
- * @param spec - The subcommand's flags.
+ * @param spec - The subcommand's flags and positional arity.
  * @returns The parsed arguments.
  * @throws UsageError on an unknown flag, a flag missing its value, a missing
- *   required flag, or a missing or extra positional.
+ *   required flag, or a positional count outside the spec's range.
  */
 function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
   const values = new Map<string, string>();
@@ -124,12 +165,28 @@ function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
     else if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
     else positionals.push(arg);
   }
-  if (positionals.length !== 1) {
-    throw new UsageError(`expected one positional path, got ${String(positionals.length)}`);
-  }
+  assertArity(positionals.length, spec.rest);
   const missing = spec.valueFlags.find((flag) => !values.has(flag));
   if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
-  return { target: toTarget(positionals[0] ?? ''), values, switches };
+  const [target = '', ...rest] = positionals;
+  return { target: toTarget(target), rest, values, switches };
+}
+
+/**
+ * Check the positional count: one target path plus `rest.min`..`rest.max`
+ * further arguments.
+ *
+ * @param count - Positionals given.
+ * @param rest - The spec's arity after the target.
+ * @throws UsageError naming the expectation and the count.
+ */
+function assertArity(count: number, rest: CommandSpec['rest']): void {
+  if (count >= 1 + rest.min && count <= 1 + rest.max) return;
+  let expected = 'one positional path';
+  if (rest.max === Infinity) expected += ` plus at least ${String(rest.min)} more`;
+  else if (rest.max === rest.min && rest.max > 0) expected += ` plus ${String(rest.max)} more`;
+  else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
+  throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
 }
 
 /**
