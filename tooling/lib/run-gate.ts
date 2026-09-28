@@ -7,8 +7,9 @@
  * **What an `ok` verdict guarantees the scheduler.** Every edge has both ends
  * inside one run-set entry (no cross-epic edge), the edge graph is acyclic,
  * and — given a non-empty launch spec, which the CLI enforces and nothing here
- * re-checks — no entry is empty. The scheduler may rely on all three without
- * re-checking.
+ * re-checks — no entry is empty. The scheduler (`createScheduler` in
+ * `run-scheduler.ts`) re-validates all three anyway: edges unioned in after
+ * the gate (#1036's file-overlap edges) never pass through this module.
  *
  * **The epic container is never gated.** It is only asked for its sub-issues;
  * its state, labels and body never reach this module.
