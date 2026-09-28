@@ -106,13 +106,15 @@ describe('live-runs', () => {
   it('counts landed files from the merge-base, excluding merged-in master changes', TIMEOUT, () => {
     const r = addWorktree(main, `${root}/r`, 'ship/r');
     commitChanges(r, { write: { 'r-own.txt': 'run file\n' } }, 'r1');
-    commitChanges(main, { write: { 'm.txt': 'master before the resync\n' } }, 'm1');
+    const m1 = commitChanges(main, { write: { 'm.txt': 'master before the resync\n' } }, 'm1');
     mustRun('git', ['merge', '-q', '--no-edit', 'master'], r);
     commitChanges(main, { write: { 'm2.txt': 'master after the resync\n' } }, 'm2');
 
     const { json, run } = liveRuns({});
 
     expect(json.status).toBe('ok');
+    // master's tip is m2 by now, so the merge-base is distinguishable from it.
+    expect(run('ship/r')?.mergeBase).toBe(m1);
     expect(run('ship/r')?.landed).toEqual(['r-own.txt']);
   });
 

@@ -260,6 +260,25 @@ describe('harvest', () => {
       survives: (batch: string) =>
         expect(runIn('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], batch).exitCode).toBe(0),
     },
+    {
+      dirt: 'a cherry-pick stopped as empty with an empty porcelain',
+      make: (batch: string) => {
+        // Picking HEAD's own change onto HEAD comes out empty: git 2.55 stops
+        // with exit 1 and CHERRY_PICK_HEAD set, the porcelain clean.
+        commitChanges(batch, { write: { 'same.txt': 'same\n' } }, 'batch same');
+        const again = mustRun(
+          'git',
+          ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD~1', '-m', 'same again'],
+          batch,
+        ).trim();
+        expect(runIn('git', ['cherry-pick', again], batch).exitCode).toBe(1);
+        expect(porcelain(batch)).toBe('');
+      },
+      survives: (batch: string) =>
+        expect(
+          runIn('git', ['rev-parse', '-q', '--verify', 'CHERRY_PICK_HEAD'], batch).exitCode,
+        ).toBe(0),
+    },
   ])('refuses a batch holding $dirt and touches nothing', TIMEOUT, ({ make, survives }) => {
     const { batch, sha } = slicePair(
       { 'base.txt': 'base\n' },
@@ -436,7 +455,7 @@ describe('staged-guard', () => {
       const run = runCli<StagedGuardResult>([
         'staged-guard',
         main,
-        'n.txt',
+        './n.txt',
         'b.txt',
         'dir\\m.txt',
         'd.txt',
@@ -462,6 +481,19 @@ describe('staged-guard', () => {
     expect(run.json.reason).toBe('staged-mismatch');
     expect(run.json.missing).toEqual(['c.txt']);
     expect(run.json.unexpected).toEqual(['a.txt']);
+  });
+
+  it('fails preconditions for a subdirectory of a worktree', TIMEOUT, () => {
+    // Staged and expected sets match, so only the root check can stop it.
+    const main = makeGitRepo(root, { 'sub/k.txt': 'k v1\n' });
+    writeFileSync(join(main, 'sub', 'k.txt'), 'k v2\n');
+    mustRun('git', ['add', '--', 'sub/k.txt'], main);
+
+    const run = runCli<StagedGuardResult>(['staged-guard', `${main}/sub`, 'sub/k.txt']);
+
+    expect(run.code).toBe(1);
+    expect(run.json.status).toBe('failed');
+    expect(run.json.errors[0]?.step).toBe('preconditions');
   });
 
   it('compares case-exactly on any filesystem', TIMEOUT, () => {

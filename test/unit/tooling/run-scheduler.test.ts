@@ -51,6 +51,28 @@ describe('advance — action order', () => {
       { kind: 'epic-done', epic: 900 },
     ]);
   });
+
+  it('emits several skips in ascending issue order, not input or edge order', () => {
+    const [, blocked] = play(
+      {
+        runSet: [{ epic: 900, issues: [1, 4, 2, 3] }],
+        edges: [
+          { blocker: 1, dependent: 4 },
+          { blocker: 1, dependent: 2 },
+          { blocker: 4, dependent: 3 },
+        ],
+        maxSlices: 1,
+      },
+      [{ kind: 'blocked', issue: 1, reason: 'x' }],
+    );
+    const cause = { root: 1, trigger: 'blocked' };
+    expect(blocked?.actions).toEqual([
+      { kind: 'skip', issue: 2, cause },
+      { kind: 'skip', issue: 3, cause },
+      { kind: 'skip', issue: 4, cause },
+      { kind: 'epic-done', epic: 900 },
+    ]);
+  });
 });
 
 describe('advance — protocol violations', () => {
@@ -60,11 +82,29 @@ describe('advance — protocol violations', () => {
     maxSlices: 1,
   };
 
-  it('rejects committed on a waiting issue', () => {
-    const [init] = play(input, []);
+  // #11 waits on #10; #12 is a root queued behind #10 (one slot), so ready.
+  it.each(
+    (['committed', 'blocked', 'harvest-conflict', 'agent-died', 'slot-free'] as const).flatMap(
+      (kind) => [
+        { kind, issue: 11, phase: 'waiting' },
+        { kind, issue: 12, phase: 'ready' },
+      ],
+    ),
+  )('rejects $kind on a $phase issue', ({ kind, issue, phase }) => {
+    const [init] = play(
+      {
+        runSet: [{ epic: 900, issues: [10, 11, 12] }],
+        edges: [{ blocker: 10, dependent: 11 }],
+        maxSlices: 1,
+      },
+      [],
+    );
     if (init === undefined) throw new Error('unreachable');
-    expect(() => advance(init.state, { kind: 'committed', issue: 11 })).toThrow(
-      'run scheduler: committed for #11, which is waiting',
+    const event = (
+      kind === 'blocked' ? { kind, issue, reason: 'x' } : { kind, issue }
+    ) as SchedulerEvent;
+    expect(() => advance(init.state, event)).toThrow(
+      `run scheduler: ${kind} for #${String(issue)}, which is ${phase}`,
     );
   });
 
@@ -130,6 +170,18 @@ describe('advance — ready order', () => {
     expect(first?.actions).toEqual([{ kind: 'start', issue: 2 }]);
     expect(second?.actions).toEqual([{ kind: 'start', issue: 5 }]);
     expect(third?.actions).toEqual([{ kind: 'start', issue: 4 }]);
+  });
+
+  it('drops a label-removed issue from the ready queue, so it is never started', () => {
+    const [, removed, committed] = play(
+      { runSet: [{ epic: 900, issues: [1, 2, 3] }], edges: [], maxSlices: 1 },
+      [
+        { kind: 'label-removed', issue: 2 },
+        { kind: 'committed', issue: 1 },
+      ],
+    );
+    expect(removed?.actions).toEqual([]);
+    expect(committed?.actions).toEqual([{ kind: 'start', issue: 3 }]);
   });
 });
 
