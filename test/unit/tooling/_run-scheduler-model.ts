@@ -14,6 +14,7 @@ import fc from 'fast-check';
 import { advance, createScheduler } from '../../../tooling/lib/run-scheduler.js';
 import type { RunEdge } from '../../../tooling/lib/run-set.js';
 import type {
+  IssueEvent,
   SchedulerAction,
   SchedulerEvent,
   SchedulerInput,
@@ -24,6 +25,7 @@ import type {
 
 /** The checker's invariants; per-step ones first, in check order, then end-of-run ones. */
 export type InvariantName =
+  | 'halt-stops-entry'
   | 'dependency-order'
   | 'cap'
   | 'work-conserving'
@@ -35,7 +37,7 @@ export type InvariantName =
   | 'skip-closure-complete (final)'
   | 'requeued-restarted'
   | 'every-issue-settles'
-  | 'epic-done-once';
+  | 'one-terminal-per-entry';
 
 /** A named invariant failed. */
 export class InvariantViolation extends Error {
@@ -62,10 +64,14 @@ export interface Choice {
 
 type Observed = 'unstarted' | 'authoring' | 'landing' | 'settled';
 
+/** An entry's end action kind. */
+type EndKind = 'epic-done' | 'epic-halted';
+
 /** What the driver has seen so far, built only from fed events and emitted actions. */
 export interface View {
   readonly input: SchedulerInput;
   readonly order: readonly number[];
+  readonly entryOf: ReadonlyMap<number, number | null>;
   readonly blockers: ReadonlyMap<number, readonly number[]>;
   readonly dependents: ReadonlyMap<number, readonly number[]>;
   readonly status: Map<number, Observed>;
@@ -75,7 +81,10 @@ export interface View {
   readonly skipped: Set<number>;
   readonly pendingRestart: Set<number>;
   readonly removedWhileParked: Set<number>;
-  readonly epicDone: Map<number | null, number>;
+  /** The entries fed `epic-halt`, by epic key. */
+  readonly halted: Set<number | null>;
+  /** Each entry's end actions so far, in emission order. */
+  readonly ends: Map<number | null, EndKind[]>;
 }
 
 /** The scheduler surface the driver talks to — the real one, or a mutant around it. */
@@ -178,6 +187,7 @@ export function arbChoices(): fc.Arbitrary<Choice[]> {
         'harvest-conflict',
         'agent-died',
         'label-removed',
+        'epic-halt',
       ),
       pick: fc.nat(),
     }),
@@ -212,10 +222,11 @@ function ringEdges(ring: readonly number[]): RunEdge[] {
 // ---------------------------------------------------------------- driver
 
 /**
- * Drive one run: create, feed each choice as a valid event, then commit every
- * live issue until none is live. Every state is deep-frozen before it is
- * passed back in, and the invariants are checked after every step and at the
- * end.
+ * Drive one run: create, feed each choice as a valid event, then settle every
+ * live issue until none is live — `committed`, or `blocked` for an issue of a
+ * halted entry, which the consumer protocol never lands. Every state is
+ * deep-frozen before it is passed back in, and the invariants are checked
+ * after every step and at the end.
  *
  * @param input - The run graph.
  * @param choices - The generated script.
@@ -246,7 +257,9 @@ export function runModel(
   for (let n = 0; n < view.order.length * 4; n += 1) {
     const live = view.order.find((i) => isLive(view.status.get(i)));
     if (live === undefined) break;
-    const event: SchedulerEvent = { kind: 'committed', issue: live };
+    const event: SchedulerEvent = inHaltedEntry(view, live)
+      ? { kind: 'blocked', issue: live, reason: 'model' }
+      : { kind: 'committed', issue: live };
     t = record(event, machine.advance(deepFreeze(t.state), event));
   }
   checkEnd(view);
@@ -302,6 +315,7 @@ function newView(input: SchedulerInput): View {
   return {
     input,
     order,
+    entryOf: new Map(input.runSet.flatMap((entry) => entry.issues.map((i) => [i, entry.epic]))),
     blockers,
     dependents,
     status: new Map(order.map((i) => [i, 'unstarted'])),
@@ -311,7 +325,8 @@ function newView(input: SchedulerInput): View {
     skipped: new Set(),
     pendingRestart: new Set(),
     removedWhileParked: new Set(),
-    epicDone: new Map(),
+    halted: new Set(),
+    ends: new Map(),
   };
 }
 
@@ -319,13 +334,35 @@ function isLive(status: Observed | undefined): boolean {
   return status === 'authoring' || status === 'landing';
 }
 
-function candidates(view: View, kind: SchedulerEvent['kind']): number[] {
+function inHaltedEntry(view: View, issue: number): boolean {
+  const epic = view.entryOf.get(issue);
+  return epic !== undefined && view.halted.has(epic);
+}
+
+function endCount(view: View, epic: number | null): number {
+  return view.ends.get(epic)?.length ?? 0;
+}
+
+function candidates(view: View, kind: IssueEvent['kind']): number[] {
   if (kind === 'slot-free') return view.order.filter((i) => view.status.get(i) === 'authoring');
   if (kind === 'label-removed') return view.order.filter((i) => view.status.get(i) !== 'settled');
+  // A halted entry lands nothing more: the consumer never feeds its issues `committed`.
+  if (kind === 'committed') {
+    return view.order.filter((i) => isLive(view.status.get(i)) && !inHaltedEntry(view, i));
+  }
   return view.order.filter((i) => isLive(view.status.get(i)));
 }
 
 function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
+  if (choice.kind === 'epic-halt') {
+    const open = view.input.runSet.filter(
+      ({ epic }) => !view.halted.has(epic) && endCount(view, epic) === 0,
+    );
+    const entry = open[choice.pick % Math.max(open.length, 1)];
+    return entry === undefined
+      ? undefined
+      : { kind: 'epic-halt', epic: entry.epic, reason: 'model' };
+  }
   const pool = candidates(view, choice.kind);
   const issue = pool[choice.pick % Math.max(pool.length, 1)];
   if (issue === undefined) return undefined;
@@ -336,21 +373,47 @@ function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
 
 interface PreStep {
   readonly settled: ReadonlySet<number>;
-  readonly epicDone: ReadonlyMap<number | null, number>;
+  readonly ends: ReadonlyMap<number | null, number>;
 }
 
 function step(view: View, event: SchedulerEvent | null, actions: readonly SchedulerAction[]): void {
   const pre: PreStep = {
     settled: new Set(view.order.filter((i) => view.status.get(i) === 'settled')),
-    epicDone: new Map(view.epicDone),
+    ends: new Map(view.input.runSet.map(({ epic }) => [epic, endCount(view, epic)])),
   };
   if (event !== null) applyEvent(view, event);
   for (const action of actions) applyAction(view, action);
   checkStep(view, event, actions, pre);
 }
 
+/**
+ * Halt an entry in the view: its unstarted issues (waiting, ready, or parked
+ * for a restart) settle and will never start.
+ *
+ * @param view - The view.
+ * @param epic - The halted entry's epic key.
+ */
+function haltEntry(view: View, epic: number | null): void {
+  view.halted.add(epic);
+  for (const i of view.input.runSet.find((entry) => entry.epic === epic)?.issues ?? []) {
+    if (view.status.get(i) !== 'unstarted') continue;
+    view.status.set(i, 'settled');
+    view.pendingRestart.delete(i);
+  }
+}
+
 function applyEvent(view: View, event: SchedulerEvent): void {
+  if (event.kind === 'epic-halt') {
+    haltEntry(view, event.epic);
+    return;
+  }
   const i = event.issue;
+  // In a halted entry every settling event settles the issue as halted: no
+  // death counted, no bad root, no restart.
+  if (inHaltedEntry(view, i) && event.kind !== 'slot-free') {
+    view.status.set(i, 'settled');
+    return;
+  }
   switch (event.kind) {
     case 'committed':
       view.committed.add(i);
@@ -376,8 +439,8 @@ function applyEvent(view: View, event: SchedulerEvent): void {
 }
 
 function applyAction(view: View, action: SchedulerAction): void {
-  if (action.kind === 'epic-done') {
-    view.epicDone.set(action.epic, (view.epicDone.get(action.epic) ?? 0) + 1);
+  if (action.kind === 'epic-done' || action.kind === 'epic-halted') {
+    view.ends.set(action.epic, [...(view.ends.get(action.epic) ?? []), action.kind]);
     return;
   }
   const i = action.issue;
@@ -421,14 +484,23 @@ function checkStep(
   actions: readonly SchedulerAction[],
   pre: PreStep,
 ): void {
+  checkHaltStopsEntry(view, actions);
   checkDependencyOrder(view, actions);
   checkCap(view);
   checkWorkConserving(view);
   checkSkipOnlyDependents(view, actions, pre);
   checkSkipClosureComplete(view, event, actions);
-  checkRequeueAnnounced(event, actions);
+  checkRequeueAnnounced(view, event, actions);
   checkRetryOnce(view, event, actions);
   for (const entry of view.input.runSet) checkEpicDoneWhenSettled(view, entry, actions, pre);
+}
+
+function checkHaltStopsEntry(view: View, actions: readonly SchedulerAction[]): void {
+  for (const { issue } of ofKind(actions, 'start')) {
+    if (inHaltedEntry(view, issue)) {
+      violate('halt-stops-entry', `#${issue} started after epic ${view.entryOf.get(issue)} halted`);
+    }
+  }
 }
 
 function checkDependencyOrder(view: View, actions: readonly SchedulerAction[]): void {
@@ -488,11 +560,13 @@ function checkSkipClosureComplete(
 }
 
 function checkRequeueAnnounced(
+  view: View,
   event: SchedulerEvent | null,
   actions: readonly SchedulerAction[],
 ): void {
   const got = ofKind(actions, 'requeue').map((a) => a.issue);
-  const want = event?.kind === 'harvest-conflict' ? [event.issue] : [];
+  const want =
+    event?.kind === 'harvest-conflict' && !inHaltedEntry(view, event.issue) ? [event.issue] : [];
   if (got.join() !== want.join()) violate('requeue-announced', `requeued [${got}], want [${want}]`);
 }
 
@@ -503,7 +577,8 @@ function checkRetryOnce(
 ): void {
   const retried = ofKind(actions, 'retry').map((a) => a.issue);
   const blocked = ofKind(actions, 'block').map((a) => a.issue);
-  const died = event?.kind === 'agent-died' ? event.issue : undefined;
+  const died =
+    event?.kind === 'agent-died' && !inHaltedEntry(view, event.issue) ? event.issue : undefined;
   const deaths = died === undefined ? 0 : (view.deaths.get(died) ?? 0);
   const want = { retry: deaths === 1 ? [died] : [], block: deaths === 2 ? [died] : [] };
   if (retried.join() !== want.retry.join() || blocked.join() !== want.block.join()) {
@@ -517,8 +592,11 @@ function checkEpicDoneWhenSettled(
   actions: readonly SchedulerAction[],
   pre: PreStep,
 ): void {
-  const now = ofKind(actions, 'epic-done').filter((a) => a.epic === entry.epic).length;
-  const before = pre.epicDone.get(entry.epic) ?? 0;
+  // Either end action counts: which kind is right is one-terminal-per-entry's.
+  const now = [...ofKind(actions, 'epic-done'), ...ofKind(actions, 'epic-halted')].filter(
+    (a) => a.epic === entry.epic,
+  ).length;
+  const before = pre.ends.get(entry.epic) ?? 0;
   const settled = entry.issues.every((i) => view.status.get(i) === 'settled');
   const want = settled && before === 0 ? 1 : 0;
   if (now !== want) {
@@ -542,8 +620,9 @@ function checkEnd(view: View): void {
   const open = view.order.filter((i) => view.status.get(i) !== 'settled');
   if (open.length > 0) violate('every-issue-settles', `unsettled: ${open}`);
   for (const { epic } of view.input.runSet) {
-    const n = view.epicDone.get(epic) ?? 0;
-    if (n !== 1) violate('epic-done-once', `epic ${epic}: ${n} epic-done`);
+    const got = (view.ends.get(epic) ?? []).join();
+    const want = view.halted.has(epic) ? 'epic-halted' : 'epic-done';
+    if (got !== want) violate('one-terminal-per-entry', `epic ${epic}: [${got}], want [${want}]`);
   }
 }
 
@@ -637,6 +716,32 @@ function secondRetry(): MachineFactory {
   });
 }
 
+/**
+ * A halt that leaves the entry's ready issues startable: the real scheduler
+ * halts, then one of the entry's ready issues is started anyway.
+ *
+ * @returns The mutant machine factory.
+ */
+function startAfterHalt(): MachineFactory {
+  return (view) => ({
+    create: createScheduler,
+    advance: (state, event) => {
+      const t = advance(state, event);
+      if (event.kind !== 'epic-halt') return t;
+      const ready = readyIssueOf(view, event.epic);
+      if (ready === undefined) return t;
+      return { state: t.state, actions: [...t.actions, { kind: 'start', issue: ready }] };
+    },
+  });
+}
+
+function readyIssueOf(view: View, epic: number | null): number | undefined {
+  const isReady = (i: number): boolean =>
+    view.status.get(i) === 'unstarted' &&
+    (view.blockers.get(i) ?? []).every((b) => view.committed.has(b));
+  return view.order.find((i) => view.entryOf.get(i) === epic && isReady(i));
+}
+
 /** The must-fail twins, each paired with the invariant it trips first. */
 export const MUTANTS: readonly Mutant[] = [
   {
@@ -692,6 +797,21 @@ export const MUTANTS: readonly Mutant[] = [
     trips: 'epic-done-when-settled',
     machine: mapActions((_view, _event, actions) =>
       actions.flatMap((a): SchedulerAction[] => (a.kind === 'epic-done' ? [a, a] : [a])),
+    ),
+  },
+  {
+    name: 'leave a halted entry’s ready issues startable',
+    trips: 'halt-stops-entry',
+    machine: startAfterHalt(),
+  },
+  {
+    name: 'end a halted entry with epic-done',
+    trips: 'one-terminal-per-entry',
+    machine: mapActions((_view, _event, actions) =>
+      actions.map(
+        (a): SchedulerAction =>
+          a.kind === 'epic-halted' ? { kind: 'epic-done', epic: a.epic } : a,
+      ),
     ),
   },
 ];

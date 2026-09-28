@@ -7,23 +7,35 @@
  *
  * **Issue lifecycle.** Phases, and what moves an issue between them:
  *
- * | From                               | Trigger                                 | To            | Action               |
- * | ---------------------------------- | --------------------------------------- | ------------- | -------------------- |
- * | waiting                            | every blocker committed                 | ready         | —                    |
- * | ready                              | a free slot (fill)                      | authoring     | `start`              |
- * | authoring                          | `slot-free`                             | landing       | —                    |
- * | authoring, landing                 | `committed`                             | committed     | —                    |
- * | authoring, landing                 | `blocked`                               | blocked       | skips for dependents |
- * | authoring, landing                 | `harvest-conflict`                      | ready (front) | `requeue`, then fill |
- * | authoring, landing                 | `agent-died`, first time for the issue  | ready (front) | `retry`, then fill   |
- * | authoring, landing                 | `agent-died`, second time               | blocked       | `block`, skips       |
- * | waiting, ready, authoring, landing | `label-removed`                         | removed       | skips for dependents |
- * | waiting                            | a transitive blocker blocked or removed | skipped       | `skip`               |
+ * | From                               | Trigger                                              | To            | Action               |
+ * | ---------------------------------- | ---------------------------------------------------- | ------------- | -------------------- |
+ * | waiting                            | every blocker committed                              | ready         | —                    |
+ * | ready                              | a free slot (fill)                                   | authoring     | `start`              |
+ * | authoring                          | `slot-free`                                          | landing       | —                    |
+ * | authoring, landing                 | `committed`                                          | committed     | —                    |
+ * | authoring, landing                 | `blocked`                                            | blocked       | skips for dependents |
+ * | authoring, landing                 | `harvest-conflict`                                   | ready (front) | `requeue`, then fill |
+ * | authoring, landing                 | `agent-died`, first time for the issue               | ready (front) | `retry`, then fill   |
+ * | authoring, landing                 | `agent-died`, second time                            | blocked       | `block`, skips       |
+ * | waiting, ready, authoring, landing | `label-removed`                                      | removed       | skips for dependents |
+ * | waiting                            | a transitive blocker blocked or removed              | skipped       | `skip`               |
+ * | waiting, ready                     | `epic-halt` for its entry                            | halted        | —                    |
+ * | authoring, landing — entry halted  | `blocked`, `harvest-conflict`, `agent-died`          | halted        | —                    |
+ * | authoring, landing — entry halted  | `committed`                                          | —             | throws               |
  *
- * Committed, blocked, removed and skipped are terminal (settled). A skip is
- * only ever emitted for a still-waiting dependent, so no issue is skipped
- * twice. The retry budget is one per issue for its whole life, requeues
- * included. The scheduler has no requeue cap.
+ * Committed, blocked, removed, skipped and halted are terminal (settled). A
+ * skip is only ever emitted for a still-waiting dependent, so no issue is
+ * skipped twice. The retry budget is one per issue for its whole life,
+ * requeues included. The scheduler has no requeue cap.
+ *
+ * **Halt.** `epic-halt` stops one entry: its waiting and ready issues settle
+ * as halted and leave the ready queue at once, while its in-flight issues
+ * (authoring, landing) keep their phase and their slot until the workflow
+ * settles them. For an issue of a halted entry, `blocked`, `agent-died` and
+ * `harvest-conflict` settle it as halted — no retry, no requeue, no skips;
+ * `slot-free` and `label-removed` behave as for any entry; `committed` is a
+ * workflow bug, since a halted entry lands nothing more. A halt never
+ * touches another entry.
  *
  * **Slots — the cap bounds authoring only.** A slot is an issue in authoring;
  * after every transition the authoring count is at most `maxSlices`. `slot-free`,
@@ -39,9 +51,11 @@
  *
  * **Action order within one transition** (fixed): the direct response
  * (`requeue` / `retry` / `block`); then `skip`s, ascending by issue; then
- * `start`s, in queue order; then `epic-done`s, in input order. An entry's
- * `epic-done` is emitted exactly once, in the transition where its last issue
- * settles; entries finish independently.
+ * `start`s, in queue order; then `epic-done`s and `epic-halted`s together, in
+ * input order. Each entry gets exactly one end action — `epic-halted` if it
+ * was halted, `epic-done` otherwise — in the transition where its last issue
+ * settles (for a halt with nothing in flight, the halt's own transition);
+ * entries finish independently.
  *
  * **Consumer protocol** (the workflow, #1035 / #1036):
  *
@@ -58,7 +72,13 @@
  * 6. Record `skip` and `block` issues as `see #N`. A fed `label-removed` or
  *    `blocked` issue needs the same record, but gets no action back: record it
  *    when feeding the event.
- * 7. On `epic-done`, run the epic end.
+ * 7. On a landing that leaves the batch unverified (the mapping is the
+ *    commit queue's `settleEvents`, #1035), feed `epic-halt` for the entry,
+ *    then `blocked` for the halting issue itself and for each other
+ *    in-flight issue of the entry — each slice torn down before its
+ *    `blocked` is fed.
+ * 8. On `epic-done`, run the epic end. On `epic-halted`, skip it — no epic
+ *    end, no PR — and record the entry's unlanded issues as `see #N`.
  *
  * **Fail loud, pure.** A bad input or an event the table does not allow is a
  * workflow bug: every throw is an `Error` prefixed `run scheduler:` naming the
@@ -88,6 +108,7 @@ import {
   type RunSet,
 } from './run-set.js';
 import type {
+  IssueEvent,
   IssuePhase,
   SchedulerAction,
   SchedulerEvent,
@@ -97,8 +118,8 @@ import type {
   Transition,
 } from './run-scheduler.types.js';
 
-/** The phases each event kind is valid in. */
-const ACCEPTED_PHASES: Readonly<Record<SchedulerEvent['kind'], readonly IssuePhase[]>> = {
+/** The phases each issue-keyed event kind is valid in. */
+const ACCEPTED_PHASES: Readonly<Record<IssueEvent['kind'], readonly IssuePhase[]>> = {
   committed: ['authoring', 'landing'],
   blocked: ['authoring', 'landing'],
   'harvest-conflict': ['authoring', 'landing'],
@@ -108,7 +129,13 @@ const ACCEPTED_PHASES: Readonly<Record<SchedulerEvent['kind'], readonly IssuePha
 };
 
 /** The terminal phases. */
-const SETTLED_PHASES: readonly IssuePhase[] = ['committed', 'blocked', 'removed', 'skipped'];
+const SETTLED_PHASES: readonly IssuePhase[] = [
+  'committed',
+  'blocked',
+  'removed',
+  'skipped',
+  'halted',
+];
 
 /**
  * Validate the run graph and build the initial state and actions.
@@ -141,11 +168,33 @@ export function createScheduler(input: SchedulerInput): Transition {
  * @throws Error when `event.kind` is not an event kind (an untyped caller's typo).
  * @throws Error when `event.issue` is not in the run.
  * @throws Error when the issue's phase does not accept `event.kind` (a settled issue accepts none).
+ * @throws Error on `committed` for an issue of a halted entry.
+ * @throws Error on `epic-halt` for an `epic` key no entry has, or for an
+ *   entry already halted or done.
  */
 export function advance(state: SchedulerState, event: SchedulerEvent): Transition {
-  assertPhase(state, event);
   const draft = openDraft(state);
+  if (event.kind === 'epic-halt') onEpicHalt(draft, state, event.epic);
+  else onIssueEvent(draft, state, event);
+  return finish(state, draft);
+}
+
+/**
+ * Apply one issue-keyed event to the draft.
+ *
+ * @param draft - The draft.
+ * @param state - The current state.
+ * @param event - The event.
+ */
+function onIssueEvent(draft: Draft, state: SchedulerState, event: IssueEvent): void {
+  assertPhase(state, event);
   const issue = event.issue;
+  if (
+    state.halted[entryIndexOf(state, issue)] === true &&
+    settleInHaltedEntry(draft, state, event)
+  ) {
+    return;
+  }
   switch (event.kind) {
     case 'committed':
       onCommitted(draft, state, issue);
@@ -166,7 +215,59 @@ export function advance(state: SchedulerState, event: SchedulerEvent): Transitio
       draft.phase[issue] = 'landing';
       break;
   }
-  return finish(state, draft);
+}
+
+/**
+ * Settle an in-flight issue of a halted entry, when the event is one the
+ * halt changes (the header's **Halt** rules).
+ *
+ * @param draft - The draft.
+ * @param state - The current state.
+ * @param event - An event for an issue of a halted entry.
+ * @returns `true` when the event was handled here; `false` for `slot-free`
+ *   and `label-removed`, which behave as for any entry.
+ */
+function settleInHaltedEntry(draft: Draft, state: SchedulerState, event: IssueEvent): boolean {
+  if (event.kind === 'committed') {
+    const { epic } = state.runSet[entryIndexOf(state, event.issue)] ?? { epic: null };
+    fail(`committed for ${hash(event.issue)}, whose ${entryLabel(epic)} is halted`);
+  }
+  if (event.kind === 'slot-free' || event.kind === 'label-removed') return false;
+  draft.phase[event.issue] = 'halted';
+  return true;
+}
+
+/**
+ * Halt an entry: settle its waiting and ready issues as halted and drop
+ * them from the ready queue; its in-flight issues keep their phase.
+ *
+ * @param draft - The draft.
+ * @param state - The current state.
+ * @param epic - The entry's `epic` key.
+ */
+function onEpicHalt(draft: Draft, state: SchedulerState, epic: number | null): void {
+  const index = state.runSet.findIndex((entry) => entry.epic === epic);
+  const subject = `epic-halt for ${entryLabel(epic)}`;
+  if (index < 0) fail(`${subject}, which is not in the run`);
+  if (state.halted[index] === true) fail(`${subject}, which is halted`);
+  if (state.epicDone[index] === true) fail(`${subject}, which is done`);
+  draft.halted[index] = true;
+  for (const issue of state.runSet[index]?.issues ?? []) {
+    if (draft.phase[issue] !== 'waiting' && draft.phase[issue] !== 'ready') continue;
+    draft.phase[issue] = 'halted';
+    dequeue(draft, issue);
+  }
+}
+
+/**
+ * The index of the entry holding an issue.
+ *
+ * @param state - The current state.
+ * @param issue - An issue in the run.
+ * @returns The entry's index.
+ */
+function entryIndexOf(state: SchedulerState, issue: number): number {
+  return state.runSet.findIndex((entry) => entry.issues.includes(issue));
 }
 
 /** A transition in progress: fresh copies of the state's mutable parts, plus the action buckets. */
@@ -175,10 +276,12 @@ interface Draft {
   readonly retried: Record<number, true>;
   readonly ready: number[];
   readonly epicDone: boolean[];
+  readonly halted: boolean[];
   readonly response: SchedulerAction[];
   readonly skips: SchedulerAction[];
   readonly starts: SchedulerAction[];
-  readonly epicDones: SchedulerAction[];
+  /** The end actions: `epic-done` and `epic-halted`. */
+  readonly ends: SchedulerAction[];
 }
 
 /**
@@ -283,6 +386,7 @@ function initialState(input: SchedulerInput): SchedulerState {
     retried: {},
     ready: order.filter((issue) => phase[issue] === 'ready'),
     epicDone: runSet.map(() => false),
+    halted: runSet.map(() => false),
   };
 }
 
@@ -310,7 +414,7 @@ function dedupeEdges(edges: readonly RunEdge[]): RunEdge[] {
  * @param state - The current state.
  * @param event - The event.
  */
-function assertPhase(state: SchedulerState, event: SchedulerEvent): void {
+function assertPhase(state: SchedulerState, event: IssueEvent): void {
   const phase = state.phase[event.issue];
   const subject = `${event.kind} for ${hash(event.issue)}`;
   // The rendered workflow is plain JS: nothing type-checks the kind it feeds.
@@ -331,10 +435,11 @@ function openDraft(state: SchedulerState): Draft {
     retried: { ...state.retried },
     ready: [...state.ready],
     epicDone: [...state.epicDone],
+    halted: [...state.halted],
     response: [],
     skips: [],
     starts: [],
-    epicDones: [],
+    ends: [],
   };
 }
 
@@ -347,7 +452,7 @@ function openDraft(state: SchedulerState): Draft {
  */
 function finish(state: SchedulerState, draft: Draft): Transition {
   fill(draft, state);
-  emitEpicDone(draft, state);
+  emitEnds(draft, state);
   return {
     state: {
       ...state,
@@ -355,8 +460,9 @@ function finish(state: SchedulerState, draft: Draft): Transition {
       retried: draft.retried,
       ready: draft.ready,
       epicDone: draft.epicDone,
+      halted: draft.halted,
     },
-    actions: [...draft.response, ...draft.skips, ...draft.starts, ...draft.epicDones],
+    actions: [...draft.response, ...draft.skips, ...draft.starts, ...draft.ends],
   };
 }
 
@@ -404,9 +510,19 @@ function onAgentDied(draft: Draft, state: SchedulerState, issue: number): void {
  * @param issue - The removed issue.
  */
 function onLabelRemoved(draft: Draft, state: SchedulerState, issue: number): void {
+  dequeue(draft, issue);
+  settleAndSkip(draft, state, issue, 'label-removed');
+}
+
+/**
+ * Drop an issue from the ready queue, when it is queued.
+ *
+ * @param draft - The draft.
+ * @param issue - The issue.
+ */
+function dequeue(draft: Draft, issue: number): void {
   const queued = draft.ready.indexOf(issue);
   if (queued >= 0) draft.ready.splice(queued, 1);
-  settleAndSkip(draft, state, issue, 'label-removed');
 }
 
 /**
@@ -461,18 +577,20 @@ function fill(draft: Draft, state: SchedulerState): void {
 }
 
 /**
- * Emit `epic-done` for each entry whose last issue just settled, in input order.
+ * Emit the end action for each entry whose last issue just settled, in
+ * input order: `epic-halted` for a halted entry, `epic-done` otherwise.
  *
  * @param draft - The draft.
  * @param state - The current state.
  */
-function emitEpicDone(draft: Draft, state: SchedulerState): void {
+function emitEnds(draft: Draft, state: SchedulerState): void {
   state.runSet.forEach((entry, index) => {
     if (draft.epicDone[index] === true) return;
     const phases = entry.issues.map((issue) => draft.phase[issue]);
     if (!phases.every((p) => p !== undefined && SETTLED_PHASES.includes(p))) return;
     draft.epicDone[index] = true;
-    draft.epicDones.push({ kind: 'epic-done', epic: entry.epic });
+    const kind = draft.halted[index] === true ? 'epic-halted' : 'epic-done';
+    draft.ends.push({ kind, epic: entry.epic });
   });
 }
 

@@ -1,7 +1,9 @@
 /**
  * Result envelope of the worktree CLI (`tooling/worktree.ts`): the single
- * JSON object every command prints on one stdout line, plus the two error
- * classes a step throws to end its command early.
+ * JSON object every command prints on one stdout line, plus the error
+ * classes a step throws to end its command early. The envelopes of the
+ * run-branch commands (`cut-batch`, `cut-slice`, `preflight`, `land`) are
+ * in `types-run.ts`.
  *
  * Status semantics (the envelope's `status`):
  *
@@ -11,14 +13,14 @@
  * - `failed` — a step failed; `errors[0].step` names it. Thrown as
  *   {@link StepFailure}; any other throw is step `internal`, and a bad
  *   command line is step `usage`.
- * - `conflict` — `harvest` only: the change cannot apply to the batch's
- *   current head; the batch is back at a verified-clean `HEAD`. Thrown as
- *   {@link Conflict}.
+ * - `conflict` — `harvest` and `land` only: the change cannot apply to the
+ *   batch's current head; the batch is back at a verified-clean `HEAD`.
+ *   Thrown as {@link Conflict}.
  *
  * Every filesystem path in an envelope is absolute with forward slashes;
- * the path lists of `harvest`, `staged-guard` and `live-runs` (`files`,
- * `conflicts`, `expected`, `staged`, `missing`, `unexpected`, `landed`) are
- * repository-relative, as git spells them.
+ * the path lists of `harvest`, `land`, `staged-guard` and `live-runs`
+ * (`files`, `conflicts`, `expected`, `staged`, `missing`, `unexpected`,
+ * `landed`) are repository-relative, as git spells them.
  */
 
 /** The envelope's outcome. */
@@ -38,7 +40,19 @@ export type RefusalReason =
   /** Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree. */
   | 'unregistered-worktree'
   /** Staged-guard: the staged set differs from the expected list; the envelope names both sides. */
-  | 'staged-mismatch';
+  | 'staged-mismatch'
+  /** Land: the slice is not exactly one commit on top of its cut. */
+  | 'slice-not-single-commit'
+  /** Cut-batch, preflight: the target is not the repository's main worktree. */
+  | 'not-main-worktree'
+  /** Cut-slice, land: the target is a linked worktree, but not on a `ship/` run branch. */
+  | 'not-run-batch'
+  /** Cut-batch, cut-slice: the branch to create exists already. */
+  | 'branch-exists'
+  /** Cut-batch, cut-slice: the directory to create exists already. */
+  | 'path-exists'
+  /** Preflight: a check failed; the envelope's `problems` names each. */
+  | 'preflight-failed';
 
 /** One entry of the envelope's `errors` list. */
 export interface StepError {

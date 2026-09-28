@@ -3,7 +3,19 @@
  * never inherited: the CLI's stdout carries exactly one JSON object, so a
  * child writing to it would corrupt the envelope. On failure the captured
  * tail travels in the envelope's `errors[].detail` instead.
+ *
+ * The spawn budgets below are the only timeouts of an unattended run's
+ * tool steps: the CLI owns them, and the workflow that calls it sets none
+ * of its own. Every spawn that can outlast local git plumbing — a network
+ * call, an install, a build, a hooked commit — names its constant here; the
+ * local `git` plumbing (`git.ts`) runs under the default.
+ *
+ * A budget kill on Windows reaches only the direct child: a killed
+ * `git commit`'s hook tree keeps running, while a Node child's own children
+ * die with it (probe 2026-09-28, git 2.55 win32).
  */
+
+import { writeFileSync } from 'node:fs';
 
 import { execaSync } from 'execa';
 
@@ -15,6 +27,18 @@ const TAIL_LINES = 40;
 /** Budget for one `npm ci` / `npm run build`. */
 export const NPM_TIMEOUT_MS = 600_000;
 
+/**
+ * Budget for one `git commit` whose pre-commit hook runs the commit gate
+ * (lefthook's parallel jobs, a whole-program `tsc` among them).
+ */
+export const COMMIT_TIMEOUT_MS = 900_000;
+
+/** Budget for one `git fetch` from `origin`. */
+export const FETCH_TIMEOUT_MS = 120_000;
+
+/** Budget for one `gh` call. */
+export const GH_TIMEOUT_MS = 120_000;
+
 /** Budget for any child without an explicit one. */
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -25,8 +49,8 @@ export interface Captured {
   /** The child's stdout alone (for parsing). */
   readonly stdout: string;
   /**
-   * Last {@link TAIL_LINES} lines of interleaved stdout + stderr; execa's
-   * failure message (spawn error, timeout) when the child printed nothing.
+   * Last {@link TAIL_LINES} lines of the output {@link outputOf} composes,
+   * then any line {@link writeLog} returns.
    */
   readonly tail: string;
 }
@@ -37,6 +61,12 @@ export interface CaptureOptions {
   readonly cwd: string;
   /** Kill the child after this many ms. */
   readonly timeoutMs?: number;
+  /**
+   * Also write the whole output {@link outputOf} composes here (created or
+   * overwritten) after the child exits — even when it failed, timed out or
+   * never started.
+   */
+  readonly logFile?: string;
 }
 
 /**
@@ -65,7 +95,7 @@ function lastLines(text: string): string {
  *
  * @param file - Executable name or path.
  * @param args - Argument vector, passed without a shell.
- * @param options - Working directory and optional timeout.
+ * @param options - Working directory, optional timeout and log file.
  * @returns Exit code, stdout, and the output tail.
  */
 export function runCaptured(
@@ -85,8 +115,43 @@ export function runCaptured(
     stdin: 'ignore',
     timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   });
-  const output = r.all.trim() === '' ? (r.shortMessage ?? '') : r.all;
+  let output = outputOf(r.all, r.timedOut, r.shortMessage ?? '');
+  if (options.logFile !== undefined) output += writeLog(options.logFile, output);
   return { exitCode: r.exitCode ?? -1, stdout: r.stdout, tail: lastLines(output) };
+}
+
+/**
+ * Compose a child's output: what it printed, then execa's message after a
+ * budget kill — a killed child that printed anything would otherwise read
+ * as a bare exit `-1` — or that message alone when it printed nothing.
+ *
+ * @param all - Interleaved stdout + stderr.
+ * @param timedOut - Whether the budget killed the child.
+ * @param failure - Execa's failure message; empty when the child succeeded.
+ * @returns The composed output.
+ */
+function outputOf(all: string, timedOut: boolean, failure: string): string {
+  if (all.trim() === '') return failure;
+  return timedOut ? `${all}\n${failure}` : all;
+}
+
+/**
+ * Write the whole output to the log file.
+ *
+ * @param file - The log file.
+ * @param output - The composed output.
+ * @returns `''` when written; otherwise a line naming the failure.
+ * @silences A failed write (a missing directory, a file held open): the
+ *   child's outcome stands — a commit that landed must not read as failed —
+ *   and the returned line reaches the caller in the tail.
+ */
+function writeLog(file: string, output: string): string {
+  try {
+    writeFileSync(file, output);
+    return '';
+  } catch (err) {
+    return `\nlog not written to ${file}: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 /**

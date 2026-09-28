@@ -149,6 +149,133 @@ describe('advance — protocol violations', () => {
   });
 });
 
+describe('advance — epic halt', () => {
+  it('halts an entry with nothing in flight at once, leaving the other entry running', () => {
+    // #20 of epic 800 holds the one slot; epic 900's #1 and #3 are ready, #2 waits on #1.
+    const [, halted, first, second] = play(
+      {
+        runSet: [
+          { epic: 800, issues: [20, 21] },
+          { epic: 900, issues: [1, 2, 3] },
+        ],
+        edges: [{ blocker: 1, dependent: 2 }],
+        maxSlices: 1,
+      },
+      [
+        { kind: 'epic-halt', epic: 900, reason: 'x' },
+        { kind: 'committed', issue: 20 },
+        { kind: 'committed', issue: 21 },
+      ],
+    );
+    expect(halted?.actions).toEqual([{ kind: 'epic-halted', epic: 900 }]);
+    expect(first?.actions).toEqual([{ kind: 'start', issue: 21 }]);
+    expect(second?.actions).toEqual([{ kind: 'epic-done', epic: 800 }]);
+  });
+
+  it.each<SchedulerEvent>([
+    { kind: 'blocked', issue: 1, reason: 'x' },
+    { kind: 'agent-died', issue: 1 },
+    { kind: 'harvest-conflict', issue: 1 },
+  ])(
+    'waits for the in-flight issue, then settles it on $kind with no restart or skip',
+    (settle) => {
+      const [, halted, settled] = play(
+        {
+          runSet: [
+            { epic: 900, issues: [1, 2] },
+            { epic: 800, issues: [20] },
+          ],
+          edges: [{ blocker: 1, dependent: 2 }],
+          maxSlices: 1,
+        },
+        [{ kind: 'epic-halt', epic: 900, reason: 'x' }, settle],
+      );
+      expect(halted?.actions).toEqual([]);
+      expect(settled?.actions).toEqual([
+        { kind: 'start', issue: 20 },
+        { kind: 'epic-halted', epic: 900 },
+      ]);
+    },
+  );
+
+  it('lets a halted entry release its slot and then settle from landing', () => {
+    const [, , landed, settled] = play(
+      { runSet: [{ epic: 900, issues: [1] }], edges: [], maxSlices: 1 },
+      [
+        { kind: 'epic-halt', epic: 900, reason: 'x' },
+        { kind: 'slot-free', issue: 1 },
+        { kind: 'blocked', issue: 1, reason: 'x' },
+      ],
+    );
+    expect(landed?.actions).toEqual([]);
+    expect(settled?.actions).toEqual([{ kind: 'epic-halted', epic: 900 }]);
+  });
+
+  it('rejects committed for an in-flight issue of a halted entry', () => {
+    const [, halted] = play({ runSet: [{ epic: 900, issues: [1] }], edges: [], maxSlices: 1 }, [
+      { kind: 'epic-halt', epic: 900, reason: 'x' },
+    ]);
+    if (halted === undefined) throw new Error('unreachable');
+    expect(() => advance(halted.state, { kind: 'committed', issue: 1 })).toThrow(
+      'run scheduler: committed for #1, whose epic #900 is halted',
+    );
+  });
+
+  it('rejects any event for a halted issue', () => {
+    const [, halted] = play({ runSet: [{ epic: 900, issues: [1, 2] }], edges: [], maxSlices: 1 }, [
+      { kind: 'epic-halt', epic: 900, reason: 'x' },
+    ]);
+    if (halted === undefined) throw new Error('unreachable');
+    expect(() => advance(halted.state, { kind: 'label-removed', issue: 2 })).toThrow(
+      'run scheduler: label-removed for #2, which is halted',
+    );
+  });
+
+  it.each([
+    {
+      entry: 'an unknown epic',
+      epic: 999,
+      events: [],
+      label: 'epic #999, which is not in the run',
+    },
+    {
+      entry: 'a halted entry',
+      epic: 900,
+      events: [{ kind: 'epic-halt', epic: 900, reason: 'x' }] as const,
+      label: 'epic #900, which is halted',
+    },
+    {
+      entry: 'a done entry',
+      epic: 900,
+      events: [{ kind: 'committed', issue: 1 }] as const,
+      label: 'epic #900, which is done',
+    },
+    {
+      entry: 'the explicit list when absent',
+      epic: null,
+      events: [],
+      label: 'the explicit list, which is not in the run',
+    },
+  ])('rejects epic-halt for $entry', ({ epic, events, label }) => {
+    const transitions = play(
+      {
+        runSet: [
+          { epic: 900, issues: [1] },
+          { epic: 800, issues: [20] },
+        ],
+        edges: [],
+        maxSlices: 2,
+      },
+      events,
+    );
+    const last = transitions[transitions.length - 1];
+    if (last === undefined) throw new Error('unreachable');
+    expect(() => advance(last.state, { kind: 'epic-halt', epic, reason: 'x' })).toThrow(
+      `run scheduler: epic-halt for ${label}`,
+    );
+  });
+});
+
 describe('advance — ready order', () => {
   it('queues newly ready issues behind those already waiting, in input order', () => {
     // 5 before 4 in the entry: input order, not numeric order, decides.

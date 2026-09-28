@@ -1,9 +1,16 @@
 /**
  * `live-runs <main>` — every live unattended run of the repository: each
- * registered worktree on a run branch, with its commits and files ahead of
+ * registered worktree on a run branch (`RUN_BRANCH_PREFIX`, `run-layout.ts`),
+ * with its commits and files ahead of
  * the base branch, whether it is dirty, its pull request (via `gh`), and
  * the worktrees nested inside it. Read-only, so there is no self-hosted
  * guard.
+ *
+ * `ahead` and `landed` count against `RUN_BASE_BRANCH` and are exact only
+ * while local `master` is level with `origin/master` — true at pre-flight,
+ * which requires it, but not guaranteed at a later resync or spent-run
+ * cleanup, where a stale local `master` overcounts `ahead` (a merged PR's
+ * commits still look unlanded) and moves the merge-base back.
  *
  * A PR that `gh` cannot report makes the envelope `failed` with one
  * `pr-state` error per affected branch while every run is still reported in
@@ -28,6 +35,7 @@ import {
   statusEntries,
   type WorktreeEntry,
 } from './git.js';
+import { RUN_BASE_BRANCH, RUN_BRANCH_PREFIX } from './run-layout.js';
 import {
   recordFailure,
   StepFailure,
@@ -35,24 +43,6 @@ import {
   type LiveRunsResult,
   type PrInfo,
 } from './types.js';
-
-/**
- * The branch namespace of every unattended run's feature branch
- * (`ship/<slug>`), the earlier parallel batch flow's included, so its live
- * batches stay visible. Slice, harness-agent (`worktree-agent-*`) and
- * detached worktrees are not runs.
- */
-const RUN_BRANCH_PREFIX = 'refs/heads/ship/';
-
-/**
- * The branch runs are cut from (`.claude/rules/git.md` § Unattended
- * workflow runs). `ahead` and `landed` are exact only while local `master`
- * is level with `origin/master` — true at pre-flight, which requires it,
- * but not guaranteed at a later resync or spent-run cleanup, where a stale
- * local `master` overcounts `ahead` (a merged PR's commits still look
- * unlanded) and moves the merge-base back.
- */
-const RUN_BASE_BRANCH = 'master';
 
 /** `gh`'s PR states in precedence order: a reopened branch's live PR wins. */
 const PR_STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
