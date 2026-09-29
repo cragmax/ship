@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { STAGES, type StageName, type StageRow } from '../../../../tooling/workflows/lib/stages.js';
+import {
+  reviewEffort,
+  STAGES,
+  type StageName,
+  type StageRow,
+} from '../../../../tooling/workflows/lib/stages.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, LIVE_RUNS_NONE, PREFLIGHT_OK } from './_fake-hooks.js';
+import {
+  BATCH,
+  fakeHooks,
+  GATE_OK,
+  inTurn,
+  LAND_OK,
+  LIVE_RUNS_NONE,
+  PLAN_CARD,
+  PREFLIGHT_OK,
+  REPORT_DIR,
+  TDD_FILES,
+  type FakeRun,
+} from './_fake-hooks.js';
 
 const EPIC_GRAPH = {
   runSet: [{ epic: 1025, issues: [1045, 1046] }],
@@ -61,6 +78,28 @@ const SEVEN_STALE_BLOCKS_EIGHT = {
   },
 };
 
+const LAND_CONFLICT = {
+  ...LAND_OK,
+  status: 'conflict',
+  commit: null,
+  conflicts: ['tooling/x.ts'],
+  rolledBack: true,
+  errors: [{ step: 'cherry-pick', message: 'tooling/x.ts would not apply' }],
+};
+
+const LAND_BATCH_DIRTY = {
+  ...LAND_OK,
+  status: 'refused',
+  reason: 'batch-dirty',
+  commit: null,
+  batchClean: false,
+  errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
+};
+
+const PLANNER_STALE = {
+  planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'x already exists at abc123' },
+};
+
 /** Every run this file drives; the tier check runs over each. */
 const SCENARIOS = [
   { name: 'pre-flight only', responses: EPIC_FRESH, args: 'epics 1025 --preflight-only' },
@@ -71,7 +110,17 @@ const SCENARIOS = [
     args: 'issues 7,8 #9 --exclude --preflight-only',
   },
   { name: 'full launch', responses: {}, args: 'issues 7' },
+  {
+    name: 'land conflict',
+    responses: { 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) },
+    args: 'issues 7',
+  },
+  { name: 'land batch-dirty', responses: { 'runner:land': LAND_BATCH_DIRTY }, args: 'issues 7' },
+  { name: 'stale plan', responses: PLANNER_STALE, args: 'issues 7' },
+  { name: 'dead tdd', responses: { tdd: null }, args: 'issues 7' },
 ];
+
+const EPIC_END_COMMAND = /^runner:(server-tier|sync-master|bump|publish)/;
 
 const isCutOrLand = (c: { label: string; argv: readonly string[] }): boolean =>
   /cut-batch|provision|land/.test(`${c.label} ${c.argv.join(' ')}`);
@@ -117,19 +166,112 @@ describe('runShip — pre-flight refusals', () => {
     });
     expect(run.calls.filter(isCutOrLand)).toEqual([]);
   });
+});
 
-  it('refuses a clean full launch full-run-unavailable, cutting nothing', async () => {
+describe('runShip — one issue from launch to PR', () => {
+  it('runs the chain through test review before one land, tears the slice down before committed, then the epic end', async () => {
     const run = fakeHooks();
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(report).toEqual({
-      status: 'refused',
-      refusals: [{ kind: 'full-run-unavailable', message: expect.any(String) }],
+    expect(run.calls.map((c) => c.label)).toEqual([
+      'runner:preflight',
+      'runner:run-gate',
+      'runner:live-runs',
+      'scout',
+      'runner:cut-batch:list',
+      'runner:provision-batch:list',
+      'runner:check:7-1',
+      'runner:cut-slice:7-1',
+      'runner:provision:7-1',
+      'planner:7-1',
+      'planReviewer:7-1',
+      'tdd:7-1',
+      'reviewer:7-1',
+      'testReview:7-1',
+      'runner:land:7-1',
+      'runner:teardown:7-1',
+      'runner:server-tier:paper',
+      'runner:server-tier:folia',
+      'runner:sync-master:list',
+      'runner:bump:list',
+      'runner:publish:list',
+      'runner:preflight:list',
+    ]);
+    const at = (entry: string): number => run.timeline.indexOf(entry);
+    expect(at('call runner:teardown:7-1')).toBeGreaterThan(-1);
+    expect(at('call runner:teardown:7-1')).toBeLessThan(at('log fed committed #7'));
+    expect(run.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
+    expect(report).toMatchObject({
+      status: 'done',
       dropped: [],
-      epics: [],
+      epics: [
+        {
+          epic: null,
+          branch: 'ship/7',
+          outcome: 'pr',
+          pr: 42,
+          mainUntouched: true,
+          issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
+        },
+      ],
     });
-    expect(run.calls.filter(isCutOrLand)).toEqual([]);
+  });
+
+  it('hands each command its paths from the envelopes before it', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const argvOf = (label: string): readonly string[] =>
+      run.calls.find((c) => c.label === label)?.argv ?? [];
+    expect(argvOf('runner:cut-batch:list')).toEqual([
+      'tooling/worktree.ts',
+      'cut-batch',
+      '.',
+      '--issues',
+      '7',
+    ]);
+    expect(argvOf('runner:cut-slice:7-1')).toEqual([
+      'tooling/worktree.ts',
+      'cut-slice',
+      BATCH,
+      '--issue',
+      '7',
+      '--attempt',
+      '1',
+    ]);
+    expect(argvOf('runner:provision:7-1')).toEqual([
+      'tooling/worktree.ts',
+      'provision',
+      'C:/src/ph-runs/7/slice-7-1',
+      '--batch',
+      BATCH,
+      '--server',
+    ]);
+    expect(argvOf('runner:land:7-1')).toEqual([
+      'tooling/worktree.ts',
+      'land',
+      BATCH,
+      'slice1',
+      '--base',
+      'cut1',
+      '--message-file',
+      `${REPORT_DIR}/commit-7-1.txt`,
+      '--log',
+      `${REPORT_DIR}/land-7-1.log`,
+    ]);
+    expect(argvOf('runner:publish:list')).toEqual([
+      'tooling/worktree.ts',
+      'publish',
+      BATCH,
+      '--title',
+      'feat(build): add the x tool',
+      '--body-file',
+      `${REPORT_DIR}/pr-body.md`,
+      '--log',
+      `${REPORT_DIR}/publish.log`,
+    ]);
   });
 });
 
@@ -322,6 +464,235 @@ describe('runShip — every tool failure is a refusal', () => {
   });
 });
 
+/**
+ * The recorded labels, in call order.
+ *
+ * @param run - The fake run.
+ * @returns Each call's label.
+ */
+const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
+
+/**
+ * Where an entry sits on the timeline.
+ *
+ * @param run - The fake run.
+ * @param entry - `call <label>` or `log <message>`.
+ * @returns Its first index; fails the test when absent.
+ */
+const when = (run: FakeRun, entry: string): number => {
+  const at = run.timeline.indexOf(entry);
+  expect(at, `${entry} on the timeline`).toBeGreaterThan(-1);
+  return at;
+};
+
+describe('runShip — an attempt that does not land', () => {
+  it('re-cuts attempt 2 and plans again after a land conflict, tearing attempt 1 down first', async () => {
+    const run = fakeHooks({ 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(when(run, 'call runner:land:7-1')).toBeLessThan(when(run, 'call runner:teardown:7-1'));
+    expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(
+      when(run, 'log fed harvest-conflict #7'),
+    );
+    expect(when(run, 'log fed harvest-conflict #7')).toBeLessThan(
+      when(run, 'call runner:cut-slice:7-2'),
+    );
+    expect(run.calls.find((c) => c.label === 'runner:cut-slice:7-2')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'cut-slice',
+      BATCH,
+      '--issue',
+      '7',
+      '--attempt',
+      '2',
+    ]);
+    expect(labels(run)).toContain('planner:7-2');
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      issues: [{ issue: 7, outcome: 'landed', cite: 'fixes' }],
+    });
+  });
+
+  it('halts the epic on a land batch-dirty: teardown, epic-halt then blocked, no epic end, the issue cited see', async () => {
+    const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(
+      when(run, 'log fed epic-halt the issue list'),
+    );
+    expect(when(run, 'log fed epic-halt the issue list')).toBeLessThan(
+      when(run, 'log fed blocked #7'),
+    );
+    expect(labels(run).filter((l) => EPIC_END_COMMAND.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('runner:land'))).toEqual(['runner:land:7-1']);
+    expect(report.epics).toEqual([
+      {
+        epic: null,
+        branch: 'ship/7',
+        outcome: 'halted',
+        issues: [
+          {
+            issue: 7,
+            outcome: 'halted',
+            cite: 'see',
+            reason: expect.stringMatching(/batch-dirty/),
+          },
+        ],
+        residue: [],
+      },
+    ]);
+  });
+
+  it('tears the slice down before feeding blocked for a stale plan, landing nothing', async () => {
+    const run = fakeHooks(PLANNER_STALE);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(when(run, 'log fed blocked #7'));
+    expect(labels(run).filter((l) => /^(tdd|runner:land)/.test(l))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      issues: [
+        { issue: 7, outcome: 'blocked', cite: 'see', reason: expect.stringMatching(/stale/) },
+      ],
+    });
+  });
+
+  it('blocks the issue when the tdd returns nothing twice, each slice torn down, and ends nothing-landed', async () => {
+    const run = fakeHooks({ tdd: null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^(tdd|runner:teardown)/.test(l))).toEqual([
+      'tdd:7-1',
+      'runner:teardown:7-1',
+      'tdd:7-2',
+      'runner:teardown:7-2',
+    ]);
+    expect(labels(run).filter((l) => EPIC_END_COMMAND.test(l))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      issues: [{ issue: 7, outcome: 'blocked', cite: 'see' }],
+    });
+  });
+
+  it('records a teardown that threw as residue and still lands the issue', async () => {
+    const run = fakeHooks({
+      'runner:teardown': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      issues: [{ issue: 7, outcome: 'landed' }],
+      residue: ['the runner returned nothing for teardown'],
+    });
+  });
+
+  it('reports an epic end whose call threw as stopped, never rejecting the run', async () => {
+    const run = fakeHooks({
+      'runner:bump': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:publish'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'stopped',
+      message: 'the epic end threw: runner crashed',
+      issues: [{ issue: 7, outcome: 'landed' }],
+    });
+  });
+
+  it('stops the epic end on a code conflict: no bump, no push', async () => {
+    const run = fakeHooks({
+      'runner:sync-master': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'code-conflict',
+        errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^runner:(bump|publish)/.test(l))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'stopped',
+      message: expect.stringMatching(/code-conflict/),
+    });
+  });
+});
+
+describe('runShip — a failed cut', () => {
+  // A cross-entry edge (the gate refuses one; the drop must still hold) lets
+  // the failed cut of epic 1 drop #2 from epic 2.
+  const failedCut = (epicTwo: readonly number[]): FakeRun =>
+    fakeHooks({
+      'runner:run-gate': {
+        ...GATE_OK,
+        runSet: [
+          { epic: 1, issues: [1] },
+          { epic: 2, issues: epicTwo },
+        ],
+        edges: [{ blocker: 1, dependent: 2 }],
+      },
+      scout: {
+        issues: [1, ...epicTwo].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+        overlaps: [],
+      },
+      'runner:cut-batch:epic-1': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'worktree', message: 'worktree add failed' }],
+      },
+    });
+
+  it('reports an entry the drop emptied nothing-landed, driving nothing', async () => {
+    const run = failedCut([2]);
+
+    const report = await runShip(run.hooks, 'epics 1 2');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual([]);
+    expect(report.epics).toMatchObject([
+      { epic: 1, outcome: 'stopped' },
+      {
+        epic: 2,
+        outcome: 'nothing-landed',
+        issues: [{ issue: 2, outcome: 'skipped', cite: 'see' }],
+      },
+    ]);
+  });
+
+  it('drives the surviving entry by its epic key and cites the dropped dependent see', async () => {
+    const run = failedCut([2, 3]);
+
+    const report = await runShip(run.hooks, 'epics 1 2');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual(['runner:check:3-1']);
+    expect(report.epics).toMatchObject([
+      { epic: 1, outcome: 'stopped', issues: [{ issue: 1, outcome: 'blocked', cite: 'see' }] },
+      {
+        epic: 2,
+        outcome: 'pr',
+        issues: [
+          { issue: 2, outcome: 'skipped', cite: 'see' },
+          { issue: 3, outcome: 'landed' },
+        ],
+      },
+    ]);
+  });
+});
+
 describe('runShip — exclude mode', () => {
   it('drops the stale issue and its dependent, keeping the rest of the graph', async () => {
     const run = fakeHooks(SEVEN_STALE_BLOCKS_EIGHT);
@@ -353,6 +724,13 @@ describe('agent-call tiers', () => {
     expect(STAGES).toEqual({
       runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
       scout: { agentType: 'scout' },
+      planner: { agentType: 'planner' },
+      applier: { agentType: 'planner' },
+      planReviewer: { agentType: 'ship-plan-reviewer' },
+      tdd: { agentType: 'ship-tdd', model: 'opus' },
+      reviewer: { agentType: 'reviewer', model: 'opus' },
+      resolver: { agentType: 'reviewer', model: 'opus' },
+      testReview: { agentType: 'ship-test-review', model: 'opus' },
     });
   });
 
@@ -368,10 +746,12 @@ describe('agent-call tiers', () => {
         const stage = call.label.split(':')[0] ?? '';
         expect(Object.keys(STAGES)).toContain(stage);
         const row: StageRow = STAGES[stage as StageName];
+        // The reviewer's effort is per slice; every fake tdd commits TDD_FILES.
+        const effort = stage === 'reviewer' ? reviewEffort(TDD_FILES) : row.effort;
         expect({ agentType: call.agentType, model: call.model, effort: call.effort }).toEqual({
           agentType: row.agentType,
           model: row.model,
-          effort: row.effort,
+          effort,
         });
       }
     },

@@ -2,6 +2,41 @@ import { describe, expect, it } from 'vitest';
 
 import { createScheduler } from '../../../../tooling/lib/run-scheduler.js';
 import { dropWithDependents } from '../../../../tooling/workflows/lib/preflight.js';
+import { isTrivialSurface, reviewEffort } from '../../../../tooling/workflows/lib/stages.js';
+
+describe('reviewEffort', () => {
+  it.each([
+    ['one src/ file', ['src/engine/a.ts'], 'high'],
+    ['six files outside src/', ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md'], 'high'],
+    [
+      'five files outside src/',
+      ['tooling/a.ts', 'test/a.test.ts', 'b.md', 'c.md', 'd.md'],
+      'medium',
+    ],
+    ['a path merely starting with src', ['srcmap/a.ts'], 'medium'],
+    ['no file', [], 'medium'],
+  ])('rates %s', (_name, files, effort) => {
+    expect(reviewEffort(files)).toBe(effort);
+  });
+});
+
+describe('isTrivialSurface', () => {
+  it.each([
+    [
+      'docs and agents only',
+      ['docs/adr/0045-x.md', '.claude/agents/planner.md', 'README.md'],
+      true,
+    ],
+    ['no file', [], true],
+    ['a path merely starting with src', ['srcmap/a.ts'], true],
+    ['a src/ file', ['docs/a.md', 'src/a.ts'], false],
+    ['a tooling/ file', ['tooling/a.ts'], false],
+    ['a test/ file', ['test/unit/a.test.ts'], false],
+    ['an evals/ file', ['evals/run.ts'], false],
+  ])('judges %s', (_name, files, trivial) => {
+    expect(isTrivialSurface(files)).toBe(trivial);
+  });
+});
 
 describe('dropWithDependents', () => {
   // 13 → 12 keeps its blocker but loses its dependent: the edge must go too (review N5).

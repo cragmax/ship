@@ -23,7 +23,9 @@
  * no top-level side effect.
  */
 
+import type { GateFailure } from '../../lib/run-gate.js';
 import { runSetIssues, transitiveDependents, type RunGraph } from '../../lib/run-set.js';
+import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
 import type { ShipArgs } from './args.js';
 import type { JsonSchema, WorkflowHooks } from './hooks.types.js';
@@ -36,16 +38,27 @@ import {
   type PreflightOutput,
 } from './tool-calls.js';
 
+/**
+ * What stopped a launch: `usage` (the arguments); a failed pre-flight check
+ * or `preflight-error`; a gate failure kind or `gate-error`;
+ * `live-runs-failed`; `stale`, `overlap` or `scout-unavailable` (the
+ * scout); `empty-run-set` (exclude mode dropped everything).
+ */
+export type ShipRefusalKind =
+  | 'usage'
+  | PreflightCheck
+  | 'preflight-error'
+  | GateFailure['kind']
+  | 'gate-error'
+  | 'live-runs-failed'
+  | 'stale'
+  | 'overlap'
+  | 'scout-unavailable';
+
 /** One reason the run may not start. */
 export interface ShipRefusal {
-  /**
-   * What failed: `usage`; a pre-flight check (`master-ahead`,
-   * `master-behind`, `gh-auth`, `warm-unreachable`) or `preflight-error`; a
-   * gate failure kind or `gate-error`; `live-runs-failed`; `stale`,
-   * `overlap` or `scout-unavailable`; `empty-run-set`; or
-   * `full-run-unavailable`.
-   */
-  readonly kind: string;
+  /** What failed. */
+  readonly kind: ShipRefusalKind;
   /** The issue it concerns, when one does. */
   readonly issue?: number;
   /** What was found. */
@@ -70,6 +83,19 @@ export interface PreflightOutcome {
   readonly dropped: readonly DroppedIssue[];
   /** The run graph to schedule, drops applied; `null` when the gate gave none. */
   readonly graph: RunGraph | null;
+  /**
+   * The main checkout as pre-flight found it — the baseline of the epic
+   * end's "main untouched" check; `null` unless the checks passed.
+   */
+  readonly main: MainSnapshot | null;
+}
+
+/** The main checkout at one moment, as `worktree.ts preflight` reports it. */
+export interface MainSnapshot {
+  /** The main checkout, absolute. */
+  readonly worktree: string;
+  /** Its `HEAD` and whether it had uncommitted changes. */
+  readonly snapshot: NonNullable<PreflightResult['snapshot']>;
 }
 
 /** A graph with issues dropped. */
@@ -153,10 +179,26 @@ export async function runPreflight(
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null };
+  const main = mainSnapshot(checks);
+  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null, main };
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  return settleScout({ refusals, dropped: gateDrops(gate), graph }, scout, args.exclude);
+  return settleScout({ refusals, dropped: gateDrops(gate), graph, main }, scout, args.exclude);
+}
+
+/**
+ * The main checkout's snapshot from a pre-flight output.
+ *
+ * @param checks - `preflight`'s output.
+ * @returns The checkout and its snapshot; `null` unless the checks passed
+ *   and carry both.
+ */
+function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
+  const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
+  if (typeof checks?.worktree !== 'string' || snapshot === undefined || snapshot === null) {
+    return null;
+  }
+  return { worktree: checks.worktree, snapshot };
 }
 
 /**
@@ -308,7 +350,7 @@ function settleScout(
   const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
   if (!exclude) {
     for (const v of stale) refusals.push({ kind: 'stale', issue: v.issue, message: v.evidence });
-    return { refusals, dropped: found.dropped, graph: found.graph };
+    return { refusals, dropped: found.dropped, graph: found.graph, main: found.main };
   }
   const { graph, dependents } = dropWithDependents(
     found.graph,
@@ -324,7 +366,7 @@ function settleScout(
       (n): DroppedIssue => ({ issue: n, cause: 'dependent', message: 'blocked by a stale issue' }),
     ),
   ];
-  return { refusals, dropped, graph };
+  return { refusals, dropped, graph, main: found.main };
 }
 
 /**

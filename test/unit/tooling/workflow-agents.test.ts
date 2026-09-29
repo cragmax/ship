@@ -32,6 +32,33 @@ describe('workflow agents', () => {
     expect(fm).not.toMatch(/^model:/m);
   });
 
+  // Hand-written: the agents that load a skill through the Skill tool (review N2).
+  it.each(['ship-tdd', 'reviewer', 'ship-test-review'])(
+    '%s lists Skill in its tools',
+    (agentType) => {
+      const fm = frontmatter(readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8'));
+      const line = fm.split(/\r?\n/).find((l) => l.startsWith('tools:')) ?? '';
+      const tools = line
+        .slice('tools:'.length)
+        .split(',')
+        .map((t) => t.trim());
+
+      expect(tools).toContain('Skill');
+    },
+  );
+
+  it('covers every agent the workflow calls', () => {
+    expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
+      'planner',
+      'reviewer',
+      'runner',
+      'scout',
+      'ship-plan-reviewer',
+      'ship-tdd',
+      'ship-test-review',
+    ]);
+  });
+
   it.each(readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')))(
     '%s names no personal workflow skill',
     (file) => {

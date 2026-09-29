@@ -98,6 +98,18 @@ describe('the ship render', () => {
     expect(out.endsWith(TAIL)).toBe(true);
   });
 
+  it('places run-set, then the scheduler, then the drive loop, lease timings inlined too', () => {
+    const at = (declaration: string): number => {
+      const index = out.indexOf(declaration);
+      expect(index, declaration).toBeGreaterThan(-1);
+      return index;
+    };
+
+    expect(at('function runSetIssues(')).toBeLessThan(at('function createScheduler('));
+    expect(at('function createScheduler(')).toBeLessThan(at('async function drive('));
+    expect(at('function parseLeaseLines(')).toBeLessThan(at('function renderPrBody('));
+  });
+
   it('compiles as the body of the async workflow function once the meta export is dropped', () => {
     const body = out.replace(/^export /, '');
 
@@ -168,6 +180,18 @@ describe('the render closure', () => {
     expect(files).not.toContain('tooling/workflows/lib/hooks.types.ts');
     expect(files).not.toContain('tooling/lib/run-gate.ts');
     expect(files.at(-1)).toBe('tooling/workflows/ship.ts');
+  });
+
+  it('takes the scheduler and the lease-line parser into the ship closure, never the CLIs', () => {
+    const files = workflowClosure(ROOT, shipSpec().entry);
+    const at = (file: string): number => files.indexOf(file);
+
+    expect(files).toContain('tooling/lib/run-scheduler.ts');
+    expect(files).toContain('tooling/lib/lease-timings.ts');
+    expect(files).not.toContain('tooling/lib/run-scheduler.types.ts');
+    expect(files.filter((f) => f.startsWith('tooling/worktree'))).toEqual([]);
+    expect(at('tooling/lib/run-set.ts')).toBeLessThan(at('tooling/lib/run-scheduler.ts'));
+    expect(at('tooling/lib/run-scheduler.ts')).toBeLessThan(at('tooling/workflows/lib/drive.ts'));
   });
 
   it('follows no non-relative type-only import', async () => {
