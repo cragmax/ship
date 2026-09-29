@@ -11,18 +11,14 @@
  * 2026-09-28); no URL is a `pr` failure with `pushed` true.
  */
 
-import { z } from 'zod';
-
 import { assertRunBatch } from './cut.js';
 import { GH_TIMEOUT_MS, NPM_TIMEOUT_MS, PUSH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import { git } from './git.js';
 import { assertLinkedWorktree } from './harvest.js';
+import { lookupPr } from './live-runs.js';
 import { RUN_BASE_BRANCH } from './run-layout.js';
 import type { OpenedPr, PublishResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure } from './types.js';
-
-/** `gh pr list --json number,state` output; unknown keys are tolerated. */
-const PrListSchema = z.array(z.object({ number: z.number() }));
 
 /** Inputs of {@link publish}; paths absolute with forward slashes. */
 export interface PublishInput {
@@ -74,7 +70,8 @@ export function publish(input: PublishInput): PublishResult {
 
 /**
  * Refuse a branch that already has an open PR: a second `gh pr create`
- * fails, and a push would silently update the open one.
+ * fails, and a push would silently update the open one. The lookup is
+ * `live-runs`' ({@link lookupPr}).
  *
  * @param batch - The batch worktree (`gh`'s working directory).
  * @param branch - The run branch, short form.
@@ -82,44 +79,14 @@ export function publish(input: PublishInput): PublishResult {
  *   never read as "no PR"; Refusal `pr-exists` naming the open PR.
  */
 function assertNoOpenPr(batch: string, branch: string): void {
-  const r = runCaptured(
-    'gh',
-    ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'number,state'],
-    { cwd: batch, timeoutMs: GH_TIMEOUT_MS },
-  );
-  if (r.exitCode !== 0) {
-    throw new StepFailure(
-      'pr-state',
-      `gh pr list exited ${String(r.exitCode)} for ${branch}`,
-      r.tail,
-    );
-  }
-  const open = parseOpenPrs(r.stdout);
-  if (open === null) {
-    throw new StepFailure('pr-state', `gh pr list printed unreadable JSON for ${branch}`, r.stdout);
-  }
-  const [first] = open;
-  if (first !== undefined) {
+  const { info, error } = lookupPr(batch, branch);
+  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
+  if (info.state === 'open') {
     throw new Refusal(
       'pr-exists',
       'pr-state',
-      `${branch} already has open PR #${String(first.number)}`,
+      `${branch} already has open PR #${String(info.number)}`,
     );
-  }
-}
-
-/**
- * Parse `gh pr list --json number,state` output.
- *
- * @param stdout - `gh`'s stdout.
- * @returns The PRs, or `null` unless it is JSON matching {@link PrListSchema}.
- */
-function parseOpenPrs(stdout: string): z.infer<typeof PrListSchema> | null {
-  try {
-    const parsed = PrListSchema.safeParse(JSON.parse(stdout));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
   }
 }
 

@@ -30,24 +30,24 @@
 
 import { readFileSync } from 'node:fs';
 
+import { COMMIT_TIMEOUT_MS, freshLogDir, NPM_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import {
-  COMMIT_TIMEOUT_MS,
-  FETCH_TIMEOUT_MS,
-  freshLogDir,
-  NPM_TIMEOUT_MS,
-  runCaptured,
-  runStep,
-} from './exec.js';
-import { git, gitPaths, isInside, listWorktrees, refExists, samePath } from './git.js';
+  commitWithHooks,
+  fetchOrigin,
+  git,
+  gitPaths,
+  isInside,
+  listWorktrees,
+  refExists,
+  samePath,
+} from './git.js';
 import { assertBatchClean, assertLinkedWorktree } from './harvest.js';
+import { needsBuild } from './land.js';
 import { linkTarget } from './links.js';
-import { RUN_BASE_BRANCH } from './run-layout.js';
+import { RUN_UPSTREAM } from './run-layout.js';
 import { sortedSet } from './staged-set.js';
 import type { ConflictKind, ConflictPath, SyncMasterResult } from './types-run.js';
 import { Conflict, Refusal, recordFailure, StepFailure } from './types.js';
-
-/** The branch merged, as `git merge` names it. */
-const UPSTREAM = `origin/${RUN_BASE_BRANCH}`;
 
 /** The lockfile, regenerated on a conflict rather than merged by hand. */
 const LOCKFILE = 'package-lock.json';
@@ -61,9 +61,6 @@ const DOC_INDEX_PATHS: readonly string[] = [
 
 /** How many subjects a conflict's `landedBy` carries at most. */
 const LANDED_BY_LIMIT = 5;
-
-/** Repository-relative prefixes whose change makes `dist/` stale (as `land.ts`'s). */
-const BUILD_PREFIXES = ['src/', 'tooling/'] as const;
 
 /** A conflict-marker line git writes into a conflicted file. */
 const MARKER_LINE = /^(?:<{7} |={7}\r?$|>{7} )/mu;
@@ -139,15 +136,12 @@ function start(run: Run): void {
   const { batch, result } = run;
   assertBatchClean(batch);
   assertNoLiveSlices(batch);
-  runStep('fetch', 'git', ['-C', batch, 'fetch', '-q', 'origin'], {
-    cwd: process.cwd(),
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
+  fetchOrigin(batch);
   if (isMerged(batch)) {
     result.outcome = 'up-to-date';
     return;
   }
-  const mergeBase = git(batch, ['merge-base', 'HEAD', UPSTREAM], 'probe');
+  const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'probe');
   result.conflicts = probeConflicts(batch).map((path) => ({
     path,
     kind: conflictKind(path),
@@ -239,7 +233,7 @@ function assertNoLiveSlices(batch: string): void {
  * @throws StepFailure `up-to-date` when git cannot tell.
  */
 function isMerged(batch: string): boolean {
-  const r = runCaptured('git', ['-C', batch, 'merge-base', '--is-ancestor', UPSTREAM, 'HEAD'], {
+  const r = runCaptured('git', ['-C', batch, 'merge-base', '--is-ancestor', RUN_UPSTREAM, 'HEAD'], {
     cwd: process.cwd(),
   });
   if (r.exitCode === 0) return true;
@@ -258,7 +252,7 @@ function isMerged(batch: string): boolean {
 function probeConflicts(batch: string): string[] {
   const r = runCaptured(
     'git',
-    ['-C', batch, 'merge-tree', '--write-tree', '--name-only', '-z', 'HEAD', UPSTREAM],
+    ['-C', batch, 'merge-tree', '--write-tree', '--name-only', '-z', 'HEAD', RUN_UPSTREAM],
     { cwd: process.cwd() },
   );
   if (r.exitCode === 0) return [];
@@ -305,7 +299,15 @@ function conflictKind(path: string): ConflictKind {
 function landedBy(batch: string, mergeBase: string, path: string): string[] {
   return git(
     batch,
-    ['log', '--format=%s', '-n', String(LANDED_BY_LIMIT), `${mergeBase}..${UPSTREAM}`, '--', path],
+    [
+      'log',
+      '--format=%s',
+      '-n',
+      String(LANDED_BY_LIMIT),
+      `${mergeBase}..${RUN_UPSTREAM}`,
+      '--',
+      path,
+    ],
     'probe',
   )
     .split(/\r?\n/u)
@@ -324,7 +326,7 @@ function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
   throw new Refusal(
     'code-conflict',
     'probe',
-    `merging ${UPSTREAM} would conflict in code: ${code.join(', ')}`,
+    `merging ${RUN_UPSTREAM} would conflict in code: ${code.join(', ')}`,
   );
 }
 
@@ -352,14 +354,14 @@ function logFile(run: Run, name: string): string {
  * @throws StepFailure `merge` when it exits non-zero without a merge in progress.
  */
 function merge(run: Run): boolean {
-  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', UPSTREAM], {
+  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', RUN_UPSTREAM], {
     cwd: process.cwd(),
     timeoutMs: COMMIT_TIMEOUT_MS,
     logFile: logFile(run, 'merge.log'),
   });
   if (r.exitCode === 0) return true;
   if (refExists(run.batch, 'MERGE_HEAD')) return false;
-  throw new StepFailure('merge', `git merge ${UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
+  throw new StepFailure('merge', `git merge ${RUN_UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
 }
 
 /**
@@ -393,7 +395,7 @@ function refresh(run: Run, mergeBase: string): void {
   const { batch, result } = run;
   const changed = gitPaths(
     batch,
-    ['diff', '--name-only', '--no-renames', mergeBase, UPSTREAM],
+    ['diff', '--name-only', '--no-renames', mergeBase, RUN_UPSTREAM],
     'refresh',
   );
   if (changed.includes(LOCKFILE)) {
@@ -403,7 +405,7 @@ function refresh(run: Run, mergeBase: string): void {
     });
     result.refreshed.ci = true;
   }
-  if (result.refreshed.ci || changed.some((p) => BUILD_PREFIXES.some((pre) => p.startsWith(pre)))) {
+  if (result.refreshed.ci || needsBuild(changed)) {
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
     result.refreshed.build = true;
   }
@@ -462,19 +464,7 @@ function assertResolved(batch: string, pending: readonly string[]): void {
  * @throws StepFailure `commit` on a non-zero exit, spawn failure or budget kill.
  */
 function commitMerge(run: Run): void {
-  const log = logFile(run, 'commit.log');
-  const r = runCaptured('git', ['-C', run.batch, 'commit', '--no-edit'], {
-    cwd: process.cwd(),
-    timeoutMs: COMMIT_TIMEOUT_MS,
-    logFile: log,
-  });
-  if (r.exitCode !== 0) {
-    throw new StepFailure(
-      'commit',
-      `git commit --no-edit exited ${String(r.exitCode)} in ${run.batch}; output in ${log}`,
-      r.tail,
-    );
-  }
+  commitWithHooks(run.batch, ['--no-edit'], logFile(run, 'commit.log'));
 }
 
 /**

@@ -15,9 +15,8 @@
  */
 
 import { AGENT_CALLS } from './agent-calls.js';
-import { envelopeProblem } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import { runPlace, runTool, type SyncMasterOutput } from './tool-calls.js';
+import { envelopeProblem, runPlace, runTool, type SyncMasterOutput } from './tool-calls.js';
 
 /** How the merge step ended. `code-conflict` and `failed` stop the epic. */
 export type SyncVerdict = 'up-to-date' | 'merged' | 'resolved' | 'code-conflict' | 'failed';

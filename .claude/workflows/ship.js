@@ -188,68 +188,6 @@ function validated(args) {
   return args;
 }
 
-function createCommitQueue() {
-  let tail = Promise.resolve();
-  return {
-    enqueue: (task) => {
-      const run = tail.then(() => task());
-      tail = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return run;
-    },
-  };
-}
-function landingEvent(land, at) {
-  if (land?.status === 'ok' && typeof land.commit === 'string') {
-    return { kind: 'committed', issue: at.issue };
-  }
-  const recoverable = land === null ? null : recoverableLanding(land, at.issue);
-  return recoverable ?? { kind: 'epic-halt', epic: at.epic, reason: envelopeProblem('land', land) };
-}
-function recoverableLanding(land, issue) {
-  if (land.batchClean !== true) return null;
-  if (land.status === 'conflict') return { kind: 'harvest-conflict', issue };
-  const reason = envelopeProblem('land', land);
-  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') {
-    return { kind: 'blocked', issue, reason };
-  }
-  const step = land.errors?.[0]?.step;
-  if (
-    land.status === 'failed' &&
-    land.rolledBack === true &&
-    (step === 'commit' || step === 'build')
-  ) {
-    return { kind: 'blocked', issue, reason };
-  }
-  return null;
-}
-function teardownEvent(teardown, epic) {
-  if (teardown?.status !== 'refused' || teardown.reason !== 'source-shrank') return null;
-  return { kind: 'epic-halt', epic, reason: envelopeProblem('teardown', teardown) };
-}
-function teardownResidue(teardown) {
-  return teardown?.status === 'ok' ? null : envelopeProblem('teardown', teardown);
-}
-function settleEvents(primary, teardown, at) {
-  const halt = primary.kind === 'epic-halt' ? primary : teardownEvent(teardown, at.epic);
-  if (halt !== null) {
-    const blocked = { kind: 'blocked', issue: at.issue, reason: halt.reason };
-    return at.entryHalted ? [blocked] : [halt, blocked];
-  }
-  if (at.entryHalted && primary.kind === 'committed') {
-    return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
-  }
-  return [primary];
-}
-function envelopeProblem(tool, out) {
-  if (out === null) return `the runner returned nothing for ${tool}`;
-  const reason = out.reason === undefined ? '' : ` (${out.reason})`;
-  const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
-  return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
-}
-
 function runSetIssues(runSet) {
   const all = new Set();
   for (const entry of runSet) {
@@ -588,147 +526,6 @@ function entryLabel(epic) {
   return epic === null ? 'the explicit list' : `epic ${hash(epic)}`;
 }
 
-const LEASE_LINE =
-  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
-function parseLeaseLine(line) {
-  const match = LEASE_LINE.exec(line);
-  if (match === null) return null;
-  const [, waited = '', type = '', endpoint = '', held = ''] = match;
-  return { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
-}
-function parseLeaseLines(text) {
-  const timings = [];
-  for (const line of text.split('\n')) {
-    const timing = parseLeaseLine(line);
-    if (timing !== null) timings.push(timing);
-  }
-  return timings;
-}
-
-const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
-const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
-const CLOSING_REFS = [
-  new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),
-  new RegExp(String.raw`${CLOSING_KEYWORD}(https?://\S+/\d+)`, 'giu'),
-];
-function neutralText(text, closing = new Set()) {
-  return CLOSING_REFS.reduce(
-    (out, pattern) =>
-      out.replace(pattern, (match, word, gap, ref) =>
-        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
-          ? match
-          : `${word}${gap}(see ${ref})`,
-      ),
-    text,
-  );
-}
-function subjectLine(commit) {
-  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
-}
-function commitMessage(issue, card) {
-  return [
-    subjectLine(card.commit),
-    '',
-    `${card.closes} #${String(issue)}`,
-    '',
-    CO_AUTHOR_TRAILER,
-    '',
-  ].join('\n');
-}
-function prTitle(input) {
-  const [only] = input.landed;
-  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
-  return `${input.branch}: ${String(input.landed.length)} issues`;
-}
-function renderPrBody(input) {
-  const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
-  const closing = new Set(
-    input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
-  );
-  const body = [
-    '## Summary',
-    '',
-    `Unattended run on \`${input.branch}\` — ${container}.`,
-    '',
-    '## Issues',
-    '',
-    ...input.landed.flatMap(issueSection),
-    '## Not landed',
-    '',
-    ...(input.unlanded.length === 0 ? ['None.'] : input.unlanded.map(unlandedLine)),
-    '',
-    '## Epic end',
-    '',
-    ...input.serverTier.map(tierLine),
-    `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
-    `- Version bump: ${bumpText(input.bump)}`,
-    `- Report dir: \`${input.reportDir}\``,
-    '',
-  ].join('\n');
-  return neutralText(body, closing);
-}
-function issueSection(landed) {
-  const ref = `#${String(landed.issue)}`;
-  const cite =
-    landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
-  const test = landed.testReview;
-  return [
-    `### ${subjectLine(landed.card.commit)}`,
-    '',
-    `- Issue: ${cite}, landed as ${landed.commit}`,
-    `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
-    `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
-    test === null
-      ? '- Test review: skipped — trivial surface'
-      : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
-    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
-    ...probeLines(landed.tdd.probes),
-    '',
-  ];
-}
-function probeLines(probes) {
-  if (probes.length === 0) return ['- Probes: no probe needed'];
-  return [
-    '- Probes:',
-    ...probes.map((p) => {
-      const followUp = p.followUp === '' ? '' : `; follow-up: ${p.followUp}`;
-      return `  - ${p.claim}: ${p.verdict}${followUp}`;
-    }),
-  ];
-}
-function leaseText(timings) {
-  if (timings.length === 0) return 'none';
-  return timings
-    .map(
-      (t) =>
-        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
-    )
-    .join('; ');
-}
-function unlandedLine(issue) {
-  const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
-  return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
-}
-function tierLine(run) {
-  const { out } = run;
-  if (out === null) return `- Server tier, ${run.engine}: no result (the runner returned nothing)`;
-  const t = out.tests;
-  const counts =
-    t === undefined || t === null
-      ? 'no counts'
-      : `${String(t.passed)} passed, ${String(t.failed)} failed, ${String(t.skipped)} skipped`;
-  const status =
-    out.status === 'ok'
-      ? ''
-      : ` — ${out.status ?? 'no status'}: ${out.errors?.[0]?.message ?? 'no error named'}`;
-  const lease = out.lease === undefined || out.lease === null ? 'none' : leaseText([out.lease]);
-  return `- Server tier, ${run.engine}: ${counts}${status}; lease ${lease}`;
-}
-function bumpText(bump) {
-  if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
-  return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
-}
-
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 function shellWord(word) {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
@@ -1047,6 +844,214 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
   );
   return typeof out === 'object' && out !== null ? out : null;
 }
+function envelopeProblem(tool, out) {
+  if (out === null) return `the runner returned nothing for ${tool}`;
+  const reason = out.reason === undefined ? '' : ` (${out.reason})`;
+  const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
+  return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
+}
+
+function createCommitQueue() {
+  let tail = Promise.resolve();
+  return {
+    enqueue: (task) => {
+      const run = tail.then(() => task());
+      tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    },
+  };
+}
+function landingEvent(land, at) {
+  if (land?.status === 'ok' && typeof land.commit === 'string') {
+    return { kind: 'committed', issue: at.issue };
+  }
+  const recoverable = land === null ? null : recoverableLanding(land, at.issue);
+  return recoverable ?? { kind: 'epic-halt', epic: at.epic, reason: envelopeProblem('land', land) };
+}
+function recoverableLanding(land, issue) {
+  if (land.batchClean !== true) return null;
+  if (land.status === 'conflict') return { kind: 'harvest-conflict', issue };
+  const reason = envelopeProblem('land', land);
+  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') {
+    return { kind: 'blocked', issue, reason };
+  }
+  const step = land.errors?.[0]?.step;
+  if (
+    land.status === 'failed' &&
+    land.rolledBack === true &&
+    (step === 'commit' || step === 'build')
+  ) {
+    return { kind: 'blocked', issue, reason };
+  }
+  return null;
+}
+function teardownEvent(teardown, epic) {
+  if (teardown?.status !== 'refused' || teardown.reason !== 'source-shrank') return null;
+  return { kind: 'epic-halt', epic, reason: envelopeProblem('teardown', teardown) };
+}
+function teardownResidue(teardown) {
+  return teardown?.status === 'ok' ? null : envelopeProblem('teardown', teardown);
+}
+function settleEvents(primary, teardown, at) {
+  const halt = primary.kind === 'epic-halt' ? primary : teardownEvent(teardown, at.epic);
+  if (halt !== null) {
+    const blocked = { kind: 'blocked', issue: at.issue, reason: halt.reason };
+    return at.entryHalted ? [blocked] : [halt, blocked];
+  }
+  if (at.entryHalted && primary.kind === 'committed') {
+    return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
+  }
+  return [primary];
+}
+
+const LEASE_LINE =
+  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
+function formatLeaseLine(timing) {
+  const waited = timing.waitedSeconds.toFixed(1);
+  const held = timing.heldSeconds.toFixed(1);
+  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s`;
+}
+function parseLeaseLine(line) {
+  const match = LEASE_LINE.exec(line);
+  if (match === null) return null;
+  const [, waited = '', type = '', endpoint = '', held = ''] = match;
+  return { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+}
+function parseLeaseLines(text) {
+  const timings = [];
+  for (const line of text.split('\n')) {
+    const timing = parseLeaseLine(line);
+    if (timing !== null) timings.push(timing);
+  }
+  return timings;
+}
+
+const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
+const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
+const CLOSING_REFS = [
+  new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),
+  new RegExp(String.raw`${CLOSING_KEYWORD}(https?://\S+/\d+)`, 'giu'),
+];
+function neutralText(text, closing = new Set()) {
+  return CLOSING_REFS.reduce(
+    (out, pattern) =>
+      out.replace(pattern, (match, word, gap, ref) =>
+        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
+          ? match
+          : `${word}${gap}(see ${ref})`,
+      ),
+    text,
+  );
+}
+function subjectLine(commit) {
+  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
+}
+function commitMessage(issue, card) {
+  return [
+    subjectLine(card.commit),
+    '',
+    `${card.closes} #${String(issue)}`,
+    '',
+    CO_AUTHOR_TRAILER,
+    '',
+  ].join('\n');
+}
+function prTitle(input) {
+  const [only] = input.landed;
+  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
+  return `${input.branch}: ${String(input.landed.length)} issues`;
+}
+function renderPrBody(input) {
+  const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
+  const closing = new Set(
+    input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
+  );
+  const body = [
+    '## Summary',
+    '',
+    `Unattended run on \`${input.branch}\` — ${container}.`,
+    '',
+    '## Issues',
+    '',
+    ...input.landed.flatMap(issueSection),
+    '## Not landed',
+    '',
+    ...(input.unlanded.length === 0 ? ['None.'] : input.unlanded.map(unlandedLine)),
+    '',
+    '## Epic end',
+    '',
+    ...input.serverTier.map(tierLine),
+    `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
+    `- Version bump: ${bumpText(input.bump)}`,
+    `- Report dir: \`${input.reportDir}\``,
+    '',
+  ].join('\n');
+  return neutralText(body, closing);
+}
+function issueSection(landed) {
+  const ref = `#${String(landed.issue)}`;
+  const cite =
+    landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
+  const test = landed.testReview;
+  return [
+    `### ${subjectLine(landed.card.commit)}`,
+    '',
+    `- Issue: ${cite}, landed as ${landed.commit}`,
+    `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
+    `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
+    test === null
+      ? '- Test review: skipped — trivial surface'
+      : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
+    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
+    ...probeLines(landed.tdd.probes),
+    '',
+  ];
+}
+function probeLines(probes) {
+  if (probes.length === 0) return ['- Probes: no probe needed'];
+  return [
+    '- Probes:',
+    ...probes.map((p) => {
+      const followUp = p.followUp === '' ? '' : `; follow-up: ${p.followUp}`;
+      return `  - ${p.claim}: ${p.verdict}${followUp}`;
+    }),
+  ];
+}
+function leaseText(timings) {
+  if (timings.length === 0) return 'none';
+  return timings
+    .map(
+      (t) =>
+        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
+    )
+    .join('; ');
+}
+function unlandedLine(issue) {
+  const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
+  return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+}
+function tierLine(run) {
+  const { out } = run;
+  if (out === null) return `- Server tier, ${run.engine}: no result (the runner returned nothing)`;
+  const t = out.tests;
+  const counts =
+    t === undefined || t === null
+      ? 'no counts'
+      : `${String(t.passed)} passed, ${String(t.failed)} failed, ${String(t.skipped)} skipped`;
+  const status =
+    out.status === 'ok'
+      ? ''
+      : ` — ${out.status ?? 'no status'}: ${out.errors?.[0]?.message ?? 'no error named'}`;
+  const lease = out.lease === undefined || out.lease === null ? 'none' : leaseText([out.lease]);
+  return `- Server tier, ${run.engine}: ${counts}${status}; lease ${lease}`;
+}
+function bumpText(bump) {
+  if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
+  return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
+}
 
 function strictObject(properties) {
   return { type: 'object', properties, required: Object.keys(properties) };
@@ -1054,6 +1059,16 @@ function strictObject(properties) {
 function oneOf(...values) {
   return { type: 'string', enum: values };
 }
+const SCOUT_SCHEMA = strictObject({
+  issues: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, stale: BOOLEAN, evidence: STRING }),
+  },
+  overlaps: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
+  },
+});
 const PLAN_CARD_SCHEMA = strictObject({
   verdict: oneOf('plan', 'stale', 'blocked'),
   planPath: STRING,
@@ -1107,6 +1122,8 @@ async function askAgent(hooks, prompt, options) {
   return typeof out === 'object' && out !== null ? out : null;
 }
 const AGENT_CALLS = {
+  scout: (hooks, values) =>
+    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
   planner: (hooks, values, tag) =>
     askAgent(
       hooks,
@@ -1215,8 +1232,7 @@ async function tierRun(input, engine) {
 async function bumpAndPublish(input, serverTier, sync) {
   const { hooks, entry } = input;
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
-  if (bump?.status !== 'ok')
-    return { outcome: 'stopped', message: `bump ${bump?.status ?? 'returned nothing'}` };
+  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   const body = renderPrBody({
     epic: entry.epic,
     branch: entry.branch,
@@ -1241,7 +1257,7 @@ async function bumpAndPublish(input, serverTier, sync) {
   const out = await runTool(hooks, 'publish', argv, place);
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: `publish ${out?.status ?? 'returned nothing'}` };
+    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
   return { outcome: 'pr', pr: pr.number };
 }
@@ -1694,37 +1710,6 @@ function eventSubject(event) {
   return event.epic === null ? 'the issue list' : `epic #${String(event.epic)}`;
 }
 
-const SCOUT_SCHEMA = {
-  type: 'object',
-  properties: {
-    issues: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          issue: { type: 'integer' },
-          stale: { type: 'boolean' },
-          evidence: { type: 'string' },
-        },
-        required: ['issue', 'stale', 'evidence'],
-      },
-    },
-    overlaps: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          issue: { type: 'integer' },
-          branch: { type: 'string' },
-          files: { type: 'array', items: { type: 'string' } },
-          evidence: { type: 'string' },
-        },
-        required: ['issue', 'branch', 'files', 'evidence'],
-      },
-    },
-  },
-  required: ['issues', 'overlaps'],
-};
 async function runPreflight(hooks, args) {
   const checks = await runTool(hooks, 'preflight', ['.']);
   const gate = await runTool(hooks, 'run-gate', [
@@ -1806,9 +1791,7 @@ async function runScout(hooks, graph, live) {
   const liveRuns = (live?.runs ?? [])
     .filter((r) => !r.spent)
     .map((r) => ({ branch: r.branch, landed: r.landed }));
-  const prompt = PROMPTS.scout({ issues: runSetIssues(graph.runSet), liveRuns });
-  const out = await hooks.agent(prompt, agentOptions('scout', null, SCOUT_SCHEMA));
-  return typeof out === 'object' && out !== null ? out : null;
+  return AGENT_CALLS.scout(hooks, { issues: runSetIssues(graph.runSet), liveRuns });
 }
 function settleScout(found, scout, exclude) {
   const issues = runSetIssues(found.graph.runSet);

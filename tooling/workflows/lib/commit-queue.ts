@@ -18,7 +18,7 @@
 
 import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 
-import type { LandOutput, TeardownOutput } from './tool-calls.js';
+import { envelopeProblem, type LandOutput, type TeardownOutput } from './tool-calls.js';
 
 /** A serial queue: each task starts once every earlier task has settled. */
 export interface CommitQueue {
@@ -162,26 +162,4 @@ export function settleEvents(
     return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
   }
   return [primary];
-}
-
-/**
- * One line naming a tool's non-`ok` outcome.
- *
- * @param tool - The tool.
- * @param out - Its output; `null` when the runner returned none.
- * @returns `<tool> <status>[ (<reason>)]: <first error or stderr tail>`.
- */
-export function envelopeProblem(
-  tool: string,
-  out: {
-    readonly status?: string;
-    readonly reason?: string;
-    readonly errors?: readonly { readonly message: string }[];
-    readonly stderrTail?: string;
-  } | null,
-): string {
-  if (out === null) return `the runner returned nothing for ${tool}`;
-  const reason = out.reason === undefined ? '' : ` (${out.reason})`;
-  const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
-  return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
 }

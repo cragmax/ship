@@ -24,23 +24,22 @@
  *
  * Its two long spawns name their budgets (`exec.ts`): the build runs under
  * `NPM_TIMEOUT_MS`, the commit — whose pre-commit hook runs the commit
- * gate — under `COMMIT_TIMEOUT_MS`.
+ * gate — under `COMMIT_TIMEOUT_MS` (`commitWithHooks`, `git.ts`).
  */
 
 import { assertRunBatch } from './cut.js';
-import { COMMIT_TIMEOUT_MS, NPM_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
-import { git } from './git.js';
+import { NPM_TIMEOUT_MS, runStep } from './exec.js';
+import { commitWithHooks, git, resolveCommit } from './git.js';
 import {
   assertBatchClean,
   assertLinkedWorktree,
   batchResidue,
   harvest,
-  resolveCommit,
   rollback,
 } from './harvest.js';
 import { compareSets, formatDifference, stagedPaths } from './staged-set.js';
 import type { LandResult } from './types-run.js';
-import { Refusal, recordFailure, StepFailure } from './types.js';
+import { Refusal, recordFailure } from './types.js';
 
 /** Inputs of {@link land}; paths absolute with forward slashes. */
 export interface LandInput {
@@ -100,7 +99,7 @@ export function land(input: LandInput): LandResult {
       if (needsBuild(result.files)) {
         runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
       }
-      commit(batch, input.messageFile, input.logFile);
+      commitWithHooks(batch, ['-F', input.messageFile], input.logFile);
       staged = false;
       result.commit = git(batch, ['rev-parse', 'HEAD'], 'commit');
     }
@@ -184,39 +183,15 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
 }
 
 /**
- * Whether the slice changes a path the batch's `dist/` is built from: the
+ * Whether a change touches a path the batch's `dist/` is built from: the
  * pre-commit `manifest-coverage` job reads `dist/api-manifest.json`, which
- * only `npm run build` writes.
+ * only `npm run build` writes. `sync-master` asks it of what the merge brings.
  *
- * @param files - The harvest's `files`.
+ * @param files - Repository-relative paths changed.
  * @returns `true` when any lies under {@link BUILD_PREFIXES}.
  */
-function needsBuild(files: readonly string[]): boolean {
+export function needsBuild(files: readonly string[]): boolean {
   return files.some((file) => BUILD_PREFIXES.some((prefix) => file.startsWith(prefix)));
-}
-
-/**
- * Commit the staged slice with its hooks, the whole output to the log.
- *
- * @param batch - The batch worktree.
- * @param messageFile - The commit message file.
- * @param logFile - Where the output goes.
- * @throws StepFailure `commit` carrying the output tail, on a non-zero exit,
- *   spawn failure or budget kill.
- */
-function commit(batch: string, messageFile: string, logFile: string): void {
-  const r = runCaptured('git', ['-C', batch, 'commit', '-F', messageFile], {
-    cwd: process.cwd(),
-    timeoutMs: COMMIT_TIMEOUT_MS,
-    logFile,
-  });
-  if (r.exitCode !== 0) {
-    throw new StepFailure(
-      'commit',
-      `git commit -F ${messageFile} exited ${String(r.exitCode)} in ${batch}; output in ${logFile}`,
-      r.tail,
-    );
-  }
 }
 
 /**

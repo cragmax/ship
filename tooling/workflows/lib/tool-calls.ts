@@ -461,3 +461,27 @@ export async function runTool<N extends ToolName>(
   );
   return typeof out === 'object' && out !== null ? (out as ToolOutputs[N]) : null;
 }
+
+/**
+ * One line naming a worktree-CLI tool's non-`ok` outcome — how every stage
+ * reports a tool that let it down (pre-flight's refusals, whose outputs may
+ * carry no `status`, word theirs apart).
+ *
+ * @param tool - The tool.
+ * @param out - Its output; `null` when the runner returned none.
+ * @returns `<tool> <status>[ (<reason>)]: <first error or stderr tail>`.
+ */
+export function envelopeProblem(
+  tool: string,
+  out: {
+    readonly status?: string;
+    readonly reason?: string;
+    readonly errors?: readonly { readonly message: string }[];
+    readonly stderrTail?: string;
+  } | null,
+): string {
+  if (out === null) return `the runner returned nothing for ${tool}`;
+  const reason = out.reason === undefined ? '' : ` (${out.reason})`;
+  const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
+  return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
+}

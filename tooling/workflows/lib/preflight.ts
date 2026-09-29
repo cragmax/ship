@@ -27,10 +27,10 @@ import type { GateFailure } from '../../lib/run-gate.js';
 import { runSetIssues, transitiveDependents, type RunGraph } from '../../lib/run-set.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
+import { AGENT_CALLS, type ScoutVerdict } from './agent-calls.js';
 import type { ShipArgs } from './args.js';
-import type { JsonSchema, WorkflowHooks } from './hooks.types.js';
-import { PROMPTS, type LiveRunFiles } from './prompts.js';
-import { agentOptions } from './stages.js';
+import type { WorkflowHooks } from './hooks.types.js';
+import type { LiveRunFiles } from './prompts.js';
 import {
   runTool,
   type GateOutput,
@@ -105,60 +105,6 @@ export interface DropResult {
   /** The dropped issues' transitive dependents that were dropped with them, ascending. */
   readonly dependents: readonly number[];
 }
-
-/** The scout's verdict on one run-set issue. */
-interface ScoutIssue {
-  readonly issue: number;
-  readonly stale: boolean;
-  readonly evidence: string;
-}
-
-/** A run-set issue whose change would touch a live run's files. */
-interface ScoutOverlap {
-  readonly issue: number;
-  readonly branch: string;
-  readonly files: readonly string[];
-  readonly evidence: string;
-}
-
-/** The scout's answer. */
-interface ScoutVerdict {
-  readonly issues: readonly ScoutIssue[];
-  readonly overlaps: readonly ScoutOverlap[];
-}
-
-/** The scout's output schema. */
-const SCOUT_SCHEMA: JsonSchema = {
-  type: 'object',
-  properties: {
-    issues: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          issue: { type: 'integer' },
-          stale: { type: 'boolean' },
-          evidence: { type: 'string' },
-        },
-        required: ['issue', 'stale', 'evidence'],
-      },
-    },
-    overlaps: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          issue: { type: 'integer' },
-          branch: { type: 'string' },
-          files: { type: 'array', items: { type: 'string' } },
-          evidence: { type: 'string' },
-        },
-        required: ['issue', 'branch', 'files', 'evidence'],
-      },
-    },
-  },
-  required: ['issues', 'overlaps'],
-};
 
 /**
  * Run the pre-flight phase.
@@ -315,9 +261,7 @@ async function runScout(
   const liveRuns: LiveRunFiles[] = (live?.runs ?? [])
     .filter((r) => !r.spent)
     .map((r) => ({ branch: r.branch, landed: r.landed }));
-  const prompt = PROMPTS.scout({ issues: runSetIssues(graph.runSet), liveRuns });
-  const out = await hooks.agent(prompt, agentOptions('scout', null, SCOUT_SCHEMA));
-  return typeof out === 'object' && out !== null ? (out as ScoutVerdict) : null;
+  return AGENT_CALLS.scout(hooks, { issues: runSetIssues(graph.runSet), liveRuns });
 }
 
 /**

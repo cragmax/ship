@@ -7,11 +7,11 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { COMMIT_TIMEOUT_MS, freshLogDir, NPM_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import { assertRunBatch } from './cut.js';
-import { git } from './git.js';
+import { freshLogDir, NPM_TIMEOUT_MS, runStep } from './exec.js';
+import { commitWithHooks, git } from './git.js';
 import { assertBatchClean, assertLinkedWorktree } from './harvest.js';
-import { RUN_BASE_BRANCH } from './run-layout.js';
+import { RUN_UPSTREAM } from './run-layout.js';
 import { compareSets, formatDifference, stagedPaths } from './staged-set.js';
 import type { BumpResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure } from './types.js';
@@ -77,7 +77,7 @@ export function bump(input: BumpInput): BumpResult {
     const dir = freshLogDir('bump');
     result.log = `${dir}/commit.log`;
     writeFileSync(`${dir}/message.txt`, `${BUMP_SUBJECT} — ${slug}\n`);
-    commit(batch, `${dir}/message.txt`, result.log);
+    commitWithHooks(batch, ['-F', `${dir}/message.txt`], result.log);
     result.commit = git(batch, ['rev-parse', 'HEAD'], 'commit');
   } catch (err) {
     recordFailure(result, err);
@@ -95,11 +95,7 @@ export function bump(input: BumpInput): BumpResult {
  */
 function assertBumpable(subjects: readonly string[]): void {
   if (subjects.length === 0) {
-    throw new Refusal(
-      'nothing-to-bump',
-      'subjects',
-      `no commits of its own since origin/${RUN_BASE_BRANCH}`,
-    );
+    throw new Refusal('nothing-to-bump', 'subjects', `no commits of its own since ${RUN_UPSTREAM}`);
   }
   const bumped = subjects.find((s) => s.startsWith(BUMP_SUBJECT));
   if (bumped !== undefined) {
@@ -131,8 +127,7 @@ function restore(batch: string, result: BumpResult): void {
  * @throws StepFailure `subjects` when git fails.
  */
 function ownSubjects(batch: string): string[] {
-  const upstream = `origin/${RUN_BASE_BRANCH}`;
-  const mergeBase = git(batch, ['merge-base', 'HEAD', upstream], 'subjects');
+  const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'subjects');
   return git(batch, ['log', '--no-merges', '--format=%s', `${mergeBase}..HEAD`], 'subjects')
     .split(/\r?\n/u)
     .filter((s) => s !== '');
@@ -177,30 +172,6 @@ function stageBump(batch: string): void {
       'staged-mismatch',
       'stage',
       `staged set differs from the bump — ${formatDifference(diff)}`,
-    );
-  }
-}
-
-/**
- * Commit the staged bump with its hooks, the output to the log (§ Direct
- * commits step 4).
- *
- * @param batch - The batch worktree.
- * @param messageFile - The commit message file.
- * @param logFile - Where the output goes.
- * @throws StepFailure `commit` on a non-zero exit, spawn failure or budget kill.
- */
-function commit(batch: string, messageFile: string, logFile: string): void {
-  const r = runCaptured('git', ['-C', batch, 'commit', '-F', messageFile], {
-    cwd: process.cwd(),
-    timeoutMs: COMMIT_TIMEOUT_MS,
-    logFile,
-  });
-  if (r.exitCode !== 0) {
-    throw new StepFailure(
-      'commit',
-      `git commit -F ${messageFile} exited ${String(r.exitCode)} in ${batch}; output in ${logFile}`,
-      r.tail,
     );
   }
 }

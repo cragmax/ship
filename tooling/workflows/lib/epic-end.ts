@@ -21,7 +21,7 @@ import { prTitle, renderPrBody, type LandedIssue, type TierRun } from './pr-body
 import type { MainSnapshot } from './preflight.js';
 import type { EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
-import { runPlace, runTool } from './tool-calls.js';
+import { envelopeProblem, runPlace, runTool } from './tool-calls.js';
 
 /** How an issue ended. */
 export type IssueOutcome =
@@ -144,7 +144,8 @@ async function tierRun(input: EpicEndInput, engine: 'paper' | 'folia'): Promise<
  * @param input - The epic end's inputs.
  * @param serverTier - Both engines' runs.
  * @param sync - The master sync.
- * @returns Resolves to `pr` with its number, or `stopped` naming the step.
+ * @returns Resolves to `pr` with its number, or `stopped` naming the step
+ *   and its first error.
  */
 async function bumpAndPublish(
   input: EpicEndInput,
@@ -153,8 +154,7 @@ async function bumpAndPublish(
 ): Promise<Published> {
   const { hooks, entry } = input;
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
-  if (bump?.status !== 'ok')
-    return { outcome: 'stopped', message: `bump ${bump?.status ?? 'returned nothing'}` };
+  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   const body = renderPrBody({
     epic: entry.epic,
     branch: entry.branch,
@@ -179,7 +179,7 @@ async function bumpAndPublish(
   const out = await runTool(hooks, 'publish', argv, place);
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: `publish ${out?.status ?? 'returned nothing'}` };
+    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
   return { outcome: 'pr', pr: pr.number };
 }

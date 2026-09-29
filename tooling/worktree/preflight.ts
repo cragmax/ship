@@ -17,11 +17,9 @@
 import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js';
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from '../lib/rcon-probe.js';
 
-import { assertMainWorktree } from './cut.js';
-import { FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
-import { git, statusEntries } from './git.js';
-import { resolveCommit } from './harvest.js';
-import { WARM_SET } from './pool-registry-trim.js';
+import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
+import { assertMainWorktree, fetchOrigin, git, resolveCommit, statusEntries } from './git.js';
+import { isMember, memberLabel, WARM_SET } from './pool-registry-trim.js';
 import { RUN_BASE_BRANCH } from './run-layout.js';
 import type { PreflightProblem, PreflightResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure, type WarmMember } from './types.js';
@@ -63,10 +61,7 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
   };
   try {
     assertMainWorktree(main, 'preconditions');
-    runStep('fetch', 'git', ['-C', main, 'fetch', '-q', 'origin'], {
-      cwd: process.cwd(),
-      timeoutMs: FETCH_TIMEOUT_MS,
-    });
+    fetchOrigin(main);
     checkMasterLevel(main, result);
     result.snapshot = {
       head: resolveCommit(main, 'HEAD', 'snapshot'),
@@ -162,23 +157,11 @@ async function probeMember(
   registry: readonly PoolEntry[],
   probe: WarmProbe,
 ): Promise<string | null> {
-  const entry = registry.find(
-    (e) => e.type === member.type && e.host === member.host && e.rconPort === member.rconPort,
-  );
+  const entry = registry.find((e) => isMember(member, e));
   if (entry === undefined) return 'not in the registry';
   const r = await probe({ host: entry.host, port: entry.rconPort, password: entry.rconPassword });
   if (r.ok) return null;
   return `RCON ${r.stage} failed: ${r.error instanceof Error ? r.error.message : String(r.error)}`;
-}
-
-/**
- * Name a warm member.
- *
- * @param member - The member.
- * @returns `<type>@<host>:<rconPort>`.
- */
-function memberLabel(member: WarmMember): string {
-  return `${member.type}@${member.host}:${String(member.rconPort)}`;
 }
 
 /**

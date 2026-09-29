@@ -36,6 +36,7 @@ import {
   gitPaths,
   refExists,
   requireWorktreeRoot,
+  resolveCommit,
   samePath,
   statusEntries,
 } from './git.js';
@@ -189,19 +190,6 @@ function resolveSlice(batch: string, sha: string): string {
     );
   }
   return full;
-}
-
-/**
- * Resolve a commit-ish to a full commit sha.
- *
- * @param dir - Any checkout of the repository.
- * @param ref - Any commit-ish; never read as an option.
- * @param step - Step name reported on failure.
- * @returns The full sha.
- * @throws StepFailure for `step` when it does not resolve to a commit.
- */
-export function resolveCommit(dir: string, ref: string, step: string): string {
-  return git(dir, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], step);
 }
 
 /**

@@ -39,18 +39,18 @@ import {
   type TddOutput,
   type TestReviewOutput,
 } from './agent-calls.js';
-import {
-  envelopeProblem,
-  landingEvent,
-  teardownEvent,
-  teardownResidue,
-  type CommitQueue,
-} from './commit-queue.js';
+import { landingEvent, teardownEvent, teardownResidue, type CommitQueue } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage } from './pr-body.js';
 import type { PlannerValues, PriorSlice, SliceReviewValues } from './prompts.js';
 import { isTrivialSurface } from './stages.js';
-import { runPlace, runTool, type TeardownOutput, type ToolPlace } from './tool-calls.js';
+import {
+  envelopeProblem,
+  runPlace,
+  runTool,
+  type TeardownOutput,
+  type ToolPlace,
+} from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
 export interface EntrySetup {

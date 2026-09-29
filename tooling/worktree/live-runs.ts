@@ -24,7 +24,7 @@ import { z } from 'zod';
 
 import { compareStrings } from '../shared.js';
 
-import { runCaptured } from './exec.js';
+import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import {
   git,
   gitPaths,
@@ -162,19 +162,20 @@ function isDirty(entry: WorktreeEntry): boolean | null {
 }
 
 /**
- * Ask `gh` for a branch's pull requests, in every state.
+ * Ask `gh` for a branch's pull requests, in every state, under
+ * `GH_TIMEOUT_MS`. `publish` reads it too, for its open-PR refusal.
  *
- * @param main - The main checkout (`gh` resolves the repository from it).
+ * @param dir - A checkout of the repository (`gh` resolves the repository from it).
  * @param branch - Short branch name.
  * @returns `none` for no PR; otherwise the highest-precedence PR by
  *   {@link PR_STATES}; `unknown` with an `error` when `gh` fails, is
  *   missing, or answers something unreadable.
  */
-function lookupPr(main: string, branch: string): PrLookup {
+export function lookupPr(dir: string, branch: string): PrLookup {
   const r = runCaptured(
     'gh',
     ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state', '--limit', '20'],
-    { cwd: main },
+    { cwd: dir, timeoutMs: GH_TIMEOUT_MS },
   );
   if (r.exitCode !== 0) return unknownPr(`gh pr list exited ${String(r.exitCode)}: ${r.tail}`);
   const prs = parsePrList(r.stdout);

@@ -19,7 +19,6 @@
 import type { RunGraph, RunSetEntry } from '../lib/run-set.js';
 
 import { parseShipArgs } from './lib/args.js';
-import { envelopeProblem } from './lib/commit-queue.js';
 import { drive, type DriveInput } from './lib/drive.js';
 import type { EpicReport, IssueReport } from './lib/epic-end.js';
 import type { WorkflowHooks } from './lib/hooks.types.js';
@@ -31,7 +30,7 @@ import {
 } from './lib/preflight.js';
 import type { EntrySetup } from './lib/slice-chain.js';
 import { PHASE_TITLES } from './lib/stages.js';
-import { PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
+import { envelopeProblem, PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
 
 /** What the workflow returns. */
 export interface ShipReport {

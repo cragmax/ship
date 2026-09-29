@@ -23,16 +23,27 @@ export const WARM_SET: readonly WarmMember[] = [
 ];
 
 /**
- * Whether a registry entry is the given warm member.
+ * Whether a registry entry is the given warm member — the one spelling of
+ * a member's identity, which `preflight` and `server-tier` match by too.
  *
  * @param member - Warm-set member.
  * @param entry - Registry entry.
  * @returns `true` when type, host and RCON port all match.
  */
-function isMember(member: WarmMember, entry: PoolEntry): boolean {
+export function isMember(member: WarmMember, entry: PoolEntry): boolean {
   return (
     entry.type === member.type && entry.host === member.host && entry.rconPort === member.rconPort
   );
+}
+
+/**
+ * Name a warm member.
+ *
+ * @param member - The member.
+ * @returns `<type>@<host>:<rconPort>`.
+ */
+export function memberLabel(member: WarmMember): string {
+  return `${member.type}@${member.host}:${String(member.rconPort)}`;
 }
 
 /**
@@ -53,7 +64,7 @@ export function trimRegistry(source: string, dest: string): WarmMember[] {
   if (missing.length > 0) {
     throw new StepFailure(
       'registry',
-      `${source} lacks warm member(s): ${missing.map((m) => `${m.type}@${m.host}:${String(m.rconPort)}`).join(', ')}`,
+      `${source} lacks warm member(s): ${missing.map(memberLabel).join(', ')}`,
     );
   }
   writeFileSync(dest, `${JSON.stringify(kept, null, 2)}\n`);

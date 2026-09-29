@@ -18,11 +18,42 @@ import {
   type PlannerValues,
   type PlanReviewerValues,
   type ResolverValues,
+  type ScoutValues,
   type SliceReviewValues,
   type TddValues,
 } from './prompts.js';
 import { agentOptions, reviewerOptions } from './stages.js';
-import { INTEGER, STRING, STRINGS } from './tool-calls.js';
+import { BOOLEAN, INTEGER, STRING, STRINGS } from './tool-calls.js';
+
+/** The scout's verdict on one run-set issue. */
+interface ScoutIssue {
+  /** The issue. */
+  readonly issue: number;
+  /** Whether the current tree has overtaken it. */
+  readonly stale: boolean;
+  /** What backs the verdict. */
+  readonly evidence: string;
+}
+
+/** A run-set issue whose change would touch a live run's files. */
+interface ScoutOverlap {
+  /** The issue. */
+  readonly issue: number;
+  /** The live run's branch. */
+  readonly branch: string;
+  /** The files both would touch. */
+  readonly files: readonly string[];
+  /** What backs the overlap. */
+  readonly evidence: string;
+}
+
+/** The scout's answer. */
+export interface ScoutVerdict {
+  /** One verdict per run-set issue it judged. */
+  readonly issues: readonly ScoutIssue[];
+  /** Every overlap with a live run. */
+  readonly overlaps: readonly ScoutOverlap[];
+}
 
 /** A commit message's first line, as the planner proposes it. */
 export interface CommitSpec {
@@ -150,6 +181,18 @@ function oneOf(...values: readonly string[]): JsonSchema {
   return { type: 'string', enum: values };
 }
 
+/** The scout's output schema. */
+const SCOUT_SCHEMA = strictObject({
+  issues: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, stale: BOOLEAN, evidence: STRING }),
+  },
+  overlaps: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
+  },
+});
+
 /** The planner's and the applier's output schema. */
 const PLAN_CARD_SCHEMA = strictObject({
   verdict: oneOf('plan', 'stale', 'blocked'),
@@ -227,8 +270,13 @@ async function askAgent<T>(
   return typeof out === 'object' && out !== null ? (out as T) : null;
 }
 
-/** One wrapper per judgment stage; `tag` tells the call from the stage's others (`7-1`). */
+/**
+ * One wrapper per judgment stage; `tag` tells the call from the stage's
+ * others (`7-1`). The scout runs once per launch, so it takes none.
+ */
 export const AGENT_CALLS = {
+  scout: (hooks: WorkflowHooks, values: ScoutValues) =>
+    askAgent<ScoutVerdict>(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
   planner: (hooks: WorkflowHooks, values: PlannerValues, tag: string) =>
     askAgent<PlanCard>(
       hooks,

@@ -19,8 +19,15 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { posix } from 'node:path';
 
-import { git, listWorktrees, refExists, requireWorktreeRoot, samePath } from './git.js';
-import { assertLinkedWorktree, resolveCommit } from './harvest.js';
+import {
+  assertMainWorktree,
+  git,
+  listWorktrees,
+  refExists,
+  resolveCommit,
+  samePath,
+} from './git.js';
+import { assertLinkedWorktree } from './harvest.js';
 import {
   RUN_BASE_BRANCH,
   runLayout,
@@ -127,25 +134,6 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
     recordFailure(result, err);
   }
   return result;
-}
-
-/**
- * Require `path` to be the repository's main worktree root.
- *
- * @param path - The target given.
- * @param step - Step name reported on failure.
- * @throws StepFailure for `step` when `path` is not a worktree root;
- *   Refusal `not-main-worktree` when it is a linked worktree.
- */
-export function assertMainWorktree(path: string, step: string): void {
-  const identity = requireWorktreeRoot(path, step);
-  if (!samePath(identity.main, path)) {
-    throw new Refusal(
-      'not-main-worktree',
-      step,
-      `${path} is not the main worktree (the main worktree is ${identity.main})`,
-    );
-  }
 }
 
 /**

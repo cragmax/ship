@@ -33,6 +33,9 @@ export const RUN_BRANCH_PREFIX = 'refs/heads/ship/';
  */
 export const RUN_BASE_BRANCH = 'master';
 
+/** The remote-tracking branch of {@link RUN_BASE_BRANCH}, as `git merge` / `git log` name it. */
+export const RUN_UPSTREAM = `origin/${RUN_BASE_BRANCH}`;
+
 /** What a run ships: one epic, or an explicit list of issues. */
 export type RunSelection = { readonly epic: number } | { readonly issues: readonly number[] };
 

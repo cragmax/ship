@@ -36,6 +36,8 @@ import ts from 'typescript';
 import type { WorkflowMeta } from '../workflows/lib/hooks.types.js';
 import { toPosix } from '../shared.js';
 
+import { WORKFLOW_GLOBALS } from './workflow-globals.js';
+
 /** One saved workflow to render. */
 export interface WorkflowSpec {
   /** The workflow's name; the entry must export `run<Name>` (first letter upper-cased). */
@@ -61,18 +63,11 @@ export interface RenderCheck {
   readonly reason?: string;
 }
 
-/** The names the runtime binds in the workflow's scope: no top-level name may take one. */
-export const HOOK_NAMES: readonly string[] = [
-  'agent',
-  'parallel',
-  'pipeline',
-  'phase',
-  'log',
-  'args',
-  'budget',
-  'workflow',
-  'meta',
-];
+/**
+ * The names the workflow's scope already binds — the runtime's globals and
+ * the `meta` export: no top-level name may take one.
+ */
+export const HOOK_NAMES: readonly string[] = [...WORKFLOW_GLOBALS, 'meta'];
 
 /** Substrings the output may never contain: no code loading, clock, randomness or host global. */
 export const FORBIDDEN_TOKENS: readonly string[] = [
