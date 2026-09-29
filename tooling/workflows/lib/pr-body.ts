@@ -17,9 +17,17 @@
  */
 
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
-import { parseLeaseLines, type LeaseTiming } from '../../lib/lease-timings.js';
+import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
 
-import type { CommitSpec, PlanCard, ProbeRecord, SliceWork } from './agent-calls.js';
+import type {
+  CommitSpec,
+  CriticFinding,
+  PlanCard,
+  ProbeRecord,
+  RetroFinding,
+  SliceWork,
+} from './agent-calls.js';
+import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput, ServerTierOutput } from './tool-calls.js';
 
@@ -53,6 +61,37 @@ export interface UnlandedIssue {
   readonly reason?: string;
 }
 
+/** One issue's line of an entry's schedule. */
+export interface ScheduleEntry {
+  /** The issue. */
+  readonly issue: number;
+  /** Its blockers in the scheduled graph (overlap edges included), ascending. */
+  readonly blockers: readonly number[];
+  /** How many attempts it took; 0 when it never started. */
+  readonly attempts: number;
+  /** When its final attempt's slice was cut; `null` when none was. */
+  readonly startedAt: string | null;
+  /** When its commit landed; `null` unless it landed. */
+  readonly committedAt: string | null;
+}
+
+/** The critic's part of an epic end. */
+export interface CriticReport {
+  /**
+   * `clean`: nothing to change; `landed`: its commit landed
+   * ({@link CriticReport.commit}); `dropped`: its commit did not land;
+   * `not-run`: it could not run; `skipped`: fewer than two issues landed.
+   * The last three carry {@link CriticReport.reason}, but for `skipped`.
+   */
+  readonly outcome: 'clean' | 'landed' | 'dropped' | 'not-run' | 'skipped';
+  /** The batch commit, when `landed`. */
+  readonly commit?: string;
+  /** Why, when `dropped` or `not-run`. */
+  readonly reason?: string;
+  /** Every finding it reported. */
+  readonly findings: readonly CriticFinding[];
+}
+
 /** One engine's server-tier run. */
 export interface TierRun {
   /** The engine. */
@@ -79,6 +118,16 @@ export interface PrBodyInput {
   readonly sync: SyncStepResult;
   /** The bump; `null` when the runner returned none. */
   readonly bump: BumpOutput | null;
+  /** The critic's part. */
+  readonly critic: CriticReport;
+  /** The overlap edges pre-flight added to the entry. */
+  readonly overlap: OverlapRecord;
+  /** Each issue's schedule, in the entry's order. */
+  readonly schedule: readonly ScheduleEntry[];
+  /** The entry's lease totals. */
+  readonly leases: LeaseAggregate;
+  /** The retro's findings; `null` when it returned none. */
+  readonly retro: readonly RetroFinding[] | null;
 }
 
 /**
@@ -130,6 +179,17 @@ export function commitMessage(issue: number, card: Pick<PlanCard, 'commit' | 'cl
 }
 
 /**
+ * The critic commit's message: it closes and cites no issue.
+ *
+ * @param commit - The critic's first line.
+ * @returns The subject line, a blank line and {@link CO_AUTHOR_TRAILER},
+ *   newline-terminated.
+ */
+export function criticCommitMessage(commit: CommitSpec): string {
+  return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
+}
+
+/**
  * An epic's pull request title.
  *
  * @param input - The epic's report.
@@ -146,8 +206,9 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  *
  * @param input - The epic's report.
  * @returns Markdown: a summary, one section per landed issue, the unlanded
- *   issues, then the epic end — neutralised whole but for the landed
- *   `fixes` issues.
+ *   issues, the epic end, then the critic, the overlap edges, the schedule,
+ *   the lease timings and the retro findings (an empty one `None.`) —
+ *   neutralised whole but for the landed `fixes` issues.
  */
 export function renderPrBody(input: PrBodyInput): string {
   const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
@@ -173,8 +234,106 @@ export function renderPrBody(input: PrBodyInput): string {
     `- Version bump: ${bumpText(input.bump)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
+    ...section('Critic', criticLines(input.critic)),
+    ...section('Overlap edges', input.overlap.added.map(overlapLine)),
+    ...section('Schedule', input.schedule.map(scheduleLine)),
+    ...section('Lease timings', leaseLines(input.leases)),
+    ...section('Retro findings', retroLines(input.retro)),
   ].join('\n');
   return neutralText(body, closing);
+}
+
+/**
+ * One body section.
+ *
+ * @param heading - Its `##` heading.
+ * @param lines - Its lines; none renders `None.`.
+ * @returns The heading, a blank line, the lines and a blank line.
+ */
+function section(heading: string, lines: readonly string[]): string[] {
+  return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
+}
+
+/**
+ * The critic's lines.
+ *
+ * @param critic - Its part of the epic end.
+ * @returns `- Outcome: …`, then one line per finding.
+ */
+function criticLines(critic: CriticReport): string[] {
+  const outcome = {
+    clean: 'no changes',
+    landed: `landed as ${critic.commit ?? '?'}`,
+    dropped: `changes dropped — ${critic.reason ?? 'no reason named'}`,
+    'not-run': `not run — ${critic.reason ?? 'no reason named'}`,
+    skipped: 'skipped — one issue landed',
+  }[critic.outcome];
+  return [
+    `- Outcome: ${outcome}`,
+    ...critic.findings.map(
+      (f) => `- [${f.lens}] ${f.summary} (${f.applied ? 'applied' : 'not applied'})`,
+    ),
+  ];
+}
+
+/**
+ * One overlap edge's line.
+ *
+ * @param edge - The edge.
+ * @returns `- #B → #D (<confidence>): <reason>`.
+ */
+function overlapLine(edge: OverlapEdge): string {
+  return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
+}
+
+/**
+ * One issue's schedule line.
+ *
+ * @param entry - Its schedule.
+ * @returns `- #N: blockers …; started …; committed …; attempts K`, `never`
+ *   for a missing instant.
+ */
+function scheduleLine(entry: ScheduleEntry): string {
+  const blockers =
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+  return (
+    `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
+  );
+}
+
+/**
+ * The lease totals' lines: per engine, per issue, then each unparsed line.
+ *
+ * @param leases - The totals.
+ * @returns The lines.
+ */
+function leaseLines(leases: LeaseAggregate): string[] {
+  return [
+    ...leases.engines.map(
+      (e) =>
+        `- ${e.type}: ${String(e.leases)} leases, waited ${e.waitedSeconds.toFixed(1)}s total ` +
+        `(max ${e.waitedMaxSeconds.toFixed(1)}s), held ${e.heldSeconds.toFixed(1)}s total`,
+    ),
+    ...leases.issues.map(
+      (t) =>
+        `- #${String(t.issue)}: waited ${t.waitedSeconds.toFixed(1)}s, held ${t.heldSeconds.toFixed(1)}s`,
+    ),
+    ...leases.unparsed.map(
+      (u) => `- unparsed${u.issue === null ? '' : ` (#${String(u.issue)})`}: ${u.line}`,
+    ),
+  ];
+}
+
+/**
+ * The retro's lines.
+ *
+ * @param retro - Its findings; `null` when it returned none.
+ * @returns One line per finding; a note line when it returned nothing.
+ */
+function retroLines(retro: readonly RetroFinding[] | null): string[] {
+  if (retro === null) return ['- The retro returned nothing.'];
+  return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 
 /**

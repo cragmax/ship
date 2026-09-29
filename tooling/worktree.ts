@@ -9,8 +9,8 @@
  *
  * ```
  * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN
- * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,...)
- * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH --issue N --attempt K
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG)
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic)
  * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
  * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
  * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
@@ -21,12 +21,14 @@
  * npx tsx <main-checkout>/tooling/worktree.ts server-tier BATCH --engine paper|folia --registry R --log L
  * npx tsx <main-checkout>/tooling/worktree.ts sync-master BATCH [--continue]
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
- * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH --title T --body-file F --log L
+ * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
  * staged set as `staged-guard` does, builds when needed, then commits. The
- * epic end runs the last four, in that order.
+ * epic end runs the last four, in that order. A resync runs
+ * `cut-batch --attach`, `sync-master` and `publish --push-only`.
+ * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
  * the main checkout: every command that mutates a worktree (cut-slice,
@@ -36,10 +38,14 @@
  * CLI lies inside its target. The one exception is `cut-batch`, whose
  * target is the main checkout the CLI runs from: it writes only `.git` and
  * a sibling directory, never that checkout's working tree
- * (`worktree/cut.ts`). Target paths and the path flags (`--batch`,
+ * (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the path flags (`--batch`,
  * `--report-dir`, `--message-file`, `--log`, `--body-file`, `--registry`)
  * come only from argv, resolved against the starting cwd; every other
- * argument — a sha, repo-relative paths, a number, a title — is kept as given.
+ * argument — a sha, repo-relative paths, a number, a title, the `--attach`
+ * branch — is kept as given.
+ *
+ * Every envelope carries `at`, the instant the command finished
+ * ({@link runWorktreeCli}).
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (the envelope's
  * `status` tells which), `2` usage error ({@link UsageError}). The runner
@@ -55,7 +61,8 @@ import { pathToFileURL } from 'node:url';
 
 import { toPosix } from './shared.js';
 import { bump } from './worktree/bump.js';
-import { cutBatch, cutSlice } from './worktree/cut.js';
+import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
+import { attachBatch } from './worktree/cut-attach.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
@@ -63,6 +70,7 @@ import { preflight } from './worktree/preflight.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
+import { publishPushOnly } from './worktree/publish-push.js';
 import { serverTier } from './worktree/server-tier.js';
 import type { RunSelection } from './worktree/run-layout.js';
 import { stagedGuard } from './worktree/staged-set.js';
@@ -189,21 +197,22 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   },
   'cut-batch': {
     valueFlags: [],
-    optionFlags: ['--epic', '--issues'],
+    optionFlags: ['--epic', '--issues', '--attach'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => cutBatch({ main: args.target, selection: selectionFlag(args) }),
+    run: (args) => {
+      const selection = batchSelection(args);
+      return 'attach' in selection
+        ? attachBatch({ main: args.target, branch: selection.attach })
+        : cutBatch({ main: args.target, selection });
+    },
   },
   'cut-slice': {
-    valueFlags: ['--issue', '--attempt'],
-    switchFlags: [],
+    valueFlags: [],
+    optionFlags: ['--issue', '--attempt'],
+    switchFlags: ['--critic'],
     rest: NO_REST,
-    run: (args) =>
-      cutSlice({
-        batch: args.target,
-        issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
-        attempt: positiveInt(args.values.get('--attempt') ?? '', '--attempt'),
-      }),
+    run: (args) => cutSlice({ batch: args.target, slice: sliceFlag(args) }),
   },
   'sync-master': {
     valueFlags: [],
@@ -218,16 +227,27 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: (args) => bump({ batch: args.target }),
   },
   publish: {
-    valueFlags: ['--title', '--body-file', '--log'],
-    switchFlags: [],
+    valueFlags: ['--log'],
+    optionFlags: ['--title', '--body-file'],
+    switchFlags: ['--push-only'],
     rest: NO_REST,
-    run: (args) =>
-      publish({
+    run: (args) => {
+      const logFile = pathFlag(args, '--log');
+      if (publishMode(args) === 'push-only') {
+        const pollMs = pollMsFromEnv();
+        return publishPushOnly({
+          batch: args.target,
+          logFile,
+          ...(pollMs === undefined ? {} : { pollMs }),
+        });
+      }
+      return publish({
         batch: args.target,
         title: args.values.get('--title') ?? '',
         bodyFile: pathFlag(args, '--body-file'),
-        logFile: pathFlag(args, '--log'),
-      }),
+        logFile,
+      });
+    },
   },
   'server-tier': {
     valueFlags: ['--engine', '--registry', '--log'],
@@ -316,21 +336,80 @@ function engineFlag(text: string): 'paper' | 'folia' {
 }
 
 /**
- * Read `cut-batch`'s run selection: exactly one of `--epic E` and
- * `--issues N,…`.
+ * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…`
+ * and `--attach ship/<slug>` (a branch name, kept as given).
  *
  * @param args - Parsed argv.
- * @returns The selection.
- * @throws UsageError when both or neither is given, or a number is bad.
+ * @returns The run selection, or the branch to attach.
+ * @throws UsageError when more or fewer than one is given, or a number is bad.
  */
-function selectionFlag(args: ParsedArgs): RunSelection {
+function batchSelection(args: ParsedArgs): RunSelection | { readonly attach: string } {
+  const given = ['--epic', '--issues', '--attach'].filter((flag) => args.values.has(flag));
+  if (given.length !== 1) {
+    throw new UsageError('cut-batch takes exactly one of --epic, --issues and --attach');
+  }
   const epic = args.values.get('--epic');
   const issues = args.values.get('--issues');
-  if ((epic === undefined) === (issues === undefined)) {
-    throw new UsageError('cut-batch takes exactly one of --epic and --issues');
-  }
+  const attach = args.values.get('--attach');
+  if (attach !== undefined) return { attach };
   if (epic !== undefined) return { epic: positiveInt(epic, '--epic') };
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
+}
+
+/**
+ * Read `cut-slice`'s slice: exactly one of `--critic` and
+ * `--issue N --attempt K`.
+ *
+ * @param args - Parsed argv.
+ * @returns The critic slice, or the issue attempt.
+ * @throws UsageError when both or neither is given, when one of `--issue`
+ *   and `--attempt` comes without the other, or a number is bad.
+ */
+function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
+  const issue = args.values.get('--issue');
+  const attempt = args.values.get('--attempt');
+  const critic = args.switches.has('--critic');
+  if (critic === (issue !== undefined || attempt !== undefined)) {
+    throw new UsageError('cut-slice takes exactly one of --critic and --issue N --attempt K');
+  }
+  if (critic) return { critic: true };
+  if (issue === undefined || attempt === undefined) {
+    throw new UsageError('cut-slice --issue and --attempt go together');
+  }
+  return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
+}
+
+/**
+ * Read `publish`'s mode: `--push-only` alone, or both `--title` and
+ * `--body-file`.
+ *
+ * @param args - Parsed argv.
+ * @returns `push-only` or `create`.
+ * @throws UsageError when `--push-only` comes with `--title` or
+ *   `--body-file`, or, without it, either is missing.
+ */
+function publishMode(args: ParsedArgs): 'push-only' | 'create' {
+  const given = ['--title', '--body-file'].filter((flag) => args.values.has(flag));
+  if (args.switches.has('--push-only')) {
+    if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
+    return 'push-only';
+  }
+  const missing = ['--title', '--body-file'].find((flag) => !args.values.has(flag));
+  if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
+  return 'create';
+}
+
+/**
+ * The wait between `publish --push-only`'s mergeable reads, from
+ * `PH_WORKTREE_POLL_MS` — a test-only seam, so a fixture run need not wait
+ * the production interval.
+ *
+ * @returns The variable's value when it is a positive integer in decimal;
+ *   otherwise `undefined` (the command's default).
+ */
+function pollMsFromEnv(): number | undefined {
+  const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
+  return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
 }
 
 /**
@@ -352,9 +431,24 @@ function requireValue(value: string | undefined, flag: string): string {
  * Run one CLI invocation.
  *
  * @param argv - `process.argv.slice(2)`.
- * @returns Resolves to the envelope and the process exit code; never rejects.
+ * @returns Resolves to the envelope, stamped with its `at` instant on every
+ *   path (ok, refused, failed, usage), and the process exit code; never rejects.
  */
 export async function runWorktreeCli(
+  argv: readonly string[],
+): Promise<{ result: ResultBase; exitCode: number }> {
+  const run = await dispatch(argv);
+  run.result.at = new Date().toISOString();
+  return run;
+}
+
+/**
+ * Dispatch one invocation to its command.
+ *
+ * @param argv - `process.argv.slice(2)`.
+ * @returns Resolves to the unstamped envelope and the exit code; never rejects.
+ */
+async function dispatch(
   argv: readonly string[],
 ): Promise<{ result: ResultBase; exitCode: number }> {
   const [name = '', ...rest] = argv;

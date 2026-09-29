@@ -9,13 +9,27 @@
 
 import type { LeaseTiming } from '../lib/lease-timings.js';
 
+import type { VersionTriple } from './package-version.js';
 import type { ResultBase } from './types.js';
 
-/** Envelope of `cut-batch <main> (--epic E | --issues N,…)`; `worktree` is the main checkout. */
+/** How `cut-batch --attach` found the run branch's batch. */
+export interface AttachInfo {
+  /** The batch worktree was added now; `false` when it was already there and reused. */
+  readonly created: boolean;
+  /** The local branch was fast-forwarded to `origin`'s before the checkout. */
+  readonly fastForwarded: boolean;
+  /** The branch's open PR. */
+  readonly pr: number;
+}
+
+/**
+ * Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug>)`;
+ * `worktree` is the main checkout.
+ */
 export interface CutBatchResult extends ResultBase {
-  /** The feature branch created (`ship/<slug>`), short form. */
+  /** The feature branch created or attached (`ship/<slug>`), short form. */
   branch: string | null;
-  /** The `master` commit the branch was cut at. */
+  /** The `master` commit the branch was cut at; with `--attach`, the branch's tip (the batch's `HEAD`). */
   base: string | null;
   /** The run root. */
   runRoot: string | null;
@@ -23,6 +37,8 @@ export interface CutBatchResult extends ResultBase {
   batch: string | null;
   /** The run's report directory. */
   reportDir: string | null;
+  /** How `--attach` found the batch; `null` for `--epic` / `--issues`, or before it is known. */
+  attach: AttachInfo | null;
 }
 
 /** Envelope of `cut-slice <batch> --issue N --attempt K`; `worktree` is the batch. */
@@ -83,9 +99,11 @@ export interface LandResult extends ResultBase {
 
 /**
  * How `sync-master` treats a conflicted path: `lockfile` is regenerated,
- * `doc-index` goes to a resolver, `code` refuses the merge.
+ * `doc-index` goes to a resolver, `package` — a `package.json` conflict
+ * confined to the top-level version line — is resolved by the version rule,
+ * `code` refuses the merge.
  */
-export type ConflictKind = 'lockfile' | 'doc-index' | 'code';
+export type ConflictKind = 'lockfile' | 'doc-index' | 'package' | 'code';
 
 /** One path the `origin/master` merge conflicts on. */
 export interface ConflictPath {
@@ -93,10 +111,18 @@ export interface ConflictPath {
   readonly path: string;
   readonly kind: ConflictKind;
   /**
-   * Subjects of the `origin/master` commits since the merge-base that touched
-   * it, newest first, capped at `sync-master.ts`'s `LANDED_BY_LIMIT`.
+   * First-parent subjects of the `origin/master` commits since the
+   * merge-base that touched it, newest first, capped at `sync-master.ts`'s
+   * `LANDED_BY_LIMIT`: a PR landed by merge commit shows as
+   * `Merge pull request #N …`.
    */
   readonly landedBy: readonly string[];
+}
+
+/** The `package.json` versions a merge saw, and the one it ends on. */
+export interface VersionLine extends VersionTriple {
+  /** The version the version rule gives the merge (`package-version.ts` `targetVersion`). */
+  readonly result: string;
 }
 
 /** Envelope of `sync-master <batch> [--continue]`; `worktree` is the batch. */
@@ -111,6 +137,12 @@ export interface SyncMasterResult extends ResultBase {
   commit: string | null;
   /** Every path the merge conflicts on, classified; start mode only. */
   conflicts: ConflictPath[];
+  /**
+   * The versions the merge saw; start mode only, once the merge-base is
+   * known. `null` when any of the three `package.json` copies is missing or
+   * has no top-level version line.
+   */
+  version: VersionLine | null;
   /** The paths still unmerged for a resolver, repository-relative, sorted; empty once merged. */
   pending: string[];
   /** Which batch refreshes ran on the merged tree. */
@@ -133,18 +165,30 @@ export interface BumpResult extends ResultBase {
   log: string | null;
 }
 
-/** A pull request `publish` opened. */
+/** A pull request `publish` opened, or found open with `--push-only`. */
 export interface OpenedPr {
   readonly number: number;
   readonly url: string;
 }
 
-/** Envelope of `publish <batch> --title T --body-file F --log L`; `worktree` is the batch. */
+/**
+ * Envelope of `publish <batch> (--title T --body-file F | --push-only) --log L`;
+ * `worktree` is the batch.
+ */
 export interface PublishResult extends ResultBase {
-  /** Whether the push to `origin` succeeded. */
+  /** Whether the push to `origin` ran and succeeded; `--push-only` skips a level branch's. */
   pushed: boolean;
-  /** The PR opened; `null` unless `gh pr create` succeeded and printed its URL. */
+  /**
+   * The PR opened; `null` unless `gh pr create` succeeded and printed its
+   * URL. With `--push-only`: the open PR, once its mergeable state was read.
+   */
   pr: OpenedPr | null;
+  /**
+   * The raw `gh pr view --json mergeable` value (`MERGEABLE`, `CONFLICTING`,
+   * `UNKNOWN`, …) in `--push-only` mode, the last read; `null` in create
+   * mode or before it was read.
+   */
+  mergeable: string | null;
 }
 
 /** A server-tier run's test counts, from vitest's JSON report. */

@@ -51,12 +51,25 @@ export type RefusalReason =
   | 'slice-not-single-commit'
   /** Cut-batch, preflight: the target is not the repository's main worktree. */
   | 'not-main-worktree'
-  /** Cut-slice, land, bump, publish: the target is a linked worktree, but not on a `ship/` run branch. */
+  /**
+   * Cut-slice, land, bump, publish: the target is a linked worktree, but not
+   * on a `ship/` run branch. Cut-batch `--attach`: the branch named is not a
+   * `ship/` run branch.
+   */
   | 'not-run-batch'
   /** Cut-batch, cut-slice: the branch to create exists already. */
   | 'branch-exists'
-  /** Cut-batch, cut-slice: the directory to create exists already. */
+  /**
+   * Cut-batch, cut-slice: the directory to create exists already; with
+   * cut-batch `--attach`, as anything but the branch's registered batch.
+   */
   | 'path-exists'
+  /** Cut-batch `--attach`: neither the local branch nor `origin`'s exists. */
+  | 'branch-missing'
+  /** Cut-batch `--attach`: the branch is checked out elsewhere than the run's batch; the message names where. */
+  | 'branch-checked-out'
+  /** Cut-batch `--attach`: the local branch and `origin`'s each have commits the other lacks. */
+  | 'branch-diverged'
   /** Preflight: a check failed; the envelope's `problems` names each. */
   | 'preflight-failed'
   /** Sync-master: another worktree's `node_modules` links into the batch's; the message names each. */
@@ -72,7 +85,12 @@ export type RefusalReason =
   /** Bump: the batch's commits already include a bump commit. */
   | 'already-bumped'
   /** Publish: the run branch already has an open PR; the message names it. */
-  | 'pr-exists';
+  | 'pr-exists'
+  /**
+   * Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;
+   * the message names the state and the number.
+   */
+  | 'no-open-pr';
 
 /** One entry of the envelope's `errors` list. */
 export interface StepError {
@@ -95,6 +113,12 @@ export interface ResultBase {
   errors: StepError[];
   /** Present only when `status` is `refused`. */
   reason?: RefusalReason;
+  /**
+   * When the command finished: a UTC ISO-8601 instant, stamped by the CLI
+   * shell on every envelope it prints (usage errors included); absent on an
+   * envelope built in-process.
+   */
+  at?: string;
 }
 
 /** A directory link and the absolute directory it points at. */
@@ -215,6 +239,11 @@ export interface PrInfo {
   readonly state: 'open' | 'merged' | 'closed' | 'none' | 'unknown';
   /** The PR number; `null` for `none` and `unknown`. */
   readonly number: number | null;
+  /**
+   * The PR's head commit as `gh` names it (`headRefOid`); `null` for `none`
+   * and `unknown`, or when `gh` names none.
+   */
+  readonly headOid: string | null;
 }
 
 /** One live unattended run: a registered worktree on a run branch. */
@@ -233,8 +262,17 @@ export interface LiveRun {
   readonly dirty: boolean | null;
   /** The branch's pull request. */
   readonly pr: PrInfo;
-  /** The PR is merged or closed — the run is over and awaits cleanup. */
+  /**
+   * The PR is merged or closed **and** the run's tip is contained in the
+   * PR's head — the run is over and awaits cleanup. A run re-cut after its
+   * PR merged has commits beyond that head, so it is live.
+   */
   readonly spent: boolean;
+  /**
+   * The PR is merged or closed, but its head commit is unnamed or absent
+   * locally, so containment cannot be checked; `spent` is then `false`.
+   */
+  readonly spentUnverified: boolean;
   /** Registered worktrees (any branch) strictly inside this one. */
   readonly nested: string[];
 }

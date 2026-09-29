@@ -1,9 +1,9 @@
 /**
- * The `ship` workflow's tier table — the one home of every stage's
+ * The saved workflows' tier table — the one home of every stage's
  * `agentType`, `model` and `effort` (ADR-0045), plus the run's tunables and
- * its phase titles. No other workflow source spells a tier: each `agent()`
- * call takes its options from {@link agentOptions} (a `reviewer` call from
- * {@link reviewerOptions}).
+ * each workflow's phase titles. No other workflow source spells a tier:
+ * each `agent()` call takes its options from {@link agentOptions} (a
+ * `reviewer` call from {@link reviewerOptions}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -24,16 +24,20 @@ export interface StageRow {
 /**
  * Every stage the workflow runs an agent for. `runner` runs one tooling
  * command and transcribes its envelope; `scout` checks the run set against
- * the current tree; `planner` plans one issue and `applier` (the same agent)
- * applies the plan review's findings once; `planReviewer` reviews the plan;
- * `tdd` authors the slice's one commit; `reviewer` reviews and amends it, its
- * effort set per call by {@link reviewEffort}; `resolver` (the reviewer
- * agent) resolves the epic end's doc-index conflicts; `testReview` hardens
- * the tests on the slice's final shape.
+ * the current tree; `overlapEstimator` names the run-set pairs likely to
+ * touch the same files; `planner` plans one issue and `applier` (the same
+ * agent) applies the plan review's findings once; `planReviewer` reviews the
+ * plan; `tdd` authors the slice's one commit; `reviewer` reviews and amends
+ * it, its effort set per call by {@link reviewEffort}; `resolver` (the
+ * reviewer agent) resolves the epic end's doc-index conflicts; `testReview`
+ * hardens the tests on the slice's final shape; `critic` reviews the epic's
+ * landed slices together in a slice of its own and may commit one fix;
+ * `retro` reads the entry's reports and names what the run should learn.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
+  overlapEstimator: { agentType: 'overlap-estimator' },
   planner: { agentType: 'planner' },
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
@@ -41,12 +45,18 @@ export const STAGES = {
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
+  critic: { agentType: 'critic' },
+  retro: { agentType: 'retro', model: 'sonnet' },
 } as const satisfies Readonly<Record<string, StageRow>>;
 
 /** A stage's key in {@link STAGES}. */
 export type StageName = keyof typeof STAGES;
 
-/** The default most issues authoring at once (the `maxSlices` launch arg). */
+/**
+ * The default most issues in flight at once, from start until settled — the
+ * commit-queue wait included (the `maxSlices` launch arg). Epic ends run
+ * outside the cap.
+ */
 export const MAX_SLICES = 4;
 
 /** The most minutes one in-run probe may take; a hit records a follow-up, never a verdict. */
@@ -96,7 +106,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs and the scout; refuses on any failure',
+      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'refuses on any failure',
   },
   {
     title: PHASE_TITLES.issues,
@@ -104,7 +115,36 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: server tier on both engines, master sync, version bump, pull request',
+    detail:
+      'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
+      'pull request',
+  },
+];
+
+/** The titles the `resync` workflow calls `phase()` with. */
+export const RESYNC_PHASE_TITLES = {
+  preflight: PHASE_TITLES.preflight,
+  merge: 'Merge',
+  push: 'Push',
+} as const;
+
+/** The `resync` workflow's phases, in run order (`meta.phases`). */
+export const RESYNC_PHASES: readonly WorkflowPhase[] = [
+  {
+    title: RESYNC_PHASE_TITLES.preflight,
+    detail:
+      'live runs; spent batches torn down (guarded); the branch batch attached, and re-cut and ' +
+      'provisioned if it was torn down',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.merge,
+    detail:
+      "the epic end's merge step: doc indexes resolved, the version line re-bumped, " +
+      'a code conflict stops',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.push,
+    detail: "pushed through the pre-push gate, never forced; the PR's mergeable state read",
   },
 ];
 

@@ -1,13 +1,24 @@
 /**
- * The `ship` workflow's epic end (ADR-0045 decision 6), for an entry whose
- * issues have all settled with at least one landed: the server tier on
- * Paper then Folia, the master sync, the version bump, the pull request,
- * then a second look at the main checkout.
+ * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose
+ * issues have all settled with at least one landed ({@link epicEnd}): the
+ * critic (`critic-step.ts`), the server tier on Paper then Folia, the master
+ * sync, the version bump, the retro, the pull request, then a second look
+ * at the main checkout. An entry that halted or landed nothing gets the
+ * retro alone ({@link unshippedEpicEnd}).
  *
  * - **A red server tier never blocks the PR** — both results go in its body,
  *   and the PR is the human gate.
+ * - **A critic landing that leaves the batch unverified halts the epic**:
+ *   no server tier, no push.
  * - **A code conflict or a failed sync stops the epic**: no bump, no push.
- *   So does a failed bump.
+ *   So does a failed bump, and so does a step that throws.
+ * - **The retro runs exactly once per entry**, whatever path the entry
+ *   ends on, before the PR on the shipping path.
+ * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync, the
+ *   publish and the main-checkout look each run as one task of the run's
+ *   one lock, so no two epic ends talk to `origin` or read the main
+ *   checkout at once; the critic, the server tier, the bump and the retro
+ *   run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's; the
  *   run never works in the main checkout, so a difference is reported.
@@ -16,12 +27,24 @@
  * no top-level side effect.
  */
 
+import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
+
+import { AGENT_CALLS, type RetroFinding } from './agent-calls.js';
+import type { CommitQueue } from './commit-queue.js';
+import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import { prTitle, renderPrBody, type LandedIssue, type TierRun } from './pr-body.js';
-import type { MainSnapshot } from './preflight.js';
+import {
+  prTitle,
+  renderPrBody,
+  type CriticReport,
+  type LandedIssue,
+  type ScheduleEntry,
+  type TierRun,
+} from './pr-body.js';
+import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import type { EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
-import { envelopeProblem, runPlace, runTool } from './tool-calls.js';
+import { envelopeProblem, runPlace, runTool, type BumpOutput } from './tool-calls.js';
 
 /** How an issue ended. */
 export type IssueOutcome =
@@ -53,16 +76,19 @@ export interface EpicReport {
   /** The entry's feature branch; empty when it was never cut. */
   readonly branch: string;
   /**
-   * `pr`: opened; `halted`: a landing or a slice teardown left the batch
-   * unverified; `nothing-landed`: no issue landed, so no epic end;
-   * `stopped`: its cut or its epic end failed ({@link EpicReport.message}).
+   * `pr`: opened; `halted`: a landing (the critic's included) or a slice
+   * teardown left the batch unverified; `nothing-landed`: no issue landed,
+   * so no epic end but the retro; `stopped`: its cut or its epic end failed
+   * ({@link EpicReport.message}).
    */
   readonly outcome: 'pr' | 'halted' | 'nothing-landed' | 'stopped';
   /** The pull request opened. */
   readonly pr?: number;
   /** Each issue's outcome, in the entry's order. */
   readonly issues: readonly IssueReport[];
-  /** What stopped the entry, when `stopped`. */
+  /** Each issue's schedule, in the entry's order. */
+  readonly schedule: readonly ScheduleEntry[];
+  /** What stopped or halted the entry, when its epic end says. */
   readonly message?: string;
   /**
    * Whether the main checkout's `HEAD` and dirtiness at the epic end equal
@@ -71,6 +97,12 @@ export interface EpicReport {
   readonly mainUntouched?: boolean | null;
   /** What each slice teardown left behind, one line each. */
   readonly residue: readonly string[];
+  /** The critic's part; absent without an epic end. */
+  readonly critic?: CriticReport;
+  /** The retro's findings, `null` when it returned none; absent for an entry never cut. */
+  readonly retro?: readonly RetroFinding[] | null;
+  /** The entry's lease totals; absent without an epic end. */
+  readonly leases?: LeaseAggregate;
 }
 
 /** An epic end's inputs. */
@@ -83,10 +115,23 @@ export interface EpicEndInput {
   readonly landed: readonly LandedIssue[];
   /** Every issue's outcome so far. */
   readonly issues: readonly IssueReport[];
+  /** Every issue's schedule. */
+  readonly schedule: readonly ScheduleEntry[];
   /** The teardown residue so far. */
   readonly residue: readonly string[];
   /** The main checkout as pre-flight found it. */
   readonly launch: MainSnapshot | null;
+  /** The run's repo lock, shared by every entry's epic end. */
+  readonly repoLock: CommitQueue;
+  /** The overlap edges pre-flight added to this entry. */
+  readonly overlap: OverlapRecord;
+}
+
+/** What an epic end learnt, step by step. */
+interface EndState {
+  critic?: CriticReport;
+  leases?: LeaseAggregate;
+  retro?: readonly RetroFinding[] | null;
 }
 
 /** The epic end's outcome before the main-checkout look. */
@@ -96,24 +141,132 @@ type Published = Pick<EpicReport, 'outcome' | 'pr' | 'message'>;
  * Run the epic end.
  *
  * @param input - The entry, its issues and the launch snapshot.
- * @returns Resolves to the entry's report.
+ * @returns Resolves to the entry's report; a step that throws stops the
+ *   epic (`the epic end threw: …`), the retro still run.
  */
 export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
-  const { hooks, entry } = input;
-  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
-  const sync = await syncMasterStep(hooks, entry);
-  const published: Published =
-    sync.verdict === 'code-conflict' || sync.verdict === 'failed'
-      ? { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` }
-      : await bumpAndPublish(input, serverTier, sync);
+  const state: EndState = {};
+  const published = await shipSteps(input, state).catch(
+    (err: unknown): Published => ({
+      outcome: 'stopped',
+      message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+    }),
+  );
+  if (state.retro === undefined)
+    state.retro = await retroStep(input, retroReport(input, published));
   return {
-    epic: entry.epic,
-    branch: entry.branch,
+    epic: input.entry.epic,
+    branch: input.entry.branch,
     ...published,
     issues: input.issues,
-    mainUntouched: await mainUntouched(input),
+    schedule: input.schedule,
+    mainUntouched: await input.repoLock.enqueue(() => mainUntouched(input)),
+    residue: input.residue,
+    ...(state.critic === undefined ? {} : { critic: state.critic }),
+    retro: state.retro,
+    ...(state.leases === undefined ? {} : { leases: state.leases }),
+  };
+}
+
+/**
+ * The epic end of an entry that halted or landed nothing: the retro alone.
+ *
+ * @param input - The entry, its issues, schedule and residue.
+ * @param outcome - How the entry ended.
+ * @returns Resolves to the entry's report.
+ */
+export async function unshippedEpicEnd(
+  input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues' | 'schedule' | 'residue'>,
+  outcome: 'halted' | 'nothing-landed',
+): Promise<EpicReport> {
+  const report: EpicReport = {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
     residue: input.residue,
   };
+  return { ...report, retro: await retroStep(input, report) };
+}
+
+/**
+ * The shipping path, up to the pull request: critic, server tier, sync,
+ * bump, retro, publish.
+ *
+ * @param input - The epic end's inputs.
+ * @param state - Filled in as each step reports.
+ * @returns Resolves to `pr`, `halted` (the critic) or `stopped` (sync, bump
+ *   or publish).
+ */
+async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
+  const { hooks, entry } = input;
+  const critic = await criticStep(input);
+  const { halt, ...criticReport } = critic;
+  state.critic = criticReport;
+  state.leases = leaseTotals(input.landed, []);
+  if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
+  state.leases = leaseTotals(input.landed, serverTier);
+  const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
+  if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
+    return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
+  }
+  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
+  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
+  state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+  return publishStep(input, { serverTier, sync, bump, state });
+}
+
+/** What the pull request body reports besides the entry's inputs. */
+interface EndFindings {
+  readonly serverTier: readonly TierRun[];
+  readonly sync: SyncStepResult;
+  readonly bump: BumpOutput;
+  readonly state: EndState;
+}
+
+/**
+ * Push the branch and open the PR — one repo-lock task.
+ *
+ * @param input - The epic end's inputs.
+ * @param found - The steps' results.
+ * @returns Resolves to `pr` with its number, or `stopped` naming the publish.
+ */
+async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
+  const { hooks, entry } = input;
+  const body = renderPrBody({
+    epic: entry.epic,
+    branch: entry.branch,
+    reportDir: entry.reportDir,
+    landed: input.landed,
+    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
+    serverTier: found.serverTier,
+    sync: found.sync,
+    bump: found.bump,
+    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    overlap: input.overlap,
+    schedule: input.schedule,
+    leases: found.state.leases ?? leaseTotals(input.landed, found.serverTier),
+    retro: found.state.retro ?? null,
+  });
+  const bodyPath = `${entry.reportDir}/pr-body.md`;
+  const argv = [
+    entry.batch,
+    '--title',
+    prTitle({ branch: entry.branch, landed: input.landed }),
+    '--body-file',
+    bodyPath,
+    '--log',
+    `${entry.reportDir}/publish.log`,
+  ];
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
+  const out = await input.repoLock.enqueue(() => runTool(hooks, 'publish', argv, place));
+  const pr = out?.status === 'ok' ? out.pr : null;
+  if (pr === undefined || pr === null) {
+    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
+  }
+  return { outcome: 'pr', pr: pr.number };
 }
 
 /**
@@ -139,49 +292,60 @@ async function tierRun(input: EpicEndInput, engine: 'paper' | 'folia'): Promise<
 }
 
 /**
- * Bump the version, then push the branch and open the PR.
+ * The entry's lease totals: each landed slice's release lines, and each
+ * server-tier run's lease.
+ *
+ * @param landed - The landed issues.
+ * @param serverTier - The server-tier runs so far.
+ * @returns The totals.
+ */
+function leaseTotals(
+  landed: readonly LandedIssue[],
+  serverTier: readonly TierRun[],
+): LeaseAggregate {
+  return aggregateLeaseTimings([
+    ...landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+    ...serverTier.flatMap((t) =>
+      t.out?.lease === undefined || t.out.lease === null
+        ? []
+        : [{ issue: null, lease: t.out.lease }],
+    ),
+  ]);
+}
+
+/**
+ * Run the retro over the entry's report.
+ *
+ * @param input - The entry and the hooks.
+ * @param report - The report so far, as the retro reads it.
+ * @returns Resolves to its findings; `null` when it returned none or threw.
+ */
+async function retroStep(
+  input: Pick<EpicEndInput, 'hooks' | 'entry'>,
+  report: unknown,
+): Promise<readonly RetroFinding[] | null> {
+  const { entry } = input;
+  const values = { epic: entry.epic, reportDir: entry.reportDir, report };
+  const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
+  return out?.findings ?? null;
+}
+
+/**
+ * The report the retro reads on the shipping path.
  *
  * @param input - The epic end's inputs.
- * @param serverTier - Both engines' runs.
- * @param sync - The master sync.
- * @returns Resolves to `pr` with its number, or `stopped` naming the step
- *   and its first error.
+ * @param published - How the path ended, or `pr` before the pull request.
+ * @returns The entry's outcome, issues, schedule and residue.
  */
-async function bumpAndPublish(
-  input: EpicEndInput,
-  serverTier: readonly TierRun[],
-  sync: SyncStepResult,
-): Promise<Published> {
-  const { hooks, entry } = input;
-  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
-  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  const body = renderPrBody({
-    epic: entry.epic,
-    branch: entry.branch,
-    reportDir: entry.reportDir,
-    landed: input.landed,
-    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    serverTier,
-    sync,
-    bump,
-  });
-  const bodyPath = `${entry.reportDir}/pr-body.md`;
-  const argv = [
-    entry.batch,
-    '--title',
-    prTitle({ branch: entry.branch, landed: input.landed }),
-    '--body-file',
-    bodyPath,
-    '--log',
-    `${entry.reportDir}/publish.log`,
-  ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  const pr = out?.status === 'ok' ? out.pr : null;
-  if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
-  }
-  return { outcome: 'pr', pr: pr.number };
+function retroReport(input: EpicEndInput, published: Published): EpicReport {
+  return {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    ...published,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+  };
 }
 
 /**

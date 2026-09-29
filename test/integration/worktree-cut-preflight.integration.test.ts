@@ -30,10 +30,13 @@ import {
   makeGitRepo,
   prependPath,
   writeFakeGh,
+  type Changes,
+  type FakeGhResponse,
 } from '../helpers/worktree-fixture-git.js';
 import { addWorktree, mustRun, porcelain, runCli } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const REGISTRY = 'src/server-pool/registry/pool-registry.json';
 const REAL_REGISTRY = resolve(import.meta.dirname, '../..', REGISTRY);
 
@@ -147,6 +150,218 @@ describe('cut-batch', () => {
   });
 });
 
+describe('cut-batch --attach', () => {
+  const BATCH = (): string => `${root}/ph-runs/s/batch`;
+  const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
+  let bare: string;
+
+  beforeEach(() => {
+    bare = makeBareOrigin(root, main);
+  });
+
+  /** Commit `changes` on an existing branch through a throwaway worktree, which is removed again. */
+  function commitOn(branch: string, changes: Changes, message: string): string {
+    const tmp = mkdtempSync(join(root, 'wt-'));
+    rmSync(tmp, { recursive: true });
+    mustRun('git', ['worktree', 'add', '-q', tmp, branch], main);
+    const sha = commitChanges(tmp, changes, message);
+    mustRun('git', ['worktree', 'remove', tmp], main);
+    return sha;
+  }
+
+  /** Create local `ship/s` from master with one commit of its own; no worktree left on it. */
+  function localBranch(): string {
+    mustRun('git', ['branch', 'ship/s'], main);
+    return commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+  }
+
+  /** Run `cut-batch --attach` with a fake `gh` answering `responses`. */
+  function attach(
+    responses: Record<string, FakeGhResponse>,
+    branch = 'ship/s',
+  ): ReturnType<typeof runCli<CutBatchResult>> {
+    const bin = writeFakeGh(root, responses);
+    return runCli<CutBatchResult>(['cut-batch', main, '--attach', branch], {
+      env: prependPath(bin),
+    });
+  }
+
+  it('checks out a local run branch as the layout batch, with reports/', TIMEOUT, () => {
+    const tip = localBranch();
+
+    const r = attach(OPEN_9);
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      branch: 'ship/s',
+      base: tip,
+      runRoot: `${root}/ph-runs/s`,
+      batch: BATCH(),
+      reportDir: `${root}/ph-runs/s/reports`,
+      attach: { created: true, fastForwarded: false, pr: 9 },
+    });
+    expect(branchOf(BATCH())).toBe('ship/s');
+    expect(headSha(BATCH())).toBe(tip);
+    expect(existsSync(`${root}/ph-runs/s/reports`)).toBe(true);
+  });
+
+  it('checks out a branch only origin has as a new tracking branch', TIMEOUT, () => {
+    const clone = mkdtempSync(join(root, 'clone-'));
+    mustRun('git', ['clone', '-q', bare, clone], root);
+    mustRun('git', ['config', 'user.name', 'f'], clone);
+    mustRun('git', ['config', 'user.email', 'f@example.invalid'], clone);
+    mustRun('git', ['checkout', '-q', '-b', 'ship/s'], clone);
+    const tip = commitChanges(clone, { write: { 's.txt': 's\n' } }, 's1');
+    mustRun('git', ['push', '-q', 'origin', 'ship/s'], clone);
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({ status: 'ok', base: tip, attach: { created: true } });
+    expect(headSha(main, 'refs/heads/ship/s')).toBe(tip);
+    expect(mustRun('git', ['rev-parse', '--abbrev-ref', 'ship/s@{upstream}'], main).trim()).toBe(
+      'origin/ship/s',
+    );
+    expect(headSha(BATCH())).toBe(tip);
+  });
+
+  it('reuses the batch already checked out at the layout path, mutating nothing', TIMEOUT, () => {
+    mustRun('git', ['branch', 'ship/s'], main);
+    addWorktreeAt(BATCH(), 'ship/s');
+    const before = repoState(main);
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      batch: BATCH(),
+      reportDir: `${root}/ph-runs/s/reports`,
+      attach: { created: false, fastForwarded: false, pr: 9 },
+    });
+    expect(repoState(main)).toEqual(before);
+  });
+
+  it.each([
+    { guard: 'branch-missing', branch: 'ship/s', setup: () => undefined },
+    {
+      guard: 'path-exists',
+      branch: 'ship/s',
+      setup: () => {
+        localBranch();
+        mkdirSync(`${root}/ph-runs/s/batch`, { recursive: true });
+      },
+    },
+    {
+      guard: 'branch-checked-out',
+      branch: 'ship/s',
+      setup: () => {
+        localBranch();
+        addWorktreeAt(`${root}/elsewhere`, 'ship/s');
+      },
+    },
+    {
+      guard: 'not-run-batch',
+      branch: 'feature/s',
+      setup: () => mustRun('git', ['branch', 'feature/s'], main),
+    },
+  ])('refuses $guard with the repository unchanged', TIMEOUT, ({ guard, branch, setup }) => {
+    setup();
+    const hadBatch = existsSync(BATCH());
+    const before = repoState(main);
+
+    const r = attach({ [branch]: OPEN_9['ship/s'] }, branch);
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: guard, batch: null });
+    expect(repoState(main)).toEqual(before);
+    expect(existsSync(BATCH())).toBe(hadBatch);
+  });
+
+  it.each([
+    { state: 'merged', prs: [{ number: 9, state: 'MERGED' }] },
+    { state: 'closed', prs: [{ number: 9, state: 'CLOSED' }] },
+    { state: 'none', prs: [] },
+  ])('refuses a branch whose PR is $state as no-open-pr, creating no batch', TIMEOUT, (c) => {
+    localBranch();
+
+    const r = attach({ 'ship/s': { prs: c.prs } });
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'no-open-pr' });
+    expect(r.json.errors[0]?.message).toContain(c.state);
+    expect(existsSync(BATCH())).toBe(false);
+  });
+
+  it('fails pr-state when gh cannot report the PR', TIMEOUT, () => {
+    localBranch();
+
+    const r = attach({ 'ship/s': { exit: 1 } });
+
+    expect(r.json).toMatchObject({ status: 'failed' });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-state']);
+    expect(existsSync(BATCH())).toBe(false);
+  });
+
+  it('fast-forwards a local branch strictly behind origin before checking it out', TIMEOUT, () => {
+    localBranch();
+    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+    const ahead = advanceOrigin(root, bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/s');
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({ status: 'ok', base: ahead, attach: { fastForwarded: true } });
+    expect(headSha(main, 'refs/heads/ship/s')).toBe(ahead);
+    expect(headSha(BATCH())).toBe(ahead);
+  });
+
+  it('refuses a local branch diverged from origin, its ref unchanged', TIMEOUT, () => {
+    localBranch();
+    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+    advanceOrigin(root, bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/s');
+    const local = commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-diverged' });
+    expect(headSha(main, 'refs/heads/ship/s')).toBe(local);
+    expect(existsSync(BATCH())).toBe(false);
+  });
+
+  it('checks out a local branch ahead of origin as it is, never rewinding it', TIMEOUT, () => {
+    localBranch();
+    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+    // An unpushed resync merge: local has a commit origin lacks, and nothing the other way.
+    const local = commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      base: local,
+      attach: { created: true, fastForwarded: false },
+    });
+    expect(headSha(main, 'refs/heads/ship/s')).toBe(local);
+    expect(headSha(BATCH())).toBe(local);
+  });
+
+  it('refuses a batch entry whose directory is gone as branch-checked-out', TIMEOUT, () => {
+    localBranch();
+    addWorktreeAt(BATCH(), 'ship/s');
+    rmSync(BATCH(), { recursive: true, force: true });
+    const before = repoState(main);
+
+    const r = attach(OPEN_9);
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-checked-out', batch: null });
+    expect(r.json.errors[0]?.message).toContain('(prunable)');
+    expect(repoState(main)).toEqual(before);
+    expect(existsSync(`${root}/ph-runs/s/reports`)).toBe(false);
+  });
+
+  /** Check an existing branch out at `path`. */
+  function addWorktreeAt(path: string, branch: string): void {
+    mustRun('git', ['worktree', 'add', '-q', path, branch], main);
+  }
+});
+
 describe('cut-slice', () => {
   it('cuts slice/<slug>/N-K at the batch HEAD, which live-runs does not list', TIMEOUT, () => {
     const cut = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']);
@@ -200,6 +415,45 @@ describe('cut-slice', () => {
     const r = runCli<CutSliceResult>(['cut-slice', other, '--issue', '41', '--attempt', '1']);
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'not-run-batch' });
+  });
+
+  it(
+    'cuts the critic slice slice/<slug>/critic at the batch HEAD, stamping the envelope',
+    TIMEOUT,
+    () => {
+      const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+      const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
+
+      const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+
+      expect(r.code).toBe(0);
+      const slice = `${root}/ph-runs/epic-900/slice-critic`;
+      expect(r.json).toMatchObject({
+        status: 'ok',
+        branch: 'slice/epic-900/critic',
+        base: head,
+        slice,
+        at: expect.stringMatching(ISO_INSTANT),
+      });
+      expect(branchOf(slice)).toBe('slice/epic-900/critic');
+      expect(headSha(slice)).toBe(head);
+    },
+  );
+
+  it('refuses a second critic cut as branch-exists, stamped, cutting nothing', TIMEOUT, () => {
+    const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+    runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+    const before = repoState(main);
+
+    const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+
+    expect(r.json).toMatchObject({
+      status: 'refused',
+      reason: 'branch-exists',
+      branch: null,
+      at: expect.stringMatching(ISO_INSTANT),
+    });
+    expect(repoState(main)).toEqual(before);
   });
 });
 
@@ -305,9 +559,19 @@ describe('usage errors', () => {
       name: 'cut-slice with attempt 0',
       args: ['cut-slice', 'b', '--issue', '4', '--attempt', '0'],
     },
-  ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
+    {
+      name: 'cut-slice with --critic and an issue attempt',
+      args: ['cut-slice', 'b', '--critic', '--issue', '4', '--attempt', '1'],
+    },
+    { name: 'cut-slice with neither selector', args: ['cut-slice', 'b'] },
+    {
+      name: 'cut-batch with --attach and --epic',
+      args: ['cut-batch', 'm', '--attach', 'ship/s', '--epic', '9'],
+    },
+  ])('exits 2 with a stamped usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
     expect(run.json.errors[0]?.step).toBe('usage');
+    expect(run.json.at).toMatch(ISO_INSTANT);
   });
 });

@@ -16,6 +16,7 @@ import { toPosix } from '../../tooling/shared.js';
 import type { LiveRun, LiveRunsResult } from '../../tooling/worktree/types.js';
 import {
   commitChanges,
+  headSha,
   makeGitRepo,
   prependPath,
   writeFakeGh,
@@ -64,7 +65,7 @@ describe('live-runs', () => {
     );
     writeFileSync(join(a, 'untracked.txt'), 'wip\n');
     const b = addWorktree(main, `${root}/b`, 'ship/b');
-    commitChanges(b, { write: { 'b.txt': 'b\n' } }, 'b1');
+    const bTip = commitChanges(b, { write: { 'b.txt': 'b\n' } }, 'b1');
     addWorktree(main, `${root}/c`, 'ship/c');
     addWorktree(main, `${root}/slice`, 'slice-1');
     addWorktree(main, `${main}/.claude/worktrees/agent-x`, 'worktree-agent-x');
@@ -72,7 +73,7 @@ describe('live-runs', () => {
 
     const { code, json, run } = liveRuns({
       'ship/a': { prs: [{ number: 11, state: 'OPEN' }] },
-      'ship/b': { prs: [{ number: 12, state: 'MERGED' }] },
+      'ship/b': { prs: [{ number: 12, state: 'MERGED', headRefOid: bTip }] },
     });
 
     expect(code).toBe(0);
@@ -91,8 +92,9 @@ describe('live-runs', () => {
       ahead: 1,
       landed: ['b.txt'],
       dirty: false,
-      pr: { state: 'merged', number: 12 },
+      pr: { state: 'merged', number: 12, headOid: bTip },
       spent: true,
+      spentUnverified: false,
     });
     expect(run('ship/c')).toMatchObject({
       ahead: 0,
@@ -139,7 +141,7 @@ describe('live-runs', () => {
 
   it('prefers an open PR over a closed one and marks a closed-only run spent', TIMEOUT, () => {
     addWorktree(main, `${root}/p`, 'ship/p');
-    addWorktree(main, `${root}/q`, 'ship/q');
+    const q = addWorktree(main, `${root}/q`, 'ship/q');
 
     const { run } = liveRuns({
       'ship/p': {
@@ -148,11 +150,44 @@ describe('live-runs', () => {
           { number: 21, state: 'OPEN' },
         ],
       },
-      'ship/q': { prs: [{ number: 22, state: 'CLOSED' }] },
+      'ship/q': { prs: [{ number: 22, state: 'CLOSED', headRefOid: headSha(q) }] },
     });
 
     expect(run('ship/p')).toMatchObject({ pr: { state: 'open', number: 21 }, spent: false });
     expect(run('ship/q')).toMatchObject({ pr: { state: 'closed', number: 22 }, spent: true });
+  });
+
+  it('keeps a run re-cut after its PR merged live: its tip is beyond the PR head', TIMEOUT, () => {
+    const x = addWorktree(main, `${root}/x`, 'ship/x');
+    const merged = commitChanges(x, { write: { 'x.txt': 'x\n' } }, 'x1');
+    commitChanges(x, { write: { 'x.txt': 'x2\n' } }, 'x2');
+
+    const { run } = liveRuns({
+      'ship/x': { prs: [{ number: 40, state: 'MERGED', headRefOid: merged }] },
+    });
+
+    expect(run('ship/x')).toMatchObject({
+      pr: { state: 'merged', number: 40, headOid: merged },
+      spent: false,
+      spentUnverified: false,
+    });
+  });
+
+  it('leaves a merged run unverified when the PR head is absent or unnamed', TIMEOUT, () => {
+    addWorktree(main, `${root}/u`, 'ship/u');
+    addWorktree(main, `${root}/v`, 'ship/v');
+
+    const { run } = liveRuns({
+      'ship/u': { prs: [{ number: 50, state: 'MERGED', headRefOid: 'f'.repeat(40) }] },
+      'ship/v': { prs: [{ number: 51, state: 'MERGED' }] },
+    });
+
+    expect(run('ship/u')).toMatchObject({ spent: false, spentUnverified: true });
+    expect(run('ship/v')).toMatchObject({
+      pr: { state: 'merged', number: 51, headOid: null },
+      spent: false,
+      spentUnverified: true,
+    });
   });
 
   it('fails loudly when gh cannot report a PR, still listing every run', TIMEOUT, () => {
@@ -170,7 +205,7 @@ describe('live-runs', () => {
     expect(json.errors).toHaveLength(1);
     expect(json.errors[0]?.step).toBe('pr-state');
     expect(json.errors[0]?.message).toContain('ship/e');
-    expect(run('ship/e')?.pr).toEqual({ state: 'unknown', number: null });
+    expect(run('ship/e')?.pr).toEqual({ state: 'unknown', number: null, headOid: null });
     expect(run('ship/f')).toMatchObject({
       ahead: 1,
       landed: ['f.txt'],

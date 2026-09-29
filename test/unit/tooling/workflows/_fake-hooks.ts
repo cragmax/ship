@@ -27,6 +27,18 @@ export interface RecordedCall {
   readonly argv: readonly string[];
   /** The prompt. */
   readonly prompt: string;
+  /** Its output schema, `undefined` when not given. */
+  readonly schema: JsonSchema | undefined;
+}
+
+/** Options of {@link fakeHooks}. */
+export interface FakeOptions {
+  /**
+   * Wraps each answer before its `agent()` promise settles; the default
+   * settles it at once. A held call is one whose promise the gate has not
+   * settled yet.
+   */
+  readonly gate?: (call: RecordedCall, answer: unknown) => Promise<unknown>;
 }
 
 /** A fake run: the hooks to pass, and what they recorded. */
@@ -44,7 +56,7 @@ export interface FakeRun {
 }
 
 /** A table entry answering per call: `nth` counts the earlier calls it answered. */
-type Responder = (call: RecordedCall, nth: number) => unknown;
+export type Responder = (call: RecordedCall, nth: number) => unknown;
 
 /**
  * A responder answering its values in turn, the last one for every later call.
@@ -136,6 +148,7 @@ export const LAND_OK = {
   conflicts: [],
   rolledBack: false,
   batchClean: true,
+  at: '2026-09-29T10:20:00.000Z',
 };
 
 /**
@@ -158,6 +171,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:run-gate': GATE_OK,
   'runner:live-runs': LIVE_RUNS_NONE,
   scout: SCOUT_FRESH,
+  overlapEstimator: { issues: [], pairs: [], areaMap: 'read' },
   'runner:cut-batch': {
     ...OK,
     worktree: 'C:/src/main',
@@ -178,6 +192,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     branch: 'slice/7/7-1',
     base: 'cut1',
     slice: `${RUN_ROOT}/slice-7-1`,
+    at: '2026-09-29T10:00:00.000Z',
   },
   'runner:provision': { ...OK, env: { PH_PROJECT_DIR: BATCH } },
   planner: PLAN_CARD,
@@ -193,6 +208,15 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:sync-master': { ...OK, outcome: 'up-to-date', commit: null, conflicts: [], pending: [] },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
   'runner:publish': { ...OK, pushed: true, pr: { number: 42, url: 'https://x/pull/42' } },
+  critic: {
+    outcome: 'clean',
+    sha: '',
+    files: [],
+    commit: { type: 'refactor', scope: 'build', subject: '' },
+    findings: [],
+    checks: 'nothing to verify',
+  },
+  retro: { findings: [] },
 };
 
 /**
@@ -202,10 +226,15 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
  * answers `null`, as a dead agent does.
  *
  * @param responses - Per-label answers (or {@link Responder}s) overriding the defaults.
+ * @param options - The answer gate.
  * @returns The hooks and their records.
  */
-export function fakeHooks(responses: Readonly<Record<string, unknown>> = {}): FakeRun {
+export function fakeHooks(
+  responses: Readonly<Record<string, unknown>> = {},
+  options: FakeOptions = {},
+): FakeRun {
   const table: Readonly<Record<string, unknown>> = { ...HAPPY_PATH, ...responses };
+  const gate = options.gate ?? ((_call: RecordedCall, answer: unknown) => Promise.resolve(answer));
   const calls: RecordedCall[] = [];
   const phases: string[] = [];
   const timeline: string[] = [];
@@ -219,16 +248,17 @@ export function fakeHooks(responses: Readonly<Record<string, unknown>> = {}): Fa
       effort: options.effort,
       argv: commandWords(prompt),
       prompt,
+      schema: options.schema,
     };
     calls.push(call);
     timeline.push(`call ${options.label}`);
     const key = tableKey(table, options.label);
-    if (key === undefined) return Promise.resolve(null);
+    if (key === undefined) return gate(call, null);
     const nth = answered.get(key) ?? 0;
     answered.set(key, nth + 1);
     const entry = table[key];
     const answer = typeof entry === 'function' ? (entry as Responder)(call, nth) : entry;
-    return Promise.resolve(conform(answer, options.schema, { at: options.label, violations }));
+    return gate(call, conform(answer, options.schema, { at: options.label, violations }));
   };
   const hooks: WorkflowHooks = {
     agent,

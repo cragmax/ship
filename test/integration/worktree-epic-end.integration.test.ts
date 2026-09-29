@@ -7,7 +7,15 @@
  * @integrationTier standalone
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -16,14 +24,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { compareStrings, toPosix } from '../../tooling/shared.js';
 import type * as ExecModule from '../../tooling/worktree/exec.js';
 import { PUSH_TIMEOUT_MS, runCaptured } from '../../tooling/worktree/exec.js';
-import { publish as publishInProcess } from '../../tooling/worktree/publish.js';
+import { MERGEABLE_READS } from '../../tooling/worktree/publish-push.js';
+import { publish as publishInProcess, pushBranch } from '../../tooling/worktree/publish.js';
 import type { BumpResult, PublishResult } from '../../tooling/worktree/types-run.js';
+import { StepFailure } from '../../tooling/worktree/types.js';
 import {
+  advanceOrigin,
   commitChanges,
   headSha,
   makeBareOrigin,
   prependPath,
   readFakePrCreated,
+  readFakePrViewCount,
+  setFakePrViews,
   writeFakeGh,
   type FakeGhResponse,
   type FakePrCreate,
@@ -329,6 +342,131 @@ describe('publish', () => {
   });
 });
 
+describe('publish --push-only', () => {
+  const OPEN_5 = { 'ship/r': { prs: [{ number: 5, state: 'OPEN' }] } };
+
+  /** Run `publish --push-only` on the batch, a fake `gh` answering `responses` and `views`. */
+  function pushOnly(
+    batch: string,
+    responses: Record<string, FakeGhResponse>,
+    views: Record<number, readonly string[]> = { 5: ['MERGEABLE'] },
+  ): { r: ReturnType<typeof runCli<PublishResult>>; bin: string } {
+    const bin = writeFakeGh(root, responses);
+    setFakePrViews(bin, views);
+    const r = runCli<PublishResult>(
+      ['publish', batch, '--push-only', '--log', `${root}/push.log`],
+      { env: { ...prependPath(bin), PH_WORKTREE_POLL_MS: '10' } },
+    );
+    return { r, bin };
+  }
+
+  /** A run whose batch pushed `ship/r` once, then committed one more change locally. */
+  function pushedThenAhead(): Run & { readonly pushed: string; readonly head: string } {
+    const run = makeRun();
+    const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+    const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+    return { ...run, pushed, head };
+  }
+
+  it('pushes a branch ahead of origin through pre-push and reads the open PR', TIMEOUT, () => {
+    const run = pushedThenAhead();
+    installHook(run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
+
+    const { r, bin } = pushOnly(run.batch, OPEN_5);
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      pushed: true,
+      pr: { number: 5, url: 'https://github.com/fixture/repo/pull/5' },
+      mergeable: 'MERGEABLE',
+    });
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.head);
+    expect(readFakePrCreated(bin)).toBeNull();
+    expect(readFileSync(`${root}/push.log`, 'utf8')).toContain('pre-push saw the build');
+  });
+
+  it.each([
+    { state: 'none', prs: [] },
+    { state: 'merged', prs: [{ number: 5, state: 'MERGED' }] },
+    { state: 'closed', prs: [{ number: 5, state: 'CLOSED' }] },
+  ])('refuses a branch whose PR is $state as no-open-pr, pushing nothing', TIMEOUT, (c) => {
+    const run = pushedThenAhead();
+
+    const { r } = pushOnly(run.batch, { 'ship/r': { prs: c.prs } });
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'no-open-pr', pushed: false });
+    expect(r.json.errors[0]?.message).toContain(c.state);
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.pushed);
+  });
+
+  it('fails pr-state when gh cannot report the PR', TIMEOUT, () => {
+    const run = pushedThenAhead();
+
+    const { r } = pushOnly(run.batch, { 'ship/r': { exit: 1 } });
+
+    expect(r.json).toMatchObject({ status: 'failed', pushed: false });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-state']);
+  });
+
+  it('stops at the ancestry pre-check when origin has commits the batch lacks', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+    const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
+    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+
+    const { r } = pushOnly(run.batch, OPEN_5);
+
+    expect(r.json).toMatchObject({ status: 'failed', pushed: false });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['push']);
+    expect(r.json.errors[0]?.message).toContain('has commits the batch lacks');
+    // runCaptured writes the log on every git push: no log, no push.
+    expect(existsSync(`${root}/push.log`)).toBe(false);
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
+  });
+
+  it.each([
+    {
+      name: 'until it is computed',
+      views: ['UNKNOWN', 'UNKNOWN', 'MERGEABLE'],
+      last: 'MERGEABLE',
+      reads: 3,
+    },
+    {
+      name: 'up to the bound, still ok',
+      views: ['UNKNOWN'],
+      last: 'UNKNOWN',
+      reads: MERGEABLE_READS,
+    },
+  ])('polls the mergeable state $name', TIMEOUT, (c) => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+
+    const { r, bin } = pushOnly(run.batch, OPEN_5, { 5: c.views });
+
+    expect(r.json).toMatchObject({ status: 'ok', mergeable: c.last });
+    expect(readFakePrViewCount(bin, 5)).toBe(c.reads);
+  });
+
+  it('pushes nothing for a branch level with origin, still reading the PR', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+    const marker = `${root}/pre-receive-ran`;
+    writeFileSync(`${run.bare}/hooks/pre-receive`, `#!/bin/sh\ntouch "${marker}"\nexit 0\n`);
+    chmodSync(`${run.bare}/hooks/pre-receive`, 0o755);
+
+    const { r, bin } = pushOnly(run.batch, OPEN_5);
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: false, mergeable: 'MERGEABLE' });
+    expect(existsSync(marker)).toBe(false);
+    expect(readFakePrViewCount(bin, 5)).toBe(1);
+  });
+});
+
 describe('usage errors', () => {
   it.each([
     {
@@ -336,6 +474,15 @@ describe('usage errors', () => {
       args: ['server-tier', 'b', '--engine', 'vanilla', '--registry', 'r', '--log', 'l'],
     },
     { name: 'publish without --title', args: ['publish', 'b', '--body-file', 'f', '--log', 'l'] },
+    {
+      name: 'publish --push-only with --title',
+      args: ['publish', 'b', '--push-only', '--title', 't', '--log', 'l'],
+    },
+    {
+      name: 'publish --push-only with --body-file',
+      args: ['publish', 'b', '--push-only', '--body-file', 'f', '--log', 'l'],
+    },
+    { name: 'publish --push-only without --log', args: ['publish', 'b', '--push-only'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
@@ -374,5 +521,24 @@ describe('publish (in-process)', () => {
     });
     // The budget is a contract of its own, not only a name: pin its value.
     expect(PUSH_TIMEOUT_MS).toBe(2_700_000);
+  });
+
+  it('never forces: a push origin would lose commits for fails, origin unchanged', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+    const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
+    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+
+    let thrown: unknown = null;
+    try {
+      pushBranch(run.batch, 'ship/r', `${root}/push.log`);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(StepFailure);
+    expect((thrown as StepFailure).step).toBe('push');
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
   });
 });

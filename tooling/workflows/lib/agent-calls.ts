@@ -12,12 +12,17 @@
  * no top-level side effect.
  */
 
+import { runSetIssues } from '../../lib/run-set.js';
+
 import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
+  type CriticValues,
+  type OverlapValues,
   type PlannerValues,
   type PlanReviewerValues,
   type ResolverValues,
+  type RetroValues,
   type ScoutValues,
   type SliceReviewValues,
   type TddValues,
@@ -53,6 +58,37 @@ export interface ScoutVerdict {
   readonly issues: readonly ScoutIssue[];
   /** Every overlap with a live run. */
   readonly overlaps: readonly ScoutOverlap[];
+}
+
+/** How sure the estimator is that a pair overlaps. */
+export type OverlapConfidence = 'likely' | 'unsure';
+
+/** Two run-set issues the estimator judged likely to touch the same files. */
+export interface EstimatedPair {
+  /** One issue. */
+  readonly a: number;
+  /** The other. */
+  readonly b: number;
+  /** `likely`: file-level evidence; `unsure`: same area, no evidence of disjointness. */
+  readonly confidence: OverlapConfidence;
+  /** The files, hubs or area-map columns both touch. */
+  readonly shared: readonly string[];
+  /** What backs the pair. */
+  readonly reason: string;
+}
+
+/** The overlap estimator's answer. */
+export interface OverlapEstimate {
+  /** Each run-set issue's area-map columns and paths. */
+  readonly issues: readonly {
+    readonly number: number;
+    readonly columns: readonly string[];
+    readonly paths: readonly string[];
+  }[];
+  /** Every pair it judged to overlap, unordered. */
+  readonly pairs: readonly EstimatedPair[];
+  /** Whether it could read the area map. */
+  readonly areaMap: 'read' | 'unavailable';
 }
 
 /** A commit message's first line, as the planner proposes it. */
@@ -153,6 +189,50 @@ export interface SliceWork {
   readonly testReview: TestReviewOutput | null;
 }
 
+/** One finding of the critic. */
+export interface CriticFinding {
+  /** `duplication`, `helpers`, `drift` or `test-gaps`. */
+  readonly lens: string;
+  /** The finding, one line. */
+  readonly summary: string;
+  /** Whether its commit carries the fix. */
+  readonly applied: boolean;
+}
+
+/** The critic's answer. */
+export interface CriticOutput {
+  /** `clean`: no commit; `applied`: one commit in the critic slice. */
+  readonly outcome: 'clean' | 'applied';
+  /** The commit; empty when `clean`. */
+  readonly sha: string;
+  /** Its changed paths. */
+  readonly files: readonly string[];
+  /** Its first line. */
+  readonly commit: CommitSpec;
+  /** Every finding, applied or not. */
+  readonly findings: readonly CriticFinding[];
+  /** The checks it ran green, one line. */
+  readonly checks: string;
+}
+
+/** One finding of the retro. */
+export interface RetroFinding {
+  /** The finding, one line. */
+  readonly title: string;
+  /** The report path that shows it. */
+  readonly evidence: string;
+  /** `genuine`: the next run would hit it too; `first-time`: unfamiliarity. */
+  readonly kind: 'genuine' | 'first-time';
+  /** What to change. */
+  readonly suggestion: string;
+}
+
+/** The retro's answer. */
+export interface RetroOutput {
+  /** Every finding. */
+  readonly findings: readonly RetroFinding[];
+}
+
 /** The doc-index resolver's answer. */
 export interface ResolverOutput {
   /** `resolved`: every pending path edited clean; `unresolvable`: not. */
@@ -192,6 +272,34 @@ const SCOUT_SCHEMA = strictObject({
     items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
   },
 });
+
+/**
+ * The overlap estimator's output schema, built per call: a pair's endpoints
+ * may only be the run's issues.
+ *
+ * @param issues - The run-set issues.
+ * @returns The schema.
+ */
+function overlapSchema(issues: readonly number[]): JsonSchema {
+  const issue = { type: 'integer', enum: issues };
+  return strictObject({
+    issues: {
+      type: 'array',
+      items: strictObject({ number: INTEGER, columns: STRINGS, paths: STRINGS }),
+    },
+    pairs: {
+      type: 'array',
+      items: strictObject({
+        a: issue,
+        b: issue,
+        confidence: oneOf('likely', 'unsure'),
+        shared: STRINGS,
+        reason: STRING,
+      }),
+    },
+    areaMap: oneOf('read', 'unavailable'),
+  });
+}
 
 /** The planner's and the applier's output schema. */
 const PLAN_CARD_SCHEMA = strictObject({
@@ -253,6 +361,32 @@ const RESOLVER_SCHEMA = strictObject({
   summary: STRING,
 });
 
+/** The critic's output schema. */
+const CRITIC_SCHEMA = strictObject({
+  outcome: oneOf('clean', 'applied'),
+  sha: STRING,
+  files: STRINGS,
+  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
+  findings: {
+    type: 'array',
+    items: strictObject({ lens: STRING, summary: STRING, applied: BOOLEAN }),
+  },
+  checks: STRING,
+});
+
+/** The retro's output schema. */
+const RETRO_SCHEMA = strictObject({
+  findings: {
+    type: 'array',
+    items: strictObject({
+      title: STRING,
+      evidence: STRING,
+      kind: oneOf('genuine', 'first-time'),
+      suggestion: STRING,
+    }),
+  },
+});
+
 /**
  * Run one agent and keep its answer only when it is an object.
  *
@@ -272,11 +406,18 @@ async function askAgent<T>(
 
 /**
  * One wrapper per judgment stage; `tag` tells the call from the stage's
- * others (`7-1`). The scout runs once per launch, so it takes none.
+ * others (`7-1`). The scout and the overlap estimator run once per launch,
+ * so they take none.
  */
 export const AGENT_CALLS = {
   scout: (hooks: WorkflowHooks, values: ScoutValues) =>
     askAgent<ScoutVerdict>(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
+  overlapEstimator: (hooks: WorkflowHooks, values: OverlapValues) =>
+    askAgent<OverlapEstimate>(
+      hooks,
+      PROMPTS.overlapEstimator(values),
+      agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
+    ),
   planner: (hooks: WorkflowHooks, values: PlannerValues, tag: string) =>
     askAgent<PlanCard>(
       hooks,
@@ -309,4 +450,12 @@ export const AGENT_CALLS = {
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, RESOLVER_SCHEMA),
     ),
+  critic: (hooks: WorkflowHooks, values: CriticValues, tag: string) =>
+    askAgent<CriticOutput>(
+      hooks,
+      PROMPTS.critic(values),
+      agentOptions('critic', tag, CRITIC_SCHEMA),
+    ),
+  retro: (hooks: WorkflowHooks, values: RetroValues, tag: string) =>
+    askAgent<RetroOutput>(hooks, PROMPTS.retro(values), agentOptions('retro', tag, RETRO_SCHEMA)),
 };

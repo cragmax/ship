@@ -9,6 +9,9 @@
  * A failed push opens no PR. The PR number is read from the PR URL that
  * `gh pr create` prints on stdout on success (its `--help`, observed
  * 2026-09-28); no URL is a `pr` failure with `pushed` true.
+ *
+ * `publish --push-only` — the push to an open PR's branch — is
+ * `publish-push.ts`'s; both push through {@link pushBranch}.
  */
 
 import { assertRunBatch } from './cut.js';
@@ -52,6 +55,7 @@ export function publish(input: PublishInput): PublishResult {
     errors: [],
     pushed: false,
     pr: null,
+    mergeable: null,
   };
   try {
     assertLinkedWorktree(batch, selfPath);
@@ -59,7 +63,7 @@ export function publish(input: PublishInput): PublishResult {
     const branch = git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
     assertNoOpenPr(batch, branch);
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
-    push(batch, branch, input.logFile);
+    pushBranch(batch, branch, input.logFile);
     result.pushed = true;
     result.pr = createPr(batch, branch, input);
   } catch (err) {
@@ -92,7 +96,9 @@ function assertNoOpenPr(batch: string, branch: string): void {
 
 /**
  * Push the branch to `origin`, setting its upstream; the pre-push hook runs
- * the full gate.
+ * the full gate. Never forced: a push `origin` would have to lose commits
+ * for fails, and is reported — never retried with force. `publish` and
+ * `publish --push-only` both push through here.
  *
  * @remarks
  * The refspec names both sides, unforced: a bare `<branch>` refspec takes
@@ -103,9 +109,10 @@ function assertNoOpenPr(batch: string, branch: string): void {
  * @param batch - The batch worktree.
  * @param branch - The run branch, short form.
  * @param logFile - Where the output goes.
- * @throws StepFailure `push` on a non-zero exit, spawn failure or budget kill.
+ * @throws StepFailure `push` on a non-zero exit — a non-fast-forward
+ *   included — spawn failure or budget kill.
  */
-function push(batch: string, branch: string, logFile: string): void {
+export function pushBranch(batch: string, branch: string, logFile: string): void {
   const ref = `refs/heads/${branch}`;
   const r = runCaptured('git', ['-C', batch, 'push', '-u', 'origin', `${ref}:${ref}`], {
     cwd: process.cwd(),

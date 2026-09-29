@@ -11,6 +11,7 @@
 import { resolve } from 'node:path';
 
 import { writeRenderedWorkflows, type WorkflowSpec } from './lib/workflow-render.js';
+import { RESYNC_META } from './workflows/resync.meta.js';
 import { SHIP_META } from './workflows/ship.meta.js';
 
 const ROOT_DIR = resolve(import.meta.dirname, '..');
@@ -25,6 +26,12 @@ export const WORKFLOWS: readonly WorkflowSpec[] = [
     entry: 'tooling/workflows/ship.ts',
     meta: SHIP_META,
     out: '.claude/workflows/ship.js',
+  },
+  {
+    name: 'resync',
+    entry: 'tooling/workflows/resync.ts',
+    meta: RESYNC_META,
+    out: '.claude/workflows/resync.js',
   },
 ];
 

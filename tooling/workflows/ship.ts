@@ -19,13 +19,14 @@
 import type { RunGraph, RunSetEntry } from '../lib/run-set.js';
 
 import { parseShipArgs } from './lib/args.js';
-import { drive, type DriveInput } from './lib/drive.js';
+import { drive, neverStarted, type DriveInput } from './lib/drive.js';
 import type { EpicReport, IssueReport } from './lib/epic-end.js';
 import type { WorkflowHooks } from './lib/hooks.types.js';
 import {
   dropWithDependents,
   runPreflight,
   type DroppedIssue,
+  type OverlapRecord,
   type ShipRefusal,
 } from './lib/preflight.js';
 import type { EntrySetup } from './lib/slice-chain.js';
@@ -43,8 +44,10 @@ export interface ShipReport {
   readonly refusals?: readonly ShipRefusal[];
   /** Every issue exclude mode dropped. */
   readonly dropped: readonly DroppedIssue[];
-  /** The graph the run would schedule; present only when `preflight-ok`. */
+  /** The graph the run would schedule, overlap edges merged; present only when `preflight-ok`. */
   readonly graph?: RunGraph;
+  /** The overlap edges pre-flight added; present unless `refused`. */
+  readonly overlap?: OverlapRecord;
   /** Each entry's result, in run-set order; empty unless `done`. */
   readonly epics: readonly EpicReport[];
 }
@@ -66,18 +69,20 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
   hooks.phase(PHASE_TITLES.preflight);
   const pre = await runPreflight(hooks, parsed.args);
-  if (pre.refusals.length > 0 || pre.graph === null) {
+  if (pre.refusals.length > 0 || pre.graph === null || pre.overlap === null) {
     return refusedReport(pre.refusals, pre.dropped);
   }
+  const { graph, overlap } = pre;
   if (parsed.args.preflightOnly) {
-    return { status: 'preflight-ok', dropped: pre.dropped, graph: pre.graph, epics: [] };
+    return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, pre.graph, {
+  const epics = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
+    overlap,
   });
-  return { status: 'done', dropped: pre.dropped, epics };
+  return { status: 'done', dropped: pre.dropped, overlap, epics };
 }
 
 /**
@@ -87,14 +92,14 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
  * is never driven, and drive's entry `i` is always the graph's.
  *
  * @param hooks - The workflow hooks.
- * @param graph - Pre-flight's graph.
- * @param opts - The authoring cap and the launch snapshot.
+ * @param graph - Pre-flight's graph, overlap edges merged.
+ * @param opts - The in-flight cap, the launch snapshot and the overlap record.
  * @returns Resolves to every entry's report, in run-set order.
  */
 async function runEntries(
   hooks: WorkflowHooks,
   graph: RunGraph,
-  opts: Pick<DriveInput, 'maxSlices' | 'launch'>,
+  opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap'>,
 ): Promise<EpicReport[]> {
   const cuts: EntryCut[] = [];
   for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry));
@@ -106,9 +111,12 @@ async function runEntries(
   });
   const driven =
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
-  return cuts.map((c, k) =>
-    'stopped' in c ? c.stopped : cutReport(c.setup, graph.runSet[k], driven),
-  );
+  return cuts.map((c, k) => {
+    if ('stopped' in c) {
+      return { ...c.stopped, schedule: c.issues.map((n) => neverStarted(n, graph)) };
+    }
+    return cutReport(c.setup, graph, k, driven);
+  });
 }
 
 /**
@@ -124,11 +132,12 @@ async function cutEntry(hooks: WorkflowHooks, entry: RunSetEntry): Promise<Entry
   const selection =
     entry.epic === null ? ['--issues', entry.issues.join(',')] : ['--epic', String(entry.epic)];
   const cut = await runTool(hooks, 'cut-batch', ['.', ...selection], { ...PRE_CUT, tag });
-  const { worktree, branch, batch, reportDir } = cut ?? {};
+  const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
     !isText(worktree) ||
     !isText(branch) ||
+    !isText(base) ||
     !isText(batch) ||
     !isText(reportDir)
   ) {
@@ -140,7 +149,9 @@ async function cutEntry(hooks: WorkflowHooks, entry: RunSetEntry): Promise<Entry
     return stoppedEntry(entry, branch, envelopeProblem('provision-batch', prov));
   }
   const registry = prov.registry;
-  return { setup: { epic: entry.epic, tag, branch, main: worktree, batch, reportDir, registry } };
+  return {
+    setup: { epic: entry.epic, tag, branch, main: worktree, batch, base, reportDir, registry },
+  };
 }
 
 /**
@@ -159,7 +170,8 @@ function isText(value: string | null | undefined): value is string {
  * @param entry - The entry.
  * @param branch - Its branch, when the cut named one.
  * @param message - What failed.
- * @returns A `stopped` report, every issue `blocked`, and the issues lost.
+ * @returns A `stopped` report, every issue `blocked` (its schedule filled in
+ *   by the caller, which holds the graph), and the issues lost.
  */
 function stoppedEntry(entry: RunSetEntry, branch: string, message: string): EntryCut {
   const stopped: EpicReport = {
@@ -173,6 +185,7 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
       cite: 'see',
       reason: 'its batch was not set up',
     })),
+    schedule: [],
     residue: [],
   };
   return { stopped, issues: entry.issues };
@@ -180,17 +193,19 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
 
 /**
  * The report of an entry that was cut: its drive report, every issue a
- * failed cut elsewhere dropped cited `see` as skipped — `nothing-landed`
- * when the drop emptied the entry.
+ * failed cut elsewhere dropped cited `see` as skipped and scheduled as
+ * never started — `nothing-landed` when the drop emptied the entry.
  *
  * @param setup - The entry's setup.
- * @param entry - The entry as pre-flight planned it.
+ * @param graph - Pre-flight's graph.
+ * @param k - The entry's index in it.
  * @param driven - The driven entries' reports.
- * @returns The report, its issues in the planned order.
+ * @returns The report, its issues and schedule in the planned order.
  */
 function cutReport(
   setup: EntrySetup,
-  entry: RunSetEntry | undefined,
+  graph: RunGraph,
+  k: number,
   driven: readonly EpicReport[],
 ): EpicReport {
   const report: EpicReport = driven.find((r) => r.epic === setup.epic) ?? {
@@ -198,9 +213,11 @@ function cutReport(
     branch: setup.branch,
     outcome: 'nothing-landed',
     issues: [],
+    schedule: [],
     residue: [],
   };
-  const issues = (entry?.issues ?? []).map(
+  const planned = graph.runSet[k]?.issues ?? [];
+  const issues = planned.map(
     (issue): IssueReport =>
       report.issues.find((r) => r.issue === issue) ?? {
         issue,
@@ -209,7 +226,10 @@ function cutReport(
         reason: 'a blocker lost its batch',
       },
   );
-  return { ...report, issues };
+  const schedule = planned.map(
+    (issue) => report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph),
+  );
+  return { ...report, issues, schedule };
 }
 
 /**

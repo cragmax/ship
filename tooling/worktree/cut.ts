@@ -1,8 +1,9 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> --issue N --attempt K` — cut an unattended run's
- * feature branch and batch worktree, and one issue attempt's slice
- * worktree, at the places `run-layout.ts` names (ADR-0045).
+ * `cut-slice <batch> (--issue N --attempt K | --critic)` — cut an
+ * unattended run's feature branch and batch worktree, and one slice
+ * worktree (an issue attempt's, or the epic end's critic's), at the places
+ * `run-layout.ts` names (ADR-0045).
  *
  * Invariant, both commands: every guard runs before the first mutation — a
  * `git worktree add -b` — so a refusal leaves the repository's branches,
@@ -29,6 +30,7 @@ import {
 } from './git.js';
 import { assertLinkedWorktree } from './harvest.js';
 import {
+  criticSliceLayout,
   RUN_BASE_BRANCH,
   runLayout,
   runSlug,
@@ -43,10 +45,8 @@ import { Refusal, recordFailure } from './types.js';
 export interface CutSliceInput {
   /** The batch worktree, absolute with forward slashes. */
   readonly batch: string;
-  /** The issue number. */
-  readonly issue: number;
-  /** The attempt number, 1 for the first. */
-  readonly attempt: number;
+  /** Which slice: an issue attempt (attempt 1 for the first), or the epic end's critic. */
+  readonly slice: { readonly issue: number; readonly attempt: number } | { readonly critic: true };
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
 }
@@ -75,6 +75,7 @@ export function cutBatch(input: {
     runRoot: null,
     batch: null,
     reportDir: null,
+    attach: null,
   };
   try {
     assertMainWorktree(main, 'preconditions');
@@ -98,10 +99,10 @@ export function cutBatch(input: {
 }
 
 /**
- * Cut attempt `attempt` of `issue`'s slice branch at the batch `HEAD` and
- * check it out beside the batch.
+ * Cut a slice branch — an issue attempt's, or the epic end's critic's — at
+ * the batch `HEAD` and check it out beside the batch.
  *
- * @param input - Batch, issue, attempt and the self-hosted seam.
+ * @param input - Batch, which slice, and the self-hosted seam.
  * @returns The envelope: `ok` with the branch, base and slice path;
  *   `refused` (harvest's linked-worktree reasons, `not-run-batch`,
  *   `branch-exists`, `path-exists`) before any mutation; or `failed`.
@@ -119,12 +120,12 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
   };
   try {
     assertLinkedWorktree(batch, selfPath);
-    const slice = sliceLayout(
-      posix.dirname(batch),
-      assertRunBatch(batch),
-      input.issue,
-      input.attempt,
-    );
+    const root = posix.dirname(batch);
+    const slug = assertRunBatch(batch);
+    const slice =
+      'critic' in input.slice
+        ? criticSliceLayout(root, slug)
+        : sliceLayout(root, slug, input.slice.issue, input.slice.attempt);
     assertBranchFree(batch, slice.branch);
     assertPathFree(slice.path);
     const base = resolveCommit(batch, 'HEAD', 'preconditions');
