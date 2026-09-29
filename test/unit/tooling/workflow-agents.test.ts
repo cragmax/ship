@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { STAGES } from '../../../tooling/workflows/lib/stages.js';
 
-const AGENTS_DIR = resolve(import.meta.dirname, '../../../.claude/agents');
+const REPO_ROOT = resolve(import.meta.dirname, '../../../');
+const AGENTS_DIR = resolve(REPO_ROOT, '.claude/agents');
 
 // The maintainer-personal workflow skills a repo agent must never name (ADR-0045).
 const PERSONAL_SKILLS = [
@@ -70,4 +71,37 @@ describe('workflow agents', () => {
       expect(PERSONAL_SKILLS.filter((name) => text.includes(name))).toEqual([]);
     },
   );
+
+  it.each(readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')))(
+    '%s cites no skill under a home directory',
+    (file) => {
+      // Every home-directory spelling: `~`, `$HOME`, `${HOME}`, `"$HOME"`, `%USERPROFILE%`, `$env:USERPROFILE`, `Users/<name>`; either slash.
+      expect(readFileSync(join(AGENTS_DIR, file), 'utf8')).not.toMatch(
+        /(?:~|\$\{?HOME\}?|%USERPROFILE%|\$env:USERPROFILE|\bUsers[\\/][^\\/\s]+)"?[\\/]\.claude[\\/]skills[\\/]/i,
+      );
+    },
+  );
+
+  it.each(readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')))(
+    '%s cites only skill files that exist in the repo',
+    (file) => {
+      const cited = readFileSync(join(AGENTS_DIR, file), 'utf8').match(
+        /\.claude\/skills\/[\w-]+\/[\w-]+\.\w+/g,
+      );
+
+      expect((cited ?? []).filter((path) => !existsSync(join(REPO_ROOT, path)))).toEqual([]);
+    },
+  );
+
+  // Hand-written: each agent that runs a repo skill reads it by path (#1039).
+  it.each([
+    ['ship-tdd', '.claude/skills/tdd/SKILL.md'],
+    ['ship-test-review', '.claude/skills/audit-tests/SKILL.md'],
+    ['overlap-estimator', '.claude/skills/batch-issues/areas.md'],
+  ])('%s reads %s by repo path, not through the Skill tool', (agentType, path) => {
+    const text = readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8');
+
+    expect(text).toContain(path);
+    expect(text).not.toMatch(/\bload\b[^.]*\bwith the Skill tool\b/i);
+  });
 });
