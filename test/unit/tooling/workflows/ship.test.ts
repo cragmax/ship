@@ -19,6 +19,7 @@ import {
   PREFLIGHT_OK,
   REPORT_DIR,
   TDD_FILES,
+  TDD_GREEN,
   type FakeRun,
 } from './_fake-hooks.js';
 
@@ -100,7 +101,48 @@ const PLANNER_STALE = {
   planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'x already exists at abc123' },
 };
 
-/** Every run this file drives; the tier check runs over each. */
+const ADR_INDEX = 'docs/adr/readme.md';
+
+// The two `sync-master` envelopes the CLI's own tests pin for a doc-index
+// conflict: the start stops for a resolver, `--continue` commits the merge.
+const DOC_INDEX_CONFLICT = {
+  'runner:sync-master:list': {
+    exitCode: 1,
+    envelopePath: 'e.json',
+    status: 'conflict',
+    outcome: 'needs-resolution',
+    commit: null,
+    conflicts: [{ path: ADR_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
+    pending: [ADR_INDEX],
+    errors: [],
+  },
+  resolver: { verdict: 'resolved', summary: 'kept both rows' },
+  'runner:sync-master:list-continue': {
+    exitCode: 0,
+    envelopePath: 'e.json',
+    status: 'ok',
+    outcome: 'merged',
+    commit: 'merge1',
+    conflicts: [],
+    pending: [],
+    errors: [],
+  },
+};
+
+const PLAN_REVIEW_FINDINGS = {
+  planReviewer: {
+    verdict: 'changes',
+    findings: 2,
+    findingsPath: `${REPORT_DIR}/plan-review-7-1.md`,
+  },
+  applier: {
+    ...PLAN_CARD,
+    summary: 'add the x tool, reviewed',
+    commit: { ...PLAN_CARD.commit, subject: 'add the reviewed x tool' },
+  },
+};
+
+/** The runs the tier and schema checks drive. */
 const SCENARIOS = [
   { name: 'pre-flight only', responses: EPIC_FRESH, args: 'epics 1025 --preflight-only' },
   { name: 'three refusals', responses: THREE_REFUSALS, args: { issues: [7, 8] } },
@@ -118,6 +160,8 @@ const SCENARIOS = [
   { name: 'land batch-dirty', responses: { 'runner:land': LAND_BATCH_DIRTY }, args: 'issues 7' },
   { name: 'stale plan', responses: PLANNER_STALE, args: 'issues 7' },
   { name: 'dead tdd', responses: { tdd: null }, args: 'issues 7' },
+  { name: 'plan-review findings', responses: PLAN_REVIEW_FINDINGS, args: 'issues 7' },
+  { name: 'doc-index conflict', responses: DOC_INDEX_CONFLICT, args: 'issues 7' },
 ];
 
 const EPIC_END_COMMAND = /^runner:(server-tier|sync-master|bump|publish)/;
@@ -249,11 +293,19 @@ describe('runShip — one issue from launch to PR', () => {
       BATCH,
       '--server',
     ]);
+    const shaSeenBy = (label: string): string | undefined =>
+      run.calls
+        .find((c) => c.label === label)
+        ?.prompt.split('\n')
+        .find((l) => l.startsWith('Slice commit: '));
+    // Each amend moves the slice commit: review sees the tdd's, test review the reviewer's.
+    expect(shaSeenBy('reviewer:7-1')).toBe('Slice commit: slice1');
+    expect(shaSeenBy('testReview:7-1')).toBe('Slice commit: slice2');
     expect(argvOf('runner:land:7-1')).toEqual([
       'tooling/worktree.ts',
       'land',
       BATCH,
-      'slice1',
+      'slice3',
       '--base',
       'cut1',
       '--message-file',
@@ -485,6 +537,22 @@ const when = (run: FakeRun, entry: string): number => {
   return at;
 };
 
+/**
+ * The prompt of a recorded call.
+ *
+ * @param run - The fake run.
+ * @param label - The call's label.
+ * @returns Its prompt; fails the test when there is no such call.
+ */
+const promptOf = (run: FakeRun, label: string): string => {
+  const call = run.calls.find((c) => c.label === label);
+  expect(call, `a ${label} call`).toBeDefined();
+  return call?.prompt ?? '';
+};
+
+/** A closing keyword before `#7`, as GitHub reads one. */
+const CLOSES_SEVEN = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#7\b/i;
+
 describe('runShip — an attempt that does not land', () => {
   it('re-cuts attempt 2 and plans again after a land conflict, tearing attempt 1 down first', async () => {
     const run = fakeHooks({ 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });
@@ -632,6 +700,217 @@ describe('runShip — an attempt that does not land', () => {
   });
 });
 
+describe('runShip — what an attempt hands on', () => {
+  it.each([
+    ['fixes', 'fixes #7'],
+    ['see', 'see #7'],
+  ] as const)(
+    'writes a %s card’s closing choice into the tdd’s commit message and the run report',
+    async (closes, line) => {
+      const run = fakeHooks({ planner: { ...PLAN_CARD, closes } });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(promptOf(run, 'tdd:7-1')).toContain(
+        [
+          `Commit message file: ${REPORT_DIR}/commit-7-1.txt`,
+          '----- BEGIN FILE -----',
+          'feat(build): add the x tool',
+          '',
+          line,
+          '',
+          'Co-Authored-By: Claude <noreply@anthropic.com>',
+          '----- END FILE -----',
+        ].join('\n'),
+      );
+      expect(report.epics[0]?.issues).toEqual([
+        { issue: 7, outcome: 'landed', cite: closes, commit: 'landed1' },
+      ]);
+      expect(CLOSES_SEVEN.test(promptOf(run, 'runner:publish:list'))).toBe(closes === 'fixes');
+    },
+  );
+
+  it('applies plan-review findings once through the applier, authoring from its card', async () => {
+    const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^(planner|planReviewer|applier|tdd):/.test(l))).toEqual([
+      'planner:7-1',
+      'planReviewer:7-1',
+      'applier:7-1',
+      'tdd:7-1',
+    ]);
+    const applier = promptOf(run, 'applier:7-1');
+    expect(applier).toContain('Mode: apply');
+    expect(applier).toContain(`Findings file: ${REPORT_DIR}/plan-review-7-1.md`);
+    expect(promptOf(run, 'tdd:7-1')).toContain('feat(build): add the reviewed x tool\n\nfixes #7');
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain(
+      'feat(build): add the reviewed x tool',
+    );
+  });
+
+  it('skips the test review for a slice that changes no code, landing the reviewer’s commit', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('testReview'))).toEqual([]);
+    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Test review: skipped — trivial surface',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+  });
+});
+
+describe('runShip — the epic end', () => {
+  it('resolves a doc-index conflict, then continues the merge, before the bump', async () => {
+    const run = fakeHooks(DOC_INDEX_CONFLICT);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(runner:(sync-master|bump|publish)|resolver)/.test(l)),
+    ).toEqual([
+      'runner:sync-master:list',
+      'resolver:list',
+      'runner:sync-master:list-continue',
+      'runner:bump:list',
+      'runner:publish:list',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:sync-master:list-continue')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'sync-master',
+      BATCH,
+      '--continue',
+    ]);
+    const resolver = promptOf(run, 'resolver:list');
+    expect(resolver).toContain(`Batch worktree: ${BATCH}`);
+    expect(resolver).toContain(`Pending paths: ${ADR_INDEX}`);
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Master sync: resolved at merge1',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+  });
+
+  it('leaves the merge in progress when the resolver cannot resolve: no --continue, no bump', async () => {
+    const run = fakeHooks({
+      ...DOC_INDEX_CONFLICT,
+      resolver: { verdict: 'unresolvable', summary: 'the rows contradict' },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([
+      'runner:sync-master:list',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'stopped',
+      message: `master sync failed: the resolver said the rows contradict; merge left in progress in ${BATCH}`,
+    });
+  });
+
+  it('opens the PR over a red server tier, recording it in the body', async () => {
+    const run = fakeHooks({
+      'runner:server-tier:folia': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        engine: 'folia',
+        errors: [{ step: 'tests', message: '2 tests failed' }],
+        tests: { passed: 10, failed: 2, skipped: 0 },
+        lease: null,
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Server tier, folia: 10 passed, 2 failed, 0 skipped — failed: 2 tests failed; lease none',
+    );
+  });
+
+  it.each([
+    ['its HEAD moved', { head: 'moved1', dirty: false }],
+    ['it turned dirty', { head: 'abc123', dirty: true }],
+  ])('reports the main checkout touched when %s', async (_name, snapshot) => {
+    const run = fakeHooks({ 'runner:preflight:list': { ...PREFLIGHT_OK, snapshot } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', mainUntouched: false });
+  });
+});
+
+describe('runShip — a halting entry', () => {
+  it('feeds one epic-halt when two in-flight issues of the entry stop for it', async () => {
+    const run = fakeHooks({
+      'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
+      scout: {
+        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+        overlaps: [],
+      },
+      'runner:land': LAND_BATCH_DIRTY,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    // `cut-batch --issues` takes one comma-joined list.
+    expect(run.calls.find((c) => c.label === 'runner:cut-batch:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'cut-batch',
+      '.',
+      '--issues',
+      '7,8',
+    ]);
+    expect(labels(run).filter((l) => l.startsWith('tdd'))).toEqual(['tdd:7-1', 'tdd:8-1']);
+    expect(labels(run).filter((l) => l.startsWith('runner:land'))).toEqual(['runner:land:7-1']);
+    expect(run.timeline.filter((e) => e.startsWith('log fed epic-halt'))).toEqual([
+      'log fed epic-halt the issue list',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      issues: [
+        { issue: 7, outcome: 'halted', cite: 'see' },
+        { issue: 8, outcome: 'halted', cite: 'see' },
+      ],
+    });
+  });
+
+  it('reports a landing its teardown halts landed-then-halted, with its commit, and no epic end', async () => {
+    const run = fakeHooks({
+      'runner:teardown': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'source-shrank',
+        removed: false,
+        registered: true,
+        errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(when(run, 'log fed epic-halt the issue list')).toBeLessThan(
+      when(run, 'log fed blocked #7'),
+    );
+    expect(run.timeline).not.toContain('log fed committed #7');
+    expect(labels(run).filter((l) => EPIC_END_COMMAND.test(l))).toEqual([]);
+    expect(report.epics).toEqual([
+      {
+        epic: null,
+        branch: 'ship/7',
+        outcome: 'halted',
+        issues: [{ issue: 7, outcome: 'landed-then-halted', cite: 'see', commit: 'landed1' }],
+        residue: ['teardown refused (source-shrank): node_modules lost 40 entries'],
+      },
+    ]);
+  });
+});
+
 describe('runShip — a failed cut', () => {
   // A cross-entry edge (the gate refuses one; the drop must still hold) lets
   // the failed cut of epic 1 drop #2 from epic 2.
@@ -733,6 +1012,17 @@ describe('agent-call tiers', () => {
       testReview: { agentType: 'ship-test-review', model: 'opus' },
     });
   });
+
+  it.each(SCENARIOS)(
+    'answers every agent call of the $name run within the call’s schema',
+    async ({ responses, args }) => {
+      const run = fakeHooks(responses);
+
+      await runShip(run.hooks, args);
+
+      expect(run.violations).toEqual([]);
+    },
+  );
 
   it.each(SCENARIOS)(
     'gives every agent call of the $name run its STAGES row',

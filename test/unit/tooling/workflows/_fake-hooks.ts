@@ -2,10 +2,16 @@
  * Fake workflow hooks for driving `runShip` in vitest: `agent()` answers from
  * a label-keyed response table and records every call; `parallel` and
  * `pipeline` run their work in order, so a recorded call sequence is
- * deterministic.
+ * deterministic. Each answer passes through the call's schema as an agent's
+ * would: cut to the schema's properties, a missing required key or an
+ * off-enum value recorded in {@link FakeRun.violations}.
  */
 
-import type { AgentOptions, WorkflowHooks } from '../../../../tooling/workflows/lib/hooks.types.js';
+import type {
+  AgentOptions,
+  JsonSchema,
+  WorkflowHooks,
+} from '../../../../tooling/workflows/lib/hooks.types.js';
 
 /** One recorded `agent()` call. */
 export interface RecordedCall {
@@ -33,6 +39,8 @@ export interface FakeRun {
   readonly phases: string[];
   /** Every `agent()` call (`call <label>`) and `log()` line (`log <message>`), interleaved in order. */
   readonly timeline: string[];
+  /** Where an answer broke its call's schema: `<label>.<path>: <what>`. */
+  readonly violations: string[];
 }
 
 /** A table entry answering per call: `nth` counts the earlier calls it answered. */
@@ -175,8 +183,9 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   planner: PLAN_CARD,
   planReviewer: { verdict: 'approved', findings: 0, findingsPath: `${REPORT_DIR}/pr.md` },
   tdd: TDD_GREEN,
-  reviewer: { verdict: 'clean', sha: 'slice1', summary: 'no finding' },
-  testReview: { verdict: 'clean', sha: 'slice1', survivors: 0, summary: 'every mutant killed' },
+  // Each amending stage answers a new sha, so a stage that reads a stale one shows.
+  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper' },
+  testReview: { verdict: 'hardened', sha: 'slice3', survivors: 0, summary: 'pinned a bound' },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:server-tier:paper': tierOk('paper'),
@@ -200,6 +209,7 @@ export function fakeHooks(responses: Readonly<Record<string, unknown>> = {}): Fa
   const calls: RecordedCall[] = [];
   const phases: string[] = [];
   const timeline: string[] = [];
+  const violations: string[] = [];
   const answered = new Map<string, number>();
   const agent = (prompt: string, options: AgentOptions): Promise<unknown> => {
     const call: RecordedCall = {
@@ -217,7 +227,8 @@ export function fakeHooks(responses: Readonly<Record<string, unknown>> = {}): Fa
     const nth = answered.get(key) ?? 0;
     answered.set(key, nth + 1);
     const entry = table[key];
-    return Promise.resolve(typeof entry === 'function' ? (entry as Responder)(call, nth) : entry);
+    const answer = typeof entry === 'function' ? (entry as Responder)(call, nth) : entry;
+    return Promise.resolve(conform(answer, options.schema, { at: options.label, violations }));
   };
   const hooks: WorkflowHooks = {
     agent,
@@ -238,7 +249,117 @@ export function fakeHooks(responses: Readonly<Record<string, unknown>> = {}): Fa
       timeline.push(`log ${message}`);
     },
   };
-  return { hooks, calls, phases, timeline };
+  return { hooks, calls, phases, timeline, violations };
+}
+
+/** Where a part of an answer sits, and where its violations go. */
+interface AnswerPlace {
+  /** `<label>` then `.key` / `[i]` steps. */
+  readonly at: string;
+  /** The run's violation lines. */
+  readonly violations: string[];
+}
+
+/**
+ * A value as a schema, when it is one (a plain object).
+ *
+ * @param value - The value.
+ * @returns It, or `undefined` for anything else.
+ */
+function schemaOf(value: unknown): JsonSchema | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonSchema)
+    : undefined;
+}
+
+/**
+ * An answer as its agent would give it: only what the schema asks for.
+ *
+ * @param value - The answer, or a part of it.
+ * @param schema - Its schema; `undefined` passes the value through.
+ * @param place - Where it sits.
+ * @returns The value, each object cut to its schema's `properties`.
+ */
+function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPlace): unknown {
+  if (schema === undefined || value === null || value === undefined) return value;
+  checkEnum(value, schema, place);
+  if (Array.isArray(value)) return conformItems(value, schema, place);
+  const properties = schemaOf(schema['properties']);
+  if (typeof value !== 'object' || properties === undefined) return value;
+  const record = value as Readonly<Record<string, unknown>>;
+  checkRequired(record, schema, place);
+  return pickProperties(record, properties, place);
+}
+
+/**
+ * Record a value its schema's `enum` does not allow.
+ *
+ * @param value - The value.
+ * @param schema - Its schema.
+ * @param place - Where it sits.
+ */
+function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
+  const allowed = schema['enum'];
+  if (Array.isArray(allowed) && !allowed.includes(value)) {
+    place.violations.push(`${place.at}: ${JSON.stringify(value)} is off the enum`);
+  }
+}
+
+/**
+ * An array, each item conformed to the schema's `items`.
+ *
+ * @param value - The array.
+ * @param schema - Its schema.
+ * @param place - Where it sits.
+ * @returns The conformed items.
+ */
+function conformItems(value: readonly unknown[], schema: JsonSchema, place: AnswerPlace): unknown {
+  const items = schemaOf(schema['items']);
+  if (items === undefined) return value;
+  return value.map((v, i) => conform(v, items, { ...place, at: `${place.at}[${String(i)}]` }));
+}
+
+/**
+ * Record each `required` key an object lacks.
+ *
+ * @param record - The object.
+ * @param schema - Its schema.
+ * @param place - Where it sits.
+ */
+function checkRequired(
+  record: Readonly<Record<string, unknown>>,
+  schema: JsonSchema,
+  place: AnswerPlace,
+): void {
+  const required = schema['required'];
+  if (!Array.isArray(required)) return;
+  for (const key of required as unknown[]) {
+    if (typeof key === 'string' && !Object.hasOwn(record, key)) {
+      place.violations.push(`${place.at}: lacks required ${key}`);
+    }
+  }
+}
+
+/**
+ * An object cut to its schema's properties, each conformed.
+ *
+ * @param record - The object.
+ * @param properties - The schema's `properties`.
+ * @param place - Where it sits.
+ * @returns The kept properties.
+ */
+function pickProperties(
+  record: Readonly<Record<string, unknown>>,
+  properties: JsonSchema,
+  place: AnswerPlace,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, sub] of Object.entries(properties)) {
+    if (Object.hasOwn(record, key)) {
+      out[key] = conform(record[key], schemaOf(sub), { ...place, at: `${place.at}.${key}` });
+    }
+  }
+  return out;
 }
 
 /**

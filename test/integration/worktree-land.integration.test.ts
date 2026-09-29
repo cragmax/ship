@@ -232,6 +232,26 @@ describe('land', () => {
     expect(existsSync(join(run.batch, BUILD_MARKER))).toBe(built);
   });
 
+  it('rolls back a slice whose build fails, the batch clean at the cut', TIMEOUT, () => {
+    const run = makeRun({ 'package.json': FIXTURE_PACKAGE, 'build.js': 'process.exit(3);\n' });
+    const sha = commitChanges(run.slice, { write: { 'src/feature.ts': 'changed\n' } }, 'slice');
+
+    const r = land(run.batch, sha, run.cut);
+
+    // The envelope `landingEvent` (commit-queue.ts) maps to `blocked`, not an epic halt.
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({
+      status: 'failed',
+      rolledBack: true,
+      batchClean: true,
+      commit: null,
+    });
+    expect(r.json.errors[0]?.step).toBe('build');
+    expect(headSha(run.batch)).toBe(run.cut);
+    expect(porcelain(run.batch)).toBe('');
+    expect(existsSync(join(run.batch, 'src/feature.ts'))).toBe(false);
+  });
+
   it.each([
     {
       dirt: 'an untracked file',

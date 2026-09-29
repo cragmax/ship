@@ -173,6 +173,8 @@ describe('renderPrBody', () => {
       '## Not landed',
       '## Epic end',
       '### feat(tools): add the x tool',
+      '- Issue: fixes #7, landed as c7',
+      '- Issue: see #8 (its acceptance needs a human), landed as c8',
       '- Plan: plan the thing (tier: server)',
       '- Review: fixed — renamed a helper',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
