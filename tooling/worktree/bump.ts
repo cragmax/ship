@@ -2,10 +2,13 @@
  * `bump <batch>` — the run's one version bump (`.claude/rules/git.md`
  * § Unattended workflow runs): read the batch's own commits since it left
  * `origin/master`, bump `minor` for any `feat`, else `patch`, and commit
- * `package.json` and the lockfile through § Direct commits steps 1–4.
+ * `package.json` and the lockfile through § Direct commits steps 1–4,
+ * the message carrying the run's {@link CO_AUTHOR_TRAILER}.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+
+import { CO_AUTHOR_TRAILER } from '../lib/commit-trailer.js';
 
 import { assertRunBatch } from './cut.js';
 import { freshLogDir, NPM_TIMEOUT_MS, runStep } from './exec.js';
@@ -76,7 +79,7 @@ export function bump(input: BumpInput): BumpResult {
     stageBump(batch);
     const dir = freshLogDir('bump');
     result.log = `${dir}/commit.log`;
-    writeFileSync(`${dir}/message.txt`, `${BUMP_SUBJECT} — ${slug}\n`);
+    writeFileSync(`${dir}/message.txt`, `${BUMP_SUBJECT} — ${slug}\n\n${CO_AUTHOR_TRAILER}\n`);
     commitWithHooks(batch, ['-F', `${dir}/message.txt`], result.log);
     result.commit = git(batch, ['rev-parse', 'HEAD'], 'commit');
   } catch (err) {

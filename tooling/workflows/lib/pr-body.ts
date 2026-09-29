@@ -16,14 +16,12 @@
  * `tooling/lib/lease-timings.ts`, which joins the render closure here.
  */
 
+import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { parseLeaseLines, type LeaseTiming } from '../../lib/lease-timings.js';
 
 import type { CommitSpec, PlanCard, ProbeRecord, SliceWork } from './agent-calls.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput, ServerTierOutput } from './tool-calls.js';
-
-/** The trailer every landed commit carries: model-neutral, since several agents on several tiers wrote it. */
-export const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 /** A closing keyword, then any colons and whitespace. */
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;

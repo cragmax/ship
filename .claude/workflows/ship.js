@@ -907,6 +907,8 @@ function settleEvents(primary, teardown, at) {
   return [primary];
 }
 
+const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
+
 const LEASE_LINE =
   /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
 function formatLeaseLine(timing) {
@@ -929,7 +931,6 @@ function parseLeaseLines(text) {
   return timings;
 }
 
-const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
 const CLOSING_REFS = [
   new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),

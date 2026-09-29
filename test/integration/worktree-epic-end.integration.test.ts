@@ -154,7 +154,7 @@ describe('bump', () => {
       const head = headSha(run.batch);
       expect(r.json.commit).toBe(head);
       expect(mustRun('git', ['log', '-1', '--format=%B', head], run.batch).trim()).toBe(
-        'chore(build): bump version — r',
+        'chore(build): bump version — r\n\nCo-Authored-By: Claude <noreply@anthropic.com>',
       );
       expect(commitPaths(run.batch, head)).toEqual(['package-lock.json', 'package.json']);
       expect(versions(run.batch)).toEqual({ pkg: '1.1.0', lock: '1.1.0', lockRoot: '1.1.0' });
