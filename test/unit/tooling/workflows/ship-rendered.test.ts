@@ -25,7 +25,7 @@ const META_HEAD = 'export const meta = ';
  * @returns The workflow's result.
  */
 function runRendered(run: FakeRun, args: string): Promise<unknown> {
-  // Assumed runtime wrapper (a pilot item): the file, `export` dropped, as an async function body; hooks + `args` as globals.
+  // The runtime's wrapper (observed #1035): the file, `export` dropped, as an async function body; hooks + `args` as globals.
   const script = `(async function () {\n${SHIP_JS.replace(/^export /, '')}\n})()`;
   // eslint-disable-next-line sonarjs/code-eval -- runs the committed render, never user input
   return vm.runInContext(script, vm.createContext({ ...run.hooks, args })) as Promise<unknown>;

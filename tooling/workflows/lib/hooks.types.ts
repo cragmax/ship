@@ -18,7 +18,11 @@ export type ModelAlias = 'opus' | 'sonnet' | 'haiku';
 /** A JSON Schema object an agent's structured output must satisfy. */
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
-/** The options of one `agent()` call. */
+/**
+ * The options of one `agent()` call. The runtime honours a per-call `model`
+ * and `effort` — `effort` with a non-default model included (observed
+ * 2026-09-29, #1035).
+ */
 export interface AgentOptions {
   /** The call's label in the run's transcript: `<stage>` or `<stage>:<detail>`. */
   readonly label: string;
@@ -28,13 +32,21 @@ export interface AgentOptions {
   readonly model?: ModelAlias;
   /** The effort; absent inherits. */
   readonly effort?: Effort;
-  /** The structured output's schema; the runtime validates the answer against it. */
+  /**
+   * The structured output's schema; the runtime validates the answer against
+   * it. What it enforces beyond `required` is unobserved: no answer in the
+   * pilot broke a constraint (#1035).
+   */
   readonly schema?: JsonSchema;
 }
 
 /** The hooks the workflow body is given. */
 export interface WorkflowHooks {
-  /** Run one agent; resolves to its structured output, or `null` when it returned none. */
+  /**
+   * Run one agent; resolves to its structured output, or `null` when it
+   * returned none. The `null` is unobserved: every pilot agent answered
+   * (#1035).
+   */
   readonly agent: (prompt: string, options: AgentOptions) => Promise<unknown>;
   /** Run thunks concurrently; a thunk that threw yields `null`. */
   readonly parallel: <T>(thunks: readonly (() => Promise<T>)[]) => Promise<(T | null)[]>;

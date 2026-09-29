@@ -21,10 +21,19 @@
  * Every guard throws an `Error` prefixed `workflow render:` naming the
  * files involved.
  *
- * **Line endings.** Checkouts use `core.autocrlf=true` and there is no
- * `.gitattributes`, so a committed render reads back CRLF in a Windows
- * checkout: the drift check compares with line endings normalised, and the
- * writer keeps an existing file's CRLF (LF otherwise).
+ * **Runtime wrapper.** The runtime accepts the leading `export` and runs the
+ * file as the body of an async function, the hooks and `args` bound as
+ * globals — which is what lets the tail `return` at top level; the ES2022
+ * built-in `Object.hasOwn` ran too (observed 2026-09-29, #1035).
+ *
+ * **Line endings.** The runtime refuses a script containing CR — a launch by
+ * name fails in the permission layer with "script contains control
+ * characters that would be hidden in the approval dialog" (observed
+ * 2026-09-29, #1035) — so `.gitattributes` checks `.claude/workflows/*.js`
+ * out LF whatever `core.autocrlf` says. The drift check compares with line
+ * endings normalised, and the writer keeps an existing file's CRLF (LF
+ * otherwise), so a CRLF copy left by a checkout that predates the
+ * `.gitattributes` stays one the runtime refuses.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

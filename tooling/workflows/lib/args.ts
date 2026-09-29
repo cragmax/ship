@@ -1,8 +1,9 @@
 /**
- * The `ship` workflow's launch arguments. Two shapes are accepted, since
- * how the launch text reaches `args` is the runtime's choice — the object
- * (also as its JSON text) and the string, its numbers space- or
- * comma-separated, each with an optional leading `#`:
+ * The `ship` workflow's launch arguments. `args` is whatever the launching
+ * Workflow call passed, verbatim — and the main-loop model writes that call,
+ * not the user (a string in the pilot: observed 2026-09-29, #1035). Two
+ * shapes are accepted — the object (also as its JSON text) and the string,
+ * its numbers space- or comma-separated, each with an optional leading `#`:
  *
  * ```
  * { epics | issues, exclude?, preflightOnly?, maxSlices? }

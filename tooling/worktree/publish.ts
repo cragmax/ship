@@ -147,6 +147,7 @@ function createPr(batch: string, branch: string, input: PublishInput): OpenedPr 
     ],
     { cwd: batch, timeoutMs: GH_TIMEOUT_MS },
   );
+  // gh prints the new PR's URL on stdout (gh 2.101.0, observed 2026-09-29, #1035).
   const url = /https:\/\/\S+\/pull\/(\d+)/u.exec(r.stdout);
   if (r.exitCode !== 0 || url === null) {
     throw new StepFailure('pr', `gh pr create exited ${String(r.exitCode)} for ${branch}`, r.tail);
