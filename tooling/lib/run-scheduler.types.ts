@@ -14,8 +14,9 @@ export type SchedulerInput = RunGraph & {
 };
 
 /**
- * Something the workflow observed about one issue, fed to `advance`. Which
- * phases accept which kind is the lifecycle table in `run-scheduler.ts`.
+ * Something the workflow observed about one issue — or, for `epic-halt`,
+ * one entry — fed to `advance`. Which phases accept which kind is the
+ * lifecycle table in `run-scheduler.ts`.
  */
 export type SchedulerEvent =
   | {
@@ -55,7 +56,21 @@ export type SchedulerEvent =
       readonly kind: 'slot-free';
       /** The issue. */
       readonly issue: number;
+    }
+  | {
+      /**
+       * A landing left the entry's batch unverified: stop the entry — no more
+       * starts or landings, and no epic end. Keyed by entry, not issue.
+       */
+      readonly kind: 'epic-halt';
+      /** The entry's `epic` key (`null` for an explicit list). */
+      readonly epic: number | null;
+      /** Why, for the workflow's own record; the scheduler does not read it. */
+      readonly reason: string;
     };
+
+/** The events keyed by issue: every kind but `epic-halt`. */
+export type IssueEvent = Exclude<SchedulerEvent, { readonly kind: 'epic-halt' }>;
 
 /** Why a dependent was skipped: the issue that went bad, and how. */
 export interface SkipCause {
@@ -106,9 +121,15 @@ export type SchedulerAction =
       readonly kind: 'epic-done';
       /** The entry's `epic` key (`null` for an explicit list). */
       readonly epic: number | null;
+    }
+  | {
+      /** Every issue of the halted entry has settled: skip the epic end. */
+      readonly kind: 'epic-halted';
+      /** The entry's `epic` key (`null` for an explicit list). */
+      readonly epic: number | null;
     };
 
-/** Where one issue is in its lifecycle. The last four are terminal (settled). */
+/** Where one issue is in its lifecycle. The last five are terminal (settled). */
 export type IssuePhase =
   | 'waiting'
   | 'ready'
@@ -117,7 +138,8 @@ export type IssuePhase =
   | 'committed'
   | 'blocked'
   | 'removed'
-  | 'skipped';
+  | 'skipped'
+  | 'halted';
 
 /**
  * The scheduler's state: readonly plain data (records and arrays only), so it
@@ -141,8 +163,13 @@ export interface SchedulerState {
   readonly retried: Readonly<Record<number, true>>;
   /** The ready queue, head first. */
   readonly ready: readonly number[];
-  /** Per entry (by index): whether its `epic-done` was emitted. */
+  /**
+   * Per entry (by index): whether its end action was emitted — `epic-done`,
+   * or `epic-halted` for a halted entry.
+   */
   readonly epicDone: readonly boolean[];
+  /** Per entry (by index): whether it was fed `epic-halt`. */
+  readonly halted: readonly boolean[];
 }
 
 /** One step's result: the next state and the actions to execute, in order. */

@@ -1,9 +1,16 @@
 /**
  * `live-runs <main>` — every live unattended run of the repository: each
- * registered worktree on a run branch, with its commits and files ahead of
+ * registered worktree on a run branch (`RUN_BRANCH_PREFIX`, `run-layout.ts`),
+ * with its commits and files ahead of
  * the base branch, whether it is dirty, its pull request (via `gh`), and
  * the worktrees nested inside it. Read-only, so there is no self-hosted
  * guard.
+ *
+ * `ahead` and `landed` count against `RUN_BASE_BRANCH` and are exact only
+ * while local `master` is level with `origin/master` — true at pre-flight,
+ * which requires it, but not guaranteed at a later resync or spent-run
+ * cleanup, where a stale local `master` overcounts `ahead` (a merged PR's
+ * commits still look unlanded) and moves the merge-base back.
  *
  * A PR that `gh` cannot report makes the envelope `failed` with one
  * `pr-state` error per affected branch while every run is still reported in
@@ -17,7 +24,7 @@ import { z } from 'zod';
 
 import { compareStrings } from '../shared.js';
 
-import { runCaptured } from './exec.js';
+import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import {
   git,
   gitPaths,
@@ -28,6 +35,7 @@ import {
   statusEntries,
   type WorktreeEntry,
 } from './git.js';
+import { RUN_BASE_BRANCH, RUN_BRANCH_PREFIX } from './run-layout.js';
 import {
   recordFailure,
   StepFailure,
@@ -35,24 +43,6 @@ import {
   type LiveRunsResult,
   type PrInfo,
 } from './types.js';
-
-/**
- * The branch namespace of every unattended run's feature branch
- * (`ship/<slug>`), the earlier parallel batch flow's included, so its live
- * batches stay visible. Slice, harness-agent (`worktree-agent-*`) and
- * detached worktrees are not runs.
- */
-const RUN_BRANCH_PREFIX = 'refs/heads/ship/';
-
-/**
- * The branch runs are cut from (`.claude/rules/git.md` § Unattended
- * workflow runs). `ahead` and `landed` are exact only while local `master`
- * is level with `origin/master` — true at pre-flight, which requires it,
- * but not guaranteed at a later resync or spent-run cleanup, where a stale
- * local `master` overcounts `ahead` (a merged PR's commits still look
- * unlanded) and moves the merge-base back.
- */
-const RUN_BASE_BRANCH = 'master';
 
 /** `gh`'s PR states in precedence order: a reopened branch's live PR wins. */
 const PR_STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
@@ -172,19 +162,20 @@ function isDirty(entry: WorktreeEntry): boolean | null {
 }
 
 /**
- * Ask `gh` for a branch's pull requests, in every state.
+ * Ask `gh` for a branch's pull requests, in every state, under
+ * `GH_TIMEOUT_MS`. `publish` reads it too, for its open-PR refusal.
  *
- * @param main - The main checkout (`gh` resolves the repository from it).
+ * @param dir - A checkout of the repository (`gh` resolves the repository from it).
  * @param branch - Short branch name.
  * @returns `none` for no PR; otherwise the highest-precedence PR by
  *   {@link PR_STATES}; `unknown` with an `error` when `gh` fails, is
  *   missing, or answers something unreadable.
  */
-function lookupPr(main: string, branch: string): PrLookup {
+export function lookupPr(dir: string, branch: string): PrLookup {
   const r = runCaptured(
     'gh',
     ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state', '--limit', '20'],
-    { cwd: main },
+    { cwd: dir, timeoutMs: GH_TIMEOUT_MS },
   );
   if (r.exitCode !== 0) return unknownPr(`gh pr list exited ${String(r.exitCode)}: ${r.tail}`);
   const prs = parsePrList(r.stdout);

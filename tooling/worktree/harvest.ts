@@ -15,9 +15,10 @@
  * The rollback is `git reset --hard HEAD`, a deliberate departure from
  * `.claude/rules/git.md` § Commits (no `git reset --hard` without explicit
  * approval) and § Direct commits step 1 (a mixed reset, never `--hard`).
- * The maintainer approved it for this tool on 2026-09-28, on condition of
- * the two guards above: with the target verified a clean linked worktree
- * before the pick, `--hard` discards only the failed pick's own changes.
+ * The maintainer approved it for this tool and `land` on 2026-09-28, on
+ * condition of the two guards above (git.md § Harvested slices): with the
+ * target verified a clean linked worktree before the pick, `--hard`
+ * discards only the failed pick's own changes.
  * The alternatives fail (git 2.55 win32, observed 2026-09-28):
  * `git reset --merge` leaves the batch's own file deleted after a case
  * collision (` D foo.txt`), and `git cherry-pick --abort` has nothing to
@@ -35,11 +36,19 @@ import {
   gitPaths,
   refExists,
   requireWorktreeRoot,
+  resolveCommit,
   samePath,
   statusEntries,
 } from './git.js';
 import { compareSets, formatDifference, sortedSet, stagedPaths } from './staged-set.js';
-import { Conflict, Refusal, recordFailure, StepFailure, type HarvestResult } from './types.js';
+import {
+  Conflict,
+  Refusal,
+  recordFailure,
+  StepFailure,
+  type HarvestResult,
+  type ResultBase,
+} from './types.js';
 
 /** Per-worktree refs whose presence means an operation is in progress. */
 const IN_PROGRESS_REFS = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'] as const;
@@ -105,7 +114,7 @@ export function harvest(input: HarvestInput): HarvestResult {
  *   root is its own main worktree, so it lands here too); Refusal
  *   `self-hosted` from {@link assertNotSelfHosted}.
  */
-function assertLinkedWorktree(batch: string, selfPath: string): void {
+export function assertLinkedWorktree(batch: string, selfPath: string): void {
   let main: string;
   try {
     main = requireWorktreeRoot(batch, 'preconditions').main;
@@ -130,7 +139,7 @@ function assertLinkedWorktree(batch: string, selfPath: string): void {
  * @throws Refusal `batch-dirty` naming the status entries or the
  *   in-progress refs.
  */
-function assertBatchClean(batch: string): void {
+export function assertBatchClean(batch: string): void {
   const entries = statusEntries(batch, 'preconditions');
   if (entries.length > 0) {
     throw new Refusal(
@@ -171,11 +180,7 @@ function inProgressRefs(batch: string): string[] {
  *   or does not have exactly one parent.
  */
 function resolveSlice(batch: string, sha: string): string {
-  const full = git(
-    batch,
-    ['rev-parse', '--verify', '--end-of-options', `${sha}^{commit}`],
-    'preconditions',
-  );
+  const full = resolveCommit(batch, sha, 'preconditions');
   const parents =
     git(batch, ['rev-list', '--parents', '-n', '1', full], 'preconditions').split(' ').length - 1;
   if (parents !== 1) {
@@ -278,12 +283,16 @@ function assertStagedEquals(batch: string, files: readonly string[]): void {
  * Reset the batch to `HEAD` after a failed pick and verify it clean (the
  * header's rationale for `--hard`). Sets `rolledBack` only once verified.
  *
- * @param batch - The batch worktree, verified clean and linked before the pick.
+ * @param batch - The batch worktree, verified by {@link assertLinkedWorktree}
+ *   and {@link assertBatchClean} before anything was staged in it — the
+ *   precondition of the approved `--hard`; never call it otherwise. The
+ *   linked-root half is re-checked before the reset ({@link assertResettable}).
  * @param result - Envelope; on a failed or unclean rollback its status
  *   becomes `failed` and `errors` gains a `rollback` entry.
  */
-function rollback(batch: string, result: HarvestResult): void {
+export function rollback(batch: string, result: ResultBase & { rolledBack: boolean }): void {
   try {
+    assertResettable(batch);
     git(batch, ['reset', '-q', '--hard', 'HEAD'], 'rollback');
     assertRolledBackClean(batch);
     result.rolledBack = true;
@@ -293,13 +302,41 @@ function rollback(batch: string, result: HarvestResult): void {
 }
 
 /**
+ * Re-check, at the reset itself, that its target is a linked worktree root:
+ * the `--hard` approval never covers the main worktree, and a reset run in
+ * a subdirectory resets the whole worktree holding it — whoever the caller.
+ *
+ * @param batch - The rollback target.
+ * @throws StepFailure `rollback` when it is not a worktree root, or is the
+ *   main worktree.
+ */
+function assertResettable(batch: string): void {
+  if (samePath(requireWorktreeRoot(batch, 'rollback').main, batch)) {
+    throw new StepFailure('rollback', `refusing git reset --hard in the main worktree ${batch}`);
+  }
+}
+
+/**
+ * What keeps the batch from being clean: its status entries, then the
+ * in-progress refs present.
+ *
+ * @param batch - The batch worktree.
+ * @param step - Step name reported on failure.
+ * @returns The residue; empty when the batch is clean.
+ * @throws StepFailure for `step` when git cannot report the status.
+ */
+export function batchResidue(batch: string, step: string): string[] {
+  return [...statusEntries(batch, step), ...inProgressRefs(batch)];
+}
+
+/**
  * Verify the batch is clean after the reset.
  *
  * @param batch - The batch worktree.
  * @throws StepFailure `rollback` naming the residue.
  */
 function assertRolledBackClean(batch: string): void {
-  const residue = [...statusEntries(batch, 'rollback'), ...inProgressRefs(batch)];
+  const residue = batchResidue(batch, 'rollback');
   if (residue.length > 0) {
     throw new StepFailure('rollback', `batch not clean after rollback: ${residue.join(', ')}`);
   }

@@ -1,7 +1,9 @@
 /**
  * Git and path-identity helpers for the worktree CLI. Every git call runs as
  * `git -C <dir>` with captured output ({@link runCaptured}); git prints
- * forward-slash absolute paths on every platform.
+ * forward-slash absolute paths on every platform. Local plumbing runs under
+ * the default budget; the fetch and the hooked commit take theirs from
+ * `exec.ts`.
  */
 
 import { existsSync, realpathSync } from 'node:fs';
@@ -9,7 +11,7 @@ import { resolve } from 'node:path';
 
 import { toPosix } from '../shared.js';
 
-import { runCaptured } from './exec.js';
+import { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import { Refusal, StepFailure } from './types.js';
 
 /** One entry of `git worktree list --porcelain`. */
@@ -88,6 +90,59 @@ export function gitPaths(dir: string, args: readonly string[], step: string): st
   return git(dir, [subcommand, '-z', ...rest], step)
     .split('\0')
     .filter((path) => path !== '');
+}
+
+/**
+ * Resolve a commit-ish to a full commit sha.
+ *
+ * @param dir - Any checkout of the repository.
+ * @param ref - Any commit-ish; never read as an option.
+ * @param step - Step name reported on failure.
+ * @returns The full sha.
+ * @throws StepFailure for `step` when it does not resolve to a commit.
+ */
+export function resolveCommit(dir: string, ref: string, step: string): string {
+  return git(dir, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], step);
+}
+
+/**
+ * Fetch `origin` into a checkout's remote-tracking refs, under `FETCH_TIMEOUT_MS`.
+ *
+ * @param dir - The checkout.
+ * @throws StepFailure `fetch` carrying the output tail, on a non-zero exit,
+ *   spawn failure or budget kill.
+ */
+export function fetchOrigin(dir: string): void {
+  runStep('fetch', 'git', ['-C', dir, 'fetch', '-q', 'origin'], {
+    cwd: process.cwd(),
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+}
+
+/**
+ * Commit with the hooks (the pre-commit gate), under `COMMIT_TIMEOUT_MS`,
+ * the whole output to a log file (`.claude/rules/git.md` § Direct commits
+ * step 4).
+ *
+ * @param dir - The checkout.
+ * @param args - `git commit`'s arguments (`-F <file>`, `--no-edit`).
+ * @param logFile - Where the output goes.
+ * @throws StepFailure `commit` carrying the output tail, on a non-zero exit,
+ *   spawn failure or budget kill.
+ */
+export function commitWithHooks(dir: string, args: readonly string[], logFile: string): void {
+  const r = runCaptured('git', ['-C', dir, 'commit', ...args], {
+    cwd: process.cwd(),
+    timeoutMs: COMMIT_TIMEOUT_MS,
+    logFile,
+  });
+  if (r.exitCode !== 0) {
+    throw new StepFailure(
+      'commit',
+      `git commit ${args.join(' ')} exited ${String(r.exitCode)} in ${dir}; output in ${logFile}`,
+      r.tail,
+    );
+  }
 }
 
 /**
@@ -172,6 +227,25 @@ export function requireWorktreeRoot(path: string, step: string): WorktreeIdentit
     throw new StepFailure(step, `${path} is not a worktree root (toplevel ${identity.toplevel})`);
   }
   return identity;
+}
+
+/**
+ * Require `path` to be the repository's main worktree root.
+ *
+ * @param path - The target given.
+ * @param step - Step name reported on failure.
+ * @throws StepFailure for `step` when `path` is not a worktree root;
+ *   Refusal `not-main-worktree` when it is a linked worktree.
+ */
+export function assertMainWorktree(path: string, step: string): void {
+  const identity = requireWorktreeRoot(path, step);
+  if (!samePath(identity.main, path)) {
+    throw new Refusal(
+      'not-main-worktree',
+      step,
+      `${path} is not the main worktree (the main worktree is ${identity.main})`,
+    );
+  }
 }
 
 /**
