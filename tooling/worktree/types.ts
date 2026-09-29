@@ -1,10 +1,11 @@
 /**
- * Result envelope of the worktree CLI (`tooling/worktree.ts`): the single
- * JSON object every command prints on one stdout line, plus the error
- * classes a step throws to end its command early. The envelopes of the
- * run-branch commands (`cut-batch`, `cut-slice`, `preflight`, `land`) and
- * the epic-end commands (`sync-master`, `bump`, `publish`) are in
- * `types-run.ts`.
+ * Result envelope types of the worktree CLI (`tooling/worktree.ts`): the
+ * single JSON object every command prints on one stdout line, plus the
+ * error classes a step throws to end its command early. Each envelope type
+ * is the `z.infer` of its schema in `schemas.ts` — the canonical home of the
+ * envelope shapes, their field docs and the path spelling; the run-branch
+ * and epic-end envelopes (`cut-batch`, `cut-slice`, `preflight`, `land`,
+ * `sync-master`, `bump`, `publish`) are in `types-run.ts` / `schemas-run.ts`.
  *
  * Status semantics (the envelope's `status`):
  *
@@ -12,276 +13,79 @@
  * - `refused` — a safety guard fired before, or instead of, mutating the
  *   thing it protects; `reason` names the guard. Thrown as {@link Refusal}.
  * - `failed` — a step failed; `errors[0].step` names it. Thrown as
- *   {@link StepFailure}; any other throw is step `internal`, and a bad
- *   command line is step `usage`.
+ *   {@link StepFailure}; any other throw is step `internal`, a bad command
+ *   line is step `usage`, and an envelope that fails its schema is step
+ *   `envelope` (`schemas.ts` `guardEnvelope`).
  * - `conflict` — `harvest` and `land`: the change cannot apply to the
  *   batch's current head; the batch is back at a verified-clean `HEAD`.
  *   `sync-master`: the merge stopped on doc-index conflicts a resolver must
  *   edit, its merge kept in progress. Thrown as {@link Conflict}.
- *
- * Every filesystem path in an envelope is absolute with forward slashes;
- * the path lists of `harvest`, `land`, `staged-guard`, `live-runs` and
- * `sync-master` (`files`, `conflicts`, `pending`, `expected`, `staged`,
- * `missing`, `unexpected`, `landed`) are repository-relative, as git
- * spells them.
  */
 
+import type { z } from 'zod';
+
+import type {
+  CommandStatusSchema,
+  HarvestResultSchema,
+  LinkRecordSchema,
+  LiveRunSchema,
+  LiveRunsResultSchema,
+  PrInfoSchema,
+  ProvisionBatchResultSchema,
+  ProvisionResultSchema,
+  RefusalReasonSchema,
+  ResultBaseSchema,
+  SourceCountSchema,
+  StagedGuardResultSchema,
+  StepErrorSchema,
+  TeardownResultSchema,
+  WarmMemberSchema,
+} from './schemas.js';
+
 /** The envelope's outcome. */
-export type CommandStatus = 'ok' | 'failed' | 'refused' | 'conflict';
+export type CommandStatus = z.infer<typeof CommandStatusSchema>;
 
 /** Which safety guard produced a `refused` envelope. */
-export type RefusalReason =
-  | 'self-hosted'
-  | 'main-worktree'
-  | 'report-dir-inside-worktree'
-  | 'links-remain'
-  | 'source-shrank'
-  /** Teardown: another registered worktree lies inside the target; the message names each. */
-  | 'nested-worktree'
-  /**
-   * Harvest, land, sync-master, bump: the batch has uncommitted changes, or
-   * a merge, cherry-pick or revert in progress.
-   */
-  | 'batch-dirty'
-  /** Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree. */
-  | 'unregistered-worktree'
-  /** Staged-guard: the staged set differs from the expected list; the envelope names both sides. */
-  | 'staged-mismatch'
-  /** Land: the slice is not exactly one commit on top of its cut. */
-  | 'slice-not-single-commit'
-  /** Cut-batch, preflight: the target is not the repository's main worktree. */
-  | 'not-main-worktree'
-  /**
-   * Cut-slice, land, bump, publish: the target is a linked worktree, but not
-   * on a `ship/` run branch. Cut-batch `--attach`: the branch named is not a
-   * `ship/` run branch.
-   */
-  | 'not-run-batch'
-  /** Cut-batch, cut-slice: the branch to create exists already. */
-  | 'branch-exists'
-  /**
-   * Cut-batch, cut-slice: the directory to create exists already; with
-   * cut-batch `--attach`, as anything but the branch's registered batch.
-   */
-  | 'path-exists'
-  /** Cut-batch `--attach`: neither the local branch nor `origin`'s exists. */
-  | 'branch-missing'
-  /** Cut-batch `--attach`: the branch is checked out elsewhere than the run's batch; the message names where. */
-  | 'branch-checked-out'
-  /** Cut-batch `--attach`: the local branch and `origin`'s each have commits the other lacks. */
-  | 'branch-diverged'
-  /** Preflight: a check failed; the envelope's `problems` names each. */
-  | 'preflight-failed'
-  /** Sync-master: another worktree's `node_modules` links into the batch's; the message names each. */
-  | 'slices-live'
-  /** Sync-master: the merge would conflict outside the lockfile and the doc indexes; nothing merged. */
-  | 'code-conflict'
-  /** Sync-master `--continue`: the batch has no merge in progress. */
-  | 'no-merge-in-progress'
-  /** Sync-master `--continue`: a conflicted path is outside the doc indexes or still holds markers. */
-  | 'unresolved'
-  /** Bump: the batch has no commits of its own since `origin/master`. */
-  | 'nothing-to-bump'
-  /** Bump: the batch's commits already include a bump commit. */
-  | 'already-bumped'
-  /** Publish: the run branch already has an open PR; the message names it. */
-  | 'pr-exists'
-  /**
-   * Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;
-   * the message names the state and the number.
-   */
-  | 'no-open-pr';
+export type RefusalReason = z.infer<typeof RefusalReasonSchema>;
 
 /** One entry of the envelope's `errors` list. */
-export interface StepError {
-  /** The step that failed or refused (`usage`, `preconditions`, `build`, …). */
-  readonly step: string;
-  /** One-line human-readable cause. */
-  readonly message: string;
-  /** Captured child-output tail or other supporting detail. */
-  readonly detail?: string;
-}
+export type StepError = z.infer<typeof StepErrorSchema>;
 
 /** Fields every command's envelope carries. */
-export interface ResultBase {
-  /** The subcommand as given on the command line. */
-  command: string;
-  status: CommandStatus;
-  /** The worktree the command targeted; `null` only for a usage error without one. */
-  worktree: string | null;
-  /** Empty when `status` is `ok`; otherwise the failing or refusing step. */
-  errors: StepError[];
-  /** Present only when `status` is `refused`. */
-  reason?: RefusalReason;
-  /**
-   * When the command finished: a UTC ISO-8601 instant, stamped by the CLI
-   * shell on every envelope it prints (usage errors included); absent on an
-   * envelope built in-process.
-   */
-  at?: string;
-}
+export type ResultBase = z.infer<typeof ResultBaseSchema>;
 
 /** A directory link and the absolute directory it points at. */
-export interface LinkRecord {
-  readonly path: string;
-  readonly target: string;
-}
+export type LinkRecord = z.infer<typeof LinkRecordSchema>;
 
 /** Envelope of `provision <slice> --batch <batch> [--server]`. */
-export interface ProvisionResult extends ResultBase {
-  /** The batch worktree the slice was provisioned against. */
-  batch: string;
-  /** Links in place for the slice after the command (created or reused). */
-  junctions: LinkRecord[];
-  /** The slice's built `dist`; `null` when no build produced it or it was rolled back. */
-  dist: string | null;
-  /** Vitest config files this call wrote that are still in place. */
-  vitestConfigs: string[];
-  /**
-   * The slice-specific part of a lease run's environment; `null` unless `ok`.
-   * Not the whole of it: `PH_POOL_REGISTRY` comes from the batch's
-   * `provision-batch` `env` — without it a lease run reads the full registry,
-   * cold servers included.
-   */
-  env: { PH_PROJECT_DIR: string } | null;
-  /** Paths this call created and removed again after a failure. */
-  rolledBack: string[];
-}
+export type ProvisionResult = z.infer<typeof ProvisionResultSchema>;
 
 /** One member of the fixed warm pool set. */
-export interface WarmMember {
-  readonly type: 'paper' | 'folia';
-  readonly host: string;
-  /** RCON port — the member's identity within the host. */
-  readonly rconPort: number;
-}
+export type WarmMember = z.infer<typeof WarmMemberSchema>;
 
 /** Envelope of `provision-batch <batch> --report-dir <dir>`. */
-export interface ProvisionBatchResult extends ResultBase {
-  /** The batch's installed `node_modules`, or `null` when not installed. */
-  nodeModules: string | null;
-  /** The batch's built `dist`, or `null` when not built. */
-  dist: string | null;
-  /** The batch's self-install workspace, or `null` when not created. */
-  workspace: string | null;
-  /** The trimmed pool registry written for the batch, or `null`. */
-  registry: string | null;
-  /** The warm members the trimmed registry holds. */
-  warm: WarmMember[];
-  /** Environment lease runs in the batch and its slices need; `null` unless `ok`. */
-  env: { PH_PROJECT_DIR: string; PH_POOL_REGISTRY: string } | null;
-}
+export type ProvisionBatchResult = z.infer<typeof ProvisionBatchResultSchema>;
 
 /** A link target's entry count before and after teardown's unlink step. */
-export interface SourceCount {
-  /** The link target. */
-  readonly path: string;
-  /** Count at teardown start; `null` when the target was missing (not gated). */
-  readonly before: number | null;
-  /**
-   * Latest count; `null` before the first recount, or when the target is no
-   * longer a real directory (gated as a shrink).
-   */
-  after: number | null;
-}
+export type SourceCount = z.infer<typeof SourceCountSchema>;
 
 /** Envelope of `teardown <worktree>`. */
-export interface TeardownResult extends ResultBase {
-  /** Links removed from the worktree. */
-  unlinked: LinkRecord[];
-  /**
-   * Each distinct link target outside the worktree, with its counts; a target
-   * that exists as a non-directory (a file, or another link) is not recorded.
-   */
-  sources: SourceCount[];
-  /** Whether the worktree directory was removed. */
-  removed: boolean;
-  /** Whether git still lists the worktree after the command. */
-  registered: boolean;
-}
+export type TeardownResult = z.infer<typeof TeardownResultSchema>;
 
 /** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */
-export interface HarvestResult extends ResultBase {
-  /** The slice commit's full sha; `null` until it resolves. */
-  sha: string | null;
-  /**
-   * Every path the slice commit changes, both endpoints of a rename, in
-   * code-unit order — the list a caller hands `staged-guard` next.
-   */
-  files: string[];
-  /**
-   * Paths that would not apply; non-empty only on a conflict — `status`
-   * `conflict`, or `failed` when the rollback after it failed.
-   */
-  conflicts: string[];
-  /** Whether a started pick was reset and the batch verified clean afterwards. */
-  rolledBack: boolean;
-}
+export type HarvestResult = z.infer<typeof HarvestResultSchema>;
 
 /** Envelope of `staged-guard <worktree> <file>…`; every list is sorted. */
-export interface StagedGuardResult extends ResultBase {
-  /** The expected paths, normalised and deduplicated. */
-  expected: string[];
-  /** The paths staged in the worktree, a rename as both endpoints. */
-  staged: string[];
-  /** Expected but not staged. */
-  missing: string[];
-  /** Staged but not expected. */
-  unexpected: string[];
-}
+export type StagedGuardResult = z.infer<typeof StagedGuardResultSchema>;
 
 /** A run branch's pull request as `gh` reports it. */
-export interface PrInfo {
-  /**
-   * `none`: `gh` found no PR for the branch; `unknown`: `gh` could not be
-   * asked or answered unreadably — never read as `none`.
-   */
-  readonly state: 'open' | 'merged' | 'closed' | 'none' | 'unknown';
-  /** The PR number; `null` for `none` and `unknown`. */
-  readonly number: number | null;
-  /**
-   * The PR's head commit as `gh` names it (`headRefOid`); `null` for `none`
-   * and `unknown`, or when `gh` names none.
-   */
-  readonly headOid: string | null;
-}
+export type PrInfo = z.infer<typeof PrInfoSchema>;
 
 /** One live unattended run: a registered worktree on a run branch. */
-export interface LiveRun {
-  /** The worktree root as git lists it. */
-  readonly path: string;
-  /** The short branch name, e.g. `ship/epic-1025`. */
-  readonly branch: string;
-  /** Commits on the branch not on the base branch. */
-  readonly ahead: number;
-  /** `git merge-base` of the base branch and the run branch. */
-  readonly mergeBase: string;
-  /** Paths the run changed since the merge-base, both endpoints of a rename, sorted. */
-  readonly landed: string[];
-  /** Uncommitted changes in the worktree; `null` when its directory is missing. */
-  readonly dirty: boolean | null;
-  /** The branch's pull request. */
-  readonly pr: PrInfo;
-  /**
-   * The PR is merged or closed **and** the run's tip is contained in the
-   * PR's head — the run is over and awaits cleanup. A run re-cut after its
-   * PR merged has commits beyond that head, so it is live.
-   */
-  readonly spent: boolean;
-  /**
-   * The PR is merged or closed, but its head commit is unnamed or absent
-   * locally, so containment cannot be checked; `spent` is then `false`.
-   */
-  readonly spentUnverified: boolean;
-  /** Registered worktrees (any branch) strictly inside this one. */
-  readonly nested: string[];
-}
+export type LiveRun = z.infer<typeof LiveRunSchema>;
 
 /** Envelope of `live-runs <main>`; `worktree` is the main checkout. */
-export interface LiveRunsResult extends ResultBase {
-  /** Every live run, sorted by branch. */
-  runs: LiveRun[];
-}
+export type LiveRunsResult = z.infer<typeof LiveRunsResultSchema>;
 
 /**
  * A step failed; the command stops and reports `failed`.

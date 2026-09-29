@@ -70,6 +70,7 @@ export const DOC_INDEX_CONFLICT = {
     outcome: 'merged',
     commit: 'merge1',
     conflicts: [],
+    version: null,
     pending: [],
   },
 };

@@ -129,7 +129,7 @@ async function tearDownSpent(
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
   const path = run.path ?? run.branch;
-  if (run.spentUnverified === true) {
+  if (run.spentUnverified) {
     return { path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;

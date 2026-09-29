@@ -2,8 +2,8 @@
  * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears
  * down the batch and slice worktrees of an unattended run, and lists the
  * live runs (ADR-0045). Each command prints exactly one JSON object on one
- * stdout line — the envelope in `worktree/types.ts` or
- * `worktree/types-run.ts` — and nothing else.
+ * stdout line — the envelope whose schema is in `worktree/schemas.ts` or
+ * `worktree/schemas-run.ts` — and nothing else.
  *
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
  *
@@ -42,8 +42,10 @@
  * every other argument — a sha, repo-relative paths, a number, a title, the
  * `--attach` branch — is kept as given.
  *
- * Every envelope carries `at`, the instant the command finished
- * ({@link runWorktreeCli}).
+ * Every envelope carries `at`, the instant the command finished, and is
+ * checked against its command's schema before it is printed: one that
+ * fails it is printed as `failed` at step `envelope` instead, so an
+ * unchecked envelope is never printed ({@link runWorktreeCli}).
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (the envelope's
  * `status` tells which), `2` usage error ({@link UsageError}). The runner
@@ -56,6 +58,8 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import type { z } from 'zod';
 
 import { toPosix } from './shared.js';
 import { bump } from './worktree/bump.js';
@@ -70,6 +74,25 @@ import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
 import type { RunSelection } from './worktree/run-layout.js';
+import {
+  guardEnvelope,
+  HarvestResultSchema,
+  LiveRunsResultSchema,
+  ProvisionBatchResultSchema,
+  ProvisionResultSchema,
+  ResultBaseSchema,
+  StagedGuardResultSchema,
+  TeardownResultSchema,
+} from './worktree/schemas.js';
+import {
+  BumpResultSchema,
+  CutBatchResultSchema,
+  CutSliceResultSchema,
+  LandResultSchema,
+  PreflightResultSchema,
+  PublishResultSchema,
+  SyncMasterResultSchema,
+} from './worktree/schemas-run.js';
 import { stagedGuard } from './worktree/staged-set.js';
 import { syncMaster } from './worktree/sync-master.js';
 import { teardownWorktree } from './worktree/teardown.js';
@@ -100,6 +123,8 @@ interface CommandSpec {
   readonly switchFlags: readonly string[];
   /** How many positionals may follow the target (`max` may be `Infinity`). */
   readonly rest: { readonly min: number; readonly max: number };
+  /** The envelope schema `run`'s result must satisfy, in every mode of the command. */
+  readonly schema: z.ZodType;
   /** Run the command. */
   readonly run: (args: ParsedArgs) => ResultBase | Promise<ResultBase>;
 }
@@ -130,6 +155,7 @@ function pathFlag(args: ParsedArgs, flag: string): string {
 
 const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   provision: {
+    schema: ProvisionResultSchema,
     valueFlags: ['--batch'],
     switchFlags: ['--server'],
     rest: NO_REST,
@@ -141,6 +167,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       }),
   },
   'provision-batch': {
+    schema: ProvisionBatchResultSchema,
     valueFlags: ['--report-dir'],
     switchFlags: [],
     rest: NO_REST,
@@ -148,18 +175,21 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       provisionBatch({ batch: args.target, reportDir: pathFlag(args, '--report-dir') }),
   },
   teardown: {
+    schema: TeardownResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
     run: (args) => teardownWorktree(args.target),
   },
   harvest: {
+    schema: HarvestResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: { min: 1, max: 1 },
     run: (args) => harvest({ batch: args.target, sha: args.rest[0] ?? '' }),
   },
   land: {
+    schema: LandResultSchema,
     valueFlags: ['--base', '--message-file', '--log'],
     switchFlags: [],
     rest: { min: 1, max: 1 },
@@ -175,24 +205,28 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   // At least one file: an empty expected set never precedes a real commit,
   // and accepting it would let an empty-list bug pass on an empty index.
   'staged-guard': {
+    schema: StagedGuardResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: { min: 1, max: Infinity },
     run: (args) => stagedGuard({ worktree: args.target, files: args.rest }),
   },
   'live-runs': {
+    schema: LiveRunsResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
     run: (args) => liveRuns({ main: args.target }),
   },
   preflight: {
+    schema: PreflightResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
     run: (args) => preflight({ main: args.target }),
   },
   'cut-batch': {
+    schema: CutBatchResultSchema,
     valueFlags: [],
     optionFlags: ['--epic', '--issues', '--attach'],
     switchFlags: [],
@@ -205,6 +239,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     },
   },
   'cut-slice': {
+    schema: CutSliceResultSchema,
     valueFlags: [],
     optionFlags: ['--issue', '--attempt'],
     switchFlags: ['--critic'],
@@ -212,18 +247,21 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: (args) => cutSlice({ batch: args.target, slice: sliceFlag(args) }),
   },
   'sync-master': {
+    schema: SyncMasterResultSchema,
     valueFlags: [],
     switchFlags: ['--continue'],
     rest: NO_REST,
     run: (args) => syncMaster({ batch: args.target, continue: args.switches.has('--continue') }),
   },
   bump: {
+    schema: BumpResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
     run: (args) => bump({ batch: args.target }),
   },
   publish: {
+    schema: PublishResultSchema,
     valueFlags: ['--log'],
     optionFlags: ['--title', '--body-file'],
     switchFlags: ['--push-only'],
@@ -405,39 +443,46 @@ function requireValue(value: string | undefined, flag: string): string {
  *
  * @param argv - `process.argv.slice(2)`.
  * @returns Resolves to the envelope, stamped with its `at` instant on every
- *   path (ok, refused, failed, usage), and the process exit code; never rejects.
+ *   path (ok, refused, failed, usage), and the process exit code; never
+ *   rejects. The stamped envelope is checked against its schema
+ *   ({@link guardEnvelope}): one that fails it is replaced by a `failed`
+ *   envelope at step `envelope`, exit code `1`; an unchecked envelope is
+ *   never returned.
  */
 export async function runWorktreeCli(
   argv: readonly string[],
 ): Promise<{ result: ResultBase; exitCode: number }> {
-  const run = await dispatch(argv);
-  run.result.at = new Date().toISOString();
-  return run;
+  const { result, exitCode, schema } = await dispatch(argv);
+  result.at = new Date().toISOString();
+  const guarded = guardEnvelope(result, schema);
+  return { result: guarded, exitCode: guarded === result ? exitCode : 1 };
 }
 
 /**
  * Dispatch one invocation to its command.
  *
  * @param argv - `process.argv.slice(2)`.
- * @returns Resolves to the unstamped envelope and the exit code; never rejects.
+ * @returns Resolves to the unstamped envelope, the exit code and the schema
+ *   the envelope must satisfy — the command's for its own result,
+ *   `ResultBaseSchema` for a usage error or a throw; never rejects.
  */
 async function dispatch(
   argv: readonly string[],
-): Promise<{ result: ResultBase; exitCode: number }> {
+): Promise<{ result: ResultBase; exitCode: number; schema: z.ZodType }> {
   const [name = '', ...rest] = argv;
   const base: ResultBase = { command: name, status: 'failed', worktree: null, errors: [] };
   try {
     if (!Object.hasOwn(COMMANDS, name)) throw new UsageError(`unknown command '${name}'`);
     const spec = COMMANDS[name] as CommandSpec;
     const result = await spec.run(parseArgs(rest, spec));
-    return { result, exitCode: result.status === 'ok' ? 0 : 1 };
+    return { result, exitCode: result.status === 'ok' ? 0 : 1, schema: spec.schema };
   } catch (err) {
     if (err instanceof UsageError) {
       base.errors.push({ step: 'usage', message: err.message });
-      return { result: base, exitCode: 2 };
+      return { result: base, exitCode: 2, schema: ResultBaseSchema };
     }
     recordFailure(base, err);
-    return { result: base, exitCode: 1 };
+    return { result: base, exitCode: 1, schema: ResultBaseSchema };
   }
 }
 
