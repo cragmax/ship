@@ -31,9 +31,9 @@
  * characters that would be hidden in the approval dialog" (observed
  * 2026-09-29, #1035) — so `.gitattributes` checks `.claude/workflows/*.js`
  * out LF whatever `core.autocrlf` says. The drift check compares with line
- * endings normalised, and the writer keeps an existing file's CRLF (LF
- * otherwise), so a CRLF copy left by a checkout that predates the
- * `.gitattributes` stays one the runtime refuses.
+ * endings normalised, so a CRLF copy left by a checkout that predates the
+ * `.gitattributes` still passes it; the writer always writes LF, so a
+ * re-render repairs that copy.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -190,8 +190,7 @@ export async function checkRenderedWorkflows(
 }
 
 /**
- * Render each workflow and write it, keeping an existing file's CRLF line
- * endings (LF for a new file).
+ * Render each workflow and write it LF, replacing any existing file.
  *
  * @param workflows - The workflows.
  * @param root - The repository root.
@@ -207,9 +206,8 @@ export async function writeRenderedWorkflows(
     workflows.map(async (spec) => {
       const rendered = await renderWorkflow(spec, root);
       const out = resolve(root, spec.out);
-      const crlf = existsSync(out) && readFileSync(out, 'utf8').includes('\r\n');
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, crlf ? rendered.replaceAll('\n', '\r\n') : rendered, 'utf8');
+      writeFileSync(out, rendered, 'utf8');
       return spec.out;
     }),
   );

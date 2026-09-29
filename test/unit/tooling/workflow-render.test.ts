@@ -294,12 +294,12 @@ describe('checkRenderedWorkflows and writeRenderedWorkflows', () => {
     expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([{ target: spec.out, ok: true }]);
   });
 
-  it('keeps an existing file CRLF when it rewrites it', async () => {
+  it('rewrites an existing CRLF file LF', async () => {
     writeFileSync(spec.out, 'stale\r\ncontent\r\n');
 
     await writeRenderedWorkflows([spec], ROOT);
 
-    expect(readFileSync(spec.out, 'utf8')).toBe(rendered.replaceAll('\n', '\r\n'));
+    expect(readFileSync(spec.out, 'utf8')).toBe(rendered);
   });
 
   it('writes a new file LF', async () => {
