@@ -325,7 +325,7 @@ describe('runShip — epics side by side', () => {
     ]);
   });
 
-  it('merges master into one epic at a time, the server tiers running alongside', async () => {
+  it('merges master into one epic at a time', async () => {
     const hold = holdable(/^runner:sync-master:/);
     const run = fakeHooks(
       epicRun([
@@ -338,8 +338,8 @@ describe('runShip — epics side by side', () => {
     const done = runShip(run.hooks, 'epics 1 2');
     await idle();
 
+    expect(labels(run).filter((l) => l.startsWith('runner:teardown:'))).toHaveLength(2);
     expect(labels(run).filter((l) => l.startsWith('runner:sync-master'))).toHaveLength(1);
-    expect(labels(run).filter((l) => l.startsWith('runner:server-tier'))).toHaveLength(4);
     const [first = ''] = hold.held();
     hold.release(first);
     await idle();

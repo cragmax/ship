@@ -66,7 +66,7 @@ const promptOf = (run: FakeRun, label: string): string =>
   run.calls.find((c) => c.label === label)?.prompt ?? '';
 
 describe('runShip — the critic', () => {
-  it('runs in its own slice before the server tier, landing its commit through land, then bump, retro, PR', async () => {
+  it('runs in its own slice before the master sync, landing its commit through land, then bump, retro, PR', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
       'runner:cut-slice:critic': CRITIC_CUT,
@@ -83,8 +83,6 @@ describe('runShip — the critic', () => {
       'critic:list',
       'runner:land:critic',
       'runner:teardown:critic',
-      'runner:server-tier:paper',
-      'runner:server-tier:folia',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -177,7 +175,7 @@ describe('runShip — the critic', () => {
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', critic: { outcome: 'dropped' } });
   });
 
-  it('halts the epic when the critic’s land leaves the batch unverified: no server tier, no PR', async () => {
+  it('halts the epic when the critic’s land leaves the batch unverified: no master sync, no PR', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
       critic: CRITIC_APPLIED,
@@ -186,7 +184,7 @@ describe('runShip — the critic', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
-    expect(labels(run).filter((l) => /^runner:(server-tier|publish)/.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([]);
     expect(labels(run)).toContain('retro:list');
     expect(report.epics[0]).toMatchObject({
       outcome: 'halted',
@@ -230,7 +228,7 @@ describe('runShip — the critic', () => {
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', critic: { outcome: 'not-run' } });
   });
 
-  it('halts the epic when the critic’s slice teardown leaves the batch unverified: no server tier, no PR', async () => {
+  it('halts the epic when the critic’s slice teardown leaves the batch unverified: no master sync, no PR', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
       'runner:teardown:critic': {
@@ -246,7 +244,7 @@ describe('runShip — the critic', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
-    expect(labels(run).filter((l) => /^runner:(server-tier|publish)/.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([]);
     expect(report.epics[0]).toMatchObject({
       outcome: 'halted',
       message: expect.stringMatching(/source-shrank/),
@@ -333,22 +331,44 @@ describe('runShip — the retro', () => {
 });
 
 describe('runShip — the lease totals', () => {
-  it('totals the landed slice’s lease lines with both server tiers’ leases, into the report and the PR body', async () => {
-    // The tdd reports one paper lease (1.5s / 42s); each server tier reports one (0.5s / 60s).
+  it('totals only the landed slice’s lease lines, into the report and the PR body', async () => {
     const run = fakeHooks();
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]?.leases).toEqual({
       engines: [
-        { type: 'paper', leases: 2, waitedSeconds: 2, waitedMaxSeconds: 1.5, heldSeconds: 102 },
-        { type: 'folia', leases: 1, waitedSeconds: 0.5, waitedMaxSeconds: 0.5, heldSeconds: 60 },
+        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
+        { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
       ],
       issues: [{ issue: 7, waitedSeconds: 1.5, heldSeconds: 42 }],
       unparsed: [],
     });
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
+      '- paper: 1 leases, waited 1.5s total (max 1.5s), held 42.0s total',
     );
+  });
+
+  it('still totals the landed slices’ lease lines when the critic halts the epic', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      critic: CRITIC_APPLIED,
+      'runner:land:critic': LAND_BATCH_DIRTY,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report.epics[0]).toMatchObject({ outcome: 'halted' });
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 2, waitedSeconds: 3, waitedMaxSeconds: 1.5, heldSeconds: 84 },
+        { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
+      ],
+      issues: [
+        { issue: 7, waitedSeconds: 1.5, heldSeconds: 42 },
+        { issue: 8, waitedSeconds: 1.5, heldSeconds: 42 },
+      ],
+      unparsed: [],
+    });
   });
 });

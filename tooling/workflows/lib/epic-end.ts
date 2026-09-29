@@ -1,15 +1,16 @@
 /**
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose
  * issues have all settled with at least one landed ({@link epicEnd}): the
- * critic (`critic-step.ts`), the server tier on Paper then Folia, the master
- * sync, the version bump, the retro, the pull request, then a second look
- * at the main checkout. An entry that halted or landed nothing gets the
- * retro alone ({@link unshippedEpicEnd}).
+ * critic (`critic-step.ts`), the master sync, the version bump, the retro,
+ * the pull request, then a second look at the main checkout. An entry that
+ * halted or landed nothing gets the retro alone ({@link unshippedEpicEnd}).
  *
- * - **A red server tier never blocks the PR** — both results go in its body,
- *   and the PR is the human gate.
+ * - **No server tier here** — PR CI's `Server integration` workflow
+ *   (`.github/workflows/server-integration.yml`) runs it on both engines
+ *   against the pull request, and its verdict is the PR's checks list
+ *   (ADR-0045 decision 6, #1059).
  * - **A critic landing that leaves the batch unverified halts the epic**:
- *   no server tier, no push.
+ *   no master sync, no push.
  * - **A code conflict or a failed sync stops the epic**: no bump, no push.
  *   So does a failed bump, and so does a step that throws.
  * - **The retro runs exactly once per entry**, whatever path the entry
@@ -17,8 +18,7 @@
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync, the
  *   publish and the main-checkout look each run as one task of the run's
  *   one lock, so no two epic ends talk to `origin` or read the main
- *   checkout at once; the critic, the server tier, the bump and the retro
- *   run outside it.
+ *   checkout at once; the critic, the bump and the retro run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's; the
  *   run never works in the main checkout, so a difference is reported.
@@ -39,7 +39,6 @@ import {
   type CriticReport,
   type LandedIssue,
   type ScheduleEntry,
-  type TierRun,
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import type { EntrySetup } from './slice-chain.js';
@@ -191,8 +190,8 @@ export async function unshippedEpicEnd(
 }
 
 /**
- * The shipping path, up to the pull request: critic, server tier, sync,
- * bump, retro, publish.
+ * The shipping path, up to the pull request: critic, sync, bump, retro,
+ * publish.
  *
  * @param input - The epic end's inputs.
  * @param state - Filled in as each step reports.
@@ -204,10 +203,8 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   const critic = await criticStep(input);
   const { halt, ...criticReport } = critic;
   state.critic = criticReport;
-  state.leases = leaseTotals(input.landed, []);
+  state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
-  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
-  state.leases = leaseTotals(input.landed, serverTier);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -215,12 +212,11 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
-  return publishStep(input, { serverTier, sync, bump, state });
+  return publishStep(input, { sync, bump, state });
 }
 
 /** What the pull request body reports besides the entry's inputs. */
 interface EndFindings {
-  readonly serverTier: readonly TierRun[];
   readonly sync: SyncStepResult;
   readonly bump: BumpOutput;
   readonly state: EndState;
@@ -241,13 +237,12 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     reportDir: entry.reportDir,
     landed: input.landed,
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    serverTier: found.serverTier,
     sync: found.sync,
     bump: found.bump,
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed, found.serverTier),
+    leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
@@ -270,47 +265,15 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
 }
 
 /**
- * Run the server tier on one engine.
- *
- * @param input - The epic end's inputs.
- * @param engine - The engine.
- * @returns Resolves to the engine's run.
- */
-async function tierRun(input: EpicEndInput, engine: 'paper' | 'folia'): Promise<TierRun> {
-  const { entry } = input;
-  const argv = [
-    entry.batch,
-    '--engine',
-    engine,
-    '--registry',
-    entry.registry,
-    '--log',
-    `${entry.reportDir}/server-tier-${engine}.log`,
-  ];
-  const out = await runTool(input.hooks, 'server-tier', argv, runPlace(entry.reportDir, engine));
-  return { engine, out };
-}
-
-/**
- * The entry's lease totals: each landed slice's release lines, and each
- * server-tier run's lease.
+ * The entry's lease totals: each landed slice's release lines.
  *
  * @param landed - The landed issues.
- * @param serverTier - The server-tier runs so far.
  * @returns The totals.
  */
-function leaseTotals(
-  landed: readonly LandedIssue[],
-  serverTier: readonly TierRun[],
-): LeaseAggregate {
-  return aggregateLeaseTimings([
-    ...landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
-    ...serverTier.flatMap((t) =>
-      t.out?.lease === undefined || t.out.lease === null
-        ? []
-        : [{ issue: null, lease: t.out.lease }],
-    ),
-  ]);
+function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
+  return aggregateLeaseTimings(
+    landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+  );
 }
 
 /**

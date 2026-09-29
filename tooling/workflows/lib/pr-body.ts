@@ -29,7 +29,7 @@ import type {
 } from './agent-calls.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import type { SyncStepResult } from './sync-master-step.js';
-import type { BumpOutput, ServerTierOutput } from './tool-calls.js';
+import type { BumpOutput } from './tool-calls.js';
 
 /** A closing keyword, then any colons and whitespace. */
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
@@ -92,14 +92,6 @@ export interface CriticReport {
   readonly findings: readonly CriticFinding[];
 }
 
-/** One engine's server-tier run. */
-export interface TierRun {
-  /** The engine. */
-  readonly engine: 'paper' | 'folia';
-  /** `server-tier`'s output; `null` when the runner returned none. */
-  readonly out: ServerTierOutput | null;
-}
-
 /** Everything an epic's pull request body reports. */
 export interface PrBodyInput {
   /** The epic; `null` for an explicit list. */
@@ -112,8 +104,6 @@ export interface PrBodyInput {
   readonly landed: readonly LandedIssue[];
   /** Every other issue of the entry. */
   readonly unlanded: readonly UnlandedIssue[];
-  /** Both engines' server-tier runs. */
-  readonly serverTier: readonly TierRun[];
   /** The master sync. */
   readonly sync: SyncStepResult;
   /** The bump; `null` when the runner returned none. */
@@ -229,7 +219,6 @@ export function renderPrBody(input: PrBodyInput): string {
     '',
     '## Epic end',
     '',
-    ...input.serverTier.map(tierLine),
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
     `- Report dir: \`${input.reportDir}\``,
@@ -406,28 +395,6 @@ function leaseText(timings: readonly LeaseTiming[]): string {
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
-}
-
-/**
- * One engine's server-tier line.
- *
- * @param run - The engine's run.
- * @returns Its counts, its outcome when not `ok`, and its lease.
- */
-function tierLine(run: TierRun): string {
-  const { out } = run;
-  if (out === null) return `- Server tier, ${run.engine}: no result (the runner returned nothing)`;
-  const t = out.tests;
-  const counts =
-    t === undefined || t === null
-      ? 'no counts'
-      : `${String(t.passed)} passed, ${String(t.failed)} failed, ${String(t.skipped)} skipped`;
-  const status =
-    out.status === 'ok'
-      ? ''
-      : ` — ${out.status ?? 'no status'}: ${out.errors?.[0]?.message ?? 'no error named'}`;
-  const lease = out.lease === undefined || out.lease === null ? 'none' : leaseText([out.lease]);
-  return `- Server tier, ${run.engine}: ${counts}${status}; lease ${lease}`;
 }
 
 /**

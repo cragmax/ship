@@ -18,7 +18,6 @@
  * npx tsx <main-checkout>/tooling/worktree.ts harvest BATCH SLICE-SHA
  * npx tsx <main-checkout>/tooling/worktree.ts staged-guard WORKTREE FILE...
  * npx tsx <main-checkout>/tooling/worktree.ts live-runs MAIN
- * npx tsx <main-checkout>/tooling/worktree.ts server-tier BATCH --engine paper|folia --registry R --log L
  * npx tsx <main-checkout>/tooling/worktree.ts sync-master BATCH [--continue]
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
@@ -26,23 +25,22 @@
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
  * staged set as `staged-guard` does, builds when needed, then commits. The
- * epic end runs the last four, in that order. A resync runs
+ * epic end runs the last three, in that order. A resync runs
  * `cut-batch --attach`, `sync-master` and `publish --push-only`.
  * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
  * the main checkout: every command that mutates a worktree (cut-slice,
- * provision, provision-batch, teardown, harvest, land, server-tier,
- * sync-master, bump, publish) refuses
- * (`self-hosted`, see `assertNotSelfHosted` in `worktree/git.ts`) when the
- * CLI lies inside its target. The one exception is `cut-batch`, whose
- * target is the main checkout the CLI runs from: it writes only `.git` and
- * a sibling directory, never that checkout's working tree
- * (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the path flags (`--batch`,
- * `--report-dir`, `--message-file`, `--log`, `--body-file`, `--registry`)
- * come only from argv, resolved against the starting cwd; every other
- * argument — a sha, repo-relative paths, a number, a title, the `--attach`
- * branch — is kept as given.
+ * provision, provision-batch, teardown, harvest, land, sync-master, bump,
+ * publish) refuses (`self-hosted`, see `assertNotSelfHosted` in
+ * `worktree/git.ts`) when the CLI lies inside its target. The one exception
+ * is `cut-batch`, whose target is the main checkout the CLI runs from: it
+ * writes only `.git` and a sibling directory, never that checkout's working
+ * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
+ * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
+ * `--body-file`) come only from argv, resolved against the starting cwd;
+ * every other argument — a sha, repo-relative paths, a number, a title, the
+ * `--attach` branch — is kept as given.
  *
  * Every envelope carries `at`, the instant the command finished
  * ({@link runWorktreeCli}).
@@ -71,7 +69,6 @@ import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
-import { serverTier } from './worktree/server-tier.js';
 import type { RunSelection } from './worktree/run-layout.js';
 import { stagedGuard } from './worktree/staged-set.js';
 import { syncMaster } from './worktree/sync-master.js';
@@ -249,18 +246,6 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       });
     },
   },
-  'server-tier': {
-    valueFlags: ['--engine', '--registry', '--log'],
-    switchFlags: [],
-    rest: NO_REST,
-    run: (args) =>
-      serverTier({
-        batch: args.target,
-        engine: engineFlag(args.values.get('--engine') ?? ''),
-        registry: pathFlag(args, '--registry'),
-        logFile: pathFlag(args, '--log'),
-      }),
-  },
 };
 
 /**
@@ -321,18 +306,6 @@ function positiveInt(text: string, flag: string): number {
     throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
   }
   return Number(text);
-}
-
-/**
- * Read `server-tier`'s engine.
- *
- * @param text - The `--engine` value as given.
- * @returns The engine.
- * @throws UsageError unless it is `paper` or `folia`.
- */
-function engineFlag(text: string): 'paper' | 'folia' {
-  if (text === 'paper' || text === 'folia') return text;
-  throw new UsageError(`flag --engine needs paper or folia, got '${text}'`);
 }
 
 /**

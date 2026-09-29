@@ -16,8 +16,7 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail:
-        'per epic: critic, server tier on both engines, master sync, version bump, retro, pull request',
+      detail: 'per epic: critic, master sync, version bump, retro, pull request',
     },
   ],
 };
@@ -67,9 +66,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail:
-      'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
-      'pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -687,7 +684,6 @@ const TOOL_COMMANDS = {
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
-  'server-tier': [WORKTREE_CLI, 'server-tier'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   publish: [WORKTREE_CLI, 'publish'],
@@ -850,23 +846,6 @@ const TOOL_SCHEMAS = {
     at: STRING,
   }),
   teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
-  'server-tier': worktreeSchema({
-    engine: { type: 'string', enum: ['paper', 'folia'] },
-    tests: nullableObject({ passed: INTEGER, failed: INTEGER, skipped: INTEGER }, [
-      'passed',
-      'failed',
-      'skipped',
-    ]),
-    lease: nullableObject(
-      {
-        type: STRING,
-        endpoint: STRING,
-        waitedSeconds: { type: 'number' },
-        heldSeconds: { type: 'number' },
-      },
-      ['type', 'endpoint', 'waitedSeconds', 'heldSeconds'],
-    ),
-  }),
   'sync-master': worktreeSchema({
     outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', 'needs-resolution', null] },
     commit: NULLABLE_STRING,
@@ -1262,7 +1241,6 @@ function renderPrBody(input) {
     '',
     '## Epic end',
     '',
-    ...input.serverTier.map(tierLine),
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
     `- Report dir: \`${input.reportDir}\``,
@@ -1365,21 +1343,6 @@ function leaseText(timings) {
 function unlandedLine(issue) {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
-}
-function tierLine(run) {
-  const { out } = run;
-  if (out === null) return `- Server tier, ${run.engine}: no result (the runner returned nothing)`;
-  const t = out.tests;
-  const counts =
-    t === undefined || t === null
-      ? 'no counts'
-      : `${String(t.passed)} passed, ${String(t.failed)} failed, ${String(t.skipped)} skipped`;
-  const status =
-    out.status === 'ok'
-      ? ''
-      : ` — ${out.status ?? 'no status'}: ${out.errors?.[0]?.message ?? 'no error named'}`;
-  const lease = out.lease === undefined || out.lease === null ? 'none' : leaseText([out.lease]);
-  return `- Server tier, ${run.engine}: ${counts}${status}; lease ${lease}`;
 }
 function bumpText(bump) {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
@@ -1551,10 +1514,8 @@ async function shipSteps(input, state) {
   const critic = await criticStep(input);
   const { halt, ...criticReport } = critic;
   state.critic = criticReport;
-  state.leases = leaseTotals(input.landed, []);
+  state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
-  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
-  state.leases = leaseTotals(input.landed, serverTier);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -1562,7 +1523,7 @@ async function shipSteps(input, state) {
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
-  return publishStep(input, { serverTier, sync, bump, state });
+  return publishStep(input, { sync, bump, state });
 }
 async function publishStep(input, found) {
   const { hooks, entry } = input;
@@ -1572,13 +1533,12 @@ async function publishStep(input, found) {
     reportDir: entry.reportDir,
     landed: input.landed,
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    serverTier: found.serverTier,
     sync: found.sync,
     bump: found.bump,
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed, found.serverTier),
+    leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
@@ -1599,29 +1559,10 @@ async function publishStep(input, found) {
   }
   return { outcome: 'pr', pr: pr.number };
 }
-async function tierRun(input, engine) {
-  const { entry } = input;
-  const argv = [
-    entry.batch,
-    '--engine',
-    engine,
-    '--registry',
-    entry.registry,
-    '--log',
-    `${entry.reportDir}/server-tier-${engine}.log`,
-  ];
-  const out = await runTool(input.hooks, 'server-tier', argv, runPlace(entry.reportDir, engine));
-  return { engine, out };
-}
-function leaseTotals(landed, serverTier) {
-  return aggregateLeaseTimings([
-    ...landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
-    ...serverTier.flatMap((t) =>
-      t.out?.lease === undefined || t.out.lease === null
-        ? []
-        : [{ issue: null, lease: t.out.lease }],
-    ),
-  ]);
+function leaseTotals(landed) {
+  return aggregateLeaseTimings(
+    landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+  );
 }
 async function retroStep(input, report) {
   const { entry } = input;

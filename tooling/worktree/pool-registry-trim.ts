@@ -24,7 +24,7 @@ export const WARM_SET: readonly WarmMember[] = [
 
 /**
  * Whether a registry entry is the given warm member — the one spelling of
- * a member's identity, which `preflight` and `server-tier` match by too.
+ * a member's identity, which `preflight` matches by too.
  *
  * @param member - Warm-set member.
  * @param entry - Registry entry.

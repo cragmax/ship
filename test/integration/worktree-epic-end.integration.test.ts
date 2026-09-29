@@ -468,11 +468,19 @@ describe('publish --push-only', () => {
 });
 
 describe('usage errors', () => {
+  // #1059: the epic end's local server tier moved to PR CI
+  it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
+    const run = runCli(['server-tier', 'b', '--engine', 'paper', '--registry', 'r', '--log', 'l'], {
+      cwd: root,
+    });
+    expect(run.code).toBe(2);
+    expect(run.json.errors[0]).toEqual({
+      step: 'usage',
+      message: "unknown command 'server-tier'",
+    });
+  });
+
   it.each([
-    {
-      name: 'server-tier with an unknown engine',
-      args: ['server-tier', 'b', '--engine', 'vanilla', '--registry', 'r', '--log', 'l'],
-    },
     { name: 'publish without --title', args: ['publish', 'b', '--body-file', 'f', '--log', 'l'] },
     {
       name: 'publish --push-only with --title',

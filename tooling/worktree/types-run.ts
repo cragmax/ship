@@ -2,12 +2,10 @@
  * Envelopes of the worktree CLI's run-branch commands — the commands that
  * cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `publish` and `server-tier`. The status semantics,
- * path spelling and error classes are `types.ts`'s. A field that names
- * something the command creates or measures stays `null` until it exists.
+ * `sync-master`, `bump` and `publish`. The status semantics, path spelling
+ * and error classes are `types.ts`'s. A field that names something the
+ * command creates or measures stays `null` until it exists.
  */
-
-import type { LeaseTiming } from '../lib/lease-timings.js';
 
 import type { VersionTriple } from './package-version.js';
 import type { ResultBase } from './types.js';
@@ -189,28 +187,4 @@ export interface PublishResult extends ResultBase {
    * mode or before it was read.
    */
   mergeable: string | null;
-}
-
-/** A server-tier run's test counts, from vitest's JSON report. */
-export interface TierCounts {
-  readonly passed: number;
-  readonly failed: number;
-  /** Skipped and todo tests together. */
-  readonly skipped: number;
-}
-
-/** Envelope of `server-tier <batch> --engine E --registry R --log L`; `worktree` is the batch. */
-export interface ServerTierResult extends ResultBase {
-  /** The engine the run leased. */
-  engine: 'paper' | 'folia';
-  /** The version leased: the registry entry of the engine's warm member. */
-  version: string | null;
-  /** The `server`-tier files run, repository-relative, sorted. */
-  files: string[];
-  /** Vitest's JSON report, beside the log. */
-  report: string | null;
-  /** The counts; also on a red run (`failed`, step `tests`) when the report was written. */
-  tests: TierCounts | null;
-  /** The lease's timings; `null` when the output carries no lease line. */
-  lease: LeaseTiming | null;
 }

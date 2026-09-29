@@ -34,7 +34,6 @@ import type {
   LandResult,
   PreflightResult,
   PublishResult,
-  ServerTierResult,
   SyncMasterResult,
 } from '../../worktree/types-run.js';
 
@@ -54,7 +53,6 @@ export type ToolName =
   | 'provision'
   | 'land'
   | 'teardown'
-  | 'server-tier'
   | 'sync-master'
   | 'bump'
   | 'publish';
@@ -153,9 +151,6 @@ export type LandOutput = WorktreeOutput<
 /** `teardown`'s consumed fields. */
 export type TeardownOutput = WorktreeOutput<TeardownResult, 'removed' | 'registered'>;
 
-/** `server-tier`'s consumed fields. */
-export type ServerTierOutput = WorktreeOutput<ServerTierResult, 'engine' | 'tests' | 'lease'>;
-
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = WorktreeOutput<
   SyncMasterResult,
@@ -180,7 +175,6 @@ interface ToolOutputs {
   provision: ProvisionOutput;
   land: LandOutput;
   teardown: TeardownOutput;
-  'server-tier': ServerTierOutput;
   'sync-master': SyncMasterOutput;
   bump: BumpOutput;
   publish: PublishOutput;
@@ -204,7 +198,6 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
-  'server-tier': [WORKTREE_CLI, 'server-tier'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   publish: [WORKTREE_CLI, 'publish'],
@@ -405,23 +398,6 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     at: STRING,
   }),
   teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
-  'server-tier': worktreeSchema({
-    engine: { type: 'string', enum: ['paper', 'folia'] },
-    tests: nullableObject({ passed: INTEGER, failed: INTEGER, skipped: INTEGER }, [
-      'passed',
-      'failed',
-      'skipped',
-    ]),
-    lease: nullableObject(
-      {
-        type: STRING,
-        endpoint: STRING,
-        waitedSeconds: { type: 'number' },
-        heldSeconds: { type: 'number' },
-      },
-      ['type', 'endpoint', 'waitedSeconds', 'heldSeconds'],
-    ),
-  }),
   'sync-master': worktreeSchema({
     outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', 'needs-resolution', null] },
     commit: NULLABLE_STRING,

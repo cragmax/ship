@@ -3,8 +3,8 @@
  * JSON object every command prints on one stdout line, plus the error
  * classes a step throws to end its command early. The envelopes of the
  * run-branch commands (`cut-batch`, `cut-slice`, `preflight`, `land`) and
- * the epic-end commands (`sync-master`, `bump`, `publish`, `server-tier`)
- * are in `types-run.ts`.
+ * the epic-end commands (`sync-master`, `bump`, `publish`) are in
+ * `types-run.ts`.
  *
  * Status semantics (the envelope's `status`):
  *
@@ -20,10 +20,10 @@
  *   edit, its merge kept in progress. Thrown as {@link Conflict}.
  *
  * Every filesystem path in an envelope is absolute with forward slashes;
- * the path lists of `harvest`, `land`, `staged-guard`, `live-runs`,
- * `sync-master` and `server-tier` (`files`, `conflicts`, `pending`,
- * `expected`, `staged`, `missing`, `unexpected`, `landed`) are
- * repository-relative, as git spells them.
+ * the path lists of `harvest`, `land`, `staged-guard`, `live-runs` and
+ * `sync-master` (`files`, `conflicts`, `pending`, `expected`, `staged`,
+ * `missing`, `unexpected`, `landed`) are repository-relative, as git
+ * spells them.
  */
 
 /** The envelope's outcome. */

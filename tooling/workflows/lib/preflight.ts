@@ -2,8 +2,8 @@
  * The `ship` workflow's pre-flight phase (ADR-0045): everything a run must
  * hold before it cuts anything. It runs, in order, `worktree.ts preflight`
  * (master level with `origin/master`, `gh` logged in, the warm set
- * answering — the warm set is always checked, since every epic end runs
- * the server tier), the run gate, `worktree.ts live-runs`, then the scout
+ * answering — the warm set is always checked, since a slice's server-tier
+ * tdd runs lease it), the run gate, `worktree.ts live-runs`, then the scout
  * once, over the gate's run set and the changed files of every unspent live
  * run (a spent run's PR is merged or closed, so it can no longer collide),
  * then the overlap estimate once over what the scout left

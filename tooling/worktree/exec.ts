@@ -46,9 +46,6 @@ export const GH_TIMEOUT_MS = 120_000;
 /** Budget for one `git push` whose pre-push hook runs the full gate. */
 export const PUSH_TIMEOUT_MS = 2_700_000;
 
-/** Budget for one engine's leased server-tier run (lease wait included). */
-export const SERVER_TIER_TIMEOUT_MS = 5_400_000;
-
 /** Budget for any child without an explicit one. */
 const DEFAULT_TIMEOUT_MS = 120_000;
 

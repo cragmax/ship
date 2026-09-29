@@ -190,7 +190,7 @@ const SCENARIOS = [
   { name: 'two issues', responses: TWO_ISSUES, args: 'issues 7 8' },
 ];
 
-const EPIC_END_COMMAND = /^runner:(server-tier|sync-master|bump|publish)/;
+const EPIC_END_COMMAND = /^runner:(sync-master|bump|publish)/;
 
 const isCutOrLand = (c: { label: string; argv: readonly string[] }): boolean =>
   /cut-batch|provision|land/.test(`${c.label} ${c.argv.join(' ')}`);
@@ -269,8 +269,6 @@ describe('runShip — one issue from launch to PR', () => {
       'testReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
-      'runner:server-tier:paper',
-      'runner:server-tier:folia',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -854,27 +852,6 @@ describe('runShip — the epic end', () => {
       outcome: 'stopped',
       message: `master sync failed: the resolver said the rows contradict; merge left in progress in ${BATCH}`,
     });
-  });
-
-  it('opens the PR over a red server tier, recording it in the body', async () => {
-    const run = fakeHooks({
-      'runner:server-tier:folia': {
-        exitCode: 1,
-        envelopePath: 'e.json',
-        status: 'failed',
-        engine: 'folia',
-        errors: [{ step: 'tests', message: '2 tests failed' }],
-        tests: { passed: 10, failed: 2, skipped: 0 },
-        lease: null,
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Server tier, folia: 10 passed, 2 failed, 0 skipped — failed: 2 tests failed; lease none',
-    );
   });
 
   it.each([

@@ -151,20 +151,6 @@ export const LAND_OK = {
   at: '2026-09-29T10:20:00.000Z',
 };
 
-/**
- * A green server tier on `engine`.
- *
- * @param engine - The engine.
- * @returns The output.
- */
-const tierOk = (engine: string) => ({
-  ...OK,
-  engine,
-  version: '1.21.4',
-  tests: { passed: 12, failed: 0, skipped: 1 },
-  lease: { type: engine, endpoint: 'localhost:25575', waitedSeconds: 0.5, heldSeconds: 60 },
-});
-
 /** The all-pass answers of a full run of `issues 7`, by label. */
 const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
@@ -203,8 +189,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   testReview: { verdict: 'hardened', sha: 'slice3', survivors: 0, summary: 'pinned a bound' },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
-  'runner:server-tier:paper': tierOk('paper'),
-  'runner:server-tier:folia': tierOk('folia'),
   'runner:sync-master': { ...OK, outcome: 'up-to-date', commit: null, conflicts: [], pending: [] },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
   'runner:publish': { ...OK, pushed: true, pr: { number: 42, url: 'https://x/pull/42' } },

@@ -8,7 +8,6 @@ import {
   type LandedIssue,
   type PrBodyInput,
 } from '../../../../tooling/workflows/lib/pr-body.js';
-import type { ServerTierOutput } from '../../../../tooling/workflows/lib/tool-calls.js';
 
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
 
@@ -70,15 +69,6 @@ const EIGHT: LandedIssue = {
   }),
 };
 
-const FOLIA_RED: ServerTierOutput = {
-  ...OK,
-  status: 'failed',
-  engine: 'folia',
-  errors: [{ step: 'tests', message: '2 tests failed' }],
-  tests: { passed: 10, failed: 2, skipped: 0 },
-  lease: null,
-};
-
 const INPUT: PrBodyInput = {
   epic: 1025,
   branch: 'ship/epic-1025',
@@ -87,18 +77,6 @@ const INPUT: PrBodyInput = {
   unlanded: [
     { issue: 9, outcome: 'blocked', reason: 'planner stale: resolved #9 by abc123' },
     { issue: 10, outcome: 'skipped' },
-  ],
-  serverTier: [
-    {
-      engine: 'paper',
-      out: {
-        ...OK,
-        engine: 'paper',
-        tests: { passed: 12, failed: 0, skipped: 1 },
-        lease: { type: 'paper', endpoint: 'localhost:25575', waitedSeconds: 2, heldSeconds: 90 },
-      },
-    },
-    { engine: 'folia', out: FOLIA_RED },
   ],
   sync: {
     verdict: 'merged',
@@ -142,7 +120,7 @@ const INPUT: PrBodyInput = {
   retro: [
     {
       title: 'slow paper lease',
-      evidence: 'reports/server-tier-paper.log',
+      evidence: 'reports/tdd-7.md',
       kind: 'genuine',
       suggestion: 'warm a second paper',
     },
@@ -228,8 +206,6 @@ describe('renderPrBody', () => {
       '- Lease timings: none',
       '- Probes: no probe needed',
       '  - Folia ticks x: confirmed',
-      '- Server tier, paper: 12 passed, 0 failed, 1 skipped; lease paper@localhost:25575 waited 2s, held 90s',
-      '- Server tier, folia: 10 passed, 2 failed, 0 skipped — failed: 2 tests failed; lease none',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
@@ -237,6 +213,18 @@ describe('renderPrBody', () => {
     ]) {
       expect(body.split('\n')).toContain(line);
     }
+  });
+
+  it('reports the master sync, the bump and the report dir as the whole epic end', () => {
+    const lines = body.split('\n');
+
+    expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Critic'))).toEqual([
+      '',
+      '- Master sync: merged at m1',
+      '- Version bump: minor, 2.42.0 → 2.43.0',
+      '- Report dir: `C:/runs/epic-1025/reports`',
+      '',
+    ]);
   });
 
   it('reports the critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
@@ -263,7 +251,7 @@ describe('renderPrBody', () => {
       '- folia: 0 leases, waited 0.0s total (max 0.0s), held 0.0s total',
       '- #7: waited 1.5s, held 42.0s',
       '- unparsed (#8): with-lease: waited ?s',
-      '- slow paper lease (genuine): reports/server-tier-paper.log — warm a second paper',
+      '- slow paper lease (genuine): reports/tdd-7.md — warm a second paper',
     ]) {
       expect(lines).toContain(line);
     }
@@ -304,7 +292,7 @@ describe('renderPrBody', () => {
     expect(body).toContain('  - Paper drops y: cap-hit; follow-up: probe y offline;');
   });
 
-  it('defuses a closing reference in the tier, a tool error and every reference form', () => {
+  it('defuses a closing reference in the tier, a critic reason and every reference form', () => {
     const tricky = renderPrBody({
       ...INPUT,
       landed: [
@@ -318,12 +306,7 @@ describe('renderPrBody', () => {
           },
         },
       ],
-      serverTier: [
-        {
-          engine: 'folia',
-          out: { ...FOLIA_RED, errors: [{ step: 'tests', message: 'fixed #24 then broke' }] },
-        },
-      ],
+      critic: { outcome: 'dropped', reason: 'land failed: fixed #24 then broke', findings: [] },
     });
 
     expect(tricky).toMatch(closes(7));
@@ -333,7 +316,9 @@ describe('renderPrBody', () => {
       /closes[\s:]*https:\/\/github\.com\/cragmax\/paper-harness\/issues\/23/i,
     );
     expect(tricky).toContain('(tier: unit, fixes (see #21))');
-    expect(tricky).toContain('failed: fixed (see #24) then broke');
+    expect(tricky.split('\n')).toContain(
+      '- Outcome: changes dropped — land failed: fixed (see #24) then broke',
+    );
   });
 });
 

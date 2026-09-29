@@ -107,9 +107,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail:
-      'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
-      'pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -280,7 +278,6 @@ const TOOL_COMMANDS = {
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
-  'server-tier': [WORKTREE_CLI, 'server-tier'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   publish: [WORKTREE_CLI, 'publish'],
@@ -443,23 +440,6 @@ const TOOL_SCHEMAS = {
     at: STRING,
   }),
   teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
-  'server-tier': worktreeSchema({
-    engine: { type: 'string', enum: ['paper', 'folia'] },
-    tests: nullableObject({ passed: INTEGER, failed: INTEGER, skipped: INTEGER }, [
-      'passed',
-      'failed',
-      'skipped',
-    ]),
-    lease: nullableObject(
-      {
-        type: STRING,
-        endpoint: STRING,
-        waitedSeconds: { type: 'number' },
-        heldSeconds: { type: 'number' },
-      },
-      ['type', 'endpoint', 'waitedSeconds', 'heldSeconds'],
-    ),
-  }),
   'sync-master': worktreeSchema({
     outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', 'needs-resolution', null] },
     commit: NULLABLE_STRING,
