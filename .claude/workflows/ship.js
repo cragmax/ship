@@ -72,6 +72,29 @@ const SHIP_PHASES = [
       'pull request',
   },
 ];
+const RESYNC_PHASE_TITLES = {
+  preflight: PHASE_TITLES.preflight,
+  merge: 'Merge',
+  push: 'Push',
+};
+const RESYNC_PHASES = [
+  {
+    title: RESYNC_PHASE_TITLES.preflight,
+    detail:
+      'live runs; spent batches torn down (guarded); the branch batch attached, and re-cut and ' +
+      'provisioned if it was torn down',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.merge,
+    detail:
+      "the epic end's merge step: doc indexes resolved, the version line re-bumped, " +
+      'a code conflict stops',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.push,
+    detail: "pushed through the pre-push gate, never forced; the PR's mergeable state read",
+  },
+];
 function agentOptions(stage, detail, schema) {
   const row = STAGES[stage];
   return {
@@ -770,6 +793,10 @@ const TOOL_SCHEMAS = {
             required: ['state'],
           },
           spent: BOOLEAN,
+          path: STRING,
+          dirty: { type: ['boolean', 'null'] },
+          nested: STRINGS,
+          spentUnverified: BOOLEAN,
         },
         required: ['branch', 'landed', 'pr', 'spent'],
       },
@@ -792,6 +819,11 @@ const TOOL_SCHEMAS = {
     base: NULLABLE_STRING,
     batch: NULLABLE_STRING,
     reportDir: NULLABLE_STRING,
+    attach: nullableObject({ created: BOOLEAN, fastForwarded: BOOLEAN, pr: INTEGER }, [
+      'created',
+      'fastForwarded',
+      'pr',
+    ]),
   }),
   'provision-batch': worktreeSchema({
     registry: NULLABLE_STRING,
@@ -846,6 +878,12 @@ const TOOL_SCHEMAS = {
         required: ['path', 'kind'],
       },
     },
+    version: nullableObject({ base: STRING, ours: STRING, theirs: STRING, result: STRING }, [
+      'base',
+      'ours',
+      'theirs',
+      'result',
+    ]),
     pending: STRINGS,
   }),
   bump: worktreeSchema({
@@ -857,6 +895,7 @@ const TOOL_SCHEMAS = {
   publish: worktreeSchema({
     pushed: BOOLEAN,
     pr: nullableObject({ number: INTEGER, url: STRING }, ['number', 'url']),
+    mergeable: NULLABLE_STRING,
   }),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
@@ -1428,10 +1467,11 @@ function criticNotRun(reason) {
 
 async function syncMasterStep(hooks, ctx) {
   const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
   if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return resolveAndContinue(hooks, ctx, start.pending ?? []);
+    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
   }
-  return syncVerdict(start, 'merged');
+  return { ...syncVerdict(start, 'merged'), ...found };
 }
 async function resolveAndContinue(hooks, ctx, pending) {
   if (pending.length === 0) {

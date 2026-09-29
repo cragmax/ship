@@ -1,5 +1,5 @@
 /**
- * The `ship` workflow's tooling calls: each runs one repo CLI command
+ * The saved workflows' tooling calls: each runs one repo CLI command
  * through the `runner` agent, which writes the full envelope into a fresh
  * directory of its own under the call's {@link ToolPlace} and returns only
  * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS}
@@ -21,6 +21,7 @@
 import type { GateVerdict, IssueCheck } from '../../lib/run-gate.js';
 import type {
   LiveRun,
+  PrInfo,
   ProvisionBatchResult,
   ProvisionResult,
   ResultBase,
@@ -112,11 +113,17 @@ export type PreflightOutput = WorktreeOutput<PreflightResult, 'worktree' | 'snap
 export type GateOutput = ToolBase &
   Partial<Pick<GateVerdict, 'verdict' | 'failures' | 'excluded' | 'runSet' | 'edges'>>;
 
+/** One live run as `live-runs`' output carries it: pre-flight's fields, plus spent cleanup's optional ones. */
+export type LiveRunOutput = Pick<LiveRun, 'branch' | 'landed' | 'spent'> & {
+  /** The run's PR, narrowed. */
+  readonly pr: Pick<PrInfo, 'state' | 'number'>;
+} & Partial<Pick<LiveRun, 'path' | 'dirty' | 'nested' | 'spentUnverified'>>;
+
 /** `live-runs`'s consumed fields. */
 export type LiveRunsOutput = ToolBase &
   WorktreeStatus & {
     /** Each live run, narrowed. */
-    readonly runs?: readonly Pick<LiveRun, 'branch' | 'landed' | 'pr' | 'spent'>[];
+    readonly runs?: readonly LiveRunOutput[];
   };
 
 /** `run-gate check N`'s consumed fields. */
@@ -125,7 +132,7 @@ export type CheckOutput = ToolBase & Partial<Pick<IssueCheck, 'ready' | 'failure
 /** `cut-batch`'s consumed fields. */
 export type CutBatchOutput = WorktreeOutput<
   CutBatchResult,
-  'worktree' | 'branch' | 'base' | 'batch' | 'reportDir'
+  'worktree' | 'branch' | 'base' | 'batch' | 'reportDir' | 'attach'
 >;
 
 /** `provision-batch`'s consumed fields. */
@@ -152,14 +159,14 @@ export type ServerTierOutput = WorktreeOutput<ServerTierResult, 'engine' | 'test
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = WorktreeOutput<
   SyncMasterResult,
-  'outcome' | 'commit' | 'conflicts' | 'pending'
+  'outcome' | 'commit' | 'conflicts' | 'version' | 'pending'
 >;
 
 /** `bump`'s consumed fields. */
 export type BumpOutput = WorktreeOutput<BumpResult, 'kind' | 'from' | 'to' | 'commit'>;
 
 /** `publish`'s consumed fields. */
-export type PublishOutput = WorktreeOutput<PublishResult, 'pushed' | 'pr'>;
+export type PublishOutput = WorktreeOutput<PublishResult, 'pushed' | 'pr' | 'mergeable'>;
 
 /** Each tool's output type. */
 interface ToolOutputs {
@@ -341,6 +348,10 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
             required: ['state'],
           },
           spent: BOOLEAN,
+          path: STRING,
+          dirty: { type: ['boolean', 'null'] },
+          nested: STRINGS,
+          spentUnverified: BOOLEAN,
         },
         required: ['branch', 'landed', 'pr', 'spent'],
       },
@@ -363,6 +374,11 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     base: NULLABLE_STRING,
     batch: NULLABLE_STRING,
     reportDir: NULLABLE_STRING,
+    attach: nullableObject({ created: BOOLEAN, fastForwarded: BOOLEAN, pr: INTEGER }, [
+      'created',
+      'fastForwarded',
+      'pr',
+    ]),
   }),
   'provision-batch': worktreeSchema({
     registry: NULLABLE_STRING,
@@ -417,6 +433,12 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
         required: ['path', 'kind'],
       },
     },
+    version: nullableObject({ base: STRING, ours: STRING, theirs: STRING, result: STRING }, [
+      'base',
+      'ours',
+      'theirs',
+      'result',
+    ]),
     pending: STRINGS,
   }),
   bump: worktreeSchema({
@@ -428,6 +450,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   publish: worktreeSchema({
     pushed: BOOLEAN,
     pr: nullableObject({ number: INTEGER, url: STRING }, ['number', 'url']),
+    mergeable: NULLABLE_STRING,
   }),
 };
 

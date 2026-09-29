@@ -26,6 +26,7 @@ import { toPosix } from '../../tooling/shared.js';
 import type { SyncMasterResult } from '../../tooling/worktree/types-run.js';
 import {
   advanceOrigin,
+  advanceOriginByMerge,
   commitChanges,
   gitPathList,
   headSha,
@@ -120,9 +121,45 @@ function installFailingHook(main: string): void {
   mustRun('git', ['config', 'core.hooksPath', hooks], main);
 }
 
+/**
+ * Point the fixture repo's hooks at a `pre-commit` that appends `MERGE_HEAD`
+ * (empty when none) to a log and passes.
+ *
+ * @returns The log's path.
+ */
+function recordCommits(main: string): string {
+  const hooks = `${root}/hooks`;
+  const log = `${root}/pre-commit.log`;
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    `${hooks}/pre-commit`,
+    `#!/bin/sh\ngit rev-parse -q --verify MERGE_HEAD >> "${log}"\nexit 0\n`,
+  );
+  chmodSync(`${hooks}/pre-commit`, 0o755);
+  mustRun('git', ['config', 'core.hooksPath', hooks], main);
+  return log;
+}
+
 /** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
 function show(dir: string, path: string): string {
   return readFileSync(join(dir, path), 'utf8');
+}
+
+interface Lockfile {
+  readonly version: string;
+  readonly packages: Record<string, { readonly version?: string } | undefined>;
+}
+
+/** A checkout's parsed lockfile. */
+function lockOf(dir: string): Lockfile {
+  return JSON.parse(show(dir, LOCKFILE)) as Lockfile;
+}
+
+/** The `version` fields of a checkout's package.json and lockfile. */
+function versionsOf(dir: string): { pkg: string; lock: string; lockRoot: string } {
+  const pkg = JSON.parse(show(dir, 'package.json')) as { version: string };
+  const lock = lockOf(dir);
+  return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
 }
 
 describe('sync-master', () => {
@@ -169,11 +206,51 @@ describe('sync-master', () => {
     expect(snapshot(run.batch)).toEqual(before);
   });
 
-  it('refuses a package.json conflict as code', TIMEOUT, () => {
+  it('names the PR merge commit, not its inner commits, as what landed a conflict', TIMEOUT, () => {
+    const run = makeRun({ 'src/x.ts': 'one\nshared\nthree\n' });
+    commitChanges(run.batch, { write: { 'src/x.ts': 'one\nbatch\nthree\n' } }, 'feat: batch');
+    advanceOriginByMerge(
+      root,
+      run.bare,
+      [
+        { write: { 'src/x.ts': 'one\nmaster\nthree\n' } },
+        { write: { 'src/x.ts': 'one\nm2\nthree\n' } },
+      ],
+      'Merge pull request #77 from fixture/ship-x',
+    );
+
+    const r = sync(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict' });
+    expect(r.json.conflicts[0]?.landedBy).toEqual(['Merge pull request #77 from fixture/ship-x']);
+  });
+
+  it('fails step version on a prerelease bump, merging nothing', TIMEOUT, () => {
     const pkg = (v: string): string => `{\n  "name": "p",\n  "version": "${v}"\n}\n`;
     const run = makeRun({ 'package.json': pkg('1.0.0') });
-    commitChanges(run.batch, { write: { 'package.json': pkg('1.0.1') } }, 'chore: ours');
+    const ours = commitChanges(run.batch, { write: { 'package.json': pkg('1.0.1-rc.1') } }, 'o');
     advanceOrigin(root, run.bare, { write: { 'package.json': pkg('1.1.0') } }, 'chore: theirs');
+
+    const r = sync(run.batch);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', outcome: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['version']);
+    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+  });
+
+  it.each([
+    { name: 'beside a version-line conflict', ours: '1.0.1', theirs: '1.1.0' },
+    { name: 'with no bump', ours: '1.0.0', theirs: '1.0.0' },
+  ])('refuses a package.json scripts conflict $name as code', TIMEOUT, (c) => {
+    // Both sides add a different script after the same line.
+    const pkg = (v: string, script = ''): string =>
+      `{\n  "name": "p",\n  "version": "${v}",\n  "scripts": {\n    "a": "x"${script}\n  }\n}\n`;
+    const run = makeRun({ 'package.json': pkg('1.0.0') });
+    const ours = pkg(c.ours, ',\n    "b": "y"');
+    commitChanges(run.batch, { write: { 'package.json': ours } }, 'chore: ours');
+    const theirs = pkg(c.theirs, ',\n    "c": "z"');
+    advanceOrigin(root, run.bare, { write: { 'package.json': theirs } }, 'chore: theirs');
     const before = snapshot(run.batch);
 
     const r = sync(run.batch);
@@ -230,6 +307,21 @@ describe('sync-master batch refresh', () => {
     return { main, bare, batch };
   }
 
+  /** Bump a checkout's version with `npm version` and commit both files. */
+  function bumpIn(dir: string, kind: string, message: string): string {
+    mustRun('npm', ['version', kind, '--no-git-tag-version'], dir);
+    mustRun('git', ['add', '--', 'package.json', LOCKFILE], dir);
+    mustRun('git', ['commit', '-q', '-m', message], dir);
+    return headSha(dir);
+  }
+
+  /** Bump `master` in the main checkout and push it, moving `origin/master`. */
+  function bumpOrigin(run: Run, kind: string, message: string): string {
+    const sha = bumpIn(run.main, kind, message);
+    mustRun('git', ['push', '-q', 'origin', 'master'], run.main);
+    return sha;
+  }
+
   it.each([
     { changed: 'src/feature.ts', build: true },
     { changed: 'tooling/tool.ts', build: true },
@@ -267,6 +359,68 @@ describe('sync-master batch refresh', () => {
     expect(existsSync(join(run.batch, 'node_modules', 'fake-dep', 'index.js'))).toBe(true);
     expect(existsSync(join(run.batch, BUILT))).toBe(true);
     expect(porcelain(run.batch)).toBe('');
+  });
+
+  it('resolves a version-line conflict to master bumped by the branch bump', TIMEOUT, () => {
+    const run = makeNpmRun();
+    const baseLock = lockOf(run.batch);
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    const theirs = bumpOrigin(run, 'minor', 'chore: theirs');
+
+    const r = sync(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
+    expect(r.json.conflicts).toEqual([
+      { path: LOCKFILE, kind: 'lockfile', landedBy: ['chore: theirs'] },
+      { path: 'package.json', kind: 'package', landedBy: ['chore: theirs'] },
+    ]);
+    expect(r.json.version).toEqual({
+      base: '1.0.0',
+      ours: '1.0.1',
+      theirs: '1.1.0',
+      result: '1.1.1',
+    });
+    expect(versionsOf(run.batch)).toEqual({ pkg: '1.1.1', lock: '1.1.1', lockRoot: '1.1.1' });
+    expect(lockOf(run.batch).packages['node_modules/fake-dep']).toEqual(
+      baseLock.packages['node_modules/fake-dep'],
+    );
+    expect(parents(run.batch)).toEqual([ours, theirs]);
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it('re-bumps an identical bump, committing the merge through the hooks', TIMEOUT, () => {
+    const run = makeNpmRun();
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    const hookLog = recordCommits(run.main);
+
+    const r = sync(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
+    expect(r.json.version?.result).toBe('1.0.2');
+    expect(versionsOf(run.batch)).toEqual({ pkg: '1.0.2', lock: '1.0.2', lockRoot: '1.0.2' });
+    expect(parents(run.batch)).toEqual([ours, theirs]);
+    // The hook saw MERGE_HEAD: it ran for this merge's own commit.
+    expect(readFileSync(hookLog, 'utf8').trim()).toBe(theirs);
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it('takes master version when only master bumped', TIMEOUT, () => {
+    const run = makeNpmRun();
+    commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
+    bumpOrigin(run, 'patch', 'chore: theirs');
+
+    const r = sync(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
+    expect(r.json.version).toEqual({
+      base: '1.0.0',
+      ours: '1.0.0',
+      theirs: '1.0.1',
+      result: '1.0.1',
+    });
+    expect(r.json.conflicts.filter((c) => c.kind === 'package')).toEqual([]);
+    expect(versionsOf(run.batch).pkg).toBe('1.0.1');
   });
 
   it('keeps a clean merge whose refresh fails, failing step build', TIMEOUT, () => {

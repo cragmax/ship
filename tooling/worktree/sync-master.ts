@@ -24,8 +24,17 @@
  * `node_modules` and `dist` are never rolled back. `--continue` refreshes
  * nothing: the resolver edits only doc indexes.
  *
- * The version-line rule (take master's side, re-apply the bump) is not
- * built: a `package.json` conflict is code.
+ * The version-line rule (`package-version.ts`; its I/O in
+ * `sync-master-version.ts`) intervenes only when both the batch and
+ * `origin/master` moved the `package.json` version since the merge-base:
+ * a `package.json` conflict confined to the top-level version line is then
+ * kind `package`, not code, and the merge runs `--no-ff --no-commit` — so
+ * an identical bump, which git merges clean, still stops before its commit.
+ * The rule writes and stages `package.json` at master's version bumped by
+ * the branch's own, regenerates and stages the lockfile, and the merge
+ * commit is made through the hooks as a resolver-free `--continue` would
+ * make it. A `package.json` conflict beyond the version line stays code.
+ * `--continue` finishes a merge whose `package.json` is already staged.
  */
 
 import { readFileSync } from 'node:fs';
@@ -46,11 +55,16 @@ import { needsBuild } from './land.js';
 import { linkTarget } from './links.js';
 import { RUN_UPSTREAM } from './run-layout.js';
 import { sortedSet } from './staged-set.js';
+import {
+  applyVersionRule,
+  LOCKFILE,
+  PACKAGE_JSON,
+  planVersionRule,
+  regenerateLockfile,
+  type VersionRule,
+} from './sync-master-version.js';
 import type { ConflictKind, ConflictPath, SyncMasterResult } from './types-run.js';
 import { Conflict, Refusal, recordFailure, StepFailure } from './types.js';
-
-/** The lockfile, regenerated on a conflict rather than merged by hand. */
-const LOCKFILE = 'package-lock.json';
 
 /** The doc indexes: a conflict in one goes to a resolver, never refuses. */
 const DOC_INDEX_PATHS: readonly string[] = [
@@ -109,6 +123,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
       outcome: null,
       commit: null,
       conflicts: [],
+      version: null,
       pending: [],
       refreshed: { ci: false, build: false },
       logs: [],
@@ -130,7 +145,9 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
  *
  * @param run - Call state.
  * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; Conflict
- *   `merge` when doc-index paths await a resolver; StepFailure for a failed step.
+ *   `merge` when doc-index paths await a resolver; StepFailure for a failed
+ *   step — `version` when both sides moved the version and one is not a
+ *   plain `x.y.z`, before anything merges.
  */
 function start(run: Run): void {
   const { batch, result } = run;
@@ -142,22 +159,21 @@ function start(run: Run): void {
     return;
   }
   const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'probe');
+  const { version, rule } = planVersionRule(batch, mergeBase);
+  result.version = version;
   result.conflicts = probeConflicts(batch).map((path) => ({
     path,
-    kind: conflictKind(path),
+    kind: conflictKind(path, rule !== null),
     landedBy: landedBy(batch, mergeBase, path),
   }));
   assertNoCodeConflict(result.conflicts);
   run.owned = true;
-  if (merge(run)) {
+  if (merge(run, rule !== null)) {
     recordMerged(run);
     refresh(run, mergeBase);
     return;
   }
-  const unmerged = unmergedPaths(batch, 'merge');
-  const pending = unmerged.filter((path) => path !== LOCKFILE);
-  assertOnlyDocIndexes(pending);
-  if (unmerged.includes(LOCKFILE)) regenerateLockfile(batch);
+  const pending = settleStoppedMerge(batch, rule);
   refresh(run, mergeBase);
   if (pending.length > 0) {
     result.pending = pending;
@@ -169,6 +185,29 @@ function start(run: Run): void {
     );
   }
   finish(run);
+}
+
+/**
+ * Settle what a stopped merge left that needs no resolver: the version
+ * rule's `package.json` and lockfile, or a conflicted lockfile regenerated.
+ *
+ * @param batch - The batch worktree, `MERGE_HEAD` set.
+ * @param rule - The version rule's intervention, or `null`.
+ * @returns The doc-index paths left for a resolver, sorted.
+ * @throws StepFailure `merge` when an unmerged path is neither settled here
+ *   nor a doc index; `version` or `lockfile` when settling fails.
+ */
+function settleStoppedMerge(batch: string, rule: VersionRule | null): string[] {
+  const unmerged = unmergedPaths(batch, 'merge');
+  const settled = rule === null ? [LOCKFILE] : [LOCKFILE, PACKAGE_JSON];
+  const pending = unmerged.filter((path) => !settled.includes(path));
+  assertOnlyDocIndexes(pending);
+  if (rule !== null) {
+    applyVersionRule(batch, rule.merged, rule.target, unmerged.includes(LOCKFILE));
+  } else if (unmerged.includes(LOCKFILE)) {
+    regenerateLockfile(batch, true);
+  }
+  return pending;
 }
 
 /**
@@ -278,17 +317,21 @@ function probeConflicts(batch: string): string[] {
  * Classify a conflicted path.
  *
  * @param path - Repository-relative path.
+ * @param packageResolved - Whether the version rule resolves `package.json`.
  * @returns `lockfile` for {@link LOCKFILE}, `doc-index` for a
- *   {@link DOC_INDEX_PATHS} member, `code` for anything else —
- *   `package.json` included.
+ *   {@link DOC_INDEX_PATHS} member, `package` for {@link PACKAGE_JSON} when
+ *   `packageResolved`, `code` for anything else.
  */
-function conflictKind(path: string): ConflictKind {
+function conflictKind(path: string, packageResolved: boolean): ConflictKind {
   if (path === LOCKFILE) return 'lockfile';
+  if (path === PACKAGE_JSON && packageResolved) return 'package';
   return DOC_INDEX_PATHS.includes(path) ? 'doc-index' : 'code';
 }
 
 /**
- * The `origin/master` commits since the merge-base that touched a path.
+ * The `origin/master` commits since the merge-base that touched a path,
+ * along the first-parent line — so a PR that landed by merge commit is
+ * named by that commit (`Merge pull request #N …`), never its inner commits.
  *
  * @param batch - The batch worktree.
  * @param mergeBase - The merge-base of `HEAD` and `origin/master`.
@@ -301,6 +344,7 @@ function landedBy(batch: string, mergeBase: string, path: string): string[] {
     batch,
     [
       'log',
+      '--first-parent',
       '--format=%s',
       '-n',
       String(LANDED_BY_LIMIT),
@@ -346,39 +390,27 @@ function logFile(run: Run, name: string): string {
 }
 
 /**
- * Run the merge, its output to a log. A clean merge commits itself.
+ * Run the merge, its output to a log. A clean merge commits itself, unless
+ * `stop` holds it before its commit.
  *
  * @param run - Call state.
- * @returns `true` when the merge committed; `false` when it stopped on
- *   conflicts with `MERGE_HEAD` set.
- * @throws StepFailure `merge` when it exits non-zero without a merge in progress.
+ * @param stop - Merge `--no-ff --no-commit`, for the version rule to edit
+ *   the merged tree first.
+ * @returns `true` when the merge committed; `false` when it stopped —
+ *   on conflicts or by `stop` — with `MERGE_HEAD` set.
+ * @throws StepFailure `merge` when it ends without a commit and without a
+ *   merge in progress.
  */
-function merge(run: Run): boolean {
-  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', RUN_UPSTREAM], {
+function merge(run: Run, stop: boolean): boolean {
+  const hold = stop ? ['--no-ff', '--no-commit'] : [];
+  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', ...hold, RUN_UPSTREAM], {
     cwd: process.cwd(),
     timeoutMs: COMMIT_TIMEOUT_MS,
     logFile: logFile(run, 'merge.log'),
   });
-  if (r.exitCode === 0) return true;
+  if (r.exitCode === 0 && !stop) return true;
   if (refExists(run.batch, 'MERGE_HEAD')) return false;
   throw new StepFailure('merge', `git merge ${RUN_UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
-}
-
-/**
- * Resolve a lockfile conflict by regeneration, never by hand: take
- * `origin/master`'s lockfile, let npm rewrite it against the merged
- * `package.json`, and stage it by name.
- *
- * @param batch - The batch worktree, mid-merge.
- * @throws StepFailure `lockfile` when git or npm fails.
- */
-function regenerateLockfile(batch: string): void {
-  git(batch, ['checkout', '--theirs', '--', LOCKFILE], 'lockfile');
-  runStep('lockfile', 'npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
-    cwd: batch,
-    timeoutMs: NPM_TIMEOUT_MS,
-  });
-  git(batch, ['add', '--', LOCKFILE], 'lockfile');
 }
 
 /**

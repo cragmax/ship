@@ -1,9 +1,9 @@
 /**
- * The `ship` workflow's tier table — the one home of every stage's
+ * The saved workflows' tier table — the one home of every stage's
  * `agentType`, `model` and `effort` (ADR-0045), plus the run's tunables and
- * its phase titles. No other workflow source spells a tier: each `agent()`
- * call takes its options from {@link agentOptions} (a `reviewer` call from
- * {@link reviewerOptions}).
+ * each workflow's phase titles. No other workflow source spells a tier:
+ * each `agent()` call takes its options from {@link agentOptions} (a
+ * `reviewer` call from {@link reviewerOptions}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -118,6 +118,33 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
     detail:
       'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
       'pull request',
+  },
+];
+
+/** The titles the `resync` workflow calls `phase()` with. */
+export const RESYNC_PHASE_TITLES = {
+  preflight: PHASE_TITLES.preflight,
+  merge: 'Merge',
+  push: 'Push',
+} as const;
+
+/** The `resync` workflow's phases, in run order (`meta.phases`). */
+export const RESYNC_PHASES: readonly WorkflowPhase[] = [
+  {
+    title: RESYNC_PHASE_TITLES.preflight,
+    detail:
+      'live runs; spent batches torn down (guarded); the branch batch attached, and re-cut and ' +
+      'provisioned if it was torn down',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.merge,
+    detail:
+      "the epic end's merge step: doc indexes resolved, the version line re-bumped, " +
+      'a code conflict stops',
+  },
+  {
+    title: RESYNC_PHASE_TITLES.push,
+    detail: "pushed through the pre-push gate, never forced; the PR's mergeable state read",
   },
 ];
 

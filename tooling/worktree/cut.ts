@@ -75,6 +75,7 @@ export function cutBatch(input: {
     runRoot: null,
     batch: null,
     reportDir: null,
+    attach: null,
   };
   try {
     assertMainWorktree(main, 'preconditions');

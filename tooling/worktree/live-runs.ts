@@ -16,6 +16,10 @@
  * `pr-state` error per affected branch while every run is still reported in
  * full — "could not ask" must never read as "no PR" at pre-flight. Any git
  * failure fails the whole command.
+ *
+ * `spent` keys on the run's tip, not only the branch name: a `ship/<slug>`
+ * re-cut after its PR merged has commits beyond the old PR's head, so a run
+ * is spent only when its tip is contained in that head ({@link spentOf}).
  */
 
 import { existsSync } from 'node:fs';
@@ -47,8 +51,13 @@ import {
 /** `gh`'s PR states in precedence order: a reopened branch's live PR wins. */
 const PR_STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
 
-/** `gh pr list --json number,state` output; unknown keys are tolerated. */
-const PrListSchema = z.array(z.object({ number: z.number(), state: z.string() }));
+/** `gh pr list --json number,state,headRefOid` output; unknown keys are tolerated. */
+const PrListSchema = z.array(
+  z.object({ number: z.number(), state: z.string(), headRefOid: z.string().optional() }),
+);
+
+/** A full commit id, as `gh` names a PR head. */
+const COMMIT_ID = /^[0-9a-f]{40,64}$/u;
 
 /** What {@link lookupPr} found. */
 interface PrLookup {
@@ -131,6 +140,7 @@ function describeRun(
     result.status = 'failed';
     result.errors.push({ step: 'pr-state', message: `${branch}: ${error}` });
   }
+  const { spent, unverified } = spentOf(main, ref, info);
   return {
     path: entry.path,
     branch,
@@ -141,11 +151,62 @@ function describeRun(
     ),
     dirty: isDirty(entry),
     pr: info,
-    spent: info.state === 'merged' || info.state === 'closed',
+    spent,
+    spentUnverified: unverified,
     nested: worktrees
       .map((w) => w.path)
       .filter((path) => !samePath(path, entry.path) && isInside(path, entry.path)),
   };
+}
+
+/**
+ * Whether a run is spent: its PR merged or closed, and its tip contained in
+ * the PR's head.
+ *
+ * @param main - The main checkout.
+ * @param ref - The run branch's full ref.
+ * @param info - Its PR.
+ * @returns `spent` and `unverified` both `false` while the PR is open,
+ *   absent or unknown; `unverified` when the PR is over but its head is
+ *   unnamed or not a commit here; otherwise `spent` when the tip is an
+ *   ancestor of (or equal to) the head.
+ * @throws StepFailure `runs` when `git merge-base --is-ancestor` fails.
+ */
+function spentOf(
+  main: string,
+  ref: string,
+  info: PrInfo,
+): { readonly spent: boolean; readonly unverified: boolean } {
+  if (info.state !== 'merged' && info.state !== 'closed')
+    return { spent: false, unverified: false };
+  if (info.headOid === null || !isCommit(main, info.headOid)) {
+    return { spent: false, unverified: true };
+  }
+  const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', ref, info.headOid], {
+    cwd: process.cwd(),
+  });
+  if (r.exitCode === 0) return { spent: true, unverified: false };
+  if (r.exitCode === 1) return { spent: false, unverified: false };
+  throw new StepFailure(
+    'runs',
+    `git merge-base --is-ancestor ${ref} ${info.headOid} failed`,
+    r.tail,
+  );
+}
+
+/**
+ * Whether a commit id names a commit in the repository.
+ *
+ * @param main - The main checkout.
+ * @param oid - The id `gh` gave; anything but a full hex id is not one.
+ * @returns `true` when `git cat-file -e <oid>^{commit}` succeeds.
+ */
+function isCommit(main: string, oid: string): boolean {
+  if (!COMMIT_ID.test(oid)) return false;
+  return (
+    runCaptured('git', ['-C', main, 'cat-file', '-e', `${oid}^{commit}`], { cwd: process.cwd() })
+      .exitCode === 0
+  );
 }
 
 /**
@@ -162,28 +223,43 @@ function isDirty(entry: WorktreeEntry): boolean | null {
 }
 
 /**
- * Ask `gh` for a branch's pull requests, in every state, under
- * `GH_TIMEOUT_MS`. `publish` reads it too, for its open-PR refusal.
+ * Ask `gh` for a branch's pull requests, in every state, with each head
+ * commit, under `GH_TIMEOUT_MS`. `publish` and `cut-batch --attach` read it
+ * too, for their open-PR checks.
  *
  * @param dir - A checkout of the repository (`gh` resolves the repository from it).
  * @param branch - Short branch name.
  * @returns `none` for no PR; otherwise the highest-precedence PR by
- *   {@link PR_STATES}; `unknown` with an `error` when `gh` fails, is
- *   missing, or answers something unreadable.
+ *   {@link PR_STATES}, its `headOid` `null` when `gh` names none; `unknown`
+ *   with an `error` when `gh` fails, is missing, or answers something
+ *   unreadable.
  */
 export function lookupPr(dir: string, branch: string): PrLookup {
   const r = runCaptured(
     'gh',
-    ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state', '--limit', '20'],
+    [
+      'pr',
+      'list',
+      '--head',
+      branch,
+      '--state',
+      'all',
+      '--json',
+      'number,state,headRefOid',
+      '--limit',
+      '20',
+    ],
     { cwd: dir, timeoutMs: GH_TIMEOUT_MS },
   );
   if (r.exitCode !== 0) return unknownPr(`gh pr list exited ${String(r.exitCode)}: ${r.tail}`);
   const prs = parsePrList(r.stdout);
   if (prs === null) return unknownPr(`gh pr list printed unreadable JSON: ${r.stdout}`);
-  if (prs.length === 0) return { info: { state: 'none', number: null } };
+  if (prs.length === 0) return { info: { state: 'none', number: null, headOid: null } };
   for (const [ghState, state] of Object.entries(PR_STATES)) {
     const pr = prs.find((p) => p.state === ghState);
-    if (pr !== undefined) return { info: { state, number: pr.number } };
+    if (pr !== undefined) {
+      return { info: { state, number: pr.number, headOid: pr.headRefOid ?? null } };
+    }
   }
   return unknownPr(`gh pr list reported unrecognised states: ${r.stdout}`);
 }
@@ -195,11 +271,11 @@ export function lookupPr(dir: string, branch: string): PrLookup {
  * @returns The lookup.
  */
 function unknownPr(error: string): PrLookup {
-  return { info: { state: 'unknown', number: null }, error };
+  return { info: { state: 'unknown', number: null, headOid: null }, error };
 }
 
 /**
- * Parse `gh pr list --json number,state` output.
+ * Parse `gh pr list --json number,state,headRefOid` output.
  *
  * @param stdout - `gh`'s stdout.
  * @returns The entries, or `null` unless it is JSON matching {@link PrListSchema}.

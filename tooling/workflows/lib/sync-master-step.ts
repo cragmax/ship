@@ -1,9 +1,10 @@
 /**
  * The epic end's merge step (ADR-0045 decision 6) — the one workflow home
- * of the `origin/master` merge, which `/resync` (#1037) reuses:
- * `sync-master`; on `needs-resolution`, the doc-index resolver (it edits the
- * pending paths and never stages); then `sync-master --continue`, which
- * stages by name itself.
+ * of the `origin/master` merge, which the `resync` workflow reuses, passing
+ * `{ batch, reportDir, tag: 'resync' }`: `sync-master`; on
+ * `needs-resolution`, the doc-index resolver (it edits the pending paths
+ * and never stages); then `sync-master --continue`, which stages by name
+ * itself.
  *
  * A code conflict or any failure stops the epic before its bump and push;
  * the caller reads {@link SyncStepResult.verdict}. A resolver that returns
@@ -13,6 +14,8 @@
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
+
+import type { ConflictPath, VersionLine } from '../../worktree/types-run.js';
 
 import { AGENT_CALLS } from './agent-calls.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -29,7 +32,14 @@ export interface SyncStepResult {
   readonly commit: string | null;
   /** One line on what happened. */
   readonly message: string;
+  /** The start's classified conflicts — what landed each code conflict included; `[]` when it named none. */
+  readonly conflicts: readonly ConflictPath[];
+  /** The versions the start's merge saw and ended on; `null` when it named none. */
+  readonly version: VersionLine | null;
 }
+
+/** How the step ended, before the start's findings are added. */
+type SyncOutcome = Pick<SyncStepResult, 'verdict' | 'commit' | 'message'>;
 
 /** Where the step runs. */
 export interface SyncStepContext {
@@ -37,7 +47,7 @@ export interface SyncStepContext {
   readonly batch: string;
   /** The run's report directory. */
   readonly reportDir: string;
-  /** What tells the entry's calls from other entries' (`epic-1025`, `list`). */
+  /** What tells the entry's calls from other entries' (`epic-1025`, `list`, `resync`). */
   readonly tag: string;
 }
 
@@ -46,17 +56,19 @@ export interface SyncStepContext {
  *
  * @param hooks - The workflow hooks.
  * @param ctx - The batch and its report directory.
- * @returns Resolves to the step's result; never rejects on a tool's outcome.
+ * @returns Resolves to the step's result, carrying the start's `conflicts`
+ *   and `version` on every path; never rejects on a tool's outcome.
  */
 export async function syncMasterStep(
   hooks: WorkflowHooks,
   ctx: SyncStepContext,
 ): Promise<SyncStepResult> {
   const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
   if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return resolveAndContinue(hooks, ctx, start.pending ?? []);
+    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
   }
-  return syncVerdict(start, 'merged');
+  return { ...syncVerdict(start, 'merged'), ...found };
 }
 
 /**
@@ -71,7 +83,7 @@ async function resolveAndContinue(
   hooks: WorkflowHooks,
   ctx: SyncStepContext,
   pending: readonly string[],
-): Promise<SyncStepResult> {
+): Promise<SyncOutcome> {
   if (pending.length === 0) {
     return syncFailure(
       `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
@@ -100,7 +112,7 @@ async function resolveAndContinue(
  * @returns `up-to-date`; `merged` / `resolved` for an `ok` merge carrying
  *   its commit; `code-conflict` for that refusal; `failed` otherwise.
  */
-function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'): SyncStepResult {
+function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'): SyncOutcome {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
     return { verdict: 'up-to-date', commit: null, message: 'origin/master already merged' };
   }
@@ -119,11 +131,11 @@ function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'
 }
 
 /**
- * A `failed` result.
+ * A `failed` outcome.
  *
  * @param message - What stopped the step.
- * @returns The result.
+ * @returns The outcome.
  */
-function syncFailure(message: string): SyncStepResult {
+function syncFailure(message: string): SyncOutcome {
   return { verdict: 'failed', commit: null, message };
 }

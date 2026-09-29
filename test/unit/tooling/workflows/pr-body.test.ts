@@ -100,7 +100,13 @@ const INPUT: PrBodyInput = {
     },
     { engine: 'folia', out: FOLIA_RED },
   ],
-  sync: { verdict: 'merged', commit: 'm1', message: 'merged origin/master as m1' },
+  sync: {
+    verdict: 'merged',
+    commit: 'm1',
+    message: 'merged origin/master as m1',
+    conflicts: [],
+    version: null,
+  },
   bump: { ...OK, kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
   critic: {
     outcome: 'landed',
