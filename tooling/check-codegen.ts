@@ -1,12 +1,15 @@
 /**
- * Drift gate: render `RESERVED_NAMES`-derived artifacts in-memory and string-
- * compare to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
- * but simpler — no AST walking, no checker context, just exact-string equality.
+ * Drift gate: render the generated artifacts in-memory and string-compare
+ * them to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
+ * but simpler — no checker context, just string equality.
  *
- * One target check:
+ * Target checks:
  *
  * 1. `src/init/templates/helpers-readme.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
+ * 2. Each saved workflow in {@link WORKFLOWS} — the committed
+ *    `.claude/workflows/<name>.js` equals a fresh render, line endings
+ *    normalised ({@link checkRenderedWorkflows}).
  *
  * The former `src/tools/promote-script.ts` destructure target was retired
  * by #580; the body→suite-of-one wrapper at
@@ -26,6 +29,8 @@ import {
   renderReservedNamesMarkdown,
   replaceBetweenMarkers,
 } from './generate-reserved-names-targets.js';
+import { checkRenderedWorkflows } from './lib/workflow-render.js';
+import { WORKFLOWS } from './render-workflows.js';
 
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
 
@@ -55,7 +60,10 @@ async function checkMarkersFile(absPath: string, displayPath: string): Promise<C
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const results = [await checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md')];
+  const results: CheckResult[] = [
+    await checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md'),
+    ...(await checkRenderedWorkflows(WORKFLOWS, ROOT_DIR)),
+  ];
 
   const failures = results.filter((r) => !r.ok);
   if (failures.length > 0) {
@@ -66,7 +74,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('codegen-check: OK (1 target)');
+  console.log(`codegen-check: OK (${String(results.length)} targets)`);
 }
 
 await main();
