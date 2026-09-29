@@ -5,22 +5,33 @@
  * halt state; it runs every action in the order the scheduler emits it, and
  * feeds each settled attempt's events in order.
  *
- * - `start` runs an attempt (`slice-chain.ts`); `requeue` and `retry` only
- *   bump the issue's attempt number — the attempt already tore its slice down.
- * - An authored attempt feeds `slot-free`; its landing settles later.
+ * - `start` logs `start #N attempt K` and runs an attempt (`slice-chain.ts`),
+ *   handing it the files the issue's last landing conflicted on; `requeue`
+ *   and `retry` only bump the issue's attempt number — the attempt already
+ *   tore its slice down.
+ * - **The cap bounds everything in flight; epic ends run outside it.** An
+ *   authored attempt feeds nothing: the issue holds its slot from `start`
+ *   until it settles, the commit-queue wait included (the scheduler header:
+ *   a workflow that wants a bound on everything in flight never sends
+ *   `slot-free`).
  * - An ended attempt is settled by `settleEvents` (`commit-queue.ts`),
- *   recorded, then fed.
- * - `skip` and `block` record the issue as `see #N`; `epic-done` runs the
- *   epic end when anything landed (else `nothing-landed`); `epic-halted`
- *   records the entry halted.
+ *   recorded — its outcome and its schedule, the final attempt's winning —
+ *   then fed.
+ * - `skip` and `block` record the issue as `see #N`; `epic-done` starts the
+ *   epic end as a flight of its own when anything landed, else the retro
+ *   alone; `epic-halted` starts the retro alone. The `Epic end` phase is
+ *   entered with the first end flight.
+ *
+ * **Concurrency.** The loop races un-awaited, `agent()`-chaining promises
+ * with `Promise.race` and starts new ones mid-flight; the workflow runtime
+ * runs them concurrently and resolves the race in completion order (Claude
+ * Code workflow runtime, observed 2026-09-29, #1036 P1). Each entry has its
+ * own commit queue; the run has one more, the repo lock its epic ends share.
  *
  * **Two halt flags per entry.** *Halting* is raised as soon as a landing or
  * teardown calls for a halt — the entry's attempts stop and its queued
  * landings never run. *Halted* means the scheduler was fed `epic-halt`;
  * `settleEvents` reads it, since a second `epic-halt` throws.
- *
- * Generic over entries and issues: one issue proves the chain (#1035),
- * #1036 the parallelism.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -35,11 +46,11 @@ import type {
 } from '../../lib/run-scheduler.types.js';
 import type { RunGraph } from '../../lib/run-set.js';
 
-import { createCommitQueue, settleEvents } from './commit-queue.js';
-import { epicEnd, type EpicReport, type IssueReport } from './epic-end.js';
+import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
+import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import type { LandedIssue } from './pr-body.js';
-import type { MainSnapshot } from './preflight.js';
+import type { LandedIssue, ScheduleEntry } from './pr-body.js';
+import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import {
   runAttempt,
   type AttemptEnding,
@@ -53,14 +64,16 @@ import { PHASE_TITLES } from './stages.js';
 export interface DriveInput {
   /** The workflow hooks. */
   readonly hooks: WorkflowHooks;
-  /** The run graph; entry `i` is `entries[i]`. */
+  /** The run graph, overlap edges merged; entry `i` is `entries[i]`. */
   readonly graph: RunGraph;
   /** Each entry, cut and provisioned, in run-set order. */
   readonly entries: readonly EntrySetup[];
-  /** The authoring cap. */
+  /** The most issues in flight at once, from start until settled. */
   readonly maxSlices: number;
   /** The main checkout as pre-flight found it. */
   readonly launch: MainSnapshot | null;
+  /** The overlap edges pre-flight added, run-wide. */
+  readonly overlap: OverlapRecord;
 }
 
 /** A settled flight. */
@@ -68,8 +81,8 @@ type Note =
   | AttemptNote
   | { readonly kind: 'epic-end'; readonly entry: number; readonly report: EpicReport };
 
-/** How an entry ended without a report of its own epic end. */
-type EntryEnd = 'halted' | 'nothing-landed';
+/** An issue's final attempt, as its schedule reports it. */
+type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt'>;
 
 /** The loop's state. */
 interface Drive {
@@ -78,12 +91,18 @@ interface Drive {
   scheduler: SchedulerState | null;
   readonly flights: Map<string, Promise<Note>>;
   readonly attempts: Map<number, number>;
+  /** Each issue's last conflicting files, for its next attempt's planner. */
+  readonly conflicts: Map<number, readonly string[]>;
+  /** Each settled attempt's timing, by issue; the final attempt's wins. */
+  readonly timing: Map<number, Timing>;
   readonly halting: Set<number>;
   readonly halted: Set<number>;
   readonly outcomes: Map<number, IssueReport>;
   readonly landed: Map<number, LandedIssue[]>;
   readonly residue: Map<number, string[]>;
-  readonly ends: Map<number, EpicReport | EntryEnd>;
+  readonly ends: Map<number, EpicReport>;
+  /** The run's repo lock, shared by every epic end. */
+  readonly repoLock: CommitQueue;
   epicEndEntered: boolean;
 }
 
@@ -117,12 +136,15 @@ function newDrive(input: DriveInput): Drive {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
+    conflicts: new Map(),
+    timing: new Map(),
     halting: new Set(),
     halted: new Set(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
     ends: new Map(),
+    repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -156,7 +178,8 @@ function flightKey(note: Note): string {
 }
 
 /**
- * Handle one settled flight.
+ * Handle one settled flight. An authored attempt feeds nothing: its issue
+ * keeps its slot until its landing settles.
  *
  * @param d - The loop state.
  * @param note - The flight's note.
@@ -166,7 +189,6 @@ function onNote(d: Drive, note: Note): void {
     d.ends.set(note.entry, note.report);
   } else if (note.kind === 'authored') {
     d.flights.set(flightKey(note), note.landing);
-    feed(d, [{ kind: 'slot-free', issue: note.issue }]);
   } else {
     settle(d, note.issue, note.ending);
   }
@@ -188,6 +210,12 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     entryHalted: d.halted.has(i),
   });
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
+  d.conflicts.set(issue, ending.conflicts);
+  d.timing.set(issue, {
+    attempts: d.attempts.get(issue) ?? 1,
+    startedAt: ending.startedAt,
+    committedAt: ending.committedAt,
+  });
   if (events.some((e) => e.kind === 'epic-halt')) {
     d.halting.add(i);
     d.halted.add(i);
@@ -286,13 +314,9 @@ function apply(d: Drive, t: Transition): void {
  */
 function act(d: Drive, action: SchedulerAction): void {
   switch (action.kind) {
-    case 'start': {
-      const ctx = d.contexts[entryOfIssue(d, action.issue)];
-      if (ctx === undefined) throw new Error(`ship: no entry holds #${String(action.issue)}`);
-      const attempt = d.attempts.get(action.issue) ?? 1;
-      d.flights.set(`issue:${String(action.issue)}`, runAttempt(ctx, action.issue, attempt));
+    case 'start':
+      startAttempt(d, action.issue);
       break;
-    }
     case 'requeue':
     case 'retry':
       d.attempts.set(action.issue, (d.attempts.get(action.issue) ?? 1) + 1);
@@ -317,15 +341,31 @@ function act(d: Drive, action: SchedulerAction): void {
       endEpic(d, entryOfEpic(d, action.epic));
       break;
     case 'epic-halted':
-      d.ends.set(entryOfEpic(d, action.epic), 'halted');
+      endUnshipped(d, entryOfEpic(d, action.epic), 'halted');
       break;
   }
 }
 
 /**
- * Start an entry's epic end, or record that nothing landed. An epic end
- * that rejects reports its entry `stopped` with the throw's message — it
- * never rejects the drive, so the other entries still report.
+ * Start an issue's next attempt.
+ *
+ * @param d - The loop state.
+ * @param issue - The issue.
+ */
+function startAttempt(d: Drive, issue: number): void {
+  const ctx = d.contexts[entryOfIssue(d, issue)];
+  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
+  const attempt = d.attempts.get(issue) ?? 1;
+  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
+  const conflicts = d.conflicts.get(issue) ?? [];
+  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt, conflicts));
+}
+
+/**
+ * Start an entry's epic end as a flight, or its retro alone when nothing
+ * landed. An epic end that rejects reports its entry `stopped` with the
+ * throw's message — it never rejects the drive, so the other entries still
+ * report.
  *
  * @param d - The loop state.
  * @param i - The entry.
@@ -334,20 +374,22 @@ function endEpic(d: Drive, i: number): void {
   const landed = d.landed.get(i) ?? [];
   const entry = d.input.entries[i];
   if (landed.length === 0 || entry === undefined) {
-    d.ends.set(i, 'nothing-landed');
+    endUnshipped(d, i, 'nothing-landed');
     return;
   }
-  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
-  d.epicEndEntered = true;
   const issues = issueReports(d, i);
   const residue = d.residue.get(i) ?? [];
+  const schedule = scheduleOf(d, i);
   const report = epicEnd({
     hooks: d.input.hooks,
     entry,
     landed,
     issues,
+    schedule,
     residue,
     launch: d.input.launch,
+    repoLock: d.repoLock,
+    overlap: entryOverlap(d, i),
   }).catch(
     (err: unknown): EpicReport => ({
       epic: entry.epic,
@@ -355,9 +397,55 @@ function endEpic(d: Drive, i: number): void {
       outcome: 'stopped',
       message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
       issues,
+      schedule,
       residue,
     }),
   );
+  startEnd(d, i, report);
+}
+
+/**
+ * Start the retro-only end of an entry that halted or landed nothing. One
+ * that rejects reports the entry without retro findings.
+ *
+ * @param d - The loop state.
+ * @param i - The entry.
+ * @param outcome - How the entry ended.
+ */
+function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed'): void {
+  const entry = d.input.entries[i];
+  if (entry === undefined) return;
+  const input = {
+    hooks: d.input.hooks,
+    entry,
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
+  };
+  const report = unshippedEpicEnd(input, outcome).catch(
+    (): EpicReport => ({
+      epic: entry.epic,
+      branch: entry.branch,
+      outcome,
+      issues: input.issues,
+      schedule: input.schedule,
+      residue: input.residue,
+      retro: null,
+    }),
+  );
+  startEnd(d, i, report);
+}
+
+/**
+ * Put an entry's end in flight, entering the `Epic end` phase with the first.
+ *
+ * @param d - The loop state.
+ * @param i - The entry.
+ * @param report - The end's report, never rejecting.
+ */
+function startEnd(d: Drive, i: number, report: Promise<EpicReport>): void {
+  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
+  d.epicEndEntered = true;
   d.flights.set(
     `epic:${String(i)}`,
     report.then((r): Note => ({ kind: 'epic-end', entry: i, report: r })),
@@ -369,17 +457,19 @@ function endEpic(d: Drive, i: number): void {
  *
  * @param d - The loop state.
  * @param i - The entry.
- * @returns Its epic end's report, or a `halted` / `nothing-landed` one.
+ * @returns Its end's report; a `halted` one for an entry that never got an
+ *   end action, which the scheduler's one-end-per-entry rule rules out.
  */
 function entryReport(d: Drive, i: number): EpicReport {
-  const end = d.ends.get(i) ?? 'halted';
-  if (typeof end !== 'string') return end;
+  const end = d.ends.get(i);
+  if (end !== undefined) return end;
   const entry = d.input.entries[i];
   return {
     epic: entry?.epic ?? null,
     branch: entry?.branch ?? '',
-    outcome: end,
+    outcome: 'halted',
     issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
     residue: d.residue.get(i) ?? [],
   };
 }
@@ -395,6 +485,52 @@ function entryReport(d: Drive, i: number): EpicReport {
 function issueReports(d: Drive, i: number): IssueReport[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
   return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
+}
+
+/**
+ * An entry's schedule, in the entry's order.
+ *
+ * @param d - The loop state.
+ * @param i - The entry.
+ * @returns Each issue's blockers in the drive graph (ascending) and its
+ *   final attempt's timing; `attempts: 0` and `null` instants for an issue
+ *   that never started.
+ */
+function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+  return issues.map((issue) => ({ ...neverStarted(issue, d.input.graph), ...d.timing.get(issue) }));
+}
+
+/**
+ * The schedule line of an issue that never started.
+ *
+ * @param issue - The issue.
+ * @param graph - The graph its blockers are read from.
+ * @returns Its blockers ascending, `attempts: 0`, both instants `null`.
+ */
+export function neverStarted(issue: number, graph: RunGraph): ScheduleEntry {
+  const blockers = graph.edges
+    .filter((e) => e.dependent === issue)
+    .map((e) => e.blocker)
+    .sort((a, b) => a - b);
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+}
+
+/**
+ * The part of the run's overlap record that concerns one entry.
+ *
+ * @param d - The loop state.
+ * @param i - The entry.
+ * @returns The added edges and sequenced pairs inside the entry.
+ */
+function entryOverlap(d: Drive, i: number): OverlapRecord {
+  const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
+  const { overlap } = d.input;
+  return {
+    added: overlap.added.filter((e) => issues.has(e.blocker)),
+    sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
+    areaMap: overlap.areaMap,
+  };
 }
 
 /**

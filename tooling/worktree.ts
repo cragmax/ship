@@ -10,7 +10,7 @@
  * ```
  * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN
  * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,...)
- * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH --issue N --attempt K
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic)
  * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
  * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
  * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
@@ -41,6 +41,9 @@
  * come only from argv, resolved against the starting cwd; every other
  * argument — a sha, repo-relative paths, a number, a title — is kept as given.
  *
+ * Every envelope carries `at`, the instant the command finished
+ * ({@link runWorktreeCli}).
+ *
  * Exit codes: `0` ok, `1` failed, refused or conflict (the envelope's
  * `status` tells which), `2` usage error ({@link UsageError}). The runner
  * rule shared with `tooling/run-gate.ts`: on `0` / `1` parse stdout; `2` is
@@ -55,7 +58,7 @@ import { pathToFileURL } from 'node:url';
 
 import { toPosix } from './shared.js';
 import { bump } from './worktree/bump.js';
-import { cutBatch, cutSlice } from './worktree/cut.js';
+import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
@@ -195,15 +198,11 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: (args) => cutBatch({ main: args.target, selection: selectionFlag(args) }),
   },
   'cut-slice': {
-    valueFlags: ['--issue', '--attempt'],
-    switchFlags: [],
+    valueFlags: [],
+    optionFlags: ['--issue', '--attempt'],
+    switchFlags: ['--critic'],
     rest: NO_REST,
-    run: (args) =>
-      cutSlice({
-        batch: args.target,
-        issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
-        attempt: positiveInt(args.values.get('--attempt') ?? '', '--attempt'),
-      }),
+    run: (args) => cutSlice({ batch: args.target, slice: sliceFlag(args) }),
   },
   'sync-master': {
     valueFlags: [],
@@ -334,6 +333,29 @@ function selectionFlag(args: ParsedArgs): RunSelection {
 }
 
 /**
+ * Read `cut-slice`'s slice: exactly one of `--critic` and
+ * `--issue N --attempt K`.
+ *
+ * @param args - Parsed argv.
+ * @returns The critic slice, or the issue attempt.
+ * @throws UsageError when both or neither is given, when one of `--issue`
+ *   and `--attempt` comes without the other, or a number is bad.
+ */
+function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
+  const issue = args.values.get('--issue');
+  const attempt = args.values.get('--attempt');
+  const critic = args.switches.has('--critic');
+  if (critic === (issue !== undefined || attempt !== undefined)) {
+    throw new UsageError('cut-slice takes exactly one of --critic and --issue N --attempt K');
+  }
+  if (critic) return { critic: true };
+  if (issue === undefined || attempt === undefined) {
+    throw new UsageError('cut-slice --issue and --attempt go together');
+  }
+  return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
+}
+
+/**
  * Check a value flag was followed by a value.
  *
  * @param value - The next argv entry.
@@ -352,9 +374,24 @@ function requireValue(value: string | undefined, flag: string): string {
  * Run one CLI invocation.
  *
  * @param argv - `process.argv.slice(2)`.
- * @returns Resolves to the envelope and the process exit code; never rejects.
+ * @returns Resolves to the envelope, stamped with its `at` instant on every
+ *   path (ok, refused, failed, usage), and the process exit code; never rejects.
  */
 export async function runWorktreeCli(
+  argv: readonly string[],
+): Promise<{ result: ResultBase; exitCode: number }> {
+  const run = await dispatch(argv);
+  run.result.at = new Date().toISOString();
+  return run;
+}
+
+/**
+ * Dispatch one invocation to its command.
+ *
+ * @param argv - `process.argv.slice(2)`.
+ * @returns Resolves to the unstamped envelope and the exit code; never rejects.
+ */
+async function dispatch(
   argv: readonly string[],
 ): Promise<{ result: ResultBase; exitCode: number }> {
   const [name = '', ...rest] = argv;

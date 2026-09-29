@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  criticSliceLayout,
   RUN_BRANCH_PREFIX,
   runLayout,
   runSlug,
@@ -46,6 +47,15 @@ describe('sliceLayout', () => {
     expect(sliceLayout('C:/src/ph-runs/epic-1025', 'epic-1025', 1043, 2)).toEqual({
       path: 'C:/src/ph-runs/epic-1025/slice-1043-2',
       branch: 'slice/epic-1025/1043-2',
+    });
+  });
+});
+
+describe('criticSliceLayout', () => {
+  it('puts the epic end’s critic slice beside the batch, on slice/<slug>/critic', () => {
+    expect(criticSliceLayout('C:/src/ph-runs/epic-9', 'epic-9')).toEqual({
+      path: 'C:/src/ph-runs/epic-9/slice-critic',
+      branch: 'slice/epic-9/critic',
     });
   });
 });

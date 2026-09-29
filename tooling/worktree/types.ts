@@ -95,6 +95,12 @@ export interface ResultBase {
   errors: StepError[];
   /** Present only when `status` is `refused`. */
   reason?: RefusalReason;
+  /**
+   * When the command finished: a UTC ISO-8601 instant, stamped by the CLI
+   * shell on every envelope it prints (usage errors included); absent on an
+   * envelope built in-process.
+   */
+  at?: string;
 }
 
 /** A directory link and the absolute directory it points at. */

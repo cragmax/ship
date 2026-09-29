@@ -132,7 +132,7 @@ export type CutBatchOutput = WorktreeOutput<
 export type ProvisionBatchOutput = WorktreeOutput<ProvisionBatchResult, 'registry' | 'env'>;
 
 /** `cut-slice`'s consumed fields. */
-export type CutSliceOutput = WorktreeOutput<CutSliceResult, 'branch' | 'base' | 'slice'>;
+export type CutSliceOutput = WorktreeOutput<CutSliceResult, 'branch' | 'base' | 'slice' | 'at'>;
 
 /** `provision`'s consumed fields. */
 export type ProvisionOutput = WorktreeOutput<ProvisionResult, 'env'>;
@@ -140,7 +140,7 @@ export type ProvisionOutput = WorktreeOutput<ProvisionResult, 'env'>;
 /** `land`'s consumed fields. */
 export type LandOutput = WorktreeOutput<
   LandResult,
-  'commit' | 'files' | 'conflicts' | 'rolledBack' | 'batchClean'
+  'commit' | 'files' | 'conflicts' | 'rolledBack' | 'batchClean' | 'at'
 >;
 
 /** `teardown`'s consumed fields. */
@@ -375,6 +375,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     branch: NULLABLE_STRING,
     base: NULLABLE_STRING,
     slice: NULLABLE_STRING,
+    at: STRING,
   }),
   provision: worktreeSchema({
     env: nullableObject({ PH_PROJECT_DIR: STRING }, ['PH_PROJECT_DIR']),
@@ -385,6 +386,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     conflicts: STRINGS,
     rolledBack: BOOLEAN,
     batchClean: BOOLEAN,
+    at: STRING,
   }),
   teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
   'server-tier': worktreeSchema({

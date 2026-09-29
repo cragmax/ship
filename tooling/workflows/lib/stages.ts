@@ -24,16 +24,20 @@ export interface StageRow {
 /**
  * Every stage the workflow runs an agent for. `runner` runs one tooling
  * command and transcribes its envelope; `scout` checks the run set against
- * the current tree; `planner` plans one issue and `applier` (the same agent)
- * applies the plan review's findings once; `planReviewer` reviews the plan;
- * `tdd` authors the slice's one commit; `reviewer` reviews and amends it, its
- * effort set per call by {@link reviewEffort}; `resolver` (the reviewer
- * agent) resolves the epic end's doc-index conflicts; `testReview` hardens
- * the tests on the slice's final shape.
+ * the current tree; `overlapEstimator` names the run-set pairs likely to
+ * touch the same files; `planner` plans one issue and `applier` (the same
+ * agent) applies the plan review's findings once; `planReviewer` reviews the
+ * plan; `tdd` authors the slice's one commit; `reviewer` reviews and amends
+ * it, its effort set per call by {@link reviewEffort}; `resolver` (the
+ * reviewer agent) resolves the epic end's doc-index conflicts; `testReview`
+ * hardens the tests on the slice's final shape; `critic` reviews the epic's
+ * landed slices together in a slice of its own and may commit one fix;
+ * `retro` reads the entry's reports and names what the run should learn.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
+  overlapEstimator: { agentType: 'overlap-estimator' },
   planner: { agentType: 'planner' },
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
@@ -41,12 +45,18 @@ export const STAGES = {
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
+  critic: { agentType: 'critic' },
+  retro: { agentType: 'retro', model: 'sonnet' },
 } as const satisfies Readonly<Record<string, StageRow>>;
 
 /** A stage's key in {@link STAGES}. */
 export type StageName = keyof typeof STAGES;
 
-/** The default most issues authoring at once (the `maxSlices` launch arg). */
+/**
+ * The default most issues in flight at once, from start until settled — the
+ * commit-queue wait included (the `maxSlices` launch arg). Epic ends run
+ * outside the cap.
+ */
 export const MAX_SLICES = 4;
 
 /** The most minutes one in-run probe may take; a hit records a follow-up, never a verdict. */
@@ -96,7 +106,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs and the scout; refuses on any failure',
+      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'refuses on any failure',
   },
   {
     title: PHASE_TITLES.issues,
@@ -104,7 +115,9 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: server tier on both engines, master sync, version bump, pull request',
+    detail:
+      'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
+      'pull request',
   },
 ];
 

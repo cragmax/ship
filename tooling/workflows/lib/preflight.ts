@@ -5,7 +5,9 @@
  * answering — the warm set is always checked, since every epic end runs
  * the server tier), the run gate, `worktree.ts live-runs`, then the scout
  * once, over the gate's run set and the changed files of every unspent live
- * run (a spent run's PR is merged or closed, so it can no longer collide).
+ * run (a spent run's PR is merged or closed, so it can no longer collide),
+ * then the overlap estimate once over what the scout left
+ * ({@link PreflightOutcome.overlap}).
  *
  * **Every refusal is collected.** No check stops the phase early — one
  * report names every problem found, so a maintainer fixes them in one
@@ -17,17 +19,34 @@
  *
  * **Exclude mode** drops a stale issue with its dependents through
  * {@link dropWithDependents}, as the gate drops a failing one; a code
- * overlap with a live run always refuses.
+ * overlap with a live run always refuses, and so does any overlap the
+ * estimator names between two epics of the run, `unsure` included.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 
 import type { GateFailure } from '../../lib/run-gate.js';
-import { runSetIssues, transitiveDependents, type RunGraph } from '../../lib/run-set.js';
+import {
+  mergeOverlapEdges,
+  type OverlapCrossPair,
+  type OverlapMerge,
+  type OverlapPair,
+} from '../../lib/run-overlap.js';
+import {
+  runSetIssues,
+  transitiveDependents,
+  type RunEdge,
+  type RunGraph,
+} from '../../lib/run-set.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
-import { AGENT_CALLS, type ScoutVerdict } from './agent-calls.js';
+import {
+  AGENT_CALLS,
+  type EstimatedPair,
+  type OverlapConfidence,
+  type ScoutVerdict,
+} from './agent-calls.js';
 import type { ShipArgs } from './args.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import type { LiveRunFiles } from './prompts.js';
@@ -42,7 +61,8 @@ import {
  * What stopped a launch: `usage` (the arguments); a failed pre-flight check
  * or `preflight-error`; a gate failure kind or `gate-error`;
  * `live-runs-failed`; `stale`, `overlap` or `scout-unavailable` (the
- * scout); `empty-run-set` (exclude mode dropped everything).
+ * scout); `empty-run-set` (exclude mode dropped everything);
+ * `overlap-cross-epic` or `overlap-estimate-failed` (the overlap estimate).
  */
 export type ShipRefusalKind =
   | 'usage'
@@ -53,7 +73,9 @@ export type ShipRefusalKind =
   | 'live-runs-failed'
   | 'stale'
   | 'overlap'
-  | 'scout-unavailable';
+  | 'scout-unavailable'
+  | 'overlap-cross-epic'
+  | 'overlap-estimate-failed';
 
 /** One reason the run may not start. */
 export interface ShipRefusal {
@@ -88,6 +110,26 @@ export interface PreflightOutcome {
    * end's "main untouched" check; `null` unless the checks passed.
    */
   readonly main: MainSnapshot | null;
+  /** The overlap edges merged into `graph`; `null` when the estimate failed or never ran. */
+  readonly overlap: OverlapRecord | null;
+}
+
+/** An overlap edge pre-flight added, with the estimator's word for it. */
+export type OverlapEdge = RunEdge & {
+  /** How sure the estimator was. */
+  readonly confidence: OverlapConfidence;
+  /** What backs it. */
+  readonly reason: string;
+};
+
+/** What the overlap estimate added to the run graph. */
+export interface OverlapRecord {
+  /** The edges added, sorted by (`blocker`, `dependent`). */
+  readonly added: readonly OverlapEdge[];
+  /** The pairs the declared edges already order: nothing added. */
+  readonly sequenced: readonly OverlapPair[];
+  /** Whether the estimator could read the area map. */
+  readonly areaMap: 'read' | 'unavailable';
 }
 
 /** The main checkout at one moment, as `worktree.ts preflight` reports it. */
@@ -126,10 +168,124 @@ export async function runPreflight(
   const live = await runTool(hooks, 'live-runs', ['.']);
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(checks);
-  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null, main };
+  if (gate?.runSet === undefined) {
+    return { refusals, dropped: [], graph: null, main, overlap: null };
+  }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  return settleScout({ refusals, dropped: gateDrops(gate), graph, main }, scout, args.exclude);
+  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null };
+  return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+}
+
+/**
+ * Run the overlap estimate over the settled graph and merge its pairs —
+ * every pair, `likely` and `unsure` alike — into the graph
+ * (`tooling/lib/run-overlap.ts`). A graph of fewer than two issues needs no
+ * estimate.
+ *
+ * @param hooks - The workflow hooks.
+ * @param found - The outcome so far; its refusals are kept.
+ * @returns The outcome with the merged graph and its overlap record; or with
+ *   one `overlap-cross-epic` refusal per pair across entries, or one
+ *   `overlap-estimate-failed` refusal when the estimator returned nothing or
+ *   the merge threw.
+ */
+async function settleOverlap(
+  hooks: WorkflowHooks,
+  found: PreflightOutcome,
+): Promise<PreflightOutcome> {
+  const { graph } = found;
+  if (graph === null || runSetIssues(graph.runSet).length < 2) {
+    return { ...found, overlap: { added: [], sequenced: [], areaMap: 'read' } };
+  }
+  const estimate = await AGENT_CALLS.overlapEstimator(hooks, graph);
+  if (estimate === null) {
+    return withRefusals(found, [
+      { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
+    ]);
+  }
+  let merged: OverlapMerge;
+  try {
+    merged = mergeOverlapEdges(graph, estimate.pairs);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
+  }
+  if (merged.kind === 'cross-entry') {
+    return withRefusals(
+      found,
+      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+    );
+  }
+  const overlap: OverlapRecord = {
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    sequenced: merged.sequenced,
+    areaMap: estimate.areaMap,
+  };
+  return { ...found, graph: merged.graph, overlap };
+}
+
+/**
+ * The outcome with more refusals.
+ *
+ * @param found - The outcome.
+ * @param refusals - The refusals to add.
+ * @returns The outcome, `overlap` `null`.
+ */
+function withRefusals(found: PreflightOutcome, refusals: readonly ShipRefusal[]): PreflightOutcome {
+  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+}
+
+/**
+ * The refusal of a pair across epics — any confidence: epics in one run
+ * must be code-disjoint.
+ *
+ * @param pair - The pair and both entries' `epic` keys.
+ * @param pairs - The estimator's pairs, for its word on this one.
+ * @returns The refusal, on the pair's first issue.
+ */
+function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[]): ShipRefusal {
+  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
+  const epic = (e: number | null): string =>
+    e === null ? 'the explicit list' : `epic #${String(e)}`;
+  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+  return {
+    kind: 'overlap-cross-epic',
+    issue: pair.a,
+    message:
+      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
+      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
+      '; epics in one run must be code-disjoint',
+  };
+}
+
+/**
+ * The estimator's confidence and reason for one unordered pair.
+ *
+ * @param a - One issue.
+ * @param b - The other.
+ * @param pairs - The estimator's pairs.
+ * @returns The first matching pair's word.
+ */
+function pairWord(
+  a: number,
+  b: number,
+  pairs: readonly EstimatedPair[],
+): Pick<OverlapEdge, 'confidence' | 'reason'> {
+  const word = pairs.find((p) => samePair(p, a, b));
+  return { confidence: word?.confidence ?? 'unsure', reason: word?.reason ?? '' };
+}
+
+/**
+ * Whether an estimated pair is the unordered pair `{a, b}`.
+ *
+ * @param p - The estimated pair.
+ * @param a - One issue.
+ * @param b - The other.
+ * @returns `true` for either order.
+ */
+function samePair(p: OverlapPair, a: number, b: number): boolean {
+  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 
 /**
@@ -294,7 +450,7 @@ function settleScout(
   const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
   if (!exclude) {
     for (const v of stale) refusals.push({ kind: 'stale', issue: v.issue, message: v.evidence });
-    return { refusals, dropped: found.dropped, graph: found.graph, main: found.main };
+    return { ...found, refusals };
   }
   const { graph, dependents } = dropWithDependents(
     found.graph,
@@ -310,7 +466,7 @@ function settleScout(
       (n): DroppedIssue => ({ issue: n, cause: 'dependent', message: 'blocked by a stale issue' }),
     ),
   ];
-  return { refusals, dropped, graph, main: found.main };
+  return { ...found, refusals, dropped, graph };
 }
 
 /**

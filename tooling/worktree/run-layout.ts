@@ -9,8 +9,10 @@
  *   check keys on, which nothing else may use;
  * - the run root `<dirname(main)>/ph-runs/<slug>/`, a sibling of the main
  *   checkout, holding `batch/` (the batch worktree), `slice-<N>-<K>/` (one
- *   per issue attempt) and `reports/`;
- * - the slice branch `slice/<slug>/<N>-<K>`, never under `ship/`.
+ *   per issue attempt), `slice-critic/` (the epic end's critic) and
+ *   `reports/`;
+ * - the slice branch `slice/<slug>/<N>-<K>`, and the critic's
+ *   `slice/<slug>/critic` — never under `ship/`.
  *
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
@@ -51,11 +53,11 @@ export interface RunLayout {
   readonly branch: string;
 }
 
-/** Where one issue attempt's slice lives. */
+/** Where one slice lives: an issue attempt's, or the critic's. */
 export interface SliceLayout {
   /** The slice worktree, absolute with forward slashes. */
   readonly path: string;
-  /** The slice branch, short form (`slice/<slug>/<N>-<K>`). */
+  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/critic`). */
   readonly branch: string;
 }
 
@@ -110,6 +112,17 @@ export function sliceLayout(
 ): SliceLayout {
   const id = `${String(issue)}-${String(attempt)}`;
   return { path: `${root}/slice-${id}`, branch: `slice/${slug}/${id}` };
+}
+
+/**
+ * The layout of the epic end's critic slice — one per run.
+ *
+ * @param root - The run root ({@link RunLayout.root}).
+ * @param slug - The run's slug.
+ * @returns `<root>/slice-critic` on `slice/<slug>/critic`.
+ */
+export function criticSliceLayout(root: string, slug: string): SliceLayout {
+  return { path: `${root}/slice-critic`, branch: `slice/${slug}/critic` };
 }
 
 /**

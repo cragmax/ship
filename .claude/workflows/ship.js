@@ -3,12 +3,12 @@ export const meta = {
   description:
     'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
   whenToUse:
-    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues authoring at once, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose.',
+    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose.',
   phases: [
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, run gate, live runs and the scout; refuses on any failure',
+        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure',
     },
     {
       title: 'Issues',
@@ -16,7 +16,8 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail: 'per epic: server tier on both engines, master sync, version bump, pull request',
+      detail:
+        'per epic: critic, server tier on both engines, master sync, version bump, retro, pull request',
     },
   ],
 };
@@ -25,6 +26,7 @@ export const meta = {
 const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
+  overlapEstimator: { agentType: 'overlap-estimator' },
   planner: { agentType: 'planner' },
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
@@ -32,6 +34,8 @@ const STAGES = {
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
+  critic: { agentType: 'critic' },
+  retro: { agentType: 'retro', model: 'sonnet' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -54,7 +58,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs and the scout; refuses on any failure',
+      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'refuses on any failure',
   },
   {
     title: PHASE_TITLES.issues,
@@ -62,7 +67,9 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: server tier on both engines, master sync, version bump, pull request',
+    detail:
+      'per epic: critic, server tier on both engines, master sync, version bump, retro, ' +
+      'pull request',
   },
 ];
 function agentOptions(stage, detail, schema) {
@@ -561,6 +568,11 @@ const PROMPTS = {
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
+  overlapEstimator: (values) =>
+    [
+      `Run set (JSON): ${JSON.stringify(values.runSet)}`,
+      `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
+    ].join('\n'),
   planner: (values) =>
     [
       `Mode: ${values.mode}`,
@@ -571,6 +583,11 @@ const PROMPTS = {
       `Plan file: ${values.planPath}`,
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...(values.conflicts === undefined
+        ? []
+        : [
+            `Previous attempt: harvest conflict on ${values.conflicts.join(', ')}; re-plan against the current batch head`,
+          ]),
     ].join('\n'),
   planReviewer: (values) =>
     [
@@ -603,6 +620,19 @@ const PROMPTS = {
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  critic: (values) =>
+    [
+      `Critic slice: ${values.slice}`,
+      `Epic range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  retro: (values) =>
+    [
+      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Report dir: ${values.reportDir}`,
+      `Run report (JSON): ${JSON.stringify(values.report)}`,
     ].join('\n'),
 };
 function sliceReviewPrompt(values) {
@@ -774,6 +804,7 @@ const TOOL_SCHEMAS = {
     branch: NULLABLE_STRING,
     base: NULLABLE_STRING,
     slice: NULLABLE_STRING,
+    at: STRING,
   }),
   provision: worktreeSchema({
     env: nullableObject({ PH_PROJECT_DIR: STRING }, ['PH_PROJECT_DIR']),
@@ -784,6 +815,7 @@ const TOOL_SCHEMAS = {
     conflicts: STRINGS,
     rolledBack: BOOLEAN,
     batchClean: BOOLEAN,
+    at: STRING,
   }),
   teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
   'server-tier': worktreeSchema({
@@ -864,29 +896,28 @@ function createCommitQueue() {
     },
   };
 }
-function landingEvent(land, at) {
-  if (land?.status === 'ok' && typeof land.commit === 'string') {
-    return { kind: 'committed', issue: at.issue };
-  }
-  const recoverable = land === null ? null : recoverableLanding(land, at.issue);
-  return recoverable ?? { kind: 'epic-halt', epic: at.epic, reason: envelopeProblem('land', land) };
-}
-function recoverableLanding(land, issue) {
-  if (land.batchClean !== true) return null;
-  if (land.status === 'conflict') return { kind: 'harvest-conflict', issue };
-  const reason = envelopeProblem('land', land);
-  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') {
-    return { kind: 'blocked', issue, reason };
-  }
+function classifyLanding(land) {
+  if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
+  if (land?.batchClean !== true) return 'halt';
+  if (land.status === 'conflict') return 'conflict';
+  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') return 'blocked';
   const step = land.errors?.[0]?.step;
-  if (
-    land.status === 'failed' &&
-    land.rolledBack === true &&
-    (step === 'commit' || step === 'build')
-  ) {
-    return { kind: 'blocked', issue, reason };
+  const rolledBackStep = step === 'commit' || step === 'build';
+  if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
+  return 'halt';
+}
+function landingEvent(land, at) {
+  const reason = envelopeProblem('land', land);
+  switch (classifyLanding(land)) {
+    case 'committed':
+      return { kind: 'committed', issue: at.issue };
+    case 'conflict':
+      return { kind: 'harvest-conflict', issue: at.issue };
+    case 'blocked':
+      return { kind: 'blocked', issue: at.issue, reason };
+    case 'halt':
+      return { kind: 'epic-halt', epic: at.epic, reason };
   }
-  return null;
 }
 function teardownEvent(teardown, epic) {
   if (teardown?.status !== 'refused' || teardown.reason !== 'source-shrank') return null;
@@ -906,8 +937,6 @@ function settleEvents(primary, teardown, at) {
   }
   return [primary];
 }
-
-const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 const LEASE_LINE =
   /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
@@ -930,6 +959,213 @@ function parseLeaseLines(text) {
   }
   return timings;
 }
+const LEASE_ENGINES = ['paper', 'folia'];
+function aggregateLeaseTimings(samples) {
+  const engines = LEASE_ENGINES.map((type) => ({
+    type,
+    leases: 0,
+    waitedSeconds: 0,
+    waitedMaxSeconds: 0,
+    heldSeconds: 0,
+  }));
+  const issues = new Map();
+  const unparsed = [];
+  for (const sample of samples) {
+    const lease = 'lease' in sample ? sample.lease : parseLeaseLine(sample.line);
+    const engine = engines.find((e) => e.type === lease?.type);
+    if (lease === null || engine === undefined) {
+      unparsed.push({ issue: sample.issue, line: leaseSampleLine(sample) });
+      continue;
+    }
+    leaseAddToEngine(engine, lease);
+    if (sample.issue !== null) leaseAddToIssue(issues, sample.issue, lease);
+  }
+  return {
+    engines: engines.map((e) => ({
+      ...e,
+      waitedSeconds: leaseTenths(e.waitedSeconds),
+      waitedMaxSeconds: leaseTenths(e.waitedMaxSeconds),
+      heldSeconds: leaseTenths(e.heldSeconds),
+    })),
+    issues: [...issues.values()]
+      .sort((a, b) => a.issue - b.issue)
+      .map((t) => ({
+        ...t,
+        waitedSeconds: leaseTenths(t.waitedSeconds),
+        heldSeconds: leaseTenths(t.heldSeconds),
+      })),
+    unparsed,
+  };
+}
+function leaseSampleLine(sample) {
+  return 'line' in sample ? sample.line : formatLeaseLine(sample.lease);
+}
+function leaseAddToEngine(engine, lease) {
+  engine.leases += 1;
+  engine.waitedSeconds += lease.waitedSeconds;
+  engine.waitedMaxSeconds = Math.max(engine.waitedMaxSeconds, lease.waitedSeconds);
+  engine.heldSeconds += lease.heldSeconds;
+}
+function leaseAddToIssue(issues, issue, lease) {
+  const own = issues.get(issue) ?? { issue, waitedSeconds: 0, heldSeconds: 0 };
+  own.waitedSeconds += lease.waitedSeconds;
+  own.heldSeconds += lease.heldSeconds;
+  issues.set(issue, own);
+}
+function leaseTenths(seconds) {
+  return Math.round(seconds * 10) / 10;
+}
+
+function strictObject(properties) {
+  return { type: 'object', properties, required: Object.keys(properties) };
+}
+function oneOf(...values) {
+  return { type: 'string', enum: values };
+}
+const SCOUT_SCHEMA = strictObject({
+  issues: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, stale: BOOLEAN, evidence: STRING }),
+  },
+  overlaps: {
+    type: 'array',
+    items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
+  },
+});
+function overlapSchema(issues) {
+  const issue = { type: 'integer', enum: issues };
+  return strictObject({
+    issues: {
+      type: 'array',
+      items: strictObject({ number: INTEGER, columns: STRINGS, paths: STRINGS }),
+    },
+    pairs: {
+      type: 'array',
+      items: strictObject({
+        a: issue,
+        b: issue,
+        confidence: oneOf('likely', 'unsure'),
+        shared: STRINGS,
+        reason: STRING,
+      }),
+    },
+    areaMap: oneOf('read', 'unavailable'),
+  });
+}
+const PLAN_CARD_SCHEMA = strictObject({
+  verdict: oneOf('plan', 'stale', 'blocked'),
+  planPath: STRING,
+  summary: STRING,
+  tier: STRING,
+  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
+  closes: oneOf('fixes', 'see'),
+  evidence: STRING,
+});
+const PLAN_REVIEW_SCHEMA = strictObject({
+  verdict: oneOf('approved', 'changes'),
+  findings: INTEGER,
+  findingsPath: STRING,
+});
+const TDD_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: oneOf('GREEN', 'PARTIAL', 'BLOCKED'),
+    sha: STRING,
+    files: STRINGS,
+    leaseLines: STRINGS,
+    probes: {
+      type: 'array',
+      items: strictObject({
+        claim: STRING,
+        verdict: oneOf('confirmed', 'falsified', 'inconclusive', 'cap-hit'),
+        followUp: STRING,
+      }),
+    },
+    reason: STRING,
+  },
+  required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+};
+const REVIEW_SCHEMA = strictObject({
+  verdict: oneOf('clean', 'fixed', 'blocked'),
+  sha: STRING,
+  summary: STRING,
+});
+const TEST_REVIEW_SCHEMA = strictObject({
+  verdict: oneOf('clean', 'hardened', 'blocked'),
+  sha: STRING,
+  survivors: INTEGER,
+  summary: STRING,
+});
+const RESOLVER_SCHEMA = strictObject({
+  verdict: oneOf('resolved', 'unresolvable'),
+  summary: STRING,
+});
+const CRITIC_SCHEMA = strictObject({
+  outcome: oneOf('clean', 'applied'),
+  sha: STRING,
+  files: STRINGS,
+  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
+  findings: {
+    type: 'array',
+    items: strictObject({ lens: STRING, summary: STRING, applied: BOOLEAN }),
+  },
+  checks: STRING,
+});
+const RETRO_SCHEMA = strictObject({
+  findings: {
+    type: 'array',
+    items: strictObject({
+      title: STRING,
+      evidence: STRING,
+      kind: oneOf('genuine', 'first-time'),
+      suggestion: STRING,
+    }),
+  },
+});
+async function askAgent(hooks, prompt, options) {
+  const out = await hooks.agent(prompt, options);
+  return typeof out === 'object' && out !== null ? out : null;
+}
+const AGENT_CALLS = {
+  scout: (hooks, values) =>
+    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
+  overlapEstimator: (hooks, values) =>
+    askAgent(
+      hooks,
+      PROMPTS.overlapEstimator(values),
+      agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
+    ),
+  planner: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.planner(values),
+      agentOptions(values.mode === 'plan' ? 'planner' : 'applier', tag, PLAN_CARD_SCHEMA),
+    ),
+  planReviewer: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.planReviewer(values),
+      agentOptions('planReviewer', tag, PLAN_REVIEW_SCHEMA),
+    ),
+  tdd: (hooks, values, tag) =>
+    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, TDD_SCHEMA)),
+  reviewer: (hooks, values, tag) =>
+    askAgent(hooks, PROMPTS.reviewer(values), reviewerOptions(tag, REVIEW_SCHEMA, values.files)),
+  testReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.testReview(values),
+      agentOptions('testReview', tag, TEST_REVIEW_SCHEMA),
+    ),
+  resolver: (hooks, values, tag) =>
+    askAgent(hooks, PROMPTS.resolver(values), agentOptions('resolver', tag, RESOLVER_SCHEMA)),
+  critic: (hooks, values, tag) =>
+    askAgent(hooks, PROMPTS.critic(values), agentOptions('critic', tag, CRITIC_SCHEMA)),
+  retro: (hooks, values, tag) =>
+    askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, RETRO_SCHEMA)),
+};
+
+const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
 const CLOSING_REFS = [
@@ -960,6 +1196,9 @@ function commitMessage(issue, card) {
     '',
   ].join('\n');
 }
+function criticCommitMessage(commit) {
+  return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
+}
 function prTitle(input) {
   const [only] = input.landed;
   if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
@@ -989,8 +1228,62 @@ function renderPrBody(input) {
     `- Version bump: ${bumpText(input.bump)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
+    ...section('Critic', criticLines(input.critic)),
+    ...section('Overlap edges', input.overlap.added.map(overlapLine)),
+    ...section('Schedule', input.schedule.map(scheduleLine)),
+    ...section('Lease timings', leaseLines(input.leases)),
+    ...section('Retro findings', retroLines(input.retro)),
   ].join('\n');
   return neutralText(body, closing);
+}
+function section(heading, lines) {
+  return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
+}
+function criticLines(critic) {
+  const outcome = {
+    clean: 'no changes',
+    landed: `landed as ${critic.commit ?? '?'}`,
+    dropped: `changes dropped — ${critic.reason ?? 'no reason named'}`,
+    'not-run': `not run — ${critic.reason ?? 'no reason named'}`,
+    skipped: 'skipped — one issue landed',
+  }[critic.outcome];
+  return [
+    `- Outcome: ${outcome}`,
+    ...critic.findings.map(
+      (f) => `- [${f.lens}] ${f.summary} (${f.applied ? 'applied' : 'not applied'})`,
+    ),
+  ];
+}
+function overlapLine(edge) {
+  return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
+}
+function scheduleLine(entry) {
+  const blockers =
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+  return (
+    `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
+  );
+}
+function leaseLines(leases) {
+  return [
+    ...leases.engines.map(
+      (e) =>
+        `- ${e.type}: ${String(e.leases)} leases, waited ${e.waitedSeconds.toFixed(1)}s total ` +
+        `(max ${e.waitedMaxSeconds.toFixed(1)}s), held ${e.heldSeconds.toFixed(1)}s total`,
+    ),
+    ...leases.issues.map(
+      (t) =>
+        `- #${String(t.issue)}: waited ${t.waitedSeconds.toFixed(1)}s, held ${t.heldSeconds.toFixed(1)}s`,
+    ),
+    ...leases.unparsed.map(
+      (u) => `- unparsed${u.issue === null ? '' : ` (#${String(u.issue)})`}: ${u.line}`,
+    ),
+  ];
+}
+function retroLines(retro) {
+  if (retro === null) return ['- The retro returned nothing.'];
+  return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 function issueSection(landed) {
   const ref = `#${String(landed.issue)}`;
@@ -1054,102 +1347,84 @@ function bumpText(bump) {
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }
 
-function strictObject(properties) {
-  return { type: 'object', properties, required: Object.keys(properties) };
+const CRITIC_TAG = 'critic';
+async function criticStep(input) {
+  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null };
+  const { hooks, entry } = input;
+  const place = runPlace(entry.reportDir, CRITIC_TAG);
+  const cut = await runTool(hooks, 'cut-slice', [entry.batch, '--critic'], place).catch(() => null);
+  const slice = typeof cut?.slice === 'string' ? cut.slice : null;
+  const base = cut?.base;
+  if (cut?.status !== 'ok' || slice === null || typeof base !== 'string') {
+    return criticTornDown(input, slice, criticNotRun(envelopeProblem('cut-slice', cut)));
+  }
+  const result = await criticInSlice(input, slice, base).catch((err) =>
+    criticNotRun(`the critic step threw: ${err instanceof Error ? err.message : String(err)}`),
+  );
+  return criticTornDown(input, slice, result);
 }
-function oneOf(...values) {
-  return { type: 'string', enum: values };
+async function criticInSlice(input, slice, base) {
+  const { hooks, entry } = input;
+  const argv = [slice, '--batch', entry.batch];
+  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, CRITIC_TAG));
+  if (prov?.status !== 'ok') return criticNotRun(envelopeProblem('provision', prov));
+  const values = {
+    slice,
+    range: `${entry.base}..HEAD`,
+    landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit, plan: l.card.planPath })),
+    reportPath: `${entry.reportDir}/critic.md`,
+  };
+  const out = await AGENT_CALLS.critic(hooks, values, entry.tag);
+  if (out === null) return criticNotRun('the critic returned nothing');
+  if (out.outcome === 'clean') return { outcome: 'clean', findings: out.findings, halt: null };
+  if (out.sha === '') {
+    return {
+      outcome: 'dropped',
+      reason: 'the critic applied no commit',
+      findings: out.findings,
+      halt: null,
+    };
+  }
+  return criticLand(input, out, base);
 }
-const SCOUT_SCHEMA = strictObject({
-  issues: {
-    type: 'array',
-    items: strictObject({ issue: INTEGER, stale: BOOLEAN, evidence: STRING }),
-  },
-  overlaps: {
-    type: 'array',
-    items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
-  },
-});
-const PLAN_CARD_SCHEMA = strictObject({
-  verdict: oneOf('plan', 'stale', 'blocked'),
-  planPath: STRING,
-  summary: STRING,
-  tier: STRING,
-  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
-  closes: oneOf('fixes', 'see'),
-  evidence: STRING,
-});
-const PLAN_REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('approved', 'changes'),
-  findings: INTEGER,
-  findingsPath: STRING,
-});
-const TDD_SCHEMA = {
-  type: 'object',
-  properties: {
-    verdict: oneOf('GREEN', 'PARTIAL', 'BLOCKED'),
-    sha: STRING,
-    files: STRINGS,
-    leaseLines: STRINGS,
-    probes: {
-      type: 'array',
-      items: strictObject({
-        claim: STRING,
-        verdict: oneOf('confirmed', 'falsified', 'inconclusive', 'cap-hit'),
-        followUp: STRING,
-      }),
-    },
-    reason: STRING,
-  },
-  required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
-};
-const REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('clean', 'fixed', 'blocked'),
-  sha: STRING,
-  summary: STRING,
-});
-const TEST_REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('clean', 'hardened', 'blocked'),
-  sha: STRING,
-  survivors: INTEGER,
-  summary: STRING,
-});
-const RESOLVER_SCHEMA = strictObject({
-  verdict: oneOf('resolved', 'unresolvable'),
-  summary: STRING,
-});
-async function askAgent(hooks, prompt, options) {
-  const out = await hooks.agent(prompt, options);
-  return typeof out === 'object' && out !== null ? out : null;
+async function criticLand(input, out, base) {
+  const { hooks, entry } = input;
+  const messagePath = `${entry.reportDir}/commit-critic.txt`;
+  const argv = [
+    entry.batch,
+    out.sha,
+    '--base',
+    base,
+    '--message-file',
+    messagePath,
+    '--log',
+    `${entry.reportDir}/land-critic.log`,
+  ];
+  const write = { path: messagePath, content: criticCommitMessage(out.commit) };
+  const place = runPlace(entry.reportDir, CRITIC_TAG, write);
+  const land = await runTool(hooks, 'land', argv, place).catch(() => null);
+  const kind = classifyLanding(land);
+  if (kind === 'committed' && typeof land?.commit === 'string') {
+    return { outcome: 'landed', commit: land.commit, findings: out.findings, halt: null };
+  }
+  const reason = envelopeProblem('land', land);
+  return {
+    outcome: 'dropped',
+    reason,
+    findings: out.findings,
+    halt: kind === 'halt' ? reason : null,
+  };
 }
-const AGENT_CALLS = {
-  scout: (hooks, values) =>
-    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
-  planner: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planner(values),
-      agentOptions(values.mode === 'plan' ? 'planner' : 'applier', tag, PLAN_CARD_SCHEMA),
-    ),
-  planReviewer: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planReviewer(values),
-      agentOptions('planReviewer', tag, PLAN_REVIEW_SCHEMA),
-    ),
-  tdd: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, TDD_SCHEMA)),
-  reviewer: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.reviewer(values), reviewerOptions(tag, REVIEW_SCHEMA, values.files)),
-  testReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, TEST_REVIEW_SCHEMA),
-    ),
-  resolver: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.resolver(values), agentOptions('resolver', tag, RESOLVER_SCHEMA)),
-};
+async function criticTornDown(input, slice, result) {
+  if (slice === null) return result;
+  const place = runPlace(input.entry.reportDir, CRITIC_TAG);
+  const teardown = await runTool(input.hooks, 'teardown', [slice], place).catch(() => null);
+  const halt = teardownEvent(teardown, input.entry.epic);
+  return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
+}
+function criticNotRun(reason) {
+  return { outcome: 'not-run', reason, findings: [], halt: null };
+}
 
 async function syncMasterStep(hooks, ctx) {
   const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
@@ -1200,21 +1475,89 @@ function syncFailure(message) {
 }
 
 async function epicEnd(input) {
-  const { hooks, entry } = input;
-  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
-  const sync = await syncMasterStep(hooks, entry);
-  const published =
-    sync.verdict === 'code-conflict' || sync.verdict === 'failed'
-      ? { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` }
-      : await bumpAndPublish(input, serverTier, sync);
+  const state = {};
+  const published = await shipSteps(input, state).catch((err) => ({
+    outcome: 'stopped',
+    message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+  }));
+  if (state.retro === undefined)
+    state.retro = await retroStep(input, retroReport(input, published));
   return {
-    epic: entry.epic,
-    branch: entry.branch,
+    epic: input.entry.epic,
+    branch: input.entry.branch,
     ...published,
     issues: input.issues,
-    mainUntouched: await mainUntouched(input),
+    schedule: input.schedule,
+    mainUntouched: await input.repoLock.enqueue(() => mainUntouched(input)),
+    residue: input.residue,
+    ...(state.critic === undefined ? {} : { critic: state.critic }),
+    retro: state.retro,
+    ...(state.leases === undefined ? {} : { leases: state.leases }),
+  };
+}
+async function unshippedEpicEnd(input, outcome) {
+  const report = {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
     residue: input.residue,
   };
+  return { ...report, retro: await retroStep(input, report) };
+}
+async function shipSteps(input, state) {
+  const { hooks, entry } = input;
+  const critic = await criticStep(input);
+  const { halt, ...criticReport } = critic;
+  state.critic = criticReport;
+  state.leases = leaseTotals(input.landed, []);
+  if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  const serverTier = [await tierRun(input, 'paper'), await tierRun(input, 'folia')];
+  state.leases = leaseTotals(input.landed, serverTier);
+  const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
+  if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
+    return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
+  }
+  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
+  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
+  state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+  return publishStep(input, { serverTier, sync, bump, state });
+}
+async function publishStep(input, found) {
+  const { hooks, entry } = input;
+  const body = renderPrBody({
+    epic: entry.epic,
+    branch: entry.branch,
+    reportDir: entry.reportDir,
+    landed: input.landed,
+    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
+    serverTier: found.serverTier,
+    sync: found.sync,
+    bump: found.bump,
+    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    overlap: input.overlap,
+    schedule: input.schedule,
+    leases: found.state.leases ?? leaseTotals(input.landed, found.serverTier),
+    retro: found.state.retro ?? null,
+  });
+  const bodyPath = `${entry.reportDir}/pr-body.md`;
+  const argv = [
+    entry.batch,
+    '--title',
+    prTitle({ branch: entry.branch, landed: input.landed }),
+    '--body-file',
+    bodyPath,
+    '--log',
+    `${entry.reportDir}/publish.log`,
+  ];
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
+  const out = await input.repoLock.enqueue(() => runTool(hooks, 'publish', argv, place));
+  const pr = out?.status === 'ok' ? out.pr : null;
+  if (pr === undefined || pr === null) {
+    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
+  }
+  return { outcome: 'pr', pr: pr.number };
 }
 async function tierRun(input, engine) {
   const { entry } = input;
@@ -1230,37 +1573,31 @@ async function tierRun(input, engine) {
   const out = await runTool(input.hooks, 'server-tier', argv, runPlace(entry.reportDir, engine));
   return { engine, out };
 }
-async function bumpAndPublish(input, serverTier, sync) {
-  const { hooks, entry } = input;
-  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
-  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  const body = renderPrBody({
-    epic: entry.epic,
-    branch: entry.branch,
-    reportDir: entry.reportDir,
-    landed: input.landed,
-    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    serverTier,
-    sync,
-    bump,
-  });
-  const bodyPath = `${entry.reportDir}/pr-body.md`;
-  const argv = [
-    entry.batch,
-    '--title',
-    prTitle({ branch: entry.branch, landed: input.landed }),
-    '--body-file',
-    bodyPath,
-    '--log',
-    `${entry.reportDir}/publish.log`,
-  ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  const pr = out?.status === 'ok' ? out.pr : null;
-  if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
-  }
-  return { outcome: 'pr', pr: pr.number };
+function leaseTotals(landed, serverTier) {
+  return aggregateLeaseTimings([
+    ...landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+    ...serverTier.flatMap((t) =>
+      t.out?.lease === undefined || t.out.lease === null
+        ? []
+        : [{ issue: null, lease: t.out.lease }],
+    ),
+  ]);
+}
+async function retroStep(input, report) {
+  const { entry } = input;
+  const values = { epic: entry.epic, reportDir: entry.reportDir, report };
+  const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
+  return out?.findings ?? null;
+}
+function retroReport(input, published) {
+  return {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    ...published,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+  };
 }
 async function mainUntouched(input) {
   const { entry, launch } = input;
@@ -1275,8 +1612,8 @@ async function mainUntouched(input) {
   return now.head === launch.snapshot.head && now.dirty === launch.snapshot.dirty;
 }
 
-async function runAttempt(ctx, issue, attempt) {
-  const at = newAttempt(ctx, issue, attempt);
+async function runAttempt(ctx, issue, attempt, previousConflicts = []) {
+  const at = newAttempt(ctx, issue, attempt, previousConflicts);
   const stop = await authorSlice(at).catch((err) => stageThrew(at, err));
   if (stop !== null) return endAttempt(at, stop);
   const landing = ctx.queue
@@ -1284,7 +1621,7 @@ async function runAttempt(ctx, issue, attempt) {
     .then((event) => endAttempt(at, event));
   return { kind: 'authored', issue, landing };
 }
-function newAttempt(ctx, issue, attempt) {
+function newAttempt(ctx, issue, attempt, previousConflicts) {
   const tag = `${String(issue)}-${String(attempt)}`;
   return {
     ctx,
@@ -1292,7 +1629,11 @@ function newAttempt(ctx, issue, attempt) {
     attempt,
     tag,
     place: runPlace(ctx.reportDir, tag),
+    previousConflicts,
     slice: null,
+    startedAt: null,
+    committedAt: null,
+    conflicts: [],
     base: '',
     projectDir: '',
     sha: '',
@@ -1337,6 +1678,7 @@ async function cutStage(at) {
   const argv = [at.ctx.batch, '--issue', String(at.issue), '--attempt', String(at.attempt)];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
   if (typeof out?.slice === 'string') at.slice = out.slice;
+  if (typeof out?.at === 'string') at.startedAt = out.at;
   if (out === null) return died(at);
   if (out.status !== 'ok' || at.slice === null || typeof out.base !== 'string') {
     return blocked(at, envelopeProblem('cut-slice', out));
@@ -1431,7 +1773,11 @@ async function landSlice(at) {
   const out = await runTool(at.ctx.hooks, 'land', argv, at.place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
-  if (event.kind === 'committed') at.commit = out?.commit ?? null;
+  if (event.kind === 'committed') {
+    at.commit = out?.commit ?? null;
+    at.committedAt = out?.at ?? null;
+  }
+  if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
 }
 function landThrew(at, err) {
@@ -1450,6 +1796,9 @@ async function endAttempt(at, primary) {
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
+    conflicts: at.conflicts,
+    startedAt: at.startedAt,
+    committedAt: at.committedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
@@ -1469,6 +1818,7 @@ function plannerValues(at, mode, findingsPath) {
     planPath: planPath(at),
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
+    ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
   };
 }
 function sliceReviewValues(at, report) {
@@ -1524,12 +1874,15 @@ function newDrive(input) {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
+    conflicts: new Map(),
+    timing: new Map(),
     halting: new Set(),
     halted: new Set(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
     ends: new Map(),
+    repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -1559,7 +1912,6 @@ function onNote(d, note) {
     d.ends.set(note.entry, note.report);
   } else if (note.kind === 'authored') {
     d.flights.set(flightKey(note), note.landing);
-    feed(d, [{ kind: 'slot-free', issue: note.issue }]);
   } else {
     settle(d, note.issue, note.ending);
   }
@@ -1573,6 +1925,12 @@ function settle(d, issue, ending) {
     entryHalted: d.halted.has(i),
   });
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
+  d.conflicts.set(issue, ending.conflicts);
+  d.timing.set(issue, {
+    attempts: d.attempts.get(issue) ?? 1,
+    startedAt: ending.startedAt,
+    committedAt: ending.committedAt,
+  });
   if (events.some((e) => e.kind === 'epic-halt')) {
     d.halting.add(i);
     d.halted.add(i);
@@ -1618,13 +1976,9 @@ function apply(d, t) {
 }
 function act(d, action) {
   switch (action.kind) {
-    case 'start': {
-      const ctx = d.contexts[entryOfIssue(d, action.issue)];
-      if (ctx === undefined) throw new Error(`ship: no entry holds #${String(action.issue)}`);
-      const attempt = d.attempts.get(action.issue) ?? 1;
-      d.flights.set(`issue:${String(action.issue)}`, runAttempt(ctx, action.issue, attempt));
+    case 'start':
+      startAttempt(d, action.issue);
       break;
-    }
     case 'requeue':
     case 'retry':
       d.attempts.set(action.issue, (d.attempts.get(action.issue) ?? 1) + 1);
@@ -1649,56 +2003,114 @@ function act(d, action) {
       endEpic(d, entryOfEpic(d, action.epic));
       break;
     case 'epic-halted':
-      d.ends.set(entryOfEpic(d, action.epic), 'halted');
+      endUnshipped(d, entryOfEpic(d, action.epic), 'halted');
       break;
   }
+}
+function startAttempt(d, issue) {
+  const ctx = d.contexts[entryOfIssue(d, issue)];
+  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
+  const attempt = d.attempts.get(issue) ?? 1;
+  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
+  const conflicts = d.conflicts.get(issue) ?? [];
+  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt, conflicts));
 }
 function endEpic(d, i) {
   const landed = d.landed.get(i) ?? [];
   const entry = d.input.entries[i];
   if (landed.length === 0 || entry === undefined) {
-    d.ends.set(i, 'nothing-landed');
+    endUnshipped(d, i, 'nothing-landed');
     return;
   }
-  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
-  d.epicEndEntered = true;
   const issues = issueReports(d, i);
   const residue = d.residue.get(i) ?? [];
+  const schedule = scheduleOf(d, i);
   const report = epicEnd({
     hooks: d.input.hooks,
     entry,
     landed,
     issues,
+    schedule,
     residue,
     launch: d.input.launch,
+    repoLock: d.repoLock,
+    overlap: entryOverlap(d, i),
   }).catch((err) => ({
     epic: entry.epic,
     branch: entry.branch,
     outcome: 'stopped',
     message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
     issues,
+    schedule,
     residue,
   }));
+  startEnd(d, i, report);
+}
+function endUnshipped(d, i, outcome) {
+  const entry = d.input.entries[i];
+  if (entry === undefined) return;
+  const input = {
+    hooks: d.input.hooks,
+    entry,
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
+  };
+  const report = unshippedEpicEnd(input, outcome).catch(() => ({
+    epic: entry.epic,
+    branch: entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+    retro: null,
+  }));
+  startEnd(d, i, report);
+}
+function startEnd(d, i, report) {
+  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
+  d.epicEndEntered = true;
   d.flights.set(
     `epic:${String(i)}`,
     report.then((r) => ({ kind: 'epic-end', entry: i, report: r })),
   );
 }
 function entryReport(d, i) {
-  const end = d.ends.get(i) ?? 'halted';
-  if (typeof end !== 'string') return end;
+  const end = d.ends.get(i);
+  if (end !== undefined) return end;
   const entry = d.input.entries[i];
   return {
     epic: entry?.epic ?? null,
     branch: entry?.branch ?? '',
-    outcome: end,
+    outcome: 'halted',
     issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
     residue: d.residue.get(i) ?? [],
   };
 }
 function issueReports(d, i) {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
   return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
+}
+function scheduleOf(d, i) {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+  return issues.map((issue) => ({ ...neverStarted(issue, d.input.graph), ...d.timing.get(issue) }));
+}
+function neverStarted(issue, graph) {
+  const blockers = graph.edges
+    .filter((e) => e.dependent === issue)
+    .map((e) => e.blocker)
+    .sort((a, b) => a - b);
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+}
+function entryOverlap(d, i) {
+  const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
+  const { overlap } = d.input;
+  return {
+    added: overlap.added.filter((e) => issues.has(e.blocker)),
+    sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
+    areaMap: overlap.areaMap,
+  };
 }
 function entryOfIssue(d, issue) {
   return d.input.graph.runSet.findIndex((entry) => entry.issues.includes(issue));
@@ -1711,6 +2123,122 @@ function eventSubject(event) {
   return event.epic === null ? 'the issue list' : `epic #${String(event.epic)}`;
 }
 
+function mergeOverlapEdges(graph, pairs) {
+  const issues = runSetIssues(graph.runSet);
+  overlapAssertPairs(issues, pairs);
+  const cycles = findCycles(issues, graph.edges);
+  if (cycles.length > 0) {
+    overlapFail(
+      `the declared edges hold a cycle among ${cycles.map((c) => c.map(overlapRef).join(', ')).join('; ')}`,
+    );
+  }
+  const unique = overlapDistinct(pairs);
+  const entryOf = overlapEntryIndex(graph);
+  const crossing = unique.filter((p) => entryOf.get(p.a) !== entryOf.get(p.b));
+  if (crossing.length > 0) {
+    return {
+      kind: 'cross-entry',
+      pairs: crossing.map((p) => ({
+        ...p,
+        epicA: graph.runSet[entryOf.get(p.a) ?? -1]?.epic ?? null,
+        epicB: graph.runSet[entryOf.get(p.b) ?? -1]?.epic ?? null,
+      })),
+    };
+  }
+  return overlapDirect(graph, unique);
+}
+function overlapDirect(graph, pairs) {
+  const rank = overlapTopoRank(graph);
+  const added = [];
+  const sequenced = [];
+  for (const p of pairs) {
+    const ordered =
+      transitiveDependents([p.a], graph.edges).includes(p.b) ||
+      transitiveDependents([p.b], graph.edges).includes(p.a);
+    if (ordered) {
+      sequenced.push(p);
+      continue;
+    }
+    const aFirst = (rank.get(p.a) ?? 0) < (rank.get(p.b) ?? 0);
+    added.push(aFirst ? { blocker: p.a, dependent: p.b } : { blocker: p.b, dependent: p.a });
+  }
+  const edges = overlapSortEdges(overlapDistinctEdges([...graph.edges, ...added]));
+  return {
+    kind: 'ok',
+    graph: { runSet: graph.runSet, edges },
+    added: overlapSortEdges(added),
+    sequenced,
+  };
+}
+function overlapTopoRank(graph) {
+  const order = graph.runSet.flatMap((entry) => entry.issues);
+  const indegree = new Map(order.map((n) => [n, 0]));
+  overlapShiftIndegree(indegree, graph.edges, 1);
+  const rank = new Map();
+  const nextReady = () => order.find((n) => !rank.has(n) && indegree.get(n) === 0);
+  for (let next = nextReady(); next !== undefined; next = nextReady()) {
+    rank.set(next, rank.size);
+    const ranked = next;
+    overlapShiftIndegree(
+      indegree,
+      graph.edges.filter((e) => e.blocker === ranked),
+      -1,
+    );
+  }
+  return rank;
+}
+function overlapShiftIndegree(indegree, edges, by) {
+  for (const e of edges) indegree.set(e.dependent, (indegree.get(e.dependent) ?? 0) + by);
+}
+function overlapAssertPairs(issues, pairs) {
+  for (const p of pairs) {
+    const outside = [p.a, p.b].find((n) => !issues.includes(n));
+    if (outside !== undefined) {
+      overlapFail(
+        `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
+      );
+    }
+  }
+  for (const p of pairs) {
+    if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
+  }
+}
+function overlapDistinct(pairs) {
+  const seen = new Map();
+  for (const p of pairs) {
+    const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
+    seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
+  }
+  return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
+}
+function overlapEntryIndex(graph) {
+  const entryOf = new Map();
+  graph.runSet.forEach((entry, i) => {
+    for (const n of entry.issues) entryOf.set(n, i);
+  });
+  return entryOf;
+}
+function overlapDistinctEdges(edges) {
+  const seen = new Map();
+  for (const e of edges) {
+    const key = `${String(e.blocker)}>${String(e.dependent)}`;
+    if (!seen.has(key)) seen.set(key, { blocker: e.blocker, dependent: e.dependent });
+  }
+  return [...seen.values()];
+}
+function overlapSortEdges(edges) {
+  return [...edges].sort((x, y) => x.blocker - y.blocker || x.dependent - y.dependent);
+}
+function overlapRef(issue) {
+  return `#${String(issue)}`;
+}
+function overlapPairLabel(pair) {
+  return `{${overlapRef(pair.a)}, ${overlapRef(pair.b)}}`;
+}
+function overlapFail(message) {
+  throw new Error(`run overlap: ${message}`);
+}
+
 async function runPreflight(hooks, args) {
   const checks = await runTool(hooks, 'preflight', ['.']);
   const gate = await runTool(hooks, 'run-gate', [
@@ -1721,10 +2249,67 @@ async function runPreflight(hooks, args) {
   const live = await runTool(hooks, 'live-runs', ['.']);
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(checks);
-  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null, main };
+  if (gate?.runSet === undefined) {
+    return { refusals, dropped: [], graph: null, main, overlap: null };
+  }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  return settleScout({ refusals, dropped: gateDrops(gate), graph, main }, scout, args.exclude);
+  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null };
+  return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+}
+async function settleOverlap(hooks, found) {
+  const { graph } = found;
+  if (graph === null || runSetIssues(graph.runSet).length < 2) {
+    return { ...found, overlap: { added: [], sequenced: [], areaMap: 'read' } };
+  }
+  const estimate = await AGENT_CALLS.overlapEstimator(hooks, graph);
+  if (estimate === null) {
+    return withRefusals(found, [
+      { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
+    ]);
+  }
+  let merged;
+  try {
+    merged = mergeOverlapEdges(graph, estimate.pairs);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
+  }
+  if (merged.kind === 'cross-entry') {
+    return withRefusals(
+      found,
+      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+    );
+  }
+  const overlap = {
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    sequenced: merged.sequenced,
+    areaMap: estimate.areaMap,
+  };
+  return { ...found, graph: merged.graph, overlap };
+}
+function withRefusals(found, refusals) {
+  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+}
+function crossEpicRefusal(pair, pairs) {
+  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
+  const epic = (e) => (e === null ? 'the explicit list' : `epic #${String(e)}`);
+  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+  return {
+    kind: 'overlap-cross-epic',
+    issue: pair.a,
+    message:
+      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
+      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
+      '; epics in one run must be code-disjoint',
+  };
+}
+function pairWord(a, b, pairs) {
+  const word = pairs.find((p) => samePair(p, a, b));
+  return { confidence: word?.confidence ?? 'unsure', reason: word?.reason ?? '' };
+}
+function samePair(p, a, b) {
+  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 function mainSnapshot(checks) {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
@@ -1811,7 +2396,7 @@ function settleScout(found, scout, exclude) {
   const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
   if (!exclude) {
     for (const v of stale) refusals.push({ kind: 'stale', issue: v.issue, message: v.evidence });
-    return { refusals, dropped: found.dropped, graph: found.graph, main: found.main };
+    return { ...found, refusals };
   }
   const { graph, dependents } = dropWithDependents(
     found.graph,
@@ -1829,7 +2414,7 @@ function settleScout(found, scout, exclude) {
       message: 'blocked by a stale issue',
     })),
   ];
-  return { refusals, dropped, graph, main: found.main };
+  return { ...found, refusals, dropped, graph };
 }
 function toolError(out, what) {
   if (out === null) return `the runner returned nothing for ${what}`;
@@ -1846,18 +2431,20 @@ async function runShip(hooks, rawArgs) {
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
   hooks.phase(PHASE_TITLES.preflight);
   const pre = await runPreflight(hooks, parsed.args);
-  if (pre.refusals.length > 0 || pre.graph === null) {
+  if (pre.refusals.length > 0 || pre.graph === null || pre.overlap === null) {
     return refusedReport(pre.refusals, pre.dropped);
   }
+  const { graph, overlap } = pre;
   if (parsed.args.preflightOnly) {
-    return { status: 'preflight-ok', dropped: pre.dropped, graph: pre.graph, epics: [] };
+    return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, pre.graph, {
+  const epics = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
+    overlap,
   });
-  return { status: 'done', dropped: pre.dropped, epics };
+  return { status: 'done', dropped: pre.dropped, overlap, epics };
 }
 async function runEntries(hooks, graph, opts) {
   const cuts = [];
@@ -1870,20 +2457,24 @@ async function runEntries(hooks, graph, opts) {
   });
   const driven =
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
-  return cuts.map((c, k) =>
-    'stopped' in c ? c.stopped : cutReport(c.setup, graph.runSet[k], driven),
-  );
+  return cuts.map((c, k) => {
+    if ('stopped' in c) {
+      return { ...c.stopped, schedule: c.issues.map((n) => neverStarted(n, graph)) };
+    }
+    return cutReport(c.setup, graph, k, driven);
+  });
 }
 async function cutEntry(hooks, entry) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const selection =
     entry.epic === null ? ['--issues', entry.issues.join(',')] : ['--epic', String(entry.epic)];
   const cut = await runTool(hooks, 'cut-batch', ['.', ...selection], { ...PRE_CUT, tag });
-  const { worktree, branch, batch, reportDir } = cut ?? {};
+  const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
     !isText(worktree) ||
     !isText(branch) ||
+    !isText(base) ||
     !isText(batch) ||
     !isText(reportDir)
   ) {
@@ -1895,7 +2486,9 @@ async function cutEntry(hooks, entry) {
     return stoppedEntry(entry, branch, envelopeProblem('provision-batch', prov));
   }
   const registry = prov.registry;
-  return { setup: { epic: entry.epic, tag, branch, main: worktree, batch, reportDir, registry } };
+  return {
+    setup: { epic: entry.epic, tag, branch, main: worktree, batch, base, reportDir, registry },
+  };
 }
 function isText(value) {
   return typeof value === 'string';
@@ -1912,19 +2505,22 @@ function stoppedEntry(entry, branch, message) {
       cite: 'see',
       reason: 'its batch was not set up',
     })),
+    schedule: [],
     residue: [],
   };
   return { stopped, issues: entry.issues };
 }
-function cutReport(setup, entry, driven) {
+function cutReport(setup, graph, k, driven) {
   const report = driven.find((r) => r.epic === setup.epic) ?? {
     epic: setup.epic,
     branch: setup.branch,
     outcome: 'nothing-landed',
     issues: [],
+    schedule: [],
     residue: [],
   };
-  const issues = (entry?.issues ?? []).map(
+  const planned = graph.runSet[k]?.issues ?? [];
+  const issues = planned.map(
     (issue) =>
       report.issues.find((r) => r.issue === issue) ?? {
         issue,
@@ -1933,7 +2529,10 @@ function cutReport(setup, entry, driven) {
         reason: 'a blocker lost its batch',
       },
   );
-  return { ...report, issues };
+  const schedule = planned.map(
+    (issue) => report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph),
+  );
+  return { ...report, issues, schedule };
 }
 function refusedReport(refusals, dropped) {
   return { status: 'refused', refusals, dropped, epics: [] };

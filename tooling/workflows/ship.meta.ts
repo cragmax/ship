@@ -19,7 +19,7 @@ export const SHIP_META: WorkflowMeta = {
     'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), ' +
     'plus optional `--exclude` (drop failing or stale issues with their dependents instead of ' +
     'refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues ' +
-    `authoring at once, default ${String(MAX_SLICES)}); or the object ` +
+    `in flight, start until settled, default ${String(MAX_SLICES)}); or the object ` +
     '{ epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: ' +
     'when the user gives bare numbers, ask whether they are epics or issues — never choose.',
   phases: SHIP_PHASES,

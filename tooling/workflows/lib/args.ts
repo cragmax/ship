@@ -34,7 +34,7 @@ export interface ShipArgs {
   readonly exclude: boolean;
   /** Stop after pre-flight. */
   readonly preflightOnly: boolean;
-  /** The most issues authoring at once; default `MAX_SLICES`. */
+  /** The most issues in flight at once, from start until settled; default `MAX_SLICES`. */
   readonly maxSlices: number;
 }
 

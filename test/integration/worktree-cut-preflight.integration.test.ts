@@ -34,6 +34,7 @@ import {
 import { addWorktree, mustRun, porcelain, runCli } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const REGISTRY = 'src/server-pool/registry/pool-registry.json';
 const REAL_REGISTRY = resolve(import.meta.dirname, '../..', REGISTRY);
 
@@ -201,6 +202,45 @@ describe('cut-slice', () => {
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'not-run-batch' });
   });
+
+  it(
+    'cuts the critic slice slice/<slug>/critic at the batch HEAD, stamping the envelope',
+    TIMEOUT,
+    () => {
+      const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+      const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
+
+      const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+
+      expect(r.code).toBe(0);
+      const slice = `${root}/ph-runs/epic-900/slice-critic`;
+      expect(r.json).toMatchObject({
+        status: 'ok',
+        branch: 'slice/epic-900/critic',
+        base: head,
+        slice,
+        at: expect.stringMatching(ISO_INSTANT),
+      });
+      expect(branchOf(slice)).toBe('slice/epic-900/critic');
+      expect(headSha(slice)).toBe(head);
+    },
+  );
+
+  it('refuses a second critic cut as branch-exists, stamped, cutting nothing', TIMEOUT, () => {
+    const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+    runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+    const before = repoState(main);
+
+    const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+
+    expect(r.json).toMatchObject({
+      status: 'refused',
+      reason: 'branch-exists',
+      branch: null,
+      at: expect.stringMatching(ISO_INSTANT),
+    });
+    expect(repoState(main)).toEqual(before);
+  });
 });
 
 describe('preflight (in-process)', () => {
@@ -305,9 +345,15 @@ describe('usage errors', () => {
       name: 'cut-slice with attempt 0',
       args: ['cut-slice', 'b', '--issue', '4', '--attempt', '0'],
     },
-  ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
+    {
+      name: 'cut-slice with --critic and an issue attempt',
+      args: ['cut-slice', 'b', '--critic', '--issue', '4', '--attempt', '1'],
+    },
+    { name: 'cut-slice with neither selector', args: ['cut-slice', 'b'] },
+  ])('exits 2 with a stamped usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
     expect(run.json.errors[0]?.step).toBe('usage');
+    expect(run.json.at).toMatch(ISO_INSTANT);
   });
 });

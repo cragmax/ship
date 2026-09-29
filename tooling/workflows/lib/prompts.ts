@@ -13,6 +13,8 @@
  * no top-level side effect.
  */
 
+import type { RunEdge, RunSet } from '../../lib/run-set.js';
+
 import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
 
 /** A live run's changed files, for the scout's overlap judgment. */
@@ -54,6 +56,14 @@ export interface ScoutValues {
   readonly liveRuns: readonly LiveRunFiles[];
 }
 
+/** The overlap estimator's values: the run set and its declared edges. */
+export interface OverlapValues {
+  /** The run set, drops applied. */
+  readonly runSet: RunSet;
+  /** Its declared edges. */
+  readonly edges: readonly RunEdge[];
+}
+
 /** One issue its epic landed earlier in the run, for a later issue's planner. */
 export interface PriorSlice {
   /** The issue. */
@@ -82,6 +92,8 @@ export interface PlannerValues {
   readonly findingsPath?: string;
   /** What the epic landed before this issue, in landing order. */
   readonly priorSlices: readonly PriorSlice[];
+  /** The files the previous attempt's landing conflicted on; absent after any other ending. */
+  readonly conflicts?: readonly string[];
 }
 
 /** The plan reviewer's values. */
@@ -142,6 +154,28 @@ export interface SliceReviewValues {
   readonly files: readonly string[];
   /** The full report. */
   readonly reportPath: string;
+}
+
+/** The critic's values. */
+export interface CriticValues {
+  /** The critic's slice worktree, cut from the batch head. */
+  readonly slice: string;
+  /** The epic's landed range, `<batch base>..HEAD`. */
+  readonly range: string;
+  /** Each landed issue: its commit and plan file, in landing order. */
+  readonly landed: readonly PriorSlice[];
+  /** The full report. */
+  readonly reportPath: string;
+}
+
+/** The retro's values. */
+export interface RetroValues {
+  /** The entry's epic; `null` for an explicit list. */
+  readonly epic: number | null;
+  /** The run's report directory. */
+  readonly reportDir: string;
+  /** The entry's run report so far, JSON-serialisable. */
+  readonly report: unknown;
 }
 
 /** The doc-index resolver's values. */
@@ -224,6 +258,11 @@ export const PROMPTS = {
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
+  overlapEstimator: (values: OverlapValues): string =>
+    [
+      `Run set (JSON): ${JSON.stringify(values.runSet)}`,
+      `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
+    ].join('\n'),
   planner: (values: PlannerValues): string =>
     [
       `Mode: ${values.mode}`,
@@ -234,6 +273,11 @@ export const PROMPTS = {
       `Plan file: ${values.planPath}`,
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...(values.conflicts === undefined
+        ? []
+        : [
+            `Previous attempt: harvest conflict on ${values.conflicts.join(', ')}; re-plan against the current batch head`,
+          ]),
     ].join('\n'),
   planReviewer: (values: PlanReviewerValues): string =>
     [
@@ -267,6 +311,19 @@ export const PROMPTS = {
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  critic: (values: CriticValues): string =>
+    [
+      `Critic slice: ${values.slice}`,
+      `Epic range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  retro: (values: RetroValues): string =>
+    [
+      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Report dir: ${values.reportDir}`,
+      `Run report (JSON): ${JSON.stringify(values.report)}`,
     ].join('\n'),
 };
 

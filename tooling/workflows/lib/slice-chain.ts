@@ -64,6 +64,8 @@ export interface EntrySetup {
   readonly main: string;
   /** The batch worktree. */
   readonly batch: string;
+  /** The commit the batch was cut at (`cut-batch`'s `base`): the epic's range starts there. */
+  readonly base: string;
   /** The run's report directory. */
   readonly reportDir: string;
   /** The trimmed pool registry. */
@@ -96,12 +98,18 @@ export interface AttemptEnding {
   readonly work: SliceWork | null;
   /** The batch commit; `null` unless it landed. */
   readonly commit: string | null;
+  /** The files a conflicting landing named; `[]` unless the landing was a harvest conflict. */
+  readonly conflicts: readonly string[];
+  /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut answered with one. */
+  readonly startedAt: string | null;
+  /** When it landed (the `land` envelope's `at`); `null` unless it landed. */
+  readonly committedAt: string | null;
 }
 
 /** An attempt's note to the drive loop. */
 export type AttemptNote =
   | {
-      /** Authoring finished: feed `slot-free`; the landing settles later. */
+      /** Authoring finished; the landing settles later; the issue keeps its slot. */
       readonly kind: 'authored';
       /** The issue. */
       readonly issue: number;
@@ -125,7 +133,12 @@ interface Attempt {
   /** `<issue>-<attempt>`: the attempt's label detail and file-name stem. */
   readonly tag: string;
   readonly place: ToolPlace;
+  /** The files the previous attempt's landing conflicted on; `[]` for none. */
+  readonly previousConflicts: readonly string[];
   slice: string | null;
+  startedAt: string | null;
+  committedAt: string | null;
+  conflicts: readonly string[];
   base: string;
   projectDir: string;
   sha: string;
@@ -147,14 +160,17 @@ type Stage = (at: Attempt) => Promise<SchedulerEvent | null>;
  * @param ctx - The entry.
  * @param issue - The issue.
  * @param attempt - The attempt number, 1 for the first.
+ * @param previousConflicts - The files the previous attempt's landing
+ *   conflicted on, for the planner to re-plan against; `[]` for none.
  * @returns Resolves to the attempt's first note; never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
   issue: number,
   attempt: number,
+  previousConflicts: readonly string[] = [],
 ): Promise<AttemptNote> {
-  const at = newAttempt(ctx, issue, attempt);
+  const at = newAttempt(ctx, issue, attempt, previousConflicts);
   const stop = await authorSlice(at).catch((err: unknown) => stageThrew(at, err));
   if (stop !== null) return endAttempt(at, stop);
   const landing = ctx.queue
@@ -169,9 +185,15 @@ export async function runAttempt(
  * @param ctx - The entry.
  * @param issue - The issue.
  * @param attempt - The attempt number.
+ * @param previousConflicts - The previous attempt's conflicting files.
  * @returns The record, nothing learnt yet.
  */
-function newAttempt(ctx: EntryContext, issue: number, attempt: number): Attempt {
+function newAttempt(
+  ctx: EntryContext,
+  issue: number,
+  attempt: number,
+  previousConflicts: readonly string[],
+): Attempt {
   const tag = `${String(issue)}-${String(attempt)}`;
   return {
     ctx,
@@ -179,7 +201,11 @@ function newAttempt(ctx: EntryContext, issue: number, attempt: number): Attempt 
     attempt,
     tag,
     place: runPlace(ctx.reportDir, tag),
+    previousConflicts,
     slice: null,
+    startedAt: null,
+    committedAt: null,
+    conflicts: [],
     base: '',
     projectDir: '',
     sha: '',
@@ -241,13 +267,14 @@ async function recheckStage(at: Attempt): Promise<SchedulerEvent | null> {
 /**
  * Cut the attempt's slice from the batch head.
  *
- * @param at - The attempt; gains `slice` and `base`.
+ * @param at - The attempt; gains `slice`, `base` and `startedAt`.
  * @returns Resolves to `null` once cut.
  */
 async function cutStage(at: Attempt): Promise<SchedulerEvent | null> {
   const argv = [at.ctx.batch, '--issue', String(at.issue), '--attempt', String(at.attempt)];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
   if (typeof out?.slice === 'string') at.slice = out.slice;
+  if (typeof out?.at === 'string') at.startedAt = out.at;
   if (out === null) return died(at);
   if (out.status !== 'ok' || at.slice === null || typeof out.base !== 'string') {
     return blocked(at, envelopeProblem('cut-slice', out));
@@ -373,7 +400,8 @@ async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
 /**
  * Land the authored slice on the batch — run inside the commit queue.
  *
- * @param at - The attempt; gains `commit` when it lands.
+ * @param at - The attempt; gains `commit` and `committedAt` when it lands,
+ *   `conflicts` when it conflicts.
  * @returns Resolves to the landing's event (`commit-queue.ts`), or
  *   `epic-halt` without landing when the entry is halting.
  */
@@ -392,7 +420,11 @@ async function landSlice(at: Attempt): Promise<SchedulerEvent> {
   const out = await runTool(at.ctx.hooks, 'land', argv, at.place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
-  if (event.kind === 'committed') at.commit = out?.commit ?? null;
+  if (event.kind === 'committed') {
+    at.commit = out?.commit ?? null;
+    at.committedAt = out?.at ?? null;
+  }
+  if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
 }
 
@@ -430,6 +462,9 @@ async function endAttempt(at: Attempt, primary: SchedulerEvent): Promise<Attempt
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
+    conflicts: at.conflicts,
+    startedAt: at.startedAt,
+    committedAt: at.committedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
@@ -466,6 +501,7 @@ function plannerValues(at: Attempt, mode: 'plan' | 'apply', findingsPath?: strin
     planPath: planPath(at),
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
+    ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
   };
 }
 

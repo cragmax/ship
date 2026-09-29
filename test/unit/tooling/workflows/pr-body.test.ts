@@ -102,6 +102,45 @@ const INPUT: PrBodyInput = {
   ],
   sync: { verdict: 'merged', commit: 'm1', message: 'merged origin/master as m1' },
   bump: { ...OK, kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
+  critic: {
+    outcome: 'landed',
+    commit: 'k1',
+    findings: [
+      { lens: 'duplication', summary: 'two x helpers', applied: true },
+      { lens: 'test-gaps', summary: 'no cross-slice test', applied: false },
+    ],
+  },
+  overlap: {
+    added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: 'both edit tooling/x.ts' }],
+    sequenced: [],
+    areaMap: 'read',
+  },
+  schedule: [
+    {
+      issue: 7,
+      blockers: [],
+      attempts: 1,
+      startedAt: '2026-09-29T10:00:00.000Z',
+      committedAt: '2026-09-29T10:20:00.000Z',
+    },
+    { issue: 9, blockers: [7, 8], attempts: 0, startedAt: null, committedAt: null },
+  ],
+  leases: {
+    engines: [
+      { type: 'paper', leases: 2, waitedSeconds: 2, waitedMaxSeconds: 1.5, heldSeconds: 102 },
+      { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
+    ],
+    issues: [{ issue: 7, waitedSeconds: 1.5, heldSeconds: 42 }],
+    unparsed: [{ issue: 8, line: 'with-lease: waited ?s' }],
+  },
+  retro: [
+    {
+      title: 'slow paper lease',
+      evidence: 'reports/server-tier-paper.log',
+      kind: 'genuine',
+      suggestion: 'warm a second paper',
+    },
+  ],
 };
 
 /**
@@ -192,6 +231,67 @@ describe('renderPrBody', () => {
     ]) {
       expect(body.split('\n')).toContain(line);
     }
+  });
+
+  it('reports the critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
+    const lines = body.split('\n');
+    const sections = [
+      '## Epic end',
+      '## Critic',
+      '## Overlap edges',
+      '## Schedule',
+      '## Lease timings',
+      '## Retro findings',
+    ].map((heading) => lines.indexOf(heading));
+
+    expect(sections.every((at) => at > -1)).toBe(true);
+    expect([...sections].sort((a, b) => a - b)).toEqual(sections);
+    for (const line of [
+      '- Outcome: landed as k1',
+      '- [duplication] two x helpers (applied)',
+      '- [test-gaps] no cross-slice test (not applied)',
+      '- #7 → #8 (likely): both edit tooling/x.ts',
+      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
+      '- #9: blockers #7, #8; started never; committed never; attempts 0',
+      '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
+      '- folia: 0 leases, waited 0.0s total (max 0.0s), held 0.0s total',
+      '- #7: waited 1.5s, held 42.0s',
+      '- unparsed (#8): with-lease: waited ?s',
+      '- slow paper lease (genuine): reports/server-tier-paper.log — warm a second paper',
+    ]) {
+      expect(lines).toContain(line);
+    }
+  });
+
+  it('renders None. for an empty section and the critic’s other outcomes', () => {
+    const lines = renderPrBody({
+      ...INPUT,
+      critic: { outcome: 'skipped', findings: [] },
+      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      schedule: [],
+      retro: [],
+    }).split('\n');
+
+    expect(lines).toContain('- Outcome: skipped — one issue landed');
+    for (const heading of ['## Overlap edges', '## Schedule', '## Retro findings']) {
+      expect(lines[lines.indexOf(heading) + 2]).toBe('None.');
+    }
+    expect(
+      renderPrBody({ ...INPUT, retro: null })
+        .split('\n')
+        .includes('- The retro returned nothing.'),
+    ).toBe(true);
+  });
+
+  it('defuses a closing keyword a retro finding carries, keeping the landed fixes', () => {
+    const text = renderPrBody({
+      ...INPUT,
+      retro: [{ title: 'fixes #9 already', evidence: 'e', kind: 'first-time', suggestion: 's' }],
+    });
+
+    expect(text).toContain('fixes (see #9) already');
+    expect(text).not.toMatch(closes(9));
+    expect(text).toMatch(closes(7));
   });
 
   it('records a capped probe with its follow-up', () => {

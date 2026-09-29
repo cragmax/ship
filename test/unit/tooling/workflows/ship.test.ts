@@ -142,6 +142,31 @@ const PLAN_REVIEW_FINDINGS = {
   },
 };
 
+// Two issues bring in the overlap estimator (one pair), an applied critic and a retro finding.
+const TWO_ISSUES = {
+  'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
+  scout: {
+    issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+    overlaps: [],
+  },
+  overlapEstimator: {
+    issues: [{ number: 7, columns: ['tooling'], paths: ['tooling/x.ts'] }],
+    pairs: [{ a: 7, b: 8, confidence: 'likely', shared: ['tooling/x.ts'], reason: 'both edit x' }],
+    areaMap: 'read',
+  },
+  critic: {
+    outcome: 'applied',
+    sha: 'critic1',
+    files: ['tooling/x.ts'],
+    commit: { type: 'refactor', scope: 'build', subject: 'share x' },
+    findings: [{ lens: 'duplication', summary: 'two x helpers', applied: true }],
+    checks: 'build, eslint, vitest related, prettier',
+  },
+  retro: {
+    findings: [{ title: 't', evidence: 'e', kind: 'genuine', suggestion: 's' }],
+  },
+};
+
 /** The runs the tier and schema checks drive. */
 const SCENARIOS = [
   { name: 'pre-flight only', responses: EPIC_FRESH, args: 'epics 1025 --preflight-only' },
@@ -162,6 +187,7 @@ const SCENARIOS = [
   { name: 'dead tdd', responses: { tdd: null }, args: 'issues 7' },
   { name: 'plan-review findings', responses: PLAN_REVIEW_FINDINGS, args: 'issues 7' },
   { name: 'doc-index conflict', responses: DOC_INDEX_CONFLICT, args: 'issues 7' },
+  { name: 'two issues', responses: TWO_ISSUES, args: 'issues 7 8' },
 ];
 
 const EPIC_END_COMMAND = /^runner:(server-tier|sync-master|bump|publish)/;
@@ -170,22 +196,30 @@ const isCutOrLand = (c: { label: string; argv: readonly string[] }): boolean =>
   /cut-batch|provision|land/.test(`${c.label} ${c.argv.join(' ')}`);
 
 describe('runShip — pre-flight only', () => {
-  it('returns preflight-ok with the run graph after the four pre-flight calls, before any cut-batch', async () => {
+  it('returns preflight-ok with the run graph after the five pre-flight calls, before any cut-batch', async () => {
     const run = fakeHooks(EPIC_FRESH);
 
     const report = await runShip(run.hooks, 'epics 1025 --preflight-only');
 
-    expect(report).toEqual({ status: 'preflight-ok', graph: EPIC_GRAPH, dropped: [], epics: [] });
+    expect(report).toEqual({
+      status: 'preflight-ok',
+      graph: EPIC_GRAPH,
+      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      dropped: [],
+      epics: [],
+    });
     expect(run.calls.map((c) => c.label)).toEqual([
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
       'scout',
+      'overlapEstimator',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
       ['tooling/worktree.ts', 'preflight', '.'],
       ['tooling/run-gate.ts', 'epics', '1025'],
       ['tooling/worktree.ts', 'live-runs', '.'],
+      [],
       [],
     ]);
     expect(run.phases).toEqual(['Pre-flight']);
@@ -239,6 +273,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:server-tier:folia',
       'runner:sync-master:list',
       'runner:bump:list',
+      'retro:list',
       'runner:publish:list',
       'runner:preflight:list',
     ]);
@@ -608,7 +643,17 @@ describe('runShip — an attempt that does not land', () => {
             reason: expect.stringMatching(/batch-dirty/),
           },
         ],
+        schedule: [
+          {
+            issue: 7,
+            blockers: [],
+            attempts: 1,
+            startedAt: '2026-09-29T10:00:00.000Z',
+            committedAt: null,
+          },
+        ],
         residue: [],
+        retro: [],
       },
     ]);
   });
@@ -905,7 +950,17 @@ describe('runShip — a halting entry', () => {
         branch: 'ship/7',
         outcome: 'halted',
         issues: [{ issue: 7, outcome: 'landed-then-halted', cite: 'see', commit: 'landed1' }],
+        schedule: [
+          {
+            issue: 7,
+            blockers: [],
+            attempts: 1,
+            startedAt: '2026-09-29T10:00:00.000Z',
+            committedAt: '2026-09-29T10:20:00.000Z',
+          },
+        ],
         residue: ['teardown refused (source-shrank): node_modules lost 40 entries'],
+        retro: [],
       },
     ]);
   });
@@ -981,6 +1036,7 @@ describe('runShip — exclude mode', () => {
     expect(report).toEqual({
       status: 'preflight-ok',
       graph: { runSet: [{ epic: null, issues: [9] }], edges: [] },
+      overlap: { added: [], sequenced: [], areaMap: 'read' },
       dropped: [
         { issue: 7, cause: 'stale', message: 'already implemented at abc123' },
         { issue: 8, cause: 'dependent', message: 'blocked by a stale issue' },
@@ -1003,6 +1059,7 @@ describe('agent-call tiers', () => {
     expect(STAGES).toEqual({
       runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
       scout: { agentType: 'scout' },
+      overlapEstimator: { agentType: 'overlap-estimator' },
       planner: { agentType: 'planner' },
       applier: { agentType: 'planner' },
       planReviewer: { agentType: 'ship-plan-reviewer' },
@@ -1010,6 +1067,8 @@ describe('agent-call tiers', () => {
       reviewer: { agentType: 'reviewer', model: 'opus' },
       resolver: { agentType: 'reviewer', model: 'opus' },
       testReview: { agentType: 'ship-test-review', model: 'opus' },
+      critic: { agentType: 'critic' },
+      retro: { agentType: 'retro', model: 'sonnet' },
     });
   });
 
