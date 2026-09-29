@@ -1,6 +1,6 @@
 /**
  * `fakeHooks` answers for driving `runResync` — the TS source in
- * `resync.test.ts`, the committed render in `resync-rendered.test.ts`: the
+ * `resync.test.ts`, a fresh render in `resync-rendered.test.ts`: the
  * run branch's batch reused, the push `ok`, and a merge that stops on a doc
  * index for the resolver.
  */
