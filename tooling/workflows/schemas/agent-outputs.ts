@@ -90,6 +90,8 @@ export const ProbeRecordSchema = z.object({
   verdict: z.enum(['confirmed', 'falsified', 'inconclusive', 'cap-hit']),
   /** The follow-up to file, for an inconclusive probe or a cap hit; empty otherwise. */
   followUp: z.string(),
+  /** Measured wallclock seconds summed across every run of the claim, a killed run counted up to the kill. */
+  seconds: z.int(),
 });
 
 /** The planner's card (also the applier's). */

@@ -1521,8 +1521,9 @@ const AGENT_OUTPUT_SCHEMAS = {
               enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
             },
             followUp: { type: 'string' },
+            seconds: { type: 'integer' },
           },
-          required: ['claim', 'verdict', 'followUp'],
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
     },
@@ -1555,8 +1556,9 @@ const AGENT_OUTPUT_SCHEMAS = {
               enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
             },
             followUp: { type: 'string' },
+            seconds: { type: 'integer' },
           },
-          required: ['claim', 'verdict', 'followUp'],
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
       reason: { type: 'string' },
@@ -2176,7 +2178,12 @@ function probeLines(work) {
 }
 function probeLine(stage, probe) {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
-  return `  - ${stage}: ${probe.claim}: ${probe.verdict}${followUp}`;
+  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+}
+function durationText(seconds) {
+  if (seconds < 60) return `${String(seconds)}s`;
+  const rest = String(seconds % 60).padStart(2, '0');
+  return `${String(Math.floor(seconds / 60))}m ${rest}s`;
 }
 function sliceLeaseText(work) {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {

@@ -170,6 +170,26 @@ describe('workflow agents', () => {
     expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
   });
 
+  // Hand-written: the probe timing and the greppable duration token a cap review reads (#1086).
+  const DURATION_TOKENS = ['date +%s', 'duration: <dur>', '`42s`', '`11m 04s`'];
+
+  it.each(['planner', 'ship-tdd'])(
+    '%s times each probe and writes its duration token',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(DURATION_TOKENS.filter((token) => !text.includes(token))).toEqual([]);
+    },
+  );
+
+  // Its return section, not the whole file: the planner's step 4 also names `seconds`, so a dropped return field hid behind it.
+  it.each<[string, string]>([
+    ['planner', '## Return'],
+    ['ship-tdd', '## Report and return'],
+  ])('%s returns each probe record’s seconds under its %s', (agentType, heading) => {
+    expect(section(agentText(agentType), heading)).toContain('`seconds`');
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',

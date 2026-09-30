@@ -427,9 +427,8 @@ function issueSection(landed: LandedIssue): string[] {
  *
  * @param work - The slice's plan card and tdd answer.
  * @returns `- Probes: no probe needed` when neither has a record; else
- *   `- Probes:`, then one nested line per record, the card's first —
- *   `  - <stage>: <claim>: <verdict>`, `<stage>` being `plan` or `tdd`, with
- *   `; follow-up: <followUp>` when it has one.
+ *   `- Probes:`, then one nested line per record, the card's first, each per
+ *   {@link probeLine}.
  */
 function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
   const records = [
@@ -445,12 +444,25 @@ function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
  *
  * @param stage - The stage that ran it.
  * @param probe - The record.
- * @returns `  - <stage>: <claim>: <verdict>`, with `; follow-up: <followUp>`
- *   when it has one.
+ * @returns `  - <stage>: <claim>: <verdict> in <dur>`, `<dur>` per
+ *   {@link durationText}, with `; follow-up: <followUp>` when it has one.
  */
 function probeLine(stage: 'plan' | 'tdd', probe: ProbeRecord): string {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
-  return `  - ${stage}: ${probe.claim}: ${probe.verdict}${followUp}`;
+  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+}
+
+/**
+ * A probe's measured duration as a phrase.
+ *
+ * @param seconds - Its whole seconds.
+ * @returns `<s>s` below 60 (`42s`); from 60 up, `<m>m <ss>s`, the seconds
+ *   zero-padded to two digits (`11m 04s`).
+ */
+function durationText(seconds: number): string {
+  if (seconds < 60) return `${String(seconds)}s`;
+  const rest = String(seconds % 60).padStart(2, '0');
+  return `${String(Math.floor(seconds / 60))}m ${rest}s`;
 }
 
 /**

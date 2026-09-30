@@ -77,8 +77,13 @@ const EIGHT: LandedIssue = {
     subject: 'wire y — fixes #12 in passing',
     closes: 'see',
     probes: [
-      { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '' },
-      { claim: 'Paper drops y', verdict: 'cap-hit', followUp: 'probe y offline; closes #13 maybe' },
+      { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '', seconds: 42 },
+      {
+        claim: 'Paper drops y',
+        verdict: 'cap-hit',
+        followUp: 'probe y offline; closes #13 maybe',
+        seconds: 900,
+      },
     ],
     testReview: null,
   }),
@@ -123,15 +128,22 @@ const PLAN_FALSIFIED: ProbeRecord = {
   claim: 'taskkill /T reaches every hook descendant',
   verdict: 'falsified',
   followUp: '',
+  seconds: 664,
 };
 
 const PLAN_CAPPED: ProbeRecord = {
   claim: 'git grep -P runs on Windows',
   verdict: 'cap-hit',
   followUp: 'probe grep -P offline',
+  seconds: 300,
 };
 
-const TDD_CONFIRMED: ProbeRecord = { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '' };
+const TDD_CONFIRMED: ProbeRecord = {
+  claim: 'Folia ticks x',
+  verdict: 'confirmed',
+  followUp: '',
+  seconds: 42,
+};
 
 const INPUT: PrBodyInput = {
   epic: 1025,
@@ -284,7 +296,7 @@ describe('renderPrBody', () => {
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
-      '  - tdd: Folia ticks x: confirmed',
+      '  - tdd: Folia ticks x: confirmed in 42s',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
@@ -509,7 +521,9 @@ describe('renderPrBody', () => {
   });
 
   it('records a capped probe with its follow-up', () => {
-    expect(body).toContain('  - tdd: Paper drops y: cap-hit; follow-up: probe y offline;');
+    expect(body).toContain(
+      '  - tdd: Paper drops y: cap-hit in 15m 00s; follow-up: probe y offline;',
+    );
   });
 
   it.each<[string, ProbeRecord[], ProbeRecord[], string[]]>([
@@ -517,7 +531,7 @@ describe('renderPrBody', () => {
       'the plan’s alone',
       [PLAN_FALSIFIED],
       [],
-      ['- Probes:', '  - plan: taskkill /T reaches every hook descendant: falsified'],
+      ['- Probes:', '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s'],
     ],
     [
       'the plan’s before the tdd’s',
@@ -525,12 +539,17 @@ describe('renderPrBody', () => {
       [TDD_CONFIRMED],
       [
         '- Probes:',
-        '  - plan: taskkill /T reaches every hook descendant: falsified',
-        '  - plan: git grep -P runs on Windows: cap-hit; follow-up: probe grep -P offline',
-        '  - tdd: Folia ticks x: confirmed',
+        '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s',
+        '  - plan: git grep -P runs on Windows: cap-hit in 5m 00s; follow-up: probe grep -P offline',
+        '  - tdd: Folia ticks x: confirmed in 42s',
       ],
     ],
-    ['the tdd’s alone', [], [TDD_CONFIRMED], ['- Probes:', '  - tdd: Folia ticks x: confirmed']],
+    [
+      'the tdd’s alone',
+      [],
+      [TDD_CONFIRMED],
+      ['- Probes:', '  - tdd: Folia ticks x: confirmed in 42s'],
+    ],
     ['neither', [], [], ['- Probes: no probe needed']],
   ])('renders the probe lines of %s', (_name, planProbes, probes, expected) => {
     const lines = renderPrBody({
@@ -546,6 +565,30 @@ describe('renderPrBody', () => {
     const at = lines.findIndex((l) => l.startsWith('- Probes'));
 
     expect(lines.slice(at, at + expected.length + 1)).toEqual([...expected, '']);
+  });
+
+  it.each<[number, string]>([
+    [59, '59s'],
+    [60, '1m 00s'],
+    [119, '1m 59s'],
+    [664, '11m 04s'],
+  ])('renders a probe of %s seconds as %s', (seconds, text) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'probe x',
+            closes: 'fixes',
+            probes: [{ ...TDD_CONFIRMED, seconds }],
+          }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines).toContain(`  - tdd: Folia ticks x: confirmed in ${text}`);
   });
 
   it('defuses a closing reference in the tier, a critic reason and every reference form', () => {

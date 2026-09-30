@@ -107,6 +107,17 @@ describe('consumed fields are required', () => {
       retro: [],
     });
   });
+
+  // Hand-written: a probe record's measured duration, whole seconds (#1086).
+  it.each<'planCard' | 'tdd'>(['planCard', 'tdd'])(
+    'requires the %s probe record’s duration in whole seconds',
+    (name) => {
+      const probe = AGENT_OUTPUT_SCHEMAS[name].properties.probes.items;
+
+      expect(probe.properties.seconds).toEqual({ type: 'integer' });
+      expect(probe.required).toContain('seconds');
+    },
+  );
 });
 
 describe('the construct set', () => {
