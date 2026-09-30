@@ -148,6 +148,28 @@ describe('workflow agents', () => {
     },
   );
 
+  // Hand-written: the Probes-entry tokens the planner writes and the plan reviewer and the tdd read (#1071).
+  const PLAN_PROBE_TOKENS = ['plan-time', 'tdd-time', 'pending — tdd', 'plan allowance spent'];
+
+  // Its entry-format bullet, not the whole file: step 4 and apply mode repeat the tokens, so a drifted definition hid behind them.
+  it('planner defines the plan-probe tokens in its Probes-entry format', () => {
+    const entry =
+      section(agentText('planner'), '## Plan-time probes')
+        .split('\n')
+        .find((l) => l.startsWith('- **The entry.**')) ?? '';
+
+    expect(PLAN_PROBE_TOKENS.filter((token) => !entry.includes(token))).toEqual([]);
+  });
+
+  it.each<[string, string[]]>([
+    ['ship-plan-reviewer', PLAN_PROBE_TOKENS],
+    ['ship-tdd', ['plan-time', 'pending — tdd']],
+  ])('%s spells the plan-probe tokens the planner writes', (agentType, tokens) => {
+    const text = agentText(agentType);
+
+    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',

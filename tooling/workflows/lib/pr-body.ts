@@ -400,7 +400,7 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
  *
  * @param landed - The issue.
  * @returns The section's lines, blank-line terminated; its lease line per
- *   {@link sliceLeaseText}.
+ *   {@link sliceLeaseText}, its probe lines per {@link probeLines}.
  */
 function issueSection(landed: LandedIssue): string[] {
   const ref = `#${String(landed.issue)}`;
@@ -417,27 +417,40 @@ function issueSection(landed: LandedIssue): string[] {
       ? '- Test review: skipped — trivial surface'
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
-    ...probeLines(landed.tdd.probes),
+    ...probeLines(landed),
     '',
   ];
 }
 
 /**
- * A slice's probe lines.
+ * A slice's probe lines: the planner's plan-time records, then the tdd's.
  *
- * @param probes - The tdd's probe records.
- * @returns `- Probes: no probe needed`, or one nested line per probe with its
- *   verdict and follow-up.
+ * @param work - The slice's plan card and tdd answer.
+ * @returns `- Probes: no probe needed` when neither has a record; else
+ *   `- Probes:`, then one nested line per record, the card's first —
+ *   `  - <stage>: <claim>: <verdict>`, `<stage>` being `plan` or `tdd`, with
+ *   `; follow-up: <followUp>` when it has one.
  */
-function probeLines(probes: readonly ProbeRecord[]): string[] {
-  if (probes.length === 0) return ['- Probes: no probe needed'];
-  return [
-    '- Probes:',
-    ...probes.map((p) => {
-      const followUp = p.followUp === '' ? '' : `; follow-up: ${p.followUp}`;
-      return `  - ${p.claim}: ${p.verdict}${followUp}`;
-    }),
+function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
+  const records = [
+    ...work.card.probes.map((p) => probeLine('plan', p)),
+    ...work.tdd.probes.map((p) => probeLine('tdd', p)),
   ];
+  if (records.length === 0) return ['- Probes: no probe needed'];
+  return ['- Probes:', ...records];
+}
+
+/**
+ * One probe record's nested line.
+ *
+ * @param stage - The stage that ran it.
+ * @param probe - The record.
+ * @returns `  - <stage>: <claim>: <verdict>`, with `; follow-up: <followUp>`
+ *   when it has one.
+ */
+function probeLine(stage: 'plan' | 'tdd', probe: ProbeRecord): string {
+  const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
+  return `  - ${stage}: ${probe.claim}: ${probe.verdict}${followUp}`;
 }
 
 /**

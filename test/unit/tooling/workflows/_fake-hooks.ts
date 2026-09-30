@@ -212,6 +212,7 @@ export const PLAN_CARD = {
   commit: { type: 'feat', scope: 'build', subject: 'add the x tool' },
   closes: 'fixes',
   evidence: 'the issue asks for x',
+  probes: [],
 };
 
 /** A clean land of #7's slice. */

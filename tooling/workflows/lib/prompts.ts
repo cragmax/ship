@@ -20,7 +20,12 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
-import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
+import {
+  PLAN_PROBE_CAP_MINUTES,
+  PLAN_PROBES_PER_ISSUE,
+  PROBE_CAP_MINUTES,
+  PROBES_PER_ISSUE,
+} from './stages.js';
 
 /** A live run's changed files, for the scout's overlap judgment. */
 export interface LiveRunFiles {
@@ -251,17 +256,30 @@ function leaseCommand(lease: LeaseValues): string {
 }
 
 /**
+ * A stage's `Probe caps:` line.
+ *
+ * @param minutes - The most minutes one probe may take.
+ * @param probes - The most probes the stage may run per issue.
+ * @returns `Probe caps: <minutes> min per probe, <probes> probes per issue`.
+ */
+function probeCapsLine(minutes: number, probes: number): string {
+  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
+}
+
+/**
  * A slice's server-tier recipe: the lease command template, where its
- * version comes from, and the probe caps.
+ * version comes from, and the stage's probe caps.
  *
  * @param lease - The lease command's values.
+ * @param minutes - The most minutes one probe may take.
+ * @param probes - The most probes the stage may run per issue.
  * @returns The `Lease command:`, `Lease version:` and `Probe caps:` lines.
  */
-function serverTierLines(lease: LeaseValues): string[] {
+function serverTierLines(lease: LeaseValues, minutes: number, probes: number): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    probeCapsLine(minutes, probes),
   ];
 }
 
@@ -337,7 +355,7 @@ export const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -351,6 +369,7 @@ export const PROMPTS = {
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
+      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
     ].join('\n'),
   tdd: (values: TddValues): string =>
     [
@@ -360,7 +379,7 @@ export const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
@@ -407,6 +426,6 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
-    ...serverTierLines(values.lease),
+    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }

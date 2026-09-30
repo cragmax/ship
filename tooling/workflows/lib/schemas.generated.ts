@@ -823,8 +823,23 @@ export const AGENT_OUTPUT_SCHEMAS = {
       },
       closes: { type: 'string', enum: ['fixes', 'see'] },
       evidence: { type: 'string' },
+      probes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string' },
+            verdict: {
+              type: 'string',
+              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
+            },
+            followUp: { type: 'string' },
+          },
+          required: ['claim', 'verdict', 'followUp'],
+        },
+      },
     },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence'],
+    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
   },
   planReview: {
     type: 'object',

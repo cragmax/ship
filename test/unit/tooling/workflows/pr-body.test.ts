@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SliceWork } from '../../../../tooling/workflows/lib/agent-calls.js';
+import type { ProbeRecord, SliceWork } from '../../../../tooling/workflows/lib/agent-calls.js';
 import {
   commitMessage,
   prTitle,
@@ -17,6 +17,7 @@ const work = (fields: {
   closes: 'fixes' | 'see';
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
+  planProbes?: SliceWork['tdd']['probes'];
   review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
 }): SliceWork => ({
@@ -28,6 +29,7 @@ const work = (fields: {
     commit: { type: 'feat', scope: 'tools', subject: fields.subject },
     closes: fields.closes,
     evidence: '',
+    probes: fields.planProbes ?? [],
   },
   tdd: {
     verdict: 'GREEN',
@@ -116,6 +118,20 @@ const fixedReview = (leaseLines: string[]): SliceWork['review'] => ({
   summary: 'renamed a helper',
   leaseLines,
 });
+
+const PLAN_FALSIFIED: ProbeRecord = {
+  claim: 'taskkill /T reaches every hook descendant',
+  verdict: 'falsified',
+  followUp: '',
+};
+
+const PLAN_CAPPED: ProbeRecord = {
+  claim: 'git grep -P runs on Windows',
+  verdict: 'cap-hit',
+  followUp: 'probe grep -P offline',
+};
+
+const TDD_CONFIRMED: ProbeRecord = { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '' };
 
 const INPUT: PrBodyInput = {
   epic: 1025,
@@ -268,7 +284,7 @@ describe('renderPrBody', () => {
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
-      '  - Folia ticks x: confirmed',
+      '  - tdd: Folia ticks x: confirmed',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
@@ -493,7 +509,43 @@ describe('renderPrBody', () => {
   });
 
   it('records a capped probe with its follow-up', () => {
-    expect(body).toContain('  - Paper drops y: cap-hit; follow-up: probe y offline;');
+    expect(body).toContain('  - tdd: Paper drops y: cap-hit; follow-up: probe y offline;');
+  });
+
+  it.each<[string, ProbeRecord[], ProbeRecord[], string[]]>([
+    [
+      'the plan’s alone',
+      [PLAN_FALSIFIED],
+      [],
+      ['- Probes:', '  - plan: taskkill /T reaches every hook descendant: falsified'],
+    ],
+    [
+      'the plan’s before the tdd’s',
+      [PLAN_FALSIFIED, PLAN_CAPPED],
+      [TDD_CONFIRMED],
+      [
+        '- Probes:',
+        '  - plan: taskkill /T reaches every hook descendant: falsified',
+        '  - plan: git grep -P runs on Windows: cap-hit; follow-up: probe grep -P offline',
+        '  - tdd: Folia ticks x: confirmed',
+      ],
+    ],
+    ['the tdd’s alone', [], [TDD_CONFIRMED], ['- Probes:', '  - tdd: Folia ticks x: confirmed']],
+    ['neither', [], [], ['- Probes: no probe needed']],
+  ])('renders the probe lines of %s', (_name, planProbes, probes, expected) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({ subject: 'probe x', closes: 'fixes', planProbes, probes }),
+        },
+      ],
+    }).split('\n');
+    const at = lines.findIndex((l) => l.startsWith('- Probes'));
+
+    expect(lines.slice(at, at + expected.length + 1)).toEqual([...expected, '']);
   });
 
   it('defuses a closing reference in the tier, a critic reason and every reference form', () => {

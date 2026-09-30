@@ -82,6 +82,16 @@ export const CommitSpecSchema = z.object({
   subject: z.string(),
 });
 
+/** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
+export const ProbeRecordSchema = z.object({
+  /** The claim probed. */
+  claim: z.string(),
+  /** `confirmed`, `falsified`, `inconclusive`, or `cap-hit` (a follow-up, never a verdict). */
+  verdict: z.enum(['confirmed', 'falsified', 'inconclusive', 'cap-hit']),
+  /** The follow-up to file, for an inconclusive probe or a cap hit; empty otherwise. */
+  followUp: z.string(),
+});
+
 /** The planner's card (also the applier's). */
 export const PlanCardSchema = z.object({
   /** `plan`: planned; `stale`: the tree overtook the issue; `blocked`: it cannot be planned. */
@@ -98,6 +108,8 @@ export const PlanCardSchema = z.object({
   closes: z.enum(['fixes', 'see']),
   /** What backs the verdict. */
   evidence: z.string(),
+  /** Each plan-time probe its plan records a verdict for, carried-forward ones included; never a `pending — tdd` entry. */
+  probes: z.array(ProbeRecordSchema),
 });
 
 /** The plan reviewer's answer. */
@@ -108,16 +120,6 @@ export const PlanReviewSchema = z.object({
   findings: z.int(),
   /** The findings file. */
   findingsPath: z.string(),
-});
-
-/** One probe the tdd ran, or chose not to finish. */
-export const ProbeRecordSchema = z.object({
-  /** The claim probed. */
-  claim: z.string(),
-  /** `confirmed`, `falsified`, `inconclusive`, or `cap-hit` (a follow-up, never a verdict). */
-  verdict: z.enum(['confirmed', 'falsified', 'inconclusive', 'cap-hit']),
-  /** The follow-up to file, for an inconclusive probe or a cap hit; empty otherwise. */
-  followUp: z.string(),
 });
 
 /** The tdd's answer. */

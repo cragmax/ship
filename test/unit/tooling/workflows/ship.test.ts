@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  PROBE_CAP_MINUTES,
-  PROBES_PER_ISSUE,
   reviewEffort,
   STAGES,
   type StageName,
@@ -840,7 +838,7 @@ describe('runShip — what an attempt hands on', () => {
   });
 
   it.each(['planner:7-1', 'applier:7-1', 'reviewer:7-1', 'testReview:7-1'])(
-    'hands %s the tdd’s server-tier recipe',
+    'hands %s the tdd’s lease recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
       const projectDir = 'C:/src/ph-runs/7/project-7-1';
@@ -858,18 +856,40 @@ describe('runShip — what an attempt hands on', () => {
       await runShip(run.hooks, 'issues 7');
 
       const tddLines = promptOf(run, 'tdd:7-1').split('\n');
-      const recipe = ['Lease command: ', 'Lease version: ', 'Probe caps: '].map(
+      const recipe = ['Lease command: ', 'Lease version: '].map(
         (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
       );
       const registry = `${REPORT_DIR}/pool-registry.batch.json`;
       expect(recipe).toEqual([
         `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
         `Lease version: the version of the chosen type's entry in ${registry}`,
-        `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
       ]);
       expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
     },
   );
+
+  // Hand-written: the plan-time allowance #1071 decided, and the tdd's #1038 confirmed.
+  const PLAN_CAPS = 'Probe caps: 5 min per probe, 2 probes per issue';
+  const TDD_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
+
+  it.each([
+    ['planner:7-1', PLAN_CAPS],
+    ['applier:7-1', PLAN_CAPS],
+    ['planReviewer:7-1', PLAN_CAPS],
+    ['tdd:7-1', TDD_CAPS],
+    ['reviewer:7-1', TDD_CAPS],
+    ['testReview:7-1', TDD_CAPS],
+  ])('hands %s its stage’s probe caps', async (label, line) => {
+    const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Probe caps: ')),
+    ).toEqual([line]);
+  });
 
   it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1'])(
     'hands %s the command that fetches the issue as markdown into the report dir',
