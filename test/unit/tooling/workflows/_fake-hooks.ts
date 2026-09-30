@@ -5,9 +5,14 @@
  * deterministic. Each answer passes through the call's schema as an agent's
  * would: cut to the schema's properties, a missing required key, an
  * off-enum value or a value of none of its `type`s recorded in
- * {@link FakeRun.violations}. A `null` answer is a dead agent's, and no
+ * {@link FakeRun.violations}. A required key held as `undefined` counts as
+ * missing, as JSON drops it. A test whose fake run recorded a violation fails
+ * when it finishes, with no assertion needed, unless the run opts out
+ * ({@link FakeOptions.offSchema}). A `null` answer is a dead agent's, and no
  * schema applies to it.
  */
+
+import { onTestFinished } from 'vitest';
 
 import type {
   AgentOptions,
@@ -41,6 +46,12 @@ export interface FakeOptions {
    * settled yet.
    */
   readonly gate?: (call: RecordedCall, answer: unknown) => Promise<unknown>;
+  /**
+   * The run answers off its call schemas on purpose: its {@link FakeRun.violations}
+   * are recorded for the test to read, and do not fail it. By default any
+   * violation fails the test that made the run, when that test finishes.
+   */
+  readonly offSchema?: boolean;
 }
 
 /** A fake run: the hooks to pass, and what they recorded. */
@@ -53,7 +64,10 @@ export interface FakeRun {
   readonly phases: string[];
   /** Every `agent()` call (`call <label>`) and `log()` line (`log <message>`), interleaved in order. */
   readonly timeline: string[];
-  /** Where an answer broke its call's schema: `<label>.<path>: <what>`. */
+  /**
+   * Where an answer broke its call's schema: `<label>.<path>: <what>`. Any
+   * line fails the test when it finishes, unless {@link FakeOptions.offSchema}.
+   */
   readonly violations: string[];
 }
 
@@ -248,8 +262,10 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
  * answers `null`, as a dead agent does.
  *
  * @param responses - Per-label answers (or {@link Responder}s) overriding the defaults.
- * @param options - The answer gate.
+ * @param options - The answer gate, and whether the run answers off its schemas on purpose.
  * @returns The hooks and their records.
+ * @throws When called outside a running test without `offSchema`: the finish
+ *   check registers through vitest's `onTestFinished`.
  */
 export function fakeHooks(
   responses: Readonly<Record<string, unknown>> = {},
@@ -261,6 +277,7 @@ export function fakeHooks(
   const phases: string[] = [];
   const timeline: string[] = [];
   const violations: string[] = [];
+  if (options.offSchema !== true) failTestOnViolations(violations);
   const answered = new Map<string, number>();
   const agent = (prompt: string, options: AgentOptions): Promise<unknown> => {
     const call: RecordedCall = {
@@ -303,6 +320,20 @@ export function fakeHooks(
     },
   };
   return { hooks, calls, phases, timeline, violations };
+}
+
+/**
+ * Fail the running test when it finishes with a violation recorded, its
+ * error naming each violation line.
+ *
+ * @param violations - The run's violation lines, read when the test finishes.
+ */
+function failTestOnViolations(violations: readonly string[]): void {
+  onTestFinished(() => {
+    if (violations.length > 0) {
+      throw new Error(`fake answers broke their call schemas:\n${violations.join('\n')}`);
+    }
+  });
 }
 
 /** Where a part of an answer sits, and where its violations go. */
@@ -401,7 +432,7 @@ function conformItems(value: readonly unknown[], schema: JsonSchema, place: Answ
 }
 
 /**
- * Record each `required` key an object lacks.
+ * Record each `required` key an object lacks, or holds as `undefined` (which JSON drops).
  *
  * @param record - The object.
  * @param schema - Its schema.
@@ -415,7 +446,7 @@ function checkRequired(
   const required = schema['required'];
   if (!Array.isArray(required)) return;
   for (const key of required as unknown[]) {
-    if (typeof key === 'string' && !Object.hasOwn(record, key)) {
+    if (typeof key === 'string' && (!Object.hasOwn(record, key) || record[key] === undefined)) {
       place.violations.push(`${place.at}: lacks required ${key}`);
     }
   }

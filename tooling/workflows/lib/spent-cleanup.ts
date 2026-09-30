@@ -28,7 +28,7 @@ import {
 
 /** A spent run left standing, and why. */
 export interface SkippedRun {
-  /** The run's worktree; its branch when `live-runs` named no path. */
+  /** The run's worktree. */
   readonly path: string;
   /** Why it was not torn down. */
   readonly why: string;
@@ -121,25 +121,28 @@ async function tearDownSpent(
 }
 
 /**
- * What the cleanup does with one run.
+ * What the cleanup does with one run. Reads `path` and `nested` unguarded:
+ * the `live-runs` row schema requires both, and the runner's answer is held
+ * to it.
  *
  * @param run - The run, as `live-runs` reported it.
  * @returns `null` for a live run; a {@link SkippedRun} for a spent run it
- *   must leave (unverified, dirty or of unknown dirtiness, with nested
- *   worktrees, or without a path); otherwise the path to tear down.
+ *   must leave (unverified, dirty or of unknown dirtiness, or with nested
+ *   worktrees); otherwise the path to tear down.
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
-  const path = run.path ?? run.branch;
   if (run.spentUnverified) {
-    return { path, why: 'its PR is over, but the PR head could not be checked' };
+    return { path: run.path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;
-  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
   if (run.dirty !== false) {
-    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+    return {
+      path: run.path,
+      why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown',
+    };
   }
-  if (!Array.isArray(run.nested) || run.nested.length > 0) {
-    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  if (run.nested.length > 0) {
+    return { path: run.path, why: `nested worktrees: ${run.nested.join(', ')}` };
   }
   return { path: run.path };
 }

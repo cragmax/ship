@@ -3143,17 +3143,18 @@ async function tearDownSpent(hooks, path, report) {
   }
 }
 function spentTarget(run) {
-  const path = run.path ?? run.branch;
   if (run.spentUnverified) {
-    return { path, why: 'its PR is over, but the PR head could not be checked' };
+    return { path: run.path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;
-  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
   if (run.dirty !== false) {
-    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+    return {
+      path: run.path,
+      why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown',
+    };
   }
-  if (!Array.isArray(run.nested) || run.nested.length > 0) {
-    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  if (run.nested.length > 0) {
+    return { path: run.path, why: `nested worktrees: ${run.nested.join(', ')}` };
   }
   return { path: run.path };
 }

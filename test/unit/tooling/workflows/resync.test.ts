@@ -26,7 +26,6 @@ describe('runResync — arguments', () => {
 
       expect(report).toMatchObject({ status: 'done', branch: BRANCH });
       expect(labels(run)[0]).toBe('runner:live-runs:resync');
-      expect(run.violations).toEqual([]);
     },
   );
 
@@ -72,7 +71,6 @@ describe('runResync — merge and push', () => {
       expect(report.message).toBe(
         `${pushed ? 'pushed' : 'nothing to push'}; PR #9 mergeable confirmed`,
       );
-      expect(run.violations).toEqual([]);
     },
   );
 
@@ -85,7 +83,6 @@ describe('runResync — merge and push', () => {
 
     expect(report).toMatchObject({ status: 'done', pushed: true, mergeable: 'CONFLICTING' });
     expect(report.message).toBe('pushed; PR #9 mergeable unconfirmed (CONFLICTING)');
-    expect(run.violations).toEqual([]);
   });
 
   it('carries the merge start version into the report', async () => {
@@ -105,7 +102,6 @@ describe('runResync — merge and push', () => {
 
     expect(report).toMatchObject({ status: 'done', sync: { verdict: 'merged', commit: 'merge1' } });
     expect(report.sync?.version).toEqual(version);
-    expect(run.violations).toEqual([]);
   });
 
   const CODE_CONFLICT = {
@@ -166,7 +162,6 @@ describe('runResync — merge and push', () => {
     expect(labels(run).filter((l) => l.startsWith('runner:publish'))).toEqual([]);
     expect(report).toMatchObject({ status: 'stopped', pushed: false });
     expect(report.sync?.conflicts).toEqual(c.conflicts);
-    expect(run.violations).toEqual([]);
   });
 
   it('stops on a failed push, naming it', async () => {
@@ -197,7 +192,6 @@ describe('runResync — spent cleanup', () => {
     const teardown = run.calls.find((c) => c.label === 'runner:teardown:spent-1');
     expect(teardown?.argv.slice(2)).toEqual(['C:/src/ph-runs/old-0/batch']);
     expect(report.cleanup.tornDown).toEqual(['C:/src/ph-runs/old-0/batch']);
-    expect(run.violations).toEqual([]);
   });
 
   it.each([
@@ -220,18 +214,6 @@ describe('runResync — spent cleanup', () => {
 
     expect(labels(run).filter((l) => l.startsWith('runner:teardown'))).toEqual([]);
     expect(report.cleanup.skipped).toEqual([{ path: 'C:/src/ph-runs/old-0/batch', why: c.why }]);
-  });
-
-  it('leaves a spent run live-runs named no path standing, by its branch', async () => {
-    const run = resyncHooks(liveRuns({ path: undefined }));
-
-    const report = await runResync(run.hooks, BRANCH);
-
-    expect(labels(run).filter((l) => l.startsWith('runner:teardown'))).toEqual([]);
-    expect(report.cleanup.skipped).toEqual([
-      { path: 'ship/old-0', why: 'live-runs named no path' },
-    ]);
-    expect(run.violations).toEqual([]);
   });
 
   it('keeps a re-cut run whose merged PR does not contain its tip', async () => {
@@ -266,6 +248,8 @@ describe('runResync — spent cleanup', () => {
       exitCode: 1,
       status: 'failed',
       errors: [{ step: 'remove', message: 'busy' }],
+      removed: false,
+      registered: true,
     };
     const teardown = { ...OK, removed: true, registered: false };
     const run = resyncHooks({
@@ -287,6 +271,8 @@ describe('runResync — spent cleanup', () => {
       status: 'refused',
       reason: 'source-shrank',
       errors: [{ step: 'unlink', message: 'node_modules lost files' }],
+      removed: false,
+      registered: true,
     };
     const run = resyncHooks({ ...liveRuns({}), 'runner:teardown': shrank });
 
@@ -348,6 +334,8 @@ describe('runResync — attach', () => {
       exitCode: 1,
       status: 'failed',
       errors: [{ step: 'install', message: 'npm ci' }],
+      registry: null,
+      env: null,
     };
     const run = resyncHooks({
       'runner:cut-batch': attachOk(true),
@@ -395,6 +383,5 @@ describe('runResync — order', () => {
       'runner:publish:resync',
     ]);
     expect(report).toMatchObject({ status: 'done', branch: BRANCH, pushed: true });
-    expect(run.violations).toEqual([]);
   });
 });

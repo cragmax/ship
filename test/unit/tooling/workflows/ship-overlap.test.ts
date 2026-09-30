@@ -134,11 +134,6 @@ describe('runShip — the overlap estimate', () => {
       estimate({ a: 7, b: 7, confidence: 'likely' }),
       'run overlap: pair {#7, #7} pairs an issue with itself',
     ],
-    [
-      'a pair naming an issue outside the run',
-      estimate({ a: 7, b: 99, confidence: 'likely' }),
-      'run overlap: pair {#7, #99} names #99, which is outside the run set',
-    ],
   ])('refuses %s as overlap-estimate-failed', async (_name, answer, message) => {
     const run = fakeHooks({ ...SEVEN_EIGHT, overlapEstimator: answer });
 
@@ -147,6 +142,27 @@ describe('runShip — the overlap estimate', () => {
     expect(report).toEqual({
       status: 'refused',
       refusals: [{ kind: 'overlap-estimate-failed', message }],
+      dropped: [],
+      epics: [],
+    });
+  });
+
+  it('refuses a pair naming an issue outside the run as overlap-estimate-failed', async () => {
+    const run = fakeHooks(
+      { ...SEVEN_EIGHT, overlapEstimator: estimate({ a: 7, b: 99, confidence: 'likely' }) },
+      { offSchema: true },
+    );
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report).toEqual({
+      status: 'refused',
+      refusals: [
+        {
+          kind: 'overlap-estimate-failed',
+          message: 'run overlap: pair {#7, #99} names #99, which is outside the run set',
+        },
+      ],
       dropped: [],
       epics: [],
     });

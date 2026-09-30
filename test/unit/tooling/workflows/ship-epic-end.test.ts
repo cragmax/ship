@@ -33,6 +33,7 @@ const CRITIC_CUT = {
   branch: 'slice/7-8/critic',
   base: 'batchhead',
   slice: 'C:/src/ph-runs/7/slice-critic',
+  at: '2026-09-29T10:30:00.000Z',
 };
 
 const CRITIC_APPLIED = {
@@ -216,6 +217,7 @@ describe('runShip — the critic', () => {
         base: null,
         slice: null,
         errors: [{ step: 'preconditions', message: 'slice/7-8/critic exists' }],
+        at: '2026-09-29T10:30:00.000Z',
       },
     });
 
@@ -297,6 +299,11 @@ describe('runShip — the retro', () => {
           status: 'refused',
           reason: 'code-conflict',
           errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+          outcome: null,
+          commit: null,
+          conflicts: [],
+          version: null,
+          pending: [],
         },
       },
     ],

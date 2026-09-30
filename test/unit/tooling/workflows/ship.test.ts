@@ -172,7 +172,7 @@ const TWO_ISSUES = {
   },
 };
 
-/** The runs the tier and schema checks drive. */
+/** The runs the tier check drives. */
 const SCENARIOS = [
   { name: 'pre-flight only', responses: EPIC_FRESH, args: 'epics 1025 --preflight-only' },
   { name: 'three refusals', responses: THREE_REFUSALS, args: { issues: [7, 8] } },
@@ -374,7 +374,22 @@ describe('runShip — one issue from launch to PR', () => {
 });
 
 describe('runShip — every tool failure is a refusal', () => {
-  const OTHER_RUN = { branch: 'ship/epic-9', landed: ['src/a.ts'], spent: false };
+  const OTHER_RUN = {
+    branch: 'ship/epic-9',
+    landed: ['src/a.ts'],
+    spent: false,
+    path: 'C:/src/ph-runs/epic-9/batch',
+    dirty: false,
+    nested: [],
+    spentUnverified: false,
+  };
+
+  const refuses = async (run: FakeRun, args: string, refusals: unknown): Promise<void> => {
+    const report = await runShip(run.hooks, args);
+
+    expect(report.status).toBe('refused');
+    expect(report.refusals).toEqual(refusals);
+  };
 
   it.each([
     [
@@ -383,6 +398,65 @@ describe('runShip — every tool failure is a refusal', () => {
       'issues 7 --preflight-only',
       [{ kind: 'preflight-error', message: 'the runner returned nothing for preflight' }],
     ],
+    [
+      'a failed live-runs',
+      {
+        'runner:live-runs': {
+          ...LIVE_RUNS_NONE,
+          exitCode: 1,
+          status: 'failed',
+          errors: [{ step: 'pr-state', message: 'gh pr list failed for ship/epic-9' }],
+        },
+      },
+      'issues 7 --preflight-only',
+      [{ kind: 'live-runs-failed', message: 'gh pr list failed for ship/epic-9' }],
+    ],
+    [
+      'an unknown PR state, never read as no PR',
+      {
+        'runner:live-runs': {
+          ...LIVE_RUNS_NONE,
+          runs: [{ ...OTHER_RUN, pr: { state: 'unknown', number: null } }],
+        },
+      },
+      'issues 7 --preflight-only',
+      [{ kind: 'live-runs-failed', message: 'pull request state unknown for ship/epic-9' }],
+    ],
+    [
+      'a scout that returned nothing',
+      { scout: null },
+      'issues 7 --preflight-only',
+      [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
+    ],
+    [
+      'a code overlap, even in exclude mode',
+      {
+        scout: {
+          issues: [{ issue: 7, stale: false, evidence: 'fresh' }],
+          overlaps: [
+            {
+              issue: 7,
+              branch: 'ship/epic-9',
+              files: ['src/a.ts'],
+              evidence: 'both edit src/a.ts',
+            },
+          ],
+        },
+      },
+      'issues 7 --exclude --preflight-only',
+      [{ kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' }],
+    ],
+    [
+      'exclude mode dropping every issue',
+      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] } },
+      'issues 7 --exclude --preflight-only',
+      [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
+    ],
+  ])('refuses %s', async (_name, responses, args, refusals) => {
+    await refuses(fakeHooks(responses), args, refusals);
+  });
+
+  it.each([
     [
       'a pre-flight usage error',
       {
@@ -443,73 +517,17 @@ describe('runShip — every tool failure is a refusal', () => {
       'issues 7 --preflight-only',
       [{ kind: 'live-runs-failed', message: 'live-runs exited 0 with no usable verdict' }],
     ],
-    [
-      'a failed live-runs',
-      {
-        'runner:live-runs': {
-          ...LIVE_RUNS_NONE,
-          exitCode: 1,
-          status: 'failed',
-          errors: [{ step: 'pr-state', message: 'gh pr list failed for ship/epic-9' }],
-        },
-      },
-      'issues 7 --preflight-only',
-      [{ kind: 'live-runs-failed', message: 'gh pr list failed for ship/epic-9' }],
-    ],
-    [
-      'an unknown PR state, never read as no PR',
-      {
-        'runner:live-runs': {
-          ...LIVE_RUNS_NONE,
-          runs: [{ ...OTHER_RUN, pr: { state: 'unknown', number: null } }],
-        },
-      },
-      'issues 7 --preflight-only',
-      [{ kind: 'live-runs-failed', message: 'pull request state unknown for ship/epic-9' }],
-    ],
-    [
-      'a scout that returned nothing',
-      { scout: null },
-      'issues 7 --preflight-only',
-      [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
-    ],
-    [
-      'a code overlap, even in exclude mode',
-      {
-        scout: {
-          issues: [{ issue: 7, stale: false, evidence: 'fresh' }],
-          overlaps: [
-            {
-              issue: 7,
-              branch: 'ship/epic-9',
-              files: ['src/a.ts'],
-              evidence: 'both edit src/a.ts',
-            },
-          ],
-        },
-      },
-      'issues 7 --exclude --preflight-only',
-      [{ kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' }],
-    ],
-    [
-      'exclude mode dropping every issue',
-      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] } },
-      'issues 7 --exclude --preflight-only',
-      [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
-    ],
   ])('refuses %s', async (_name, responses, args, refusals) => {
-    const run = fakeHooks(responses);
-
-    const report = await runShip(run.hooks, args);
-
-    expect(report.status).toBe('refused');
-    expect(report.refusals).toEqual(refusals);
+    await refuses(fakeHooks(responses, { offSchema: true }), args, refusals);
   });
 
   it('refuses a gate with no verdict, and skips the scout for want of a run set', async () => {
-    const run = fakeHooks({
-      'runner:run-gate': { exitCode: 2, envelopePath: 'g', stderrTail: 'run-gate: schema error' },
-    });
+    const run = fakeHooks(
+      {
+        'runner:run-gate': { exitCode: 2, envelopePath: 'g', stderrTail: 'run-gate: schema error' },
+      },
+      { offSchema: true },
+    );
 
     const report = await runShip(run.hooks, 'issues 7 --preflight-only');
 
@@ -527,6 +545,10 @@ describe('runShip — every tool failure is a refusal', () => {
             landed: ['src/old.ts'],
             pr: { state: 'merged', number: 3 },
             spent: true,
+            path: 'C:/src/ph-runs/epic-8/batch',
+            dirty: false,
+            nested: [],
+            spentUnverified: false,
           },
           { ...OTHER_RUN, pr: { state: 'open', number: 4 } },
         ],
@@ -743,6 +765,11 @@ describe('runShip — an attempt that does not land', () => {
         status: 'refused',
         reason: 'code-conflict',
         errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+        outcome: null,
+        commit: null,
+        conflicts: [],
+        version: null,
+        pending: [],
       },
     });
 
@@ -1036,6 +1063,12 @@ describe('runShip — a failed cut', () => {
         envelopePath: 'e.json',
         status: 'failed',
         errors: [{ step: 'worktree', message: 'worktree add failed' }],
+        worktree: 'C:/src/main',
+        branch: null,
+        base: null,
+        batch: null,
+        reportDir: null,
+        attach: null,
       },
     });
 
@@ -1119,17 +1152,6 @@ describe('agent-call tiers', () => {
       retro: { agentType: 'retro', model: 'sonnet' },
     });
   });
-
-  it.each(SCENARIOS)(
-    'answers every agent call of the $name run within the call’s schema',
-    async ({ responses, args }) => {
-      const run = fakeHooks(responses);
-
-      await runShip(run.hooks, args);
-
-      expect(run.violations).toEqual([]);
-    },
-  );
 
   it.each(SCENARIOS)(
     'gives every agent call of the $name run its STAGES row',

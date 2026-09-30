@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, onTestFailed } from 'vitest';
 
 import { checkSchemaModule, SCHEMA_MODULE } from '../../../tooling/lib/workflow-schemas.js';
 import { compareStrings } from '../../../tooling/shared.js';
@@ -69,6 +69,9 @@ const WORKTREE_OPTIONAL = ['reason', 'stderrTail'];
 // The construct set the workflow runtime has been seen to accept (#1047).
 const ALLOWED_KEYS = ['description', 'enum', 'items', 'properties', 'required', 'type'];
 const ALLOWED_TYPES = ['array', 'boolean', 'integer', 'null', 'object', 'string'];
+
+/** {@link LAND_OK} with its required `at` dropped. */
+const LAND_WITHOUT_AT = Object.fromEntries(Object.entries(LAND_OK).filter(([key]) => key !== 'at'));
 
 describe('consumed fields are required', () => {
   it('leaves only the legitimately absent fields optional in every tool schema', () => {
@@ -175,7 +178,10 @@ describe('checkSchemaModule', () => {
 
 describe('the fake hooks check types against the emitted schema', () => {
   it('records a string where land’s schema wants a boolean', async () => {
-    const run = fakeHooks({ 'runner:land': { ...LAND_OK, batchClean: 'yes' } });
+    const run = fakeHooks(
+      { 'runner:land': { ...LAND_OK, batchClean: 'yes' } },
+      { offSchema: true },
+    );
 
     await runTool(run.hooks, 'land', []);
 
@@ -183,7 +189,7 @@ describe('the fake hooks check types against the emitted schema', () => {
   });
 
   it('records a null where land’s schema admits none', async () => {
-    const run = fakeHooks({ 'runner:land': { ...LAND_OK, batchClean: null } });
+    const run = fakeHooks({ 'runner:land': { ...LAND_OK, batchClean: null } }, { offSchema: true });
 
     await runTool(run.hooks, 'land', []);
 
@@ -191,10 +197,86 @@ describe('the fake hooks check types against the emitted schema', () => {
   });
 
   it('records a fraction where the schema wants an integer', async () => {
-    const run = fakeHooks({ 'runner:land': { ...LAND_OK, exitCode: 0.5 } });
+    const run = fakeHooks({ 'runner:land': { ...LAND_OK, exitCode: 0.5 } }, { offSchema: true });
 
     await runTool(run.hooks, 'land', []);
 
     expect(run.violations).toEqual([expect.stringMatching(/\.exitCode: 0\.5 is not integer$/)]);
+  });
+
+  it('records a required key present as undefined as lacking', async () => {
+    const run = fakeHooks({ 'runner:land': { ...LAND_OK, at: undefined } }, { offSchema: true });
+
+    await runTool(run.hooks, 'land', []);
+
+    expect(run.violations).toEqual(['runner:land: lacks required at']);
+  });
+});
+
+describe('the fake hooks fail a test on a schema violation', () => {
+  // The it.fails test's error messages, read by the test after it: a file's tests run in order.
+  let failure: string[] | undefined;
+
+  // it.fails inverts the result: this passes only because the harness's finish check fails the test.
+  it.fails(
+    'fails a test whose fake answer lacks a required field, with no assertion on violations',
+    async () => {
+      onTestFailed(({ task }) => {
+        failure = task.result?.errors?.map((error) => error.message);
+      });
+      const run = fakeHooks({ 'runner:land': LAND_WITHOUT_AT });
+
+      await runTool(run.hooks, 'land', []);
+    },
+  );
+
+  // it.fails passes on any failure: this pins the finish check as its one cause.
+  it('fails that test through the finish check alone, naming each violation', () => {
+    expect(failure).toEqual([
+      'fake answers broke their call schemas:\nrunner:land: lacks required at',
+    ]);
+  });
+
+  it('records the dropped field for a run that opts out, and passes', async () => {
+    const run = fakeHooks({ 'runner:land': LAND_WITHOUT_AT }, { offSchema: true });
+
+    await runTool(run.hooks, 'land', []);
+
+    expect(run.violations).toEqual(['runner:land: lacks required at']);
+  });
+});
+
+/**
+ * What `fn` threw.
+ *
+ * @param fn - The call.
+ * @returns The thrown value; `undefined` when it returned.
+ */
+function thrownBy(fn: () => unknown): unknown {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe('the fake hooks outside a running test', () => {
+  let byDefault: unknown;
+  let offSchema: unknown;
+
+  // A beforeAll hook runs with no current test, as a describe body does.
+  beforeAll(() => {
+    byDefault = thrownBy(() => fakeHooks());
+    offSchema = thrownBy(() => fakeHooks({}, { offSchema: true }));
+  });
+
+  it('throw by default, as the finish check needs a running test', () => {
+    expect(byDefault).toBeInstanceOf(Error);
+    expect((byDefault as Error).message).toMatch(/onTestFinished/);
+  });
+
+  it('build a run that opts out, registering no finish check', () => {
+    expect(offSchema).toBeUndefined();
   });
 });
