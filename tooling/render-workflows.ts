@@ -18,7 +18,7 @@ const ROOT_DIR = resolve(import.meta.dirname, '..');
 
 /**
  * Every saved workflow. To add one: write its entry (exporting
- * `run<Name>(hooks, rawArgs)`) and its meta, add a row, run `npm run codegen`.
+ * `run<Name>(hooks, rawArgs)`) and its meta, add a row, run `npm run fix`.
  */
 export const WORKFLOWS: readonly WorkflowSpec[] = [
   {

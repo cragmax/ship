@@ -2,7 +2,7 @@
  * The `ship` workflow's entry (ADR-0045): ships epics or explicit issue
  * lists unattended, one pull request per epic. Rendered into
  * `.claude/workflows/ship.js` by `tooling/render-workflows.ts` — edit this
- * source and run `npm run codegen`, never the rendered file.
+ * source and run `npm run fix`, never the rendered file.
  *
  * {@link runShip} parses the launch arguments and runs the pre-flight
  * phase; any refusal ends the run before anything is cut, and a

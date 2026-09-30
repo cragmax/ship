@@ -4,7 +4,7 @@
  * the epic end's own merge step and a lefthook-gated, never-forced push;
  * never a rebase, never GitHub's server-side "Update branch". Rendered into
  * `.claude/workflows/resync.js` by `tooling/render-workflows.ts` — edit
- * this source and run `npm run codegen`, never the rendered file.
+ * this source and run `npm run fix`, never the rendered file.
  *
  * {@link runResync} runs, in order:
  *
