@@ -156,6 +156,8 @@ export const TestReviewOutputSchema = z.object({
   survivors: z.int(),
   /** The outcome, one line. */
   summary: z.string(),
+  /** Every `with-lease:` release line its lease runs printed, verbatim, one per lease. */
+  leaseLines: z.array(z.string()),
 });
 
 /** The doc-index resolver's answer. */

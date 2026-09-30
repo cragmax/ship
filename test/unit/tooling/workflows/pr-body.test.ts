@@ -38,7 +38,13 @@ const work = (fields: {
   review: { verdict: 'fixed', sha: 's2', summary: 'renamed a helper' },
   testReview:
     fields.testReview === undefined
-      ? { verdict: 'hardened', sha: 's3', survivors: 1, summary: 'pinned the bound' }
+      ? {
+          verdict: 'hardened',
+          sha: 's3',
+          survivors: 1,
+          summary: 'pinned the bound',
+          leaseLines: [],
+        }
       : fields.testReview,
 });
 
@@ -82,6 +88,19 @@ const ELEVEN: LandedIssue = {
     ],
   }),
 };
+
+const TDD_LEASE = 'with-lease: waited 38.9s for paper@localhost:25701, held 27.0s';
+const REVIEW_LEASE = 'with-lease: waited 1.2s for folia@localhost:25711, held 40.3s';
+// A wait line is no release line: a role holding only one had no lease to show.
+const WAIT_LINE = 'with-lease: waiting for paper@localhost:25701 — held by an unknown holder';
+
+const reviewed = (leaseLines: string[]): SliceWork['testReview'] => ({
+  verdict: 'hardened',
+  sha: 's3',
+  survivors: 1,
+  summary: 'pinned the bound',
+  leaseLines,
+});
 
 const INPUT: PrBodyInput = {
   epic: 1025,
@@ -231,7 +250,7 @@ describe('renderPrBody', () => {
       '- Review: fixed — renamed a helper',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
       '- Test review: skipped — trivial surface',
-      '- Lease timings: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
       '  - Folia ticks x: confirmed',
@@ -357,8 +376,55 @@ describe('renderPrBody', () => {
 
   it('names the holder a lease waited on in its lease timings', () => {
     expect(renderPrBody({ ...INPUT, landed: [ELEVEN] }).split('\n')).toContain(
-      '- Lease timings: paper@localhost:25701 waited 38.9s on epic-911/slice-913-1 (pid 1234), held 27s',
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s on epic-911/slice-913-1 (pid 1234), held 27s',
     );
+  });
+
+  it.each<[string, string[], SliceWork['testReview'], string]>([
+    [
+      'the tdd alone',
+      [TDD_LEASE],
+      reviewed([]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
+    ],
+    [
+      'the test review alone',
+      [],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'both roles, tdd first',
+      [TDD_LEASE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    ['neither role', [], reviewed([]), '- Lease timings: none'],
+    [
+      'a skipped test review',
+      [TDD_LEASE],
+      null,
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
+    ],
+    [
+      'a tdd with only a wait line',
+      [WAIT_LINE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+  ])('renders the lease timings of %s', (_name, tdd, testReview, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, testReview }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
   });
 
   it('records a capped probe with its follow-up', () => {

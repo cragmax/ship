@@ -877,8 +877,9 @@ export const AGENT_OUTPUT_SCHEMAS = {
       sha: { type: 'string' },
       survivors: { type: 'integer' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'survivors', 'summary'],
+    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
   },
   resolver: {
     type: 'object',

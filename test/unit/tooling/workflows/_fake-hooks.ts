@@ -262,7 +262,13 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   tdd: TDD_GREEN,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
   reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper' },
-  testReview: { verdict: 'hardened', sha: 'slice3', survivors: 0, summary: 'pinned a bound' },
+  testReview: {
+    verdict: 'hardened',
+    sha: 'slice3',
+    survivors: 0,
+    summary: 'pinned a bound',
+    leaseLines: [],
+  },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:sync-master': {

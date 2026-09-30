@@ -1557,8 +1557,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       sha: { type: 'string' },
       survivors: { type: 'integer' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'survivors', 'summary'],
+    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
   },
   resolver: {
     type: 'object',
@@ -2027,6 +2028,13 @@ function prTitle(input) {
   if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
+function sliceLeaseLines(work) {
+  const roles = [{ role: 'tdd', lines: work.tdd.leaseLines }];
+  if (work.testReview !== null) {
+    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
+  }
+  return roles;
+}
 function renderPrBody(input) {
   const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
   const closing = new Set(
@@ -2127,7 +2135,7 @@ function issueSection(landed) {
     test === null
       ? '- Test review: skipped — trivial surface'
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
-    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
+    `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
   ];
@@ -2142,8 +2150,14 @@ function probeLines(probes) {
     }),
   ];
 }
+function sliceLeaseText(work) {
+  const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
+    const timings = parseLeaseLines(lines.join('\n'));
+    return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];
+  });
+  return parts.length === 0 ? 'none' : parts.join('; ');
+}
 function leaseText(timings) {
-  if (timings.length === 0) return 'none';
   return timings
     .map((t) => {
       const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
@@ -2441,7 +2455,9 @@ async function openPr(input, found, checked) {
 }
 function leaseTotals(landed) {
   return aggregateLeaseTimings(
-    landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+    landed.flatMap((l) =>
+      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
+    ),
   );
 }
 async function retroStep(input, report) {

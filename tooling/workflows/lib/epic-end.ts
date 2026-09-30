@@ -45,6 +45,7 @@ import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './mas
 import {
   prTitle,
   renderPrBody,
+  sliceLeaseLines,
   type CriticReport,
   type LandedIssue,
   type ScheduleEntry,
@@ -317,14 +318,18 @@ async function openPr(
 }
 
 /**
- * The entry's lease totals: each landed slice's release lines.
+ * The entry's lease totals: every landed slice's release lines, the tdd's and
+ * the test review's alike ({@link sliceLeaseLines}), each counted in its
+ * engine's and its issue's totals with no role breakdown.
  *
  * @param landed - The landed issues.
  * @returns The totals.
  */
 function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
   return aggregateLeaseTimings(
-    landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+    landed.flatMap((l) =>
+      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
+    ),
   );
 }
 

@@ -53,6 +53,14 @@ export interface LandedIssue extends SliceWork {
   readonly commit: string;
 }
 
+/** A slice's lease lines from one agent role. */
+export interface RoleLeaseLines {
+  /** The agent whose lease runs printed them: `tdd` or `test-review`. */
+  readonly role: 'tdd' | 'test-review';
+  /** Its `with-lease:` lines, as the agent transcribed them. */
+  readonly lines: readonly string[];
+}
+
 /** An issue that did not land, as the run report records it. */
 export interface UnlandedIssue {
   /** The issue. */
@@ -218,6 +226,21 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 }
 
 /**
+ * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
+ *
+ * @param work - The slice's tdd and test-review answers.
+ * @returns The tdd's, then the test review's; no test-review entry when it
+ *   was skipped (`null`); lines unparsed and unfiltered.
+ */
+export function sliceLeaseLines(work: Pick<SliceWork, 'tdd' | 'testReview'>): RoleLeaseLines[] {
+  const roles: RoleLeaseLines[] = [{ role: 'tdd', lines: work.tdd.leaseLines }];
+  if (work.testReview !== null) {
+    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
+  }
+  return roles;
+}
+
+/**
  * An epic's pull request body.
  *
  * @param input - The epic's report.
@@ -370,7 +393,8 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
  * One landed issue's section.
  *
  * @param landed - The issue.
- * @returns The section's lines, blank-line terminated.
+ * @returns The section's lines, blank-line terminated; its lease line per
+ *   {@link sliceLeaseText}.
  */
 function issueSection(landed: LandedIssue): string[] {
   const ref = `#${String(landed.issue)}`;
@@ -386,7 +410,7 @@ function issueSection(landed: LandedIssue): string[] {
     test === null
       ? '- Test review: skipped — trivial surface'
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
-    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
+    `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
   ];
@@ -411,15 +435,30 @@ function probeLines(probes: readonly ProbeRecord[]): string[] {
 }
 
 /**
+ * A slice's lease timings as one phrase.
+ *
+ * @param work - The slice's tdd and test-review answers.
+ * @returns `<role>: <leases>` for each role with at least one release line,
+ *   tdd first, `; `-joined, each role's leases per {@link leaseText}; a role
+ *   with none is omitted; `none` when no role has one.
+ */
+function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'testReview'>): string {
+  const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
+    const timings = parseLeaseLines(lines.join('\n'));
+    return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];
+  });
+  return parts.length === 0 ? 'none' : parts.join('; ');
+}
+
+/**
  * Lease timings as one phrase.
  *
- * @param timings - The parsed release lines.
+ * @param timings - The parsed release lines, at least one.
  * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s` — with
  *   ` on <waitedOn>` after `waited <W>s` when the line names the holder
- *   waited on — `; `-joined; `none` for none.
+ *   waited on — `; `-joined.
  */
 function leaseText(timings: readonly LeaseTiming[]): string {
-  if (timings.length === 0) return 'none';
   return timings
     .map((t) => {
       const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;

@@ -45,6 +45,14 @@ const CRITIC_APPLIED = {
   checks: 'build, eslint, vitest related, prettier',
 };
 
+const TEST_REVIEW_LEASED = {
+  verdict: 'hardened',
+  sha: 'slice3',
+  survivors: 0,
+  summary: 'pinned a bound',
+  leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
+};
+
 const LAND_BATCH_DIRTY = {
   ...LAND_OK,
   status: 'refused',
@@ -354,6 +362,53 @@ describe('runShip — the lease totals', () => {
     });
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
       '- paper: 1 leases, waited 1.5s total (max 1.5s), held 42.0s total',
+    );
+  });
+
+  it('labels the test review’s leases after the tdd’s in the issue’s lease timings', async () => {
+    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Lease timings: ')),
+    ).toEqual([
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ]);
+  });
+
+  it('counts a landed issue’s test-review lease in its engine’s and its issue’s totals', async () => {
+    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
+        { type: 'folia', leases: 1, waitedSeconds: 1.2, waitedMaxSeconds: 1.2, heldSeconds: 40.3 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 2.7, heldSeconds: 82.3 }],
+      unparsed: [],
+    });
+  });
+
+  it('keeps a test review’s malformed lease line unparsed, under its issue', async () => {
+    const run = fakeHooks({
+      testReview: {
+        ...TEST_REVIEW_LEASED,
+        leaseLines: [...TEST_REVIEW_LEASED.leaseLines, 'with-lease: waited ?s'],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases?.unparsed).toEqual([
+      { issue: 7, line: 'with-lease: waited ?s' },
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- unparsed (#7): with-lease: waited ?s',
     );
   });
 
