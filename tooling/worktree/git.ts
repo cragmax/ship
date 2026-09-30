@@ -120,6 +120,37 @@ export function fetchOrigin(dir: string): void {
 }
 
 /**
+ * Read one ref of `origin` live with `git ls-remote`, under
+ * `FETCH_TIMEOUT_MS` — never the checkout's remote-tracking copy of it.
+ *
+ * @param dir - The checkout whose `origin` is asked.
+ * @param ref - The full ref name, e.g. `refs/heads/master`.
+ * @param step - Step name reported on failure.
+ * @returns The sha `origin` names for exactly `ref`; `null` when `origin`
+ *   has no such ref (`ls-remote` then prints nothing and exits 0).
+ * @throws StepFailure for `step` carrying the output tail, on a non-zero
+ *   exit, spawn failure or budget kill.
+ */
+export function lsRemoteRef(dir: string, ref: string, step: string): string | null {
+  const r = runCaptured('git', ['-C', dir, 'ls-remote', 'origin', ref], {
+    cwd: process.cwd(),
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (r.exitCode !== 0) {
+    throw new StepFailure(
+      step,
+      `git ls-remote origin ${ref} exited ${String(r.exitCode)} in ${dir}`,
+      r.tail,
+    );
+  }
+  for (const line of r.stdout.split(/\r?\n/u)) {
+    const [sha = '', name] = line.split('\t');
+    if (name === ref) return sha;
+  }
+  return null;
+}
+
+/**
  * Commit with the hooks (the pre-commit gate), under `COMMIT_TIMEOUT_MS`,
  * the whole output to a log file (`.claude/rules/git.md` § Direct commits
  * step 4).

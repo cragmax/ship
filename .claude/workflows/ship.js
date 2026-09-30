@@ -16,7 +16,7 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail: 'per epic: critic, master sync, version bump, retro, pull request',
+      detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
     },
   ],
 };
@@ -66,7 +66,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -724,6 +724,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -737,8 +738,16 @@ const TOOL_ENVELOPE_SCHEMAS = {
       worktree: { type: ['string', 'null'] },
       snapshot: {
         type: ['object', 'null'],
-        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
-        required: ['head', 'dirty'],
+        properties: {
+          head: { type: 'string' },
+          dirty: { type: 'boolean' },
+          master: {
+            type: 'object',
+            properties: { local: { type: 'string' }, remote: { type: 'string' } },
+            required: ['local', 'remote'],
+          },
+        },
+        required: ['head', 'dirty', 'master'],
       },
       problems: {
         type: 'array',
@@ -790,6 +799,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -869,6 +879,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -929,6 +940,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -981,6 +993,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1031,6 +1044,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1082,6 +1096,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1143,6 +1158,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1191,6 +1207,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1265,6 +1282,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1315,6 +1333,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1334,6 +1353,71 @@ const TOOL_ENVELOPE_SCHEMAS = {
       mergeable: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+  'check-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      local: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+      remote: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+    },
+    required: ['status', 'errors', 'local', 'remote'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1556,6 +1640,7 @@ const TOOL_COMMANDS = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
+  'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
 };
 const STRING = { type: 'string' };
@@ -1643,6 +1728,7 @@ const TOOL_SCHEMAS = {
   teardown: envelopeSchema('teardown'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
+  'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
@@ -1937,6 +2023,8 @@ function renderPrBody(input) {
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
+    `- Master check: ${masterCheckText(input.masterCheck)}`,
+    `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
@@ -2038,6 +2126,19 @@ function unlandedLine(issue) {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
 }
+function masterCheckText(check) {
+  return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
+}
+function forwardText(move) {
+  if (move.move === 'equal') return `equal at ${move.launch}`;
+  return `forward, ${move.launch} → ${move.current}`;
+}
+function mainCheckoutText(untouched) {
+  if (untouched === null) return 'not compared (a snapshot could not be read)';
+  return untouched
+    ? 'untouched since pre-flight'
+    : 'touched since pre-flight (HEAD or dirtiness changed)';
+}
 function bumpText(bump) {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
@@ -2122,6 +2223,48 @@ function criticNotRun(reason) {
   return { outcome: 'not-run', reason, findings: [], halt: null };
 }
 
+const NO_LAUNCH = 'no launch snapshot of master to check against';
+async function checkMasterStep(hooks, entry, launch) {
+  if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
+  const { master } = launch.snapshot;
+  const out = await runTool(
+    hooks,
+    'check-master',
+    [entry.main, '--local', master.local, '--remote', master.remote],
+    runPlace(entry.reportDir, entry.tag),
+  );
+  return checkOf(out);
+}
+function checkOf(out) {
+  const local = out?.local ?? null;
+  const remote = out?.remote ?? null;
+  if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
+    return { passed: true, local, remote };
+  }
+  return { passed: false, local, remote, failure: failureOf(out, local, remote) };
+}
+function failureOf(out, local, remote) {
+  const lines = [
+    ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
+    ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
+  ];
+  if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
+    return lines.join('; ');
+  }
+  return envelopeProblem('check-master', out);
+}
+function isForward(move) {
+  return (
+    move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
+  );
+}
+function moveLine(which, move) {
+  return (
+    `${which} master ${move.move}: launch ${move.launch}, now ${move.current ?? 'deleted'}` +
+    ` — restore it from ${move.launch}`
+  );
+}
+
 async function syncMasterStep(hooks, ctx) {
   const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
   const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
@@ -2185,7 +2328,8 @@ async function epicEnd(input) {
     ...published,
     issues: input.issues,
     schedule: input.schedule,
-    mainUntouched: await input.repoLock.enqueue(() => mainUntouched(input)),
+    mainUntouched: await mainAtEnd(input, state),
+    ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
@@ -2220,6 +2364,17 @@ async function shipSteps(input, state) {
   return publishStep(input, { sync, bump, state });
 }
 async function publishStep(input, found) {
+  return input.repoLock.enqueue(async () => {
+    const untouched = await mainUntouched(input);
+    found.state.mainUntouched = untouched;
+    const check = await checkMasterStep(input.hooks, input.entry, input.launch);
+    found.state.masterCheck = check;
+    if (!check.passed)
+      return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
+    return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
+  });
+}
+async function openPr(input, found, checked) {
   const { hooks, entry } = input;
   const body = renderPrBody({
     epic: entry.epic,
@@ -2229,6 +2384,8 @@ async function publishStep(input, found) {
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
     bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
@@ -2246,7 +2403,7 @@ async function publishStep(input, found) {
     `${entry.reportDir}/publish.log`,
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await input.repoLock.enqueue(() => runTool(hooks, 'publish', argv, place));
+  const out = await runTool(hooks, 'publish', argv, place);
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
@@ -2273,6 +2430,10 @@ function retroReport(input, published) {
     schedule: input.schedule,
     residue: input.residue,
   };
+}
+async function mainAtEnd(input, state) {
+  if (state.mainUntouched !== undefined) return state.mainUntouched;
+  return input.repoLock.enqueue(() => mainUntouched(input));
 }
 async function mainUntouched(input) {
   const { entry, launch } = input;

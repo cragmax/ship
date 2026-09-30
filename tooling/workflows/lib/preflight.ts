@@ -110,7 +110,8 @@ export interface PreflightOutcome {
   readonly graph: RunGraph | null;
   /**
    * The main checkout as pre-flight found it — the baseline of the epic
-   * end's "main untouched" check; `null` unless the checks passed.
+   * end's main-untouched comparison and master check; `null` unless the
+   * checks passed.
    */
   readonly main: MainSnapshot | null;
   /** The overlap edges merged into `graph`; `null` when the estimate failed or never ran. */
@@ -144,7 +145,7 @@ export interface OverlapRecord {
 export interface MainSnapshot {
   /** The main checkout, absolute. */
   readonly worktree: string;
-  /** Its `HEAD` and whether it had uncommitted changes. */
+  /** Its `HEAD`, whether it had uncommitted changes, and the launch shas of local and `origin`'s `master`. */
   readonly snapshot: NonNullable<PreflightResult['snapshot']>;
 }
 

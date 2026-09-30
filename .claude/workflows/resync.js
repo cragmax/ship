@@ -107,7 +107,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -318,6 +318,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -331,8 +332,16 @@ const TOOL_ENVELOPE_SCHEMAS = {
       worktree: { type: ['string', 'null'] },
       snapshot: {
         type: ['object', 'null'],
-        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
-        required: ['head', 'dirty'],
+        properties: {
+          head: { type: 'string' },
+          dirty: { type: 'boolean' },
+          master: {
+            type: 'object',
+            properties: { local: { type: 'string' }, remote: { type: 'string' } },
+            required: ['local', 'remote'],
+          },
+        },
+        required: ['head', 'dirty', 'master'],
       },
       problems: {
         type: 'array',
@@ -384,6 +393,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -463,6 +473,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -523,6 +534,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -575,6 +587,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -625,6 +638,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -676,6 +690,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -737,6 +752,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -785,6 +801,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -859,6 +876,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -909,6 +927,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -928,6 +947,71 @@ const TOOL_ENVELOPE_SCHEMAS = {
       mergeable: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+  'check-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      local: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+      remote: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+    },
+    required: ['status', 'errors', 'local', 'remote'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1150,6 +1234,7 @@ const TOOL_COMMANDS = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
+  'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
 };
 const STRING = { type: 'string' };
@@ -1237,6 +1322,7 @@ const TOOL_SCHEMAS = {
   teardown: envelopeSchema('teardown'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
+  'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {

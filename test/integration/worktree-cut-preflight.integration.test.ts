@@ -473,7 +473,11 @@ describe('preflight (in-process)', () => {
     const r = await preflightWith({});
 
     expect(r).toMatchObject({ status: 'ok', ahead: 0, behind: 0, problems: [] });
-    expect(r.snapshot).toEqual({ head: headSha(main), dirty: false });
+    expect(r.snapshot).toEqual({
+      head: headSha(main),
+      dirty: false,
+      master: { local: headSha(main), remote: headSha(main) },
+    });
   });
 
   it('refuses one unpushed local master commit as master-ahead', TIMEOUT, async () => {
@@ -535,7 +539,69 @@ describe('preflight (in-process)', () => {
     const r = await preflightWith({});
 
     expect(r.status).toBe('ok');
-    expect(r.snapshot).toEqual({ head: headSha(main), dirty: true });
+    expect(r.snapshot).toEqual({
+      head: headSha(main),
+      dirty: true,
+      master: { local: headSha(main), remote: headSha(main) },
+    });
+  });
+
+  it(
+    "snapshots origin's master as ls-remote reports it, apart from local master",
+    TIMEOUT,
+    async () => {
+      const pushed = advanceOrigin(root, `${root}/origin.git`, {
+        write: { 'remote.txt': 'pushed elsewhere\n' },
+      });
+
+      const r = await preflightWith({});
+
+      expect(r.status).toBe('refused');
+      expect(r.problems.map((p) => p.check)).toEqual(['master-behind']);
+      expect(r.snapshot).toEqual({
+        head: headSha(main),
+        dirty: false,
+        master: { local: headSha(main), remote: pushed },
+      });
+    },
+  );
+
+  it(
+    'snapshots local master, not HEAD, when the main checkout is on another branch',
+    TIMEOUT,
+    async () => {
+      const master = headSha(main);
+      mustRun('git', ['checkout', '-q', '-b', 'side'], main);
+      const side = commitChanges(main, { write: { 'side.txt': 'side work\n' } }, 'side work');
+
+      const r = await preflightWith({});
+
+      expect(r.status).toBe('ok');
+      expect(r.snapshot).toEqual({
+        head: side,
+        dirty: false,
+        master: { local: master, remote: master },
+      });
+    },
+  );
+
+  it('fails at step snapshot when origin has no master', TIMEOUT, async () => {
+    // No prune: the stale tracking ref survives, so the master-level check
+    // passes whatever the global config says.
+    mustRun('git', ['config', 'fetch.prune', 'false'], main);
+    mustRun('git', ['push', '-q', 'origin', 'master:refs/heads/keep'], main);
+    mustRun('git', ['symbolic-ref', 'HEAD', 'refs/heads/keep'], `${root}/origin.git`);
+    mustRun('git', ['update-ref', '-d', 'refs/heads/master'], `${root}/origin.git`);
+
+    const r = await preflightWith({});
+
+    expect(r).toMatchObject({
+      status: 'failed',
+      snapshot: null,
+      errors: [
+        { step: 'snapshot', message: 'git ls-remote origin refs/heads/master names no ref' },
+      ],
+    });
   });
 });
 

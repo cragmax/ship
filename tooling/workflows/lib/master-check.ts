@@ -1,0 +1,149 @@
+/**
+ * The epic end's forward-only check of `master` (#1080): before an epic's
+ * push, `worktree.ts check-master` compares local `master` and `origin`'s
+ * with the launch shas pre-flight recorded. The call runs inside the epic
+ * end's publish task of the repo lock (`epic-end.ts`), so no other epic end
+ * talks to `origin` between the check and the push.
+ *
+ * - **Fail closed**: anything but an `ok` check naming two moves that are
+ *   `equal` or `forward`, each with its current sha, is a failure — a
+ *   deleted, rewound or undecidable ref, a failed or refused check, and a
+ *   runner that returned nothing. "Could not tell" never passes.
+ * - **No launch snapshot stops the epic**: with no launch shas a rewind
+ *   cannot be ruled out, so the check fails without a tool call rather than
+ *   passing.
+ *
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
+ * no top-level side effect.
+ */
+
+import type { MasterMove } from '../../worktree/types-run.js';
+
+import type { WorkflowHooks } from './hooks.types.js';
+import type { MainSnapshot } from './preflight.js';
+import type { EntrySetup } from './slice-chain.js';
+import { envelopeProblem, runPlace, runTool, type CheckMasterOutput } from './tool-calls.js';
+
+/** A ref's move that passes the check: `equal` or `forward`, its current sha known. */
+export type ForwardMove = MasterMove & {
+  readonly move: 'equal' | 'forward';
+  readonly current: string;
+};
+
+/** A check both refs passed. */
+export interface PassedMasterCheck {
+  /** Always `true`. */
+  readonly passed: true;
+  /** Local `master`'s move. */
+  readonly local: ForwardMove;
+  /** `origin`'s `master` move. */
+  readonly remote: ForwardMove;
+}
+
+/** A check that did not pass, or could not run. */
+export interface FailedMasterCheck {
+  /** Always `false`. */
+  readonly passed: false;
+  /** Local `master`'s move; `null` when the check named none. */
+  readonly local: MasterMove | null;
+  /** `origin`'s `master` move; `null` when the check named none. */
+  readonly remote: MasterMove | null;
+  /** What stopped the epic, one line. */
+  readonly failure: string;
+}
+
+/** The epic end's forward-only check of `master`. */
+export type MasterCheck = PassedMasterCheck | FailedMasterCheck;
+
+/** The failure of a run pre-flight left no launch snapshot for. */
+const NO_LAUNCH = 'no launch snapshot of master to check against';
+
+/**
+ * Check that `master` only moved forward since the launch.
+ *
+ * @param hooks - The workflow hooks.
+ * @param entry - The entry's main checkout, report directory and tag.
+ * @param launch - The main checkout as pre-flight found it.
+ * @returns Resolves to the check; with no launch snapshot, a failed check
+ *   and no tool call.
+ */
+export async function checkMasterStep(
+  hooks: WorkflowHooks,
+  entry: Pick<EntrySetup, 'main' | 'reportDir' | 'tag'>,
+  launch: MainSnapshot | null,
+): Promise<MasterCheck> {
+  if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
+  const { master } = launch.snapshot;
+  const out = await runTool(
+    hooks,
+    'check-master',
+    [entry.main, '--local', master.local, '--remote', master.remote],
+    runPlace(entry.reportDir, entry.tag),
+  );
+  return checkOf(out);
+}
+
+/**
+ * Read `check-master`'s output as a check.
+ *
+ * @param out - The output; `null` when the runner returned none.
+ * @returns Passed only for an `ok` output naming two forward moves.
+ */
+function checkOf(out: CheckMasterOutput | null): MasterCheck {
+  const local = out?.local ?? null;
+  const remote = out?.remote ?? null;
+  if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
+    return { passed: true, local, remote };
+  }
+  return { passed: false, local, remote, failure: failureOf(out, local, remote) };
+}
+
+/**
+ * The one line a failed check reports.
+ *
+ * @param out - `check-master`'s output.
+ * @param local - Local `master`'s move.
+ * @param remote - `origin`'s `master` move.
+ * @returns For a `master-not-forward` refusal, each named ref that is not
+ *   forward, `; `-joined; otherwise the envelope's problem.
+ */
+function failureOf(
+  out: CheckMasterOutput | null,
+  local: MasterMove | null,
+  remote: MasterMove | null,
+): string {
+  const lines = [
+    ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
+    ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
+  ];
+  if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
+    return lines.join('; ');
+  }
+  return envelopeProblem('check-master', out);
+}
+
+/**
+ * Whether a move passes.
+ *
+ * @param move - The move.
+ * @returns `true` for an `equal` or `forward` move with a current sha.
+ */
+function isForward(move: MasterMove | null): move is ForwardMove {
+  return (
+    move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
+  );
+}
+
+/**
+ * One failed ref's line.
+ *
+ * @param which - `local` or `origin`.
+ * @param move - Its move.
+ * @returns `<which> master <move>: launch <sha>, now <sha|deleted> — restore it from <launch>`.
+ */
+function moveLine(which: 'local' | 'origin', move: MasterMove): string {
+  return (
+    `${which} master ${move.move}: launch ${move.launch}, now ${move.current ?? 'deleted'}` +
+    ` — restore it from ${move.launch}`
+  );
+}

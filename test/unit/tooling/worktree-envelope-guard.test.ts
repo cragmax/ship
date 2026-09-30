@@ -24,6 +24,7 @@ const REMOVED_PREFIX = /^envelope fails its schema: removed: /;
 // One mock stands in for every command module, so any command's result is the test's to choose.
 const { commandMock } = vi.hoisted(() => ({ commandMock: vi.fn() }));
 vi.mock('../../../tooling/worktree/bump.js', () => ({ bump: commandMock }));
+vi.mock('../../../tooling/worktree/check-master.js', () => ({ checkMaster: commandMock }));
 vi.mock('../../../tooling/worktree/cut.js', () => ({
   cutBatch: commandMock,
   cutSlice: commandMock,
@@ -121,6 +122,7 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['cut-slice', 'C:/b', '--issue', '7', '--attempt', '1'],
       ['sync-master', 'C:/b'],
       ['bump', 'C:/b'],
+      ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),

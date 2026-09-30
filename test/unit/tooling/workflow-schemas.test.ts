@@ -89,6 +89,7 @@ describe('consumed fields are required', () => {
       'sync-master': WORKTREE_OPTIONAL,
       bump: WORKTREE_OPTIONAL,
       publish: WORKTREE_OPTIONAL,
+      'check-master': WORKTREE_OPTIONAL,
     });
   });
 

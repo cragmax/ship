@@ -351,6 +351,7 @@ describe('runShip — epics side by side', () => {
   it.each([
     ['publishes', 'runner:publish:'],
     ['reads the main checkout at the epic end', 'runner:preflight:epic-'],
+    ['checks master', 'runner:check-master:epic-'],
   ])('%s for one epic at a time', async (_name, prefix) => {
     const hold = holdable(new RegExp(`^${prefix}`));
     const run = fakeHooks(

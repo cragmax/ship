@@ -285,8 +285,9 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
-      'runner:publish:list',
       'runner:preflight:list',
+      'runner:check-master:list',
+      'runner:publish:list',
     ]);
     const at = (entry: string): number => run.timeline.indexOf(entry);
     expect(at('call runner:teardown:7-1')).toBeGreaterThan(-1);
@@ -302,6 +303,11 @@ describe('runShip — one issue from launch to PR', () => {
           outcome: 'pr',
           pr: 42,
           mainUntouched: true,
+          masterCheck: {
+            passed: true,
+            local: { launch: 'local0', current: 'local0', move: 'equal' },
+            remote: { launch: 'origin0', current: 'origin0', move: 'equal' },
+          },
           issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
         },
       ],
@@ -953,14 +959,17 @@ describe('runShip — the epic end', () => {
   });
 
   it.each([
-    ['its HEAD moved', { head: 'moved1', dirty: false }],
-    ['it turned dirty', { head: 'abc123', dirty: true }],
+    ['its HEAD moved', { ...PREFLIGHT_OK.snapshot, head: 'moved1' }],
+    ['it turned dirty', { ...PREFLIGHT_OK.snapshot, dirty: true }],
   ])('reports the main checkout touched when %s', async (_name, snapshot) => {
     const run = fakeHooks({ 'runner:preflight:list': { ...PREFLIGHT_OK, snapshot } });
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', mainUntouched: false });
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Main checkout: touched since pre-flight (HEAD or dirtiness changed)',
+    );
   });
 });
 
@@ -1077,7 +1086,7 @@ describe('runShip — a failed cut', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('runner:check:'))).toEqual([]);
     expect(report.epics).toMatchObject([
       { epic: 1, outcome: 'stopped' },
       {
@@ -1093,7 +1102,7 @@ describe('runShip — a failed cut', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual(['runner:check:3-1']);
+    expect(labels(run).filter((l) => l.startsWith('runner:check:'))).toEqual(['runner:check:3-1']);
     expect(report.epics).toMatchObject([
       { epic: 1, outcome: 'stopped', issues: [{ issue: 1, outcome: 'blocked', cite: 'see' }] },
       {

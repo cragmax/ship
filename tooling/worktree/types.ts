@@ -5,7 +5,8 @@
  * is the `z.infer` of its schema in `schemas.ts` — the canonical home of the
  * envelope shapes, their field docs and the path spelling; the run-branch
  * and epic-end envelopes (`cut-batch`, `cut-slice`, `preflight`, `land`,
- * `sync-master`, `bump`, `publish`) are in `types-run.ts` / `schemas-run.ts`.
+ * `sync-master`, `bump`, `check-master`, `publish`) are in `types-run.ts` /
+ * `schemas-run.ts`.
  *
  * Status semantics (the envelope's `status`):
  *

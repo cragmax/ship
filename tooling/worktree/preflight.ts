@@ -2,8 +2,11 @@
  * `preflight <main>` — the checks an unattended run needs to hold before it
  * cuts anything (ADR-0045): local `master` level with `origin/master` after
  * a fetch, `gh` logged in, and every warm-set server answering RCON. It
- * also snapshots the main checkout's `HEAD` and whether it is dirty; a
- * dirty main checkout is recorded, never a problem.
+ * also snapshots the main checkout's `HEAD`, whether it is dirty, and the
+ * launch shas of local `master` and of `origin`'s (`git ls-remote`, not the
+ * tracking ref), the baseline of the epic end's master check; a remote
+ * without `master` fails step `snapshot`. A dirty main checkout is
+ * recorded, never a problem.
  *
  * Read-only toward every worktree, so there is no self-hosted guard (like
  * `live-runs`): the fetch writes only `.git`'s remote-tracking refs. It
@@ -18,7 +21,14 @@ import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from '../lib/rcon-probe.js';
 
 import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
-import { assertMainWorktree, fetchOrigin, git, resolveCommit, statusEntries } from './git.js';
+import {
+  assertMainWorktree,
+  fetchOrigin,
+  git,
+  lsRemoteRef,
+  resolveCommit,
+  statusEntries,
+} from './git.js';
 import { isMember, memberLabel, WARM_SET } from './pool-registry-trim.js';
 import { RUN_BASE_BRANCH } from './run-layout.js';
 import type { PreflightProblem, PreflightResult } from './types-run.js';
@@ -66,6 +76,10 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
     result.snapshot = {
       head: resolveCommit(main, 'HEAD', 'snapshot'),
       dirty: statusEntries(main, 'snapshot').length > 0,
+      master: {
+        local: resolveCommit(main, `refs/heads/${RUN_BASE_BRANCH}`, 'snapshot'),
+        remote: remoteMaster(main),
+      },
     };
     result.problems.push(...checkGhAuth(main), ...(await checkWarmSet(main, probe)));
     assertNoProblems(result.problems);
@@ -106,6 +120,21 @@ function checkMasterLevel(main: string, result: PreflightResult): void {
       message: `local ${RUN_BASE_BRANCH} is ${String(behind)} commit(s) behind origin/${RUN_BASE_BRANCH}`,
     });
   }
+}
+
+/**
+ * Read `origin`'s `master` live, for the launch snapshot.
+ *
+ * @param main - The main checkout.
+ * @returns The sha `git ls-remote` names.
+ * @throws StepFailure `snapshot` when `ls-remote` fails or names no ref.
+ */
+function remoteMaster(main: string): string {
+  const sha = lsRemoteRef(main, `refs/heads/${RUN_BASE_BRANCH}`, 'snapshot');
+  if (sha === null) {
+    throw new StepFailure('snapshot', 'git ls-remote origin refs/heads/master names no ref');
+  }
+  return sha;
 }
 
 /**

@@ -2,8 +2,9 @@
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose
  * issues have all settled with at least one landed ({@link epicEnd}): the
  * critic (`critic-step.ts`), the master sync, the version bump, the retro,
- * the pull request, then a second look at the main checkout. An entry that
- * halted or landed nothing gets the retro alone ({@link unshippedEpicEnd}).
+ * then one repo-lock task: the main-checkout look, the master check and the
+ * pull request. An entry that halted or landed nothing gets the retro alone
+ * ({@link unshippedEpicEnd}).
  *
  * - **No server tier here** — PR CI's `Server integration` workflow
  *   (`.github/workflows/server-integration.yml`) runs it on both engines
@@ -15,13 +16,20 @@
  *   So does a failed bump, and so does a step that throws.
  * - **The retro runs exactly once per entry**, whatever path the entry
  *   ends on, before the PR on the shipping path.
- * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync, the
- *   publish and the main-checkout look each run as one task of the run's
- *   one lock, so no two epic ends talk to `origin` or read the main
- *   checkout at once; the critic, the bump and the retro run outside it.
+ * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
+ *   the publish task (the main-checkout look, the master check, the push and
+ *   PR) each run as one task of the run's one lock, so no two epic ends talk
+ *   to `origin` or read the main checkout at once; the critic, the bump and
+ *   the retro run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
- *   again with `worktree.ts preflight` and compared with pre-flight's; the
- *   run never works in the main checkout, so a difference is reported.
+ *   again with `worktree.ts preflight` and compared with pre-flight's — read
+ *   in the publish task before the push on the shipping path (so the PR body
+ *   shows it), after the epic end on every other path; the run never works
+ *   in the main checkout, so a difference is reported.
+ * - **Master only moved forward**: {@link checkMasterStep}. A deleted,
+ *   rewound or undecidable ref, a check that gives no verdict, or a missing
+ *   launch snapshot stops the epic before the push: no push, no PR, the stop
+ *   message naming the ref, both shas and the sha to restore from.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -33,6 +41,7 @@ import { AGENT_CALLS, type RetroFinding } from './agent-calls.js';
 import type { CommitQueue } from './commit-queue.js';
 import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
+import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
   prTitle,
   renderPrBody,
@@ -90,10 +99,16 @@ export interface EpicReport {
   /** What stopped or halted the entry, when its epic end says. */
   readonly message?: string;
   /**
-   * Whether the main checkout's `HEAD` and dirtiness at the epic end equal
-   * pre-flight's; `null` when either read failed. Absent without an epic end.
+   * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
+   * read before the push on the shipping path, after the epic end
+   * otherwise; `null` when either read failed. Absent without an epic end.
    */
   readonly mainUntouched?: boolean | null;
+  /**
+   * The forward-only check of `master`, taken in the publish task before the
+   * push; absent when the epic end stopped before it or the check threw.
+   */
+  readonly masterCheck?: MasterCheck;
   /** What each slice teardown left behind, one line each. */
   readonly residue: readonly string[];
   /** The critic's part; absent without an epic end. */
@@ -131,6 +146,10 @@ interface EndState {
   critic?: CriticReport;
   leases?: LeaseAggregate;
   retro?: readonly RetroFinding[] | null;
+  /** The main-checkout comparison, once the publish task read it. */
+  mainUntouched?: boolean | null;
+  /** The master check, once the publish task took it. */
+  masterCheck?: MasterCheck;
 }
 
 /** The epic end's outcome before the main-checkout look. */
@@ -159,7 +178,8 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     ...published,
     issues: input.issues,
     schedule: input.schedule,
-    mainUntouched: await input.repoLock.enqueue(() => mainUntouched(input)),
+    mainUntouched: await mainAtEnd(input, state),
+    ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
@@ -191,12 +211,12 @@ export async function unshippedEpicEnd(
 
 /**
  * The shipping path, up to the pull request: critic, sync, bump, retro,
- * publish.
+ * then the publish task.
  *
  * @param input - The epic end's inputs.
  * @param state - Filled in as each step reports.
- * @returns Resolves to `pr`, `halted` (the critic) or `stopped` (sync, bump
- *   or publish).
+ * @returns Resolves to `pr`, `halted` (the critic) or `stopped` (sync, bump,
+ *   master check or publish).
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
@@ -223,13 +243,43 @@ interface EndFindings {
 }
 
 /**
- * Push the branch and open the PR — one repo-lock task.
+ * The publish task — one repo-lock task: read the main checkout, check
+ * `master`, then push and open the PR only when the check passed.
+ *
+ * @param input - The epic end's inputs.
+ * @param found - The steps' results; its state gains the main-checkout
+ *   comparison and the master check.
+ * @returns Resolves to `pr` with its number, or `stopped` naming the master
+ *   check or the publish.
+ */
+async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
+  return input.repoLock.enqueue(async (): Promise<Published> => {
+    const untouched = await mainUntouched(input);
+    found.state.mainUntouched = untouched;
+    const check = await checkMasterStep(input.hooks, input.entry, input.launch);
+    found.state.masterCheck = check;
+    if (!check.passed)
+      return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
+    return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
+  });
+}
+
+/**
+ * Push the branch and open the PR. Runs inside the publish task, so it calls
+ * the runner directly: a nested `enqueue` on the same lock would wait for
+ * the task it is part of.
  *
  * @param input - The epic end's inputs.
  * @param found - The steps' results.
+ * @param checked - The passed master check and the main-checkout
+ *   comparison, both for the body.
  * @returns Resolves to `pr` with its number, or `stopped` naming the publish.
  */
-async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
+async function openPr(
+  input: EpicEndInput,
+  found: EndFindings,
+  checked: { readonly masterCheck: PassedMasterCheck; readonly mainUntouched: boolean | null },
+): Promise<Published> {
   const { hooks, entry } = input;
   const body = renderPrBody({
     epic: entry.epic,
@@ -239,6 +289,8 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
     bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
@@ -256,7 +308,7 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     `${entry.reportDir}/publish.log`,
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await input.repoLock.enqueue(() => runTool(hooks, 'publish', argv, place));
+  const out = await runTool(hooks, 'publish', argv, place);
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
@@ -309,6 +361,19 @@ function retroReport(input: EpicEndInput, published: Published): EpicReport {
     schedule: input.schedule,
     residue: input.residue,
   };
+}
+
+/**
+ * The main-checkout comparison the report carries.
+ *
+ * @param input - The epic end's inputs.
+ * @param state - What the epic end learnt.
+ * @returns Resolves to the publish task's comparison when it ran; otherwise
+ *   to a fresh one, read as one repo-lock task.
+ */
+async function mainAtEnd(input: EpicEndInput, state: EndState): Promise<boolean | null> {
+  if (state.mainUntouched !== undefined) return state.mainUntouched;
+  return input.repoLock.enqueue(() => mainUntouched(input));
 }
 
 /**

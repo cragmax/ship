@@ -86,6 +86,12 @@ const INPUT: PrBodyInput = {
     version: null,
   },
   bump: { ...OK, kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
+  masterCheck: {
+    passed: true,
+    local: { launch: 'l0', current: 'l1', move: 'forward' },
+    remote: { launch: 'o0', current: 'o0', move: 'equal' },
+  },
+  mainUntouched: true,
   critic: {
     outcome: 'landed',
     commit: 'k1',
@@ -215,16 +221,25 @@ describe('renderPrBody', () => {
     }
   });
 
-  it('reports the master sync, the bump and the report dir as the whole epic end', () => {
+  it('reports the master sync, the bump, the master check, the main checkout and the report dir as the whole epic end', () => {
     const lines = body.split('\n');
 
     expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Critic'))).toEqual([
       '',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
+      '- Master check: passed — local forward, l0 → l1; origin equal at o0',
+      '- Main checkout: untouched since pre-flight',
       '- Report dir: `C:/runs/epic-1025/reports`',
       '',
     ]);
+  });
+
+  it.each([
+    ['touched', false, '- Main checkout: touched since pre-flight (HEAD or dirtiness changed)'],
+    ['not compared', null, '- Main checkout: not compared (a snapshot could not be read)'],
+  ])('reports a main checkout that is %s', (_name, mainUntouched, line) => {
+    expect(renderPrBody({ ...INPUT, mainUntouched }).split('\n')).toContain(line);
   });
 
   it('reports the critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {

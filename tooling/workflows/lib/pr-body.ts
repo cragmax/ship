@@ -27,6 +27,7 @@ import type {
   RetroFinding,
   SliceWork,
 } from './agent-calls.js';
+import type { ForwardMove, PassedMasterCheck } from './master-check.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput } from './tool-calls.js';
@@ -108,6 +109,13 @@ export interface PrBodyInput {
   readonly sync: SyncStepResult;
   /** The bump; `null` when the runner returned none. */
   readonly bump: BumpOutput | null;
+  /** The master check, passed: a failed check opens no PR. */
+  readonly masterCheck: PassedMasterCheck;
+  /**
+   * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
+   * read before the push; `null` when a read failed.
+   */
+  readonly mainUntouched: boolean | null;
   /** The critic's part. */
   readonly critic: CriticReport;
   /** The overlap edges pre-flight added to the entry. */
@@ -196,7 +204,8 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  *
  * @param input - The epic's report.
  * @returns Markdown: a summary, one section per landed issue, the unlanded
- *   issues, the epic end, then the critic, the overlap edges, the schedule,
+ *   issues, the epic end (master sync, version bump, master check, main
+ *   checkout, report dir), then the critic, the overlap edges, the schedule,
  *   the lease timings and the retro findings (an empty one `None.`) —
  *   neutralised whole but for the landed `fixes` issues.
  */
@@ -221,6 +230,8 @@ export function renderPrBody(input: PrBodyInput): string {
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
+    `- Master check: ${masterCheckText(input.masterCheck)}`,
+    `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
@@ -395,6 +406,42 @@ function leaseText(timings: readonly LeaseTiming[]): string {
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+}
+
+/**
+ * The passed master check as one phrase.
+ *
+ * @param check - The check.
+ * @returns `passed — local <move>; origin <move>`, each per {@link forwardText}.
+ */
+function masterCheckText(check: PassedMasterCheck): string {
+  return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
+}
+
+/**
+ * One ref's passing move as a phrase.
+ *
+ * @param move - The move.
+ * @returns `equal at <launch>`, or `forward, <launch> → <current>`.
+ */
+function forwardText(move: ForwardMove): string {
+  if (move.move === 'equal') return `equal at ${move.launch}`;
+  return `forward, ${move.launch} → ${move.current}`;
+}
+
+/**
+ * The main-checkout comparison as a phrase.
+ *
+ * @param untouched - The comparison; `null` when a read failed.
+ * @returns `untouched since pre-flight` for `true`; for `false`, touched
+ *   since pre-flight, naming `HEAD` or dirtiness; for `null`, not compared,
+ *   a snapshot unread.
+ */
+function mainCheckoutText(untouched: boolean | null): string {
+  if (untouched === null) return 'not compared (a snapshot could not be read)';
+  return untouched
+    ? 'untouched since pre-flight'
+    : 'touched since pre-flight (HEAD or dirtiness changed)';
 }
 
 /**

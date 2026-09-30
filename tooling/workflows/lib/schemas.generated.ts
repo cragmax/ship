@@ -42,6 +42,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -55,8 +56,16 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       worktree: { type: ['string', 'null'] },
       snapshot: {
         type: ['object', 'null'],
-        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
-        required: ['head', 'dirty'],
+        properties: {
+          head: { type: 'string' },
+          dirty: { type: 'boolean' },
+          master: {
+            type: 'object',
+            properties: { local: { type: 'string' }, remote: { type: 'string' } },
+            required: ['local', 'remote'],
+          },
+        },
+        required: ['head', 'dirty', 'master'],
       },
       problems: {
         type: 'array',
@@ -108,6 +117,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -187,6 +197,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -247,6 +258,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -299,6 +311,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -349,6 +362,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -400,6 +414,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -461,6 +476,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -509,6 +525,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -583,6 +600,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -633,6 +651,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -652,6 +671,71 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       mergeable: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+  'check-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      local: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+      remote: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+    },
+    required: ['status', 'errors', 'local', 'remote'],
   },
 } as const;
 

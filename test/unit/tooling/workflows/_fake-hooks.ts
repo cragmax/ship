@@ -19,6 +19,7 @@ import type {
   JsonSchema,
   WorkflowHooks,
 } from '../../../../tooling/workflows/lib/hooks.types.js';
+import type { MasterMove } from '../../../../tooling/worktree/types-run.js';
 
 /** One recorded `agent()` call. */
 export interface RecordedCall {
@@ -90,7 +91,7 @@ export const PREFLIGHT_OK = {
   envelopePath: 'reports/tool/preflight.json',
   status: 'ok',
   worktree: 'C:/src/main',
-  snapshot: { head: 'abc123', dirty: false },
+  snapshot: { head: 'abc123', dirty: false, master: { local: 'local0', remote: 'origin0' } },
   problems: [],
   errors: [],
 };
@@ -148,6 +149,41 @@ export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
     })),
   },
 });
+
+/** One ref's scripted move for {@link masterMoved}. */
+export interface ScriptedMove {
+  /** The move. */
+  readonly move: MasterMove['move'];
+  /** The current sha; `null` when deleted. */
+  readonly current: string | null;
+}
+
+/**
+ * A `check-master` answer moving each ref from its launch sha in
+ * {@link PREFLIGHT_OK} (`local0` / `origin0`): `ok` when both moves are
+ * `equal` or `forward`, otherwise `refused` `master-not-forward`.
+ *
+ * @param local - Local `master`'s move.
+ * @param remote - `origin`'s `master` move.
+ * @returns The answer, under `runner:check-master`.
+ */
+export const masterMoved = (
+  local: ScriptedMove,
+  remote: ScriptedMove,
+): Readonly<Record<string, unknown>> => {
+  const passed = [local, remote].every((m) => m.move === 'equal' || m.move === 'forward');
+  return {
+    'runner:check-master': {
+      exitCode: passed ? 0 : 1,
+      envelopePath: 'e.json',
+      status: passed ? 'ok' : 'refused',
+      ...(passed ? {} : { reason: 'master-not-forward' }),
+      errors: passed ? [] : [{ step: 'check', message: 'master is not forward of its launch' }],
+      local: { launch: 'local0', ...local },
+      remote: { launch: 'origin0', ...remote },
+    },
+  };
+};
 
 /** The run's report directory in the fakes. */
 export const REPORT_DIR = `${RUN_ROOT}/reports`;
@@ -238,6 +274,11 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     pending: [],
   },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
+  'runner:check-master': {
+    ...OK,
+    local: { launch: 'local0', current: 'local0', move: 'equal' },
+    remote: { launch: 'origin0', current: 'origin0', move: 'equal' },
+  },
   'runner:publish': {
     ...OK,
     pushed: true,
