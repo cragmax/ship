@@ -145,6 +145,7 @@ export function entryResponses(epic: number): Record<string, unknown> {
       base: `master-${tag}`,
       batch: `${root}/batch`,
       reportDir: `${root}/reports`,
+      attach: null,
     },
     [`runner:provision-batch:${tag}`]: {
       ...OK,
@@ -158,6 +159,7 @@ export function entryResponses(epic: number): Record<string, unknown> {
       ...OK,
       pushed: true,
       pr: { number: epic * 100, url: `https://x/pull/${String(epic * 100)}` },
+      mergeable: null,
     },
   };
 }

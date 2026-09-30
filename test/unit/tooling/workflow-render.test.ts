@@ -254,14 +254,14 @@ describe('the render closure', () => {
 
   it.each(['ship', 'resync'])(
     'takes the emitted schema module into the %s closure, never its zod sources',
-    (name) => {
+    async (name) => {
       const spec = WORKFLOWS.find((w) => w.name === name);
       if (spec === undefined) throw new Error(`no ${name} row in WORKFLOWS`);
       const files = workflowClosure(ROOT, spec.entry);
 
       expect(files).toContain('tooling/workflows/lib/schemas.generated.ts');
       expect(files.filter((f) => f.startsWith('tooling/workflows/schemas/'))).toEqual([]);
-      expect(readFileSync(join(ROOT, spec.out), 'utf8')).not.toMatch(/\bzod\b/);
+      expect(await renderWorkflow(spec, ROOT)).not.toMatch(/\bzod\b/);
     },
   );
 

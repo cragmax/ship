@@ -24,6 +24,7 @@ import {
   TDD_GREEN,
   type FakeRun,
 } from './_fake-hooks.js';
+import { epicRun } from './_fake-parallel.js';
 
 const EPIC_GRAPH = {
   runSet: [{ epic: 1025, issues: [1045, 1046] }],
@@ -192,6 +193,14 @@ const SCENARIOS = [
   { name: 'plan-review findings', responses: PLAN_REVIEW_FINDINGS, args: 'issues 7' },
   { name: 'doc-index conflict', responses: DOC_INDEX_CONFLICT, args: 'issues 7' },
   { name: 'two issues', responses: TWO_ISSUES, args: 'issues 7 8' },
+  {
+    name: 'two epics',
+    responses: epicRun([
+      { epic: 1, issues: [1, 2] },
+      { epic: 2, issues: [3] },
+    ]),
+    args: 'epics 1 2',
+  },
 ];
 
 const EPIC_END_COMMAND = /^runner:(sync-master|bump|publish)/;
