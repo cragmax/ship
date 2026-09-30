@@ -516,7 +516,12 @@ describe('preflight (in-process)', () => {
     });
 
     const sorted = [...probed].sort(compareStrings);
-    expect(sorted).toEqual(['localhost:25701:testpassword', 'localhost:25711:testpassword']);
+    expect(sorted).toEqual([
+      'localhost:25701:testpassword',
+      'localhost:25703:testpassword',
+      'localhost:25711:testpassword',
+      'localhost:25713:testpassword',
+    ]);
     expect(r.status).toBe('refused');
     expect(r.problems).toHaveLength(1);
     expect(r.problems[0]?.check).toBe('warm-unreachable');

@@ -12,14 +12,17 @@ import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js
 import { StepFailure, type WarmMember } from './types.js';
 
 /**
- * The fixed, machine-wide warm set: one Paper and one Folia server (the
- * compose services `minecraft` and `minecraft-folia`). Pinned, never derived
- * from the registry, so concurrent runs agree on it without coordinating,
- * and registry drift fails {@link trimRegistry} loudly.
+ * The fixed, machine-wide warm set: two Paper and two Folia servers (the
+ * compose services `minecraft`, `minecraft-2`, `minecraft-folia` and
+ * `minecraft-folia-2`; sized by PF-56, #995). Pinned, never derived from the
+ * registry, so concurrent runs agree on it without coordinating, and registry
+ * drift fails {@link trimRegistry} loudly.
  */
 export const WARM_SET: readonly WarmMember[] = [
   { type: 'paper', host: 'localhost', rconPort: 25701 },
+  { type: 'paper', host: 'localhost', rconPort: 25703 },
   { type: 'folia', host: 'localhost', rconPort: 25711 },
+  { type: 'folia', host: 'localhost', rconPort: 25713 },
 ];
 
 /**

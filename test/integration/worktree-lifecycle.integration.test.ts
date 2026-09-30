@@ -233,11 +233,15 @@ describe('provision-batch', () => {
         })),
       ).toEqual([
         { type: 'paper', host: 'localhost', rconPort: 25701 },
+        { type: 'paper', host: 'localhost', rconPort: 25703 },
         { type: 'folia', host: 'localhost', rconPort: 25711 },
+        { type: 'folia', host: 'localhost', rconPort: 25713 },
       ]);
       expect(run.json.warm).toEqual([
         { type: 'paper', host: 'localhost', rconPort: 25701 },
+        { type: 'paper', host: 'localhost', rconPort: 25703 },
         { type: 'folia', host: 'localhost', rconPort: 25711 },
+        { type: 'folia', host: 'localhost', rconPort: 25713 },
       ]);
       expect(run.json.nodeModules).toBe(toPosix(join(batch, 'node_modules')));
       expect(run.json.dist).toBe(toPosix(join(batch, 'dist')));
