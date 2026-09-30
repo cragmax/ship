@@ -18,9 +18,10 @@
  * main checkout, and only once the guards above held (git.md § Harvested
  * slices). A commit killed at its budget can leave `index.lock` behind; the
  * rollback then fails, or `batchClean` re-verifies `false`, and the caller
- * halts the epic. A lock file is never deleted here. On Windows the kill
- * reaches only `git` (`exec.ts`): its hook tree may still be running in the
- * batch when `land` returns.
+ * halts the epic. A lock file is never deleted here. On Windows a budget
+ * kill reaches only the direct child — `git`, or Git's launcher in front of
+ * it — so part of the commit's process tree may still be running in the
+ * batch when `land` returns; what survives is `exec.ts`'s header to state.
  *
  * Its two long spawns name their budgets (`exec.ts`): the build runs under
  * `NPM_TIMEOUT_MS`, the commit — whose pre-commit hook runs the commit
