@@ -22,6 +22,9 @@ const PERSONAL_SKILLS = [
 const RETIRED_RESTORE =
   /Edit-back|reversing (?:the|your) exact (?:mutation|edit)|git checkout <the-exact-impl-file|git checkout -- <file you mutated>|restore via `git checkout`/i;
 
+// A vitest run instruction without a worktree config, beside the right one.
+const BARE_VITEST = /\bnpx vitest (?:run|related)\b(?! --config vitest\.worktree\.)/;
+
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
@@ -131,6 +134,17 @@ describe('workflow agents', () => {
       expect(text).toContain('.claude/skills/audit-tests/mutate.ts');
       expect(text).toMatch(/mutate\.ts check/);
       expect(text).not.toMatch(RETIRED_RESTORE);
+    },
+  );
+
+  // regression: #1077 — a bare `npx vitest run` in a slice writes into the shared, junctioned node_modules/.vite.
+  it.each(['planner', 'ship-plan-reviewer', 'ship-tdd', 'reviewer', 'ship-test-review'])(
+    '%s runs unit tests under the worktree vitest config',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(text).toContain('npx vitest run --config vitest.worktree.config.ts <files>');
+      expect(text).not.toMatch(BARE_VITEST);
     },
   );
 

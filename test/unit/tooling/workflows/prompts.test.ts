@@ -85,6 +85,7 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
       sha: 'slice1',
       files: ['a.ts'],
       reportPath: `${REPORTS}/review-7-1.md`,
+      lease: LEASE,
     }),
   ],
   testReview: [

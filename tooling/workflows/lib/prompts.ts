@@ -149,7 +149,10 @@ export interface TddValues {
   readonly lease: LeaseValues;
 }
 
-/** The reviewer's and the test reviewer's values. */
+/**
+ * The reviewer's and the test reviewer's values: the slice's, and where its
+ * server-tier runs lease from.
+ */
 export interface SliceReviewValues {
   /** The issue. */
   readonly issue: number;
@@ -165,10 +168,6 @@ export interface SliceReviewValues {
   readonly files: readonly string[];
   /** The full report. */
   readonly reportPath: string;
-}
-
-/** The test reviewer's values: the slice's, and where its server-tier runs lease from. */
-export interface TestReviewValues extends SliceReviewValues {
   /** The lease command's values. */
   readonly lease: LeaseValues;
 }
@@ -369,8 +368,7 @@ export const PROMPTS = {
     ].join('\n'),
   reviewer: (values: SliceReviewValues): string =>
     ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values: TestReviewValues): string =>
-    [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
+  testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   resolver: (values: ResolverValues): string =>
     [
       'Mode: resolve',
@@ -397,7 +395,8 @@ export const PROMPTS = {
  * The prompt of a stage that reviews the slice's commit and may amend it.
  *
  * @param values - The slice's values.
- * @returns The prompt.
+ * @returns The prompt: the slice's lines, then its server-tier lines
+ *   ({@link serverTierLines}).
  */
 function sliceReviewPrompt(values: SliceReviewValues): string {
   return [
@@ -408,5 +407,6 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
+    ...serverTierLines(values.lease),
   ].join('\n');
 }

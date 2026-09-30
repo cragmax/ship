@@ -261,7 +261,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   planReviewer: { verdict: 'approved', findings: 0, findingsPath: `${REPORT_DIR}/pr.md` },
   tdd: TDD_GREEN,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
-  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper' },
+  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper', leaseLines: [] },
   testReview: {
     verdict: 'hardened',
     sha: 'slice3',

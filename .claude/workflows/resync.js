@@ -250,7 +250,7 @@ const PROMPTS = {
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
+  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -281,6 +281,7 @@ function sliceReviewPrompt(values) {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
+    ...serverTierLines(values.lease),
   ].join('\n');
 }
 
@@ -1141,8 +1142,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
       sha: { type: 'string' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'summary'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
   testReview: {
     type: 'object',

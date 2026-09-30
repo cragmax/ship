@@ -318,9 +318,9 @@ async function openPr(
 }
 
 /**
- * The entry's lease totals: every landed slice's release lines, the tdd's and
- * the test review's alike ({@link sliceLeaseLines}), each counted in its
- * engine's and its issue's totals with no role breakdown.
+ * The entry's lease totals: every landed slice's release lines, the tdd's, the
+ * review's and the test review's alike ({@link sliceLeaseLines}), each counted
+ * in its engine's and its issue's totals with no role breakdown.
  *
  * @param landed - The landed issues.
  * @returns The totals.

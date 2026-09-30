@@ -53,6 +53,13 @@ const TEST_REVIEW_LEASED = {
   leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
 };
 
+const REVIEW_LEASED = {
+  verdict: 'fixed',
+  sha: 'slice2',
+  summary: 'renamed a helper',
+  leaseLines: ['with-lease: waited 0.5s for paper@localhost:25702, held 12.5s'],
+};
+
 const LAND_BATCH_DIRTY = {
   ...LAND_OK,
   status: 'refused',
@@ -377,6 +384,35 @@ describe('runShip — the lease totals', () => {
     ).toEqual([
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ]);
+  });
+
+  it('labels the review’s leases between the tdd’s and the test review’s in the issue’s lease timings', async () => {
+    const run = fakeHooks({ reviewer: REVIEW_LEASED, testReview: TEST_REVIEW_LEASED });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Lease timings: ')),
+    ).toEqual([
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ]);
+  });
+
+  it('counts a landed issue’s reviewer lease in its engine’s and its issue’s totals', async () => {
+    const run = fakeHooks({ reviewer: REVIEW_LEASED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 2, waitedSeconds: 2, waitedMaxSeconds: 1.5, heldSeconds: 54.5 },
+        { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 2, heldSeconds: 54.5 }],
+      unparsed: [],
+    });
   });
 
   it('counts a landed issue’s test-review lease in its engine’s and its issue’s totals', async () => {

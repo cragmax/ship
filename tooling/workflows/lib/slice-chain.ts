@@ -389,8 +389,11 @@ async function reviewStage(at: Attempt): Promise<SchedulerEvent | null> {
  */
 async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
-  const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
+  const out = await AGENT_CALLS.testReview(
+    at.ctx.hooks,
+    sliceReviewValues(at, 'test-review'),
+    at.tag,
+  );
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
   at.testReview = out;
@@ -508,8 +511,8 @@ function plannerValues(at: Attempt, mode: 'plan' | 'apply', findingsPath?: strin
 }
 
 /**
- * Where the slice's server-tier runs lease from: the tdd, the planner and
- * the test reviewer are handed one recipe.
+ * Where the slice's server-tier runs lease from: the tdd, the planner, the
+ * reviewer and the test reviewer are handed one recipe.
  *
  * @param at - The attempt, past its provision.
  * @returns The main checkout, the provision's `PH_PROJECT_DIR` and the
@@ -524,7 +527,8 @@ function leaseValues(at: Attempt): LeaseValues {
  *
  * @param at - The attempt.
  * @param report - The report's file-name prefix.
- * @returns The values.
+ * @returns The values, the slice's lease recipe ({@link leaseValues}) among
+ *   them.
  */
 function sliceReviewValues(at: Attempt, report: string): SliceReviewValues {
   return {
@@ -535,6 +539,7 @@ function sliceReviewValues(at: Attempt, report: string): SliceReviewValues {
     sha: at.sha,
     files: at.tdd?.files ?? [],
     reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
+    lease: leaseValues(at),
   };
 }
 

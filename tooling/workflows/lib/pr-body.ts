@@ -55,8 +55,8 @@ export interface LandedIssue extends SliceWork {
 
 /** A slice's lease lines from one agent role. */
 export interface RoleLeaseLines {
-  /** The agent whose lease runs printed them: `tdd` or `test-review`. */
-  readonly role: 'tdd' | 'test-review';
+  /** The agent whose lease runs printed them: `tdd`, `review` or `test-review`. */
+  readonly role: 'tdd' | 'review' | 'test-review';
   /** Its `with-lease:` lines, as the agent transcribed them. */
   readonly lines: readonly string[];
 }
@@ -228,12 +228,18 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 /**
  * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
  *
- * @param work - The slice's tdd and test-review answers.
- * @returns The tdd's, then the test review's; no test-review entry when it
- *   was skipped (`null`); lines unparsed and unfiltered.
+ * @param work - The slice's tdd, review and test-review answers.
+ * @returns The tdd's, then the review's, then the test review's; no
+ *   test-review entry when it was skipped (`null`); lines unparsed and
+ *   unfiltered.
  */
-export function sliceLeaseLines(work: Pick<SliceWork, 'tdd' | 'testReview'>): RoleLeaseLines[] {
-  const roles: RoleLeaseLines[] = [{ role: 'tdd', lines: work.tdd.leaseLines }];
+export function sliceLeaseLines(
+  work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>,
+): RoleLeaseLines[] {
+  const roles: RoleLeaseLines[] = [
+    { role: 'tdd', lines: work.tdd.leaseLines },
+    { role: 'review', lines: work.review.leaseLines },
+  ];
   if (work.testReview !== null) {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
@@ -437,12 +443,13 @@ function probeLines(probes: readonly ProbeRecord[]): string[] {
 /**
  * A slice's lease timings as one phrase.
  *
- * @param work - The slice's tdd and test-review answers.
+ * @param work - The slice's tdd, review and test-review answers.
  * @returns `<role>: <leases>` for each role with at least one release line,
- *   tdd first, `; `-joined, each role's leases per {@link leaseText}; a role
- *   with none is omitted; `none` when no role has one.
+ *   in {@link sliceLeaseLines} order, `; `-joined, each role's leases per
+ *   {@link leaseText}; a role with none is omitted; `none` when no role has
+ *   one.
  */
-function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'testReview'>): string {
+function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

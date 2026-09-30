@@ -17,6 +17,7 @@ const work = (fields: {
   closes: 'fixes' | 'see';
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
+  review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
 }): SliceWork => ({
   card: {
@@ -35,7 +36,12 @@ const work = (fields: {
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
   },
-  review: { verdict: 'fixed', sha: 's2', summary: 'renamed a helper' },
+  review: fields.review ?? {
+    verdict: 'fixed',
+    sha: 's2',
+    summary: 'renamed a helper',
+    leaseLines: [],
+  },
   testReview:
     fields.testReview === undefined
       ? {
@@ -99,6 +105,15 @@ const reviewed = (leaseLines: string[]): SliceWork['testReview'] => ({
   sha: 's3',
   survivors: 1,
   summary: 'pinned the bound',
+  leaseLines,
+});
+
+const REVIEWER_LEASE = 'with-lease: waited 0.5s for paper@localhost:25702, held 12.5s';
+
+const fixedReview = (leaseLines: string[]): SliceWork['review'] => ({
+  verdict: 'fixed',
+  sha: 's2',
+  summary: 'renamed a helper',
   leaseLines,
 });
 
@@ -420,6 +435,56 @@ describe('renderPrBody', () => {
           issue: 11,
           commit: 'c11',
           ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, testReview }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
+  });
+
+  it.each<[string, string[], string[], SliceWork['testReview'], string]>([
+    [
+      'all three roles, the review between',
+      [TDD_LEASE],
+      [REVIEWER_LEASE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'a reviewer that leased nothing',
+      [TDD_LEASE],
+      [],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'the review alone',
+      [],
+      [REVIEWER_LEASE],
+      reviewed([]),
+      '- Lease timings: review: paper@localhost:25702 waited 0.5s, held 12.5s',
+    ],
+    [
+      'a review before a skipped test review',
+      [TDD_LEASE],
+      [REVIEWER_LEASE],
+      null,
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s',
+    ],
+  ])('renders the review’s lease timings for %s', (_name, tdd, review, testReview, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'lease x',
+            closes: 'fixes',
+            leaseLines: tdd,
+            review: fixedReview(review),
+            testReview,
+          }),
         },
       ],
     }).split('\n');

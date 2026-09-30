@@ -839,7 +839,7 @@ describe('runShip — what an attempt hands on', () => {
     );
   });
 
-  it.each(['planner:7-1', 'applier:7-1', 'testReview:7-1'])(
+  it.each(['planner:7-1', 'applier:7-1', 'reviewer:7-1', 'testReview:7-1'])(
     'hands %s the tdd’s server-tier recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
@@ -896,6 +896,32 @@ describe('runShip — what an attempt hands on', () => {
       expect(promptOf(run, label).split('\n')).toContain('Slice base: cut1');
     },
   );
+
+  it.each<[string, string[]]>([
+    ['reviewer:7-1', ['Mode']],
+    ['testReview:7-1', []],
+  ])('orders %s’s prompt: the slice’s lines, then the server-tier recipe', async (label, head) => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const keys = promptOf(run, label)
+      .split('\n')
+      .map((l) => l.slice(0, l.indexOf(': ')));
+    expect(keys).toEqual([
+      ...head,
+      'Issue',
+      'Slice worktree',
+      'Slice base',
+      'Plan file',
+      'Slice commit',
+      'Changed files',
+      'Report file',
+      'Lease command',
+      'Lease version',
+      'Probe caps',
+    ]);
+  });
 
   it('skips the test review for a slice that changes no code, landing the reviewer’s commit', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });

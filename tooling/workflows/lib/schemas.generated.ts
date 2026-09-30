@@ -867,8 +867,9 @@ export const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
       sha: { type: 'string' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'summary'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
   testReview: {
     type: 'object',

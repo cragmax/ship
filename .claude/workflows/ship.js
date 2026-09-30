@@ -656,7 +656,7 @@ const PROMPTS = {
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
+  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -687,6 +687,7 @@ function sliceReviewPrompt(values) {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
+    ...serverTierLines(values.lease),
   ].join('\n');
 }
 
@@ -1547,8 +1548,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
       sha: { type: 'string' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'summary'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
   testReview: {
     type: 'object',
@@ -2029,7 +2031,10 @@ function prTitle(input) {
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 function sliceLeaseLines(work) {
-  const roles = [{ role: 'tdd', lines: work.tdd.leaseLines }];
+  const roles = [
+    { role: 'tdd', lines: work.tdd.leaseLines },
+    { role: 'review', lines: work.review.leaseLines },
+  ];
   if (work.testReview !== null) {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
@@ -2632,8 +2637,11 @@ async function reviewStage(at) {
 }
 async function testReviewStage(at) {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
-  const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
+  const out = await AGENT_CALLS.testReview(
+    at.ctx.hooks,
+    sliceReviewValues(at, 'test-review'),
+    at.tag,
+  );
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
   at.testReview = out;
@@ -2716,6 +2724,7 @@ function sliceReviewValues(at, report) {
     sha: at.sha,
     files: at.tdd?.files ?? [],
     reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
+    lease: leaseValues(at),
   };
 }
 function planPath(at) {

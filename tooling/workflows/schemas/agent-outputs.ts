@@ -144,6 +144,8 @@ export const ReviewOutputSchema = z.object({
   sha: z.string(),
   /** The review-fix summary, one line. */
   summary: z.string(),
+  /** Every `with-lease:` release line its lease runs printed, verbatim, one per lease. */
+  leaseLines: z.array(z.string()),
 });
 
 /** The test reviewer's answer. */
