@@ -47,6 +47,7 @@ import {
   type ScoutValues,
   type SliceReviewValues,
   type TddValues,
+  type TestReviewValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
 import { agentOptions, reviewerOptions } from './stages.js';
@@ -198,7 +199,7 @@ export const AGENT_CALLS = {
       PROMPTS.reviewer(values),
       reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
-  testReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
+  testReview: (hooks: WorkflowHooks, values: TestReviewValues, tag: string) =>
     askAgent<TestReviewOutput>(
       hooks,
       PROMPTS.testReview(values),

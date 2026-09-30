@@ -572,6 +572,28 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
+function serverTierLines(lease) {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+  ];
+}
+const ISSUE_TEXT_JQ =
+  '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
+  '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+function issueLines(issue, reportDir) {
+  const dir = `${reportDir}/issues`;
+  const file = `${dir}/${String(issue)}.md`;
+  return [
+    `Issue file: ${file}`,
+    [
+      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
@@ -601,8 +623,10 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Report dir: ${values.reportDir}`,
       `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...serverTierLines(values.lease),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -615,6 +639,7 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -624,16 +649,14 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      `Lease command: ${leaseCommand(values.lease)}`,
-      `Lease version: the version of the chosen type's entry in ${values.lease.registry}`,
-      `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+      ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
+  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -659,6 +682,7 @@ function sliceReviewPrompt(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
+    `Slice base: ${values.base}`,
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
@@ -2358,6 +2382,7 @@ async function planReviewStage(at) {
     slice: at.slice ?? '',
     planPath: planPath(at),
     findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
+    reportDir: at.ctx.reportDir,
   };
   const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
@@ -2380,7 +2405,7 @@ async function tddStage(at) {
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
     message: commitMessage(at.issue, card),
-    lease: { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry },
+    lease: leaseValues(at),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return died(at);
@@ -2401,7 +2426,7 @@ async function reviewStage(at) {
 }
 async function testReviewStage(at) {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = sliceReviewValues(at, 'test-review');
+  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
   const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
@@ -2470,12 +2495,17 @@ function plannerValues(at, mode, findingsPath) {
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
     ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
+    lease: leaseValues(at),
   };
+}
+function leaseValues(at) {
+  return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
 }
 function sliceReviewValues(at, report) {
   return {
     issue: at.issue,
     slice: at.slice ?? '',
+    base: at.base,
     planPath: planPath(at),
     sha: at.sha,
     files: at.tdd?.files ?? [],

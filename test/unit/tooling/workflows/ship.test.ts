@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  PROBE_CAP_MINUTES,
+  PROBES_PER_ISSUE,
   reviewEffort,
   STAGES,
   type StageName,
@@ -794,6 +796,64 @@ describe('runShip — what an attempt hands on', () => {
       'feat(build): add the reviewed x tool',
     );
   });
+
+  it.each(['planner:7-1', 'applier:7-1', 'testReview:7-1'])(
+    'hands %s the tdd’s server-tier recipe',
+    async (label) => {
+      // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
+      const projectDir = 'C:/src/ph-runs/7/project-7-1';
+      const run = fakeHooks({
+        ...PLAN_REVIEW_FINDINGS,
+        'runner:provision': {
+          exitCode: 0,
+          envelopePath: 'e.json',
+          status: 'ok',
+          errors: [],
+          env: { PH_PROJECT_DIR: projectDir },
+        },
+      });
+
+      await runShip(run.hooks, 'issues 7');
+
+      const tddLines = promptOf(run, 'tdd:7-1').split('\n');
+      const recipe = ['Lease command: ', 'Lease version: ', 'Probe caps: '].map(
+        (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
+      );
+      const registry = `${REPORT_DIR}/pool-registry.batch.json`;
+      expect(recipe).toEqual([
+        `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
+        `Lease version: the version of the chosen type's entry in ${registry}`,
+        `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+      ]);
+      expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
+    },
+  );
+
+  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1'])(
+    'hands %s the command that fetches the issue as markdown into the report dir',
+    async (label) => {
+      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+      await runShip(run.hooks, 'issues 7');
+
+      const lines = promptOf(run, label).split('\n');
+      expect(lines).toContain(`Issue file: ${REPORT_DIR}/issues/7.md`);
+      expect(lines).toContain(
+        `Issue command: mkdir -p ${REPORT_DIR}/issues && gh issue view 7 --json title,state,labels,body,comments --jq '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, (.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)' > ${REPORT_DIR}/issues/7.md`,
+      );
+    },
+  );
+
+  it.each(['reviewer:7-1', 'testReview:7-1'])(
+    'hands %s the slice base the cut answered',
+    async (label) => {
+      const run = fakeHooks();
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(promptOf(run, label).split('\n')).toContain('Slice base: cut1');
+    },
+  );
 
   it('skips the test review for a slice that changes no code, landing the reviewer’s commit', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });

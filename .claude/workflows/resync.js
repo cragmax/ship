@@ -166,6 +166,28 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
+function serverTierLines(lease) {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+  ];
+}
+const ISSUE_TEXT_JQ =
+  '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
+  '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+function issueLines(issue, reportDir) {
+  const dir = `${reportDir}/issues`;
+  const file = `${dir}/${String(issue)}.md`;
+  return [
+    `Issue file: ${file}`,
+    [
+      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
@@ -195,8 +217,10 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Report dir: ${values.reportDir}`,
       `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...serverTierLines(values.lease),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -209,6 +233,7 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -218,16 +243,14 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      `Lease command: ${leaseCommand(values.lease)}`,
-      `Lease version: the version of the chosen type's entry in ${values.lease.registry}`,
-      `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+      ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
+  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -253,6 +276,7 @@ function sliceReviewPrompt(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
+    `Slice base: ${values.base}`,
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,

@@ -34,6 +34,10 @@ You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) 
 - **Never interpret.** Copy values; do not summarise, judge, retry or "fix" anything. A failing command is a result, not a problem for you to solve.
 - **Never end your turn while the command runs.** Keep polling until the `.exit` file exists.
 
+## Output
+
+Your envelope files and the `Write first` file are deliverables the workflow reads, not reports for a person: write them, even where a generic note says not to write report or findings files. Your answer is one StructuredOutput tool call, per your output schema — never a text reply, which the workflow does not read.
+
 </rules>
 
 <procedure>
