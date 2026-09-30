@@ -1811,17 +1811,39 @@ function settleEvents(primary, teardown, at) {
 }
 
 const LEASE_LINE =
-  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
+  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
 function formatLeaseLine(timing) {
   const waited = timing.waitedSeconds.toFixed(1);
   const held = timing.heldSeconds.toFixed(1);
-  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s`;
+  const suffix = timing.waitedOn === undefined ? '' : `, waited on ${timing.waitedOn}`;
+  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s${suffix}`;
+}
+const LEASE_WAIT_LINE = /^with-lease: waiting for \w+@\S+ /u;
+const LEASE_UNKNOWN_HOLDER = 'an unknown holder';
+function formatLeaseWaitLine(wait) {
+  const { holder } = wait;
+  const head = `with-lease: waiting for ${wait.type}@${wait.endpoint} — held by`;
+  if (holder === null) return `${head} ${LEASE_UNKNOWN_HOLDER}`;
+  const state = holder.alive ? 'alive' : 'dead, lock reclaimed once stale';
+  return `${head} ${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)}, since ${holder.since}, ${state}): ${holder.command}`;
+}
+function leaseWaitedOn(holder) {
+  if (holder === null) return LEASE_UNKNOWN_HOLDER;
+  return `${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)})`;
+}
+function leaseHolderLabel(cwd) {
+  return cwd
+    .split(/[\\/]/u)
+    .filter((segment) => segment !== '')
+    .slice(-2)
+    .join('/');
 }
 function parseLeaseLine(line) {
   const match = LEASE_LINE.exec(line);
   if (match === null) return null;
-  const [, waited = '', type = '', endpoint = '', held = ''] = match;
-  return { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+  const [, waited = '', type = '', endpoint = '', held = '', waitedOn] = match;
+  const timing = { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+  return waitedOn === undefined ? timing : { ...timing, waitedOn };
 }
 function parseLeaseLines(text) {
   const timings = [];
@@ -1842,7 +1864,7 @@ function aggregateLeaseTimings(samples) {
   }));
   const issues = new Map();
   const unparsed = [];
-  for (const sample of samples) {
+  for (const sample of samples.filter((s) => !leaseIsWaitLine(s))) {
     const lease = 'lease' in sample ? sample.lease : parseLeaseLine(sample.line);
     const engine = engines.find((e) => e.type === lease?.type);
     if (lease === null || engine === undefined) {
@@ -1868,6 +1890,9 @@ function aggregateLeaseTimings(samples) {
       })),
     unparsed,
   };
+}
+function leaseIsWaitLine(sample) {
+  return 'line' in sample && LEASE_WAIT_LINE.test(sample.line);
 }
 function leaseSampleLine(sample) {
   return 'line' in sample ? sample.line : formatLeaseLine(sample.lease);
@@ -2116,10 +2141,10 @@ function probeLines(probes) {
 function leaseText(timings) {
   if (timings.length === 0) return 'none';
   return timings
-    .map(
-      (t) =>
-        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
-    )
+    .map((t) => {
+      const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
+      return `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s${on}, held ${String(t.heldSeconds)}s`;
+    })
     .join('; ');
 }
 function unlandedLine(issue) {

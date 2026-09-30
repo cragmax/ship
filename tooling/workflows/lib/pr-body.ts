@@ -384,16 +384,17 @@ function probeLines(probes: readonly ProbeRecord[]): string[] {
  * Lease timings as one phrase.
  *
  * @param timings - The parsed release lines.
- * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s`, `; `-joined;
- *   `none` for none.
+ * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s` — with
+ *   ` on <waitedOn>` after `waited <W>s` when the line names the holder
+ *   waited on — `; `-joined; `none` for none.
  */
 function leaseText(timings: readonly LeaseTiming[]): string {
   if (timings.length === 0) return 'none';
   return timings
-    .map(
-      (t) =>
-        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
-    )
+    .map((t) => {
+      const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
+      return `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s${on}, held ${String(t.heldSeconds)}s`;
+    })
     .join('; ');
 }
 

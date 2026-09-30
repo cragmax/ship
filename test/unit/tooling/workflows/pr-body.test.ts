@@ -69,6 +69,19 @@ const EIGHT: LandedIssue = {
   }),
 };
 
+const ELEVEN: LandedIssue = {
+  issue: 11,
+  commit: 'c11',
+  ...work({
+    subject: 'wait on a held lease',
+    closes: 'fixes',
+    leaseLines: [
+      'with-lease: waiting for paper@localhost:25701 — held by epic-911/slice-913-1 (pid 1234, since 2026-09-30T18:23:58.961Z, alive): npx vitest run a.test.ts',
+      'with-lease: waited 38.9s for paper@localhost:25701, held 27.0s, waited on epic-911/slice-913-1 (pid 1234)',
+    ],
+  }),
+};
+
 const INPUT: PrBodyInput = {
   epic: 1025,
   branch: 'ship/epic-1025',
@@ -301,6 +314,12 @@ describe('renderPrBody', () => {
     expect(text).toContain('fixes (see #9) already');
     expect(text).not.toMatch(closes(9));
     expect(text).toMatch(closes(7));
+  });
+
+  it('names the holder a lease waited on in its lease timings', () => {
+    expect(renderPrBody({ ...INPUT, landed: [ELEVEN] }).split('\n')).toContain(
+      '- Lease timings: paper@localhost:25701 waited 38.9s on epic-911/slice-913-1 (pid 1234), held 27s',
+    );
   });
 
   it('records a capped probe with its follow-up', () => {
