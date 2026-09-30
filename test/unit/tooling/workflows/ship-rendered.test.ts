@@ -9,7 +9,7 @@ import { WORKFLOWS } from '../../../../tooling/render-workflows.js';
 import { SHIP_META } from '../../../../tooling/workflows/ship.meta.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, LAND_OK, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, LAND_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
 
 const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
@@ -40,11 +40,12 @@ function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
  * Drive the TS source and the render through one launch, each over its own fake hooks.
  *
  * @param args - The launch arguments.
+ * @param responses - Per-label answers over the fakes' defaults, given to both runs.
  * @returns Both fake runs, the source's report and the render's.
  */
-async function runBoth(args: string) {
-  const source = fakeHooks();
-  const rendered = fakeHooks();
+async function runBoth(args: string, responses: Readonly<Record<string, unknown>> = {}) {
+  const source = fakeHooks(responses);
+  const rendered = fakeHooks(responses);
   const expected = await runShip(source.hooks, args);
   const report = await runRendered(shipJs, rendered, args);
   return { source, rendered, expected, report };
@@ -98,6 +99,16 @@ describe('ship.js — a fresh render of the current sources', () => {
       ],
     });
     expect(both.rendered.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
+    expectSameRun(both);
+  });
+
+  it('tears a spent run down at launch with the same calls, timeline and phases as the source', async () => {
+    const both = await runBoth('issues 7', liveRuns({}));
+
+    expect(both.report).toMatchObject({
+      status: 'done',
+      cleanup: { tornDown: ['C:/src/ph-runs/old-0/batch'] },
+    });
     expectSameRun(both);
   });
 });

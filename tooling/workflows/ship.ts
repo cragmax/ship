@@ -7,10 +7,18 @@
  * {@link runShip} parses the launch arguments and runs the pre-flight
  * phase; any refusal ends the run before anything is cut, and a
  * `preflightOnly` launch stops after a clean pre-flight with the graph it
- * would schedule. A full run then cuts and provisions each entry's batch
- * worktree (an entry whose cut fails is reported `stopped`, its issues and
- * their dependents dropped from the graph and cited `see`), drives the
- * scheduler over the rest (`lib/drive.ts`), and returns the run report.
+ * would schedule. A full run then tears down the spent runs pre-flight's
+ * `live-runs` reported (`lib/spent-cleanup.ts`) before cutting anything: a
+ * `source-shrank` teardown refuses the launch with nothing cut, and any
+ * other failed teardown is residue in the report's `cleanup`. It then cuts
+ * and provisions each entry's batch worktree (an entry whose cut fails is
+ * reported `stopped`, its issues and their dependents dropped from the
+ * graph and cited `see`), drives the scheduler over the rest
+ * (`lib/drive.ts`), and returns the run report.
+ *
+ * The epic end never tears down its own batch: while its PR is open, that
+ * worktree is how `live-runs` — and so the next launch's collision check —
+ * sees the run.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -30,6 +38,7 @@ import {
   type ShipRefusal,
 } from './lib/preflight.js';
 import type { EntrySetup } from './lib/slice-chain.js';
+import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
 import { PHASE_TITLES } from './lib/stages.js';
 import { envelopeProblem, PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
 
@@ -50,6 +59,11 @@ export interface ShipReport {
   readonly overlap?: OverlapRecord;
   /** Each entry's result, in run-set order; empty unless `done`. */
   readonly epics: readonly EpicReport[];
+  /**
+   * What the spent-run cleanup did; present once it ran: `done`, or
+   * `refused` by its `source-shrank` stop.
+   */
+  readonly cleanup?: CleanupReport;
 }
 
 /** An entry's cut: its setup, or the report of a cut that failed and the issues it loses. */
@@ -76,13 +90,20 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
+  const cleanup = await cleanupSpent(hooks, pre.live);
+  if (cleanup.stop !== null) {
+    return {
+      ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
+      cleanup,
+    };
+  }
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics };
+  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
 
 /**

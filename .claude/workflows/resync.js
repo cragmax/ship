@@ -99,7 +99,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
-      'refuses on any failure',
+      'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
     title: PHASE_TITLES.issues,

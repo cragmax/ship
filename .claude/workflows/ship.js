@@ -8,7 +8,7 @@ export const meta = {
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure',
+        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -58,7 +58,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
-      'refuses on any failure',
+      'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
     title: PHASE_TITLES.issues,
@@ -2931,11 +2931,11 @@ async function runPreflight(hooks, args) {
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(checks);
   if (gate?.runSet === undefined) {
-    return { refusals, dropped: [], graph: null, main, overlap: null };
+    return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null };
+  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
 }
 async function settleOverlap(hooks, found) {
@@ -3107,6 +3107,57 @@ function toolError(out, what) {
   );
 }
 
+async function cleanupSpent(hooks, live) {
+  const report = {
+    tornDown: [],
+    skipped: [],
+    residue: [],
+    blocked: null,
+    stop: null,
+  };
+  if (live?.status !== 'ok' || live.runs === undefined) {
+    report.blocked = envelopeProblem('live-runs', live);
+    return report;
+  }
+  for (const run of live.runs) {
+    await cleanupRun(hooks, run, report);
+    if (report.stop !== null) break;
+  }
+  return report;
+}
+async function cleanupRun(hooks, run, report) {
+  const target = spentTarget(run);
+  if (target === null) return;
+  if ('why' in target) report.skipped.push(target);
+  else await tearDownSpent(hooks, target.path, report);
+}
+async function tearDownSpent(hooks, path, report) {
+  const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
+  const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
+  if (out?.status === 'ok') {
+    report.tornDown.push(path);
+  } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
+    report.stop = envelopeProblem('teardown', out);
+  } else {
+    report.residue.push(`${path}: ${envelopeProblem('teardown', out)}`);
+  }
+}
+function spentTarget(run) {
+  const path = run.path ?? run.branch;
+  if (run.spentUnverified) {
+    return { path, why: 'its PR is over, but the PR head could not be checked' };
+  }
+  if (!run.spent) return null;
+  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
+  if (run.dirty !== false) {
+    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+  }
+  if (!Array.isArray(run.nested) || run.nested.length > 0) {
+    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  }
+  return { path: run.path };
+}
+
 async function runShip(hooks, rawArgs) {
   const parsed = parseShipArgs(rawArgs);
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
@@ -3119,13 +3170,20 @@ async function runShip(hooks, rawArgs) {
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
+  const cleanup = await cleanupSpent(hooks, pre.live);
+  if (cleanup.stop !== null) {
+    return {
+      ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
+      cleanup,
+    };
+  }
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics };
+  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
 async function runEntries(hooks, graph, opts) {
   const cuts = [];

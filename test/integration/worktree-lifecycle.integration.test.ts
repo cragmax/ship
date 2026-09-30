@@ -533,6 +533,23 @@ describe('teardown with other worktrees nearby', () => {
     expect(existsSync(sibling)).toBe(true);
     expect(isRegistered(main, sibling)).toBe(true);
   });
+
+  it('keeps a torn-down batch branch and the run record beside it', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    // `batch` and `reports/` side by side, as a run's are under `ph-runs/<slug>/`.
+    const batch = addWorktree(main, join(root, 'batch'), 'ship/run');
+    const record = join(root, 'reports', 'run.md');
+    mkdirSync(dirname(record), { recursive: true });
+    writeFileSync(record, 'the run record\n');
+
+    const down = runCli<TeardownResult>(['teardown', batch]);
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(isRegistered(main, batch)).toBe(false);
+    expect(existsSync(batch)).toBe(false);
+    const branch = runIn('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/ship/run'], main);
+    expect(branch.exitCode).toBe(0);
+    expect(readFileSync(record, 'utf8')).toBe('the run record\n');
+  });
 });
 
 describe.skipIf(!WIN32)('provision', () => {

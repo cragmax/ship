@@ -62,7 +62,9 @@ import {
  * or `preflight-error`; a gate failure kind or `gate-error`;
  * `live-runs-failed`; `stale`, `overlap` or `scout-unavailable` (the
  * scout); `empty-run-set` (exclude mode dropped everything);
- * `overlap-cross-epic` or `overlap-estimate-failed` (the overlap estimate).
+ * `overlap-cross-epic` or `overlap-estimate-failed` (the overlap estimate);
+ * `source-shrank` (the launch's spent-run cleanup: a teardown found a link
+ * target shrank).
  */
 export type ShipRefusalKind =
   | 'usage'
@@ -75,7 +77,8 @@ export type ShipRefusalKind =
   | 'overlap'
   | 'scout-unavailable'
   | 'overlap-cross-epic'
-  | 'overlap-estimate-failed';
+  | 'overlap-estimate-failed'
+  | 'source-shrank';
 
 /** One reason the run may not start. */
 export interface ShipRefusal {
@@ -112,6 +115,11 @@ export interface PreflightOutcome {
   readonly main: MainSnapshot | null;
   /** The overlap edges merged into `graph`; `null` when the estimate failed or never ran. */
   readonly overlap: OverlapRecord | null;
+  /**
+   * `live-runs`' answer as pre-flight read it, reused by the launch's
+   * spent-run cleanup; `null` when the runner returned none.
+   */
+  readonly live: LiveRunsOutput | null;
 }
 
 /** An overlap edge pre-flight added, with the estimator's word for it. */
@@ -169,11 +177,11 @@ export async function runPreflight(
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(checks);
   if (gate?.runSet === undefined) {
-    return { refusals, dropped: [], graph: null, main, overlap: null };
+    return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null };
+  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
 }
 

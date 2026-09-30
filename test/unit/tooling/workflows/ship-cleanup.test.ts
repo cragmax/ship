@@ -1,0 +1,199 @@
+// The launch's spent-run cleanup, split from ship.test.ts (already past a thousand lines).
+import { describe, expect, it } from 'vitest';
+
+import { runShip } from '../../../../tooling/workflows/ship.js';
+
+import { fakeHooks, GATE_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
+
+/**
+ * Every call's label, in call order.
+ *
+ * @param run - The fake run.
+ * @returns The labels.
+ */
+const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
+
+const SPENT_BATCH = 'C:/src/ph-runs/old-0/batch';
+
+describe('runShip — spent-run cleanup at launch', () => {
+  it('tears a spent, clean, un-nested run down after pre-flight and before the cut', async () => {
+    const run = fakeHooks(liveRuns({}));
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).slice(0, 6)).toEqual([
+      'runner:preflight',
+      'runner:run-gate',
+      'runner:live-runs',
+      'scout',
+      'runner:teardown:spent-1',
+      'runner:cut-batch:list',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:teardown:spent-1')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'teardown',
+      SPENT_BATCH,
+    ]);
+    expect(report.status).toBe('done');
+    expect(report.cleanup).toEqual({
+      tornDown: [SPENT_BATCH],
+      skipped: [],
+      residue: [],
+      blocked: null,
+      stop: null,
+    });
+    expect(run.violations).toEqual([]);
+  });
+
+  it("names only the spent run's batch, never its branch or its run record", async () => {
+    const run = fakeHooks(liveRuns({}));
+
+    await runShip(run.hooks, 'issues 7');
+
+    const touching = run.calls.filter((c) =>
+      c.argv.some((w) => w.startsWith('C:/src/ph-runs/old-0')),
+    );
+    expect(touching.map((c) => [c.label, c.argv.slice(2)])).toEqual([
+      ['runner:teardown:spent-1', [SPENT_BATCH]],
+    ]);
+    expect(run.calls.filter((c) => c.argv.includes('ship/old-0'))).toEqual([]);
+  });
+
+  it('leaves a run whose PR is still open untouched', async () => {
+    const run = fakeHooks(liveRuns({ spent: false, pr: { state: 'open', number: 100 } }));
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:teardown:spent'))).toEqual([]);
+    expect(report.cleanup).toEqual({
+      tornDown: [],
+      skipped: [],
+      residue: [],
+      blocked: null,
+      stop: null,
+    });
+    expect(labels(run)).toContain('runner:cut-batch:list');
+    expect(report.status).toBe('done');
+  });
+
+  it.each([
+    { name: 'dirty', run: { dirty: true }, why: 'uncommitted changes' },
+    { name: 'of unknown dirtiness', run: { dirty: null }, why: 'dirtiness unknown' },
+    {
+      name: 'with a nested worktree',
+      run: { nested: ['C:/x/agent'] },
+      why: 'nested worktrees: C:/x/agent',
+    },
+    {
+      name: 'unverified',
+      run: { spent: false, spentUnverified: true },
+      why: 'its PR is over, but the PR head could not be checked',
+    },
+  ])('leaves a spent run $name standing, reporting why, and still cuts', async (c) => {
+    const run = fakeHooks(liveRuns(c.run));
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:teardown:spent'))).toEqual([]);
+    expect(report.cleanup?.skipped).toEqual([{ path: SPENT_BATCH, why: c.why }]);
+    expect(labels(run)).toContain('runner:cut-batch:list');
+    expect(report.status).toBe('done');
+  });
+
+  it.each([
+    {
+      name: 'failed',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'remove', message: 'busy' }],
+      },
+      residue: `${SPENT_BATCH}: teardown failed: busy`,
+    },
+    {
+      name: 'refused for another reason',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'links-remain',
+        errors: [{ step: 'gate', message: 'a link remains' }],
+      },
+      residue: `${SPENT_BATCH}: teardown refused (links-remain): a link remains`,
+    },
+    {
+      name: 'dead',
+      answer: null,
+      residue: `${SPENT_BATCH}: the runner returned nothing for teardown`,
+    },
+  ])('records a $name teardown as residue, tears the next run down and ships', async (c) => {
+    const run = fakeHooks({ ...liveRuns({}, {}), 'runner:teardown:spent-1': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.cleanup?.residue).toEqual([c.residue]);
+    expect(report.cleanup?.tornDown).toEqual(['C:/src/ph-runs/old-1/batch']);
+    expect(report.cleanup?.stop).toBeNull();
+    expect(labels(run)).toContain('runner:cut-batch:list');
+    expect(report.status).toBe('done');
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+  });
+
+  it('refuses the launch with nothing cut when a teardown finds a link target shrank', async () => {
+    const shrank = {
+      exitCode: 1,
+      envelopePath: 'e.json',
+      status: 'refused',
+      reason: 'source-shrank',
+      errors: [{ step: 'gate', message: 'node_modules lost files' }],
+    };
+    const run = fakeHooks({
+      ...liveRuns({}),
+      'runner:teardown': shrank,
+      // An exclude-mode drop, so the refusal is seen keeping pre-flight's `dropped`.
+      'runner:run-gate': {
+        ...GATE_OK,
+        failures: [{ kind: 'missing-label', issue: 8, message: '#8 lacks ready-for-agent' }],
+        excluded: [{ issue: 8, cause: 'failed' }],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 --exclude');
+
+    const stop = 'teardown refused (source-shrank): node_modules lost files';
+    expect(report).toEqual({
+      status: 'refused',
+      refusals: [{ kind: 'source-shrank', message: stop }],
+      dropped: [{ issue: 8, cause: 'gate', message: '#8 lacks ready-for-agent' }],
+      cleanup: { tornDown: [], skipped: [], residue: [], blocked: null, stop },
+      epics: [],
+    });
+    expect(labels(run).filter((l) => /cut-batch|provision|land|cut-slice/.test(l))).toEqual([]);
+    expect(run.phases).toEqual(['Pre-flight']);
+  });
+
+  it('tears nothing down on a --preflight-only launch', async () => {
+    const run = fakeHooks(liveRuns({}));
+
+    const report = await runShip(run.hooks, 'issues 7 --preflight-only');
+
+    expect(report.status).toBe('preflight-ok');
+    expect(labels(run).filter((l) => l.startsWith('runner:teardown'))).toEqual([]);
+    expect(report).not.toHaveProperty('cleanup');
+  });
+
+  it('tears nothing down when pre-flight refuses the launch', async () => {
+    const run = fakeHooks({
+      ...liveRuns({}),
+      scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('refused');
+    expect(report.refusals?.map((r) => r.kind)).toEqual(['stale']);
+    expect(labels(run).filter((l) => l.startsWith('runner:teardown'))).toEqual([]);
+    expect(report).not.toHaveProperty('cleanup');
+  });
+});

@@ -112,6 +112,29 @@ const RUN_ROOT = 'C:/src/ph-runs/7';
 /** Fields every `ok` worktree-CLI output carries. */
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
+/**
+ * A `live-runs` answer holding `runs`.
+ *
+ * @param runs - The runs, each over a spent, clean, un-nested default.
+ * @returns The answer.
+ */
+export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
+  'runner:live-runs': {
+    ...OK,
+    runs: runs.map((r, i) => ({
+      branch: `ship/old-${String(i)}`,
+      landed: [],
+      pr: { state: 'merged', number: 100 + i },
+      spent: true,
+      spentUnverified: false,
+      path: `C:/src/ph-runs/old-${String(i)}/batch`,
+      dirty: false,
+      nested: [],
+      ...r,
+    })),
+  },
+});
+
 /** The run's report directory in the fakes. */
 export const REPORT_DIR = `${RUN_ROOT}/reports`;
 
