@@ -22,6 +22,7 @@ import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../li
 import type {
   CommitSpec,
   CriticFinding,
+  OverlapConfidence,
   PlanCard,
   ProbeRecord,
   RetroFinding,
@@ -62,12 +63,29 @@ export interface UnlandedIssue {
   readonly reason?: string;
 }
 
+/** One blocker of a scheduled issue, with where its edge came from. */
+export type ScheduleBlocker =
+  | {
+      /** The blocking issue. */
+      readonly issue: number;
+      /** `declared`: a `blocked_by` edge the run gate declared. */
+      readonly source: 'declared';
+    }
+  | {
+      /** The blocking issue. */
+      readonly issue: number;
+      /** `overlap`: an edge pre-flight's overlap estimate added. */
+      readonly source: 'overlap';
+      /** The estimator's word for the edge. */
+      readonly confidence: OverlapConfidence;
+    };
+
 /** One issue's line of an entry's schedule. */
 export interface ScheduleEntry {
   /** The issue. */
   readonly issue: number;
-  /** Its blockers in the scheduled graph (overlap edges included), ascending. */
-  readonly blockers: readonly number[];
+  /** Its blockers in the scheduled graph, ascending, each with its source. */
+  readonly blockers: readonly ScheduleBlocker[];
   /** How many attempts it took; 0 when it never started. */
   readonly attempts: number;
   /** When its final attempt's slice was cut; `null` when none was. */
@@ -290,16 +308,28 @@ function overlapLine(edge: OverlapEdge): string {
  * One issue's schedule line.
  *
  * @param entry - Its schedule.
- * @returns `- #N: blockers …; started …; committed …; attempts K`, `never`
+ * @returns `- #N: blockers …; started …; committed …; attempts K`: each
+ *   blocker per {@link blockerText}, `, `-joined, `none` for none; `never`
  *   for a missing instant.
  */
 function scheduleLine(entry: ScheduleEntry): string {
   const blockers =
-    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
     `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
   );
+}
+
+/**
+ * One schedule blocker as a phrase.
+ *
+ * @param blocker - The blocker.
+ * @returns `#B (declared)`, or `#B (overlap, <confidence>)`.
+ */
+function blockerText(blocker: ScheduleBlocker): string {
+  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
+  return `#${String(blocker.issue)} (${source})`;
 }
 
 /**

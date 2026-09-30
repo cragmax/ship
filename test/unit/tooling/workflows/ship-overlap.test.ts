@@ -79,6 +79,128 @@ describe('runShip — the overlap estimate', () => {
     expect(report).toMatchObject({ status: 'done', epics: [{ outcome: 'pr' }] });
   });
 
+  it('names an overlap blocker’s source and confidence on its PR body schedule line', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      overlapEstimator: estimate({ a: 8, b: 7, confidence: 'likely' }),
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const scheduleLines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '')
+      .split('\n')
+      .filter((l) => /^- #\d+: blockers /.test(l));
+    expect(scheduleLines).toEqual([
+      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
+      '- #8: blockers #7 (overlap, likely); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
+    ]);
+  });
+
+  it('carries each blocker’s source and confidence in the run report’s schedule', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'unsure' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report.epics[0]?.schedule.map((s) => s.blockers)).toEqual([
+      [],
+      [{ issue: 7, source: 'overlap', confidence: 'unsure' }],
+    ]);
+  });
+
+  it('lists an issue’s declared and overlap blockers ascending, each with its source', async () => {
+    const run = fakeHooks({
+      'runner:run-gate': {
+        ...GATE_OK,
+        runSet: [{ epic: null, issues: [7, 8, 9] }],
+        edges: [{ blocker: 8, dependent: 9 }],
+      },
+      scout: {
+        issues: [7, 8, 9].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+        overlaps: [],
+      },
+      overlapEstimator: estimate({ a: 7, b: 9, confidence: 'likely' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 9');
+
+    expect(report.epics[0]?.schedule.map((s) => s.blockers)).toEqual([
+      [],
+      [],
+      [
+        { issue: 7, source: 'overlap', confidence: 'likely' },
+        { issue: 8, source: 'declared' },
+      ],
+    ]);
+  });
+
+  it('reads an edge both declared and estimated as declared', async () => {
+    // The estimator names a pair the declared 7 → 8 already orders.
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      'runner:run-gate': {
+        ...GATE_OK,
+        runSet: [{ epic: null, issues: [7, 8] }],
+        edges: [{ blocker: 7, dependent: 8 }],
+      },
+      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'unsure' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report.overlap).toEqual({ added: [], sequenced: [{ a: 7, b: 8 }], areaMap: 'read' });
+    expect(report.epics[0]?.schedule.map((s) => s.blockers)).toEqual([
+      [],
+      [{ issue: 7, source: 'declared' }],
+    ]);
+  });
+
+  it('reports each blocker’s source for a failed cut’s never-started issues, stopped and dropped alike', async () => {
+    // Epic 1's failed cut drops 2 and 3 through the declared 1 → 2, so both
+    // of ship.ts's never-started paths render.
+    const run = fakeHooks({
+      ...epicRun(
+        [
+          { epic: 1, issues: [1, 4] },
+          { epic: 2, issues: [2, 3] },
+        ],
+        [{ blocker: 1, dependent: 2 }],
+      ),
+      overlapEstimator: estimate(
+        { a: 1, b: 4, confidence: 'likely' },
+        { a: 2, b: 3, confidence: 'unsure' },
+      ),
+      'runner:cut-batch:epic-1': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'worktree', message: 'worktree add failed' }],
+        worktree: 'C:/src/main',
+        branch: null,
+        base: null,
+        batch: null,
+        reportDir: null,
+        attach: null,
+      },
+    });
+
+    const report = await runShip(run.hooks, 'epics 1 2');
+
+    const never = { attempts: 0, startedAt: null, committedAt: null };
+    expect(report.epics.map((e) => e.schedule)).toEqual([
+      [
+        { issue: 1, blockers: [], ...never },
+        { issue: 4, blockers: [{ issue: 1, source: 'overlap', confidence: 'likely' }], ...never },
+      ],
+      [
+        { issue: 2, blockers: [{ issue: 1, source: 'declared' }], ...never },
+        { issue: 3, blockers: [{ issue: 2, source: 'overlap', confidence: 'unsure' }], ...never },
+      ],
+    ]);
+  });
+
   it('refuses an unsure pair across epics, naming both issues, and cuts nothing', async () => {
     const run = fakeHooks({
       ...epicRun([

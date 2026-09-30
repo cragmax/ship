@@ -2083,11 +2083,15 @@ function overlapLine(edge) {
 }
 function scheduleLine(entry) {
   const blockers =
-    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
     `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
   );
+}
+function blockerText(blocker) {
+  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
+  return `#${String(blocker.issue)} (${source})`;
 }
 function leaseLines(leases) {
   return [
@@ -2961,14 +2965,23 @@ function issueReports(d, i) {
 }
 function scheduleOf(d, i) {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({ ...neverStarted(issue, d.input.graph), ...d.timing.get(issue) }));
+  return issues.map((issue) => ({
+    ...neverStarted(issue, d.input.graph, d.input.overlap),
+    ...d.timing.get(issue),
+  }));
 }
-function neverStarted(issue, graph) {
+function neverStarted(issue, graph, overlap) {
   const blockers = graph.edges
     .filter((e) => e.dependent === issue)
     .map((e) => e.blocker)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a - b)
+    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
   return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+}
+function scheduleBlocker(blocker, dependent, overlap) {
+  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
+  if (added === undefined) return { issue: blocker, source: 'declared' };
+  return { issue: blocker, source: 'overlap', confidence: added.confidence };
 }
 function entryOverlap(d, i) {
   const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
@@ -3385,9 +3398,12 @@ async function runEntries(hooks, graph, opts) {
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
   return cuts.map((c, k) => {
     if ('stopped' in c) {
-      return { ...c.stopped, schedule: c.issues.map((n) => neverStarted(n, graph)) };
+      return {
+        ...c.stopped,
+        schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
+      };
     }
-    return cutReport(c.setup, graph, k, driven);
+    return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
 async function cutEntry(hooks, entry) {
@@ -3436,7 +3452,7 @@ function stoppedEntry(entry, branch, message) {
   };
   return { stopped, issues: entry.issues };
 }
-function cutReport(setup, graph, k, driven) {
+function cutReport(setup, graph, k, driven, overlap) {
   const report = driven.find((r) => r.epic === setup.epic) ?? {
     epic: setup.epic,
     branch: setup.branch,
@@ -3456,7 +3472,8 @@ function cutReport(setup, graph, k, driven) {
       },
   );
   const schedule = planned.map(
-    (issue) => report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph),
+    (issue) =>
+      report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph, overlap),
   );
   return { ...report, issues, schedule };
 }

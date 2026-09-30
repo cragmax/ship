@@ -22,7 +22,7 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Report dir:` — the run's report directory.
-- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (blockers, attempts, cut and land instants), the teardown residue.
+- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (each blocker with its source — declared, or overlap and its confidence — attempts, cut and land instants), the teardown residue.
 
 ## Discipline
 

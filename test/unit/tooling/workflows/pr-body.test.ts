@@ -7,6 +7,7 @@ import {
   renderPrBody,
   type LandedIssue,
   type PrBodyInput,
+  type ScheduleBlocker,
 } from '../../../../tooling/workflows/lib/pr-body.js';
 
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
@@ -126,7 +127,16 @@ const INPUT: PrBodyInput = {
       startedAt: '2026-09-29T10:00:00.000Z',
       committedAt: '2026-09-29T10:20:00.000Z',
     },
-    { issue: 9, blockers: [7, 8], attempts: 0, startedAt: null, committedAt: null },
+    {
+      issue: 9,
+      blockers: [
+        { issue: 7, source: 'declared' },
+        { issue: 8, source: 'declared' },
+      ],
+      attempts: 0,
+      startedAt: null,
+      committedAt: null,
+    },
   ],
   leases: {
     engines: [
@@ -274,7 +284,7 @@ describe('renderPrBody', () => {
       '- [test-gaps] no cross-slice test (not applied)',
       '- #7 → #8 (likely): both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
-      '- #9: blockers #7, #8; started never; committed never; attempts 0',
+      '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0',
       '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
       '- folia: 0 leases, waited 0.0s total (max 0.0s), held 0.0s total',
       '- #7: waited 1.5s, held 42.0s',
@@ -283,6 +293,35 @@ describe('renderPrBody', () => {
     ]) {
       expect(lines).toContain(line);
     }
+  });
+
+  it.each<[string, readonly ScheduleBlocker[], string]>([
+    ['none', [], '- #9: blockers none; started never; committed never; attempts 0'],
+    [
+      'one declared',
+      [{ issue: 7, source: 'declared' }],
+      '- #9: blockers #7 (declared); started never; committed never; attempts 0',
+    ],
+    [
+      'one overlap, likely',
+      [{ issue: 7, source: 'overlap', confidence: 'likely' }],
+      '- #9: blockers #7 (overlap, likely); started never; committed never; attempts 0',
+    ],
+    [
+      'mixed',
+      [
+        { issue: 7, source: 'declared' },
+        { issue: 8, source: 'overlap', confidence: 'unsure' },
+      ],
+      '- #9: blockers #7 (declared), #8 (overlap, unsure); started never; committed never; attempts 0',
+    ],
+  ])('renders a schedule line whose blockers are %s', (_name, blockers, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      schedule: [{ issue: 9, blockers, attempts: 0, startedAt: null, committedAt: null }],
+    }).split('\n');
+
+    expect(lines[lines.indexOf('## Schedule') + 2]).toBe(line);
   });
 
   it('renders None. for an empty section and the critic’s other outcomes', () => {

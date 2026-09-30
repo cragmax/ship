@@ -54,7 +54,7 @@ import type { RunGraph } from '../../lib/run-set.js';
 import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
 import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import type { LandedIssue, ScheduleEntry } from './pr-body.js';
+import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import {
   runAttempt,
@@ -497,13 +497,16 @@ function issueReports(d: Drive, i: number): IssueReport[] {
  *
  * @param d - The loop state.
  * @param i - The entry.
- * @returns Each issue's blockers in the drive graph (ascending) and its
- *   final attempt's timing; `attempts: 0` and `null` instants for an issue
- *   that never started.
+ * @returns Each issue's blockers in the drive graph (ascending), each with
+ *   its source, and its final attempt's timing; `attempts: 0` and `null`
+ *   instants for an issue that never started.
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({ ...neverStarted(issue, d.input.graph), ...d.timing.get(issue) }));
+  return issues.map((issue) => ({
+    ...neverStarted(issue, d.input.graph, d.input.overlap),
+    ...d.timing.get(issue),
+  }));
 }
 
 /**
@@ -511,14 +514,45 @@ function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
  *
  * @param issue - The issue.
  * @param graph - The graph its blockers are read from.
- * @returns Its blockers ascending, `attempts: 0`, both instants `null`.
+ * @param overlap - Pre-flight's overlap record, for each blocker's source.
+ * @returns Its blockers ascending, each with its source per
+ *   {@link scheduleBlocker}, `attempts: 0`, both instants `null`.
  */
-export function neverStarted(issue: number, graph: RunGraph): ScheduleEntry {
+export function neverStarted(
+  issue: number,
+  graph: RunGraph,
+  overlap: OverlapRecord,
+): ScheduleEntry {
   const blockers = graph.edges
     .filter((e) => e.dependent === issue)
     .map((e) => e.blocker)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a - b)
+    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
   return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+}
+
+/**
+ * One graph edge's blocker, with where the edge came from.
+ *
+ * An edge both declared and estimated reads `declared`: the overlap merge
+ * (`mergeOverlapEdges`, `tooling/lib/run-overlap.ts`) adds no edge for a
+ * pair the declared edges already order, recording it `sequenced` instead —
+ * so a graph edge absent from `overlap.added` is declared.
+ *
+ * @param blocker - The edge's blocker.
+ * @param dependent - The edge's dependent.
+ * @param overlap - Pre-flight's overlap record.
+ * @returns `overlap` with the added edge's confidence when `overlap.added`
+ *   holds the edge; else `declared`.
+ */
+function scheduleBlocker(
+  blocker: number,
+  dependent: number,
+  overlap: OverlapRecord,
+): ScheduleBlocker {
+  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
+  if (added === undefined) return { issue: blocker, source: 'declared' };
+  return { issue: blocker, source: 'overlap', confidence: added.confidence };
 }
 
 /**
