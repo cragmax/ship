@@ -18,6 +18,10 @@ const PERSONAL_SKILLS = [
   'orient-from-handoff',
 ];
 
+// Hand-written: the by-hand restore wordings the mutation helper retired (#1061).
+const RETIRED_RESTORE =
+  /Edit-back|reversing (?:the|your) exact (?:mutation|edit)|git checkout <the-exact-impl-file|git checkout -- <file you mutated>|restore via `git checkout`/i;
+
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
@@ -118,6 +122,17 @@ describe('workflow agents', () => {
       expect(skillText, `${skill} still says "${phrase}"`).toContain(phrase);
     }
   });
+
+  it.each(['ship-tdd', 'ship-test-review'])(
+    '%s mutates through the mutation helper and sweeps with check',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(text).toContain('.claude/skills/audit-tests/mutate.ts');
+      expect(text).toMatch(/mutate\.ts check/);
+      expect(text).not.toMatch(RETIRED_RESTORE);
+    },
+  );
 
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
