@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
   whenToUse:
-    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose.',
+    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
   phases: [
     {
       title: 'Pre-flight',

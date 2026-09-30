@@ -27,6 +27,11 @@
  * runs them concurrently and resolves the race in completion order (Claude
  * Code workflow runtime, observed 2026-09-29, #1036 P1). Each entry has its
  * own commit queue; the run has one more, the repo lock its epic ends share.
+ * So while more than one flight is in progress, the order of the run's
+ * `agent()` calls follows settle timing. With one flight at a time, it does
+ * not. That is a single entry at `maxSlices: 1`: each issue holds its slot
+ * until it settles, and the entry's one epic end starts after its last issue
+ * settles. This is the resume boundary of ADR-0045 decision 10.
  *
  * **Two halt flags per entry.** *Halting* is raised as soon as a landing or
  * teardown calls for a halt — the entry's attempts stop and its queued

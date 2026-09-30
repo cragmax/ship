@@ -1,9 +1,11 @@
 /**
  * Helpers for driving `runShip` concurrently through `fakeHooks`' answer
  * gate: {@link holdable} keeps chosen calls pending until a test releases
- * them, {@link idle} lets every unheld call chain run to a standstill, and
- * {@link entryResponses} gives each run-set entry its own batch, report
- * directory, branch and PR number.
+ * them, {@link idle} lets every unheld call chain run to a standstill,
+ * {@link settleInOrder} settles held calls one per standstill, oldest or
+ * newest first, so a test can compare call orders under different settle
+ * timings, and {@link entryResponses} gives each run-set entry its own
+ * batch, report directory, branch and PR number.
  */
 
 import type { RecordedCall } from './_fake-hooks.js';
@@ -71,6 +73,55 @@ export function holdable(match: RegExp): Holdable {
  */
 export function idle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** Which held call a {@link settleInOrder} pump settles at each standstill. */
+export type SettleOrder = 'oldest' | 'newest';
+
+/** A gate holding every call, and the pump that settles them. */
+export interface SettlePump {
+  /** Pass as `fakeHooks`' `gate`; it holds every call. */
+  readonly gate: (call: RecordedCall, answer: unknown) => Promise<unknown>;
+  /**
+   * Settle one held call per standstill until `done` settles.
+   *
+   * @param done - The run.
+   * @returns Resolves or rejects as `done` does; rejects when the run stands
+   *   still with no call held.
+   */
+  readonly drain: <T>(done: Promise<T>) => Promise<T>;
+}
+
+/**
+ * A pump settling every held call one per standstill ({@link idle}): the
+ * oldest held first, or the newest.
+ *
+ * @param order - Which held call each standstill settles.
+ * @returns The gate and its drain.
+ */
+export function settleInOrder(order: SettleOrder): SettlePump {
+  const pending: HeldCall[] = [];
+  return {
+    gate: (call, answer) =>
+      new Promise((resolve) => {
+        pending.push({ label: call.label, settle: () => resolve(answer) });
+      }),
+    drain: async (done) => {
+      const run = { settled: false };
+      const mark = (): void => {
+        run.settled = true;
+      };
+      // Handles `done`'s rejection here; the `return done` below surfaces it.
+      void done.then(mark, mark);
+      for (;;) {
+        await idle();
+        if (run.settled) return done;
+        const next = order === 'oldest' ? pending.shift() : pending.pop();
+        if (next === undefined) throw new Error('the run stands still with no call held');
+        next.settle();
+      }
+    },
+  };
 }
 
 /** Fields every `ok` worktree-CLI output carries. */

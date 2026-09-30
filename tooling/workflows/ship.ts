@@ -20,6 +20,11 @@
  * worktree is how `live-runs` — and so the next launch's collision check —
  * sees the run.
  *
+ * **Resume** (`resumeFromRunId`) is safe only for a single-entry run at
+ * `maxSlices: 1` (why: `lib/drive.ts` § Concurrency). Any other run is
+ * recovered by hand once cut. ADR-0045 decision 10 holds the boundary and
+ * the procedure.
+ *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
