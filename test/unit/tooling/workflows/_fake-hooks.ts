@@ -3,8 +3,10 @@
  * a label-keyed response table and records every call; `parallel` and
  * `pipeline` run their work in order, so a recorded call sequence is
  * deterministic. Each answer passes through the call's schema as an agent's
- * would: cut to the schema's properties, a missing required key or an
- * off-enum value recorded in {@link FakeRun.violations}.
+ * would: cut to the schema's properties, a missing required key, an
+ * off-enum value or a value of none of its `type`s recorded in
+ * {@link FakeRun.violations}. A `null` answer is a dead agent's, and no
+ * schema applies to it.
  */
 
 import type {
@@ -110,6 +112,29 @@ const RUN_ROOT = 'C:/src/ph-runs/7';
 /** Fields every `ok` worktree-CLI output carries. */
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
+/**
+ * A `live-runs` answer holding `runs`.
+ *
+ * @param runs - The runs, each over a spent, clean, un-nested default.
+ * @returns The answer.
+ */
+export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
+  'runner:live-runs': {
+    ...OK,
+    runs: runs.map((r, i) => ({
+      branch: `ship/old-${String(i)}`,
+      landed: [],
+      pr: { state: 'merged', number: 100 + i },
+      spent: true,
+      spentUnverified: false,
+      path: `C:/src/ph-runs/old-${String(i)}/batch`,
+      dirty: false,
+      nested: [],
+      ...r,
+    })),
+  },
+});
+
 /** The run's report directory in the fakes. */
 export const REPORT_DIR = `${RUN_ROOT}/reports`;
 
@@ -166,6 +191,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     runRoot: RUN_ROOT,
     batch: BATCH,
     reportDir: REPORT_DIR,
+    attach: null,
   },
   'runner:provision-batch': {
     ...OK,
@@ -189,9 +215,21 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   testReview: { verdict: 'hardened', sha: 'slice3', survivors: 0, summary: 'pinned a bound' },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
-  'runner:sync-master': { ...OK, outcome: 'up-to-date', commit: null, conflicts: [], pending: [] },
+  'runner:sync-master': {
+    ...OK,
+    outcome: 'up-to-date',
+    commit: null,
+    conflicts: [],
+    version: null,
+    pending: [],
+  },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
-  'runner:publish': { ...OK, pushed: true, pr: { number: 42, url: 'https://x/pull/42' } },
+  'runner:publish': {
+    ...OK,
+    pushed: true,
+    pr: { number: 42, url: 'https://x/pull/42' },
+    mergeable: null,
+  },
   critic: {
     outcome: 'clean',
     sha: '',
@@ -242,6 +280,7 @@ export function fakeHooks(
     answered.set(key, nth + 1);
     const entry = table[key];
     const answer = typeof entry === 'function' ? (entry as Responder)(call, nth) : entry;
+    if (answer === null) return gate(call, null);
     return gate(call, conform(answer, options.schema, { at: options.label, violations }));
   };
   const hooks: WorkflowHooks = {
@@ -295,7 +334,9 @@ function schemaOf(value: unknown): JsonSchema | undefined {
  * @returns The value, each object cut to its schema's `properties`.
  */
 function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPlace): unknown {
-  if (schema === undefined || value === null || value === undefined) return value;
+  if (schema === undefined || value === undefined) return value;
+  checkType(value, schema, place);
+  if (value === null) return value;
   checkEnum(value, schema, place);
   if (Array.isArray(value)) return conformItems(value, schema, place);
   const properties = schemaOf(schema['properties']);
@@ -303,6 +344,32 @@ function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPl
   const record = value as Readonly<Record<string, unknown>>;
   checkRequired(record, schema, place);
   return pickProperties(record, properties, place);
+}
+
+/** How each JSON Schema `type` name tells its values. */
+const TYPE_TESTS: Readonly<Record<string, (value: unknown) => boolean>> = {
+  string: (v) => typeof v === 'string',
+  integer: (v) => Number.isInteger(v),
+  boolean: (v) => typeof v === 'boolean',
+  null: (v) => v === null,
+  array: (v) => Array.isArray(v),
+  object: (v) => schemaOf(v) !== undefined,
+};
+
+/**
+ * Record a value of none of its schema's `type`s.
+ *
+ * @param value - The value, `null` included.
+ * @param schema - Its schema; one without a `type` allows anything.
+ * @param place - Where it sits.
+ */
+function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
+  const type = schema['type'];
+  if (type === undefined) return;
+  const types = (Array.isArray(type) ? type : [type]) as readonly string[];
+  if (!types.some((t) => TYPE_TESTS[t]?.(value) === true)) {
+    place.violations.push(`${place.at}: ${JSON.stringify(value)} is not ${types.join(' or ')}`);
+  }
 }
 
 /**

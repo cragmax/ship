@@ -18,10 +18,36 @@ const PERSONAL_SKILLS = [
   'orient-from-handoff',
 ];
 
+// Hand-written: the by-hand restore wordings the mutation helper retired (#1061).
+const RETIRED_RESTORE =
+  /Edit-back|reversing (?:the|your) exact (?:mutation|edit)|git checkout <the-exact-impl-file|git checkout -- <file you mutated>|restore via `git checkout`/i;
+
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
 const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType))];
+
+const agentText = (agentType: string): string =>
+  readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8').replaceAll('\r\n', '\n');
+
+const toolsOf = (agentType: string): string[] => {
+  const line = frontmatter(agentText(agentType))
+    .split('\n')
+    .find((l) => l.startsWith('tools:'));
+  return (line ?? '')
+    .slice('tools:'.length)
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '');
+};
+
+// From the heading line up to the next `## ` heading; '' when the heading is absent.
+const section = (text: string, heading: string): string => {
+  const start = text.indexOf(`\n${heading}\n`);
+  if (start === -1) return '';
+  const end = text.indexOf('\n## ', start + 1);
+  return text.slice(start, end === -1 ? text.length : end);
+};
 
 describe('workflow agents', () => {
   it.each(agentTypes)('%s has an agent file named for it that pins no model', (agentType) => {
@@ -37,14 +63,74 @@ describe('workflow agents', () => {
   it.each(['ship-tdd', 'reviewer', 'ship-test-review'])(
     '%s lists Skill in its tools',
     (agentType) => {
-      const fm = frontmatter(readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8'));
-      const line = fm.split(/\r?\n/).find((l) => l.startsWith('tools:')) ?? '';
-      const tools = line
-        .slice('tools:'.length)
-        .split(',')
-        .map((t) => t.trim());
+      expect(toolsOf(agentType)).toContain('Skill');
+    },
+  );
 
-      expect(tools).toContain('Skill');
+  // regression: #1054 — without Edit, the applier rewrote whole plans and corrupted unrelated text.
+  it('planner lists Edit in its tools', () => {
+    expect(toolsOf('planner')).toContain('Edit');
+  });
+
+  describe('the agents that write a file', () => {
+    const writers = agentTypes.filter((agentType) => toolsOf(agentType).includes('Write'));
+
+    it('are exactly the seven the workflow hands a file to write', () => {
+      expect([...writers].sort((a, b) => a.localeCompare(b))).toEqual([
+        'critic',
+        'planner',
+        'reviewer',
+        'runner',
+        'ship-plan-reviewer',
+        'ship-tdd',
+        'ship-test-review',
+      ]);
+    });
+
+    it.each(writers)('%s answers through StructuredOutput, per its ## Output', (agentType) => {
+      expect(section(agentText(agentType), '## Output')).toContain('StructuredOutput');
+    });
+  });
+
+  // Hand-written: each agent that runs an interactive skill, and the skill's step phrases it overrides.
+  it.each([
+    [
+      'reviewer',
+      '.claude/skills/manifest-tsdoc/SKILL.md',
+      ['refuse without paths', 'STOP for approval'],
+    ],
+    [
+      'ship-test-review',
+      '.claude/skills/audit-tests/SKILL.md',
+      [
+        'Refuse without paths',
+        'user confirms the scope',
+        'user picks which findings to fix',
+        'STOP for commit',
+        'Never commit during audit',
+      ],
+    ],
+    ['ship-tdd', '.claude/skills/tdd/SKILL.md', ['surface it', 'Not for:']],
+  ])('%s overrides the interactive steps of %s', (agentType, skill, phrases) => {
+    const overrides = section(agentText(agentType), '## Headless overrides');
+    const skillText = readFileSync(join(REPO_ROOT, skill), 'utf8');
+
+    expect(overrides).toContain(skill);
+    for (const phrase of phrases) {
+      expect(overrides, `overrides quote "${phrase}"`).toContain(phrase);
+      // A reworded skill leaves the override quoting a step that no longer exists.
+      expect(skillText, `${skill} still says "${phrase}"`).toContain(phrase);
+    }
+  });
+
+  it.each(['ship-tdd', 'ship-test-review'])(
+    '%s mutates through the mutation helper and sweeps with check',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(text).toContain('.claude/skills/audit-tests/mutate.ts');
+      expect(text).toMatch(/mutate\.ts check/);
+      expect(text).not.toMatch(RETIRED_RESTORE);
     },
   );
 
@@ -98,6 +184,7 @@ describe('workflow agents', () => {
     ['ship-tdd', '.claude/skills/tdd/SKILL.md'],
     ['ship-test-review', '.claude/skills/audit-tests/SKILL.md'],
     ['overlap-estimator', '.claude/skills/batch-issues/areas.md'],
+    ['reviewer', '.claude/skills/manifest-tsdoc/SKILL.md'],
   ])('%s reads %s by repo path, not through the Skill tool', (agentType, path) => {
     const text = readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8');
 

@@ -4,7 +4,7 @@ import { RESYNC_PHASES, STAGES } from '../../../../tooling/workflows/lib/stages.
 import { RESYNC_META } from '../../../../tooling/workflows/resync.meta.js';
 import { runResync } from '../../../../tooling/workflows/resync.js';
 
-import { BATCH, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
+import { BATCH, liveRuns, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
 import {
   attachOk,
   BRANCH,
@@ -15,29 +15,6 @@ import {
 } from './_fake-resync.js';
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
-
-/**
- * A `live-runs` answer holding `runs`.
- *
- * @param runs - The runs, each over a spent, clean, un-nested default.
- * @returns The answer.
- */
-const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
-  'runner:live-runs': {
-    ...OK,
-    runs: runs.map((r, i) => ({
-      branch: `ship/old-${String(i)}`,
-      landed: [],
-      pr: { state: 'merged', number: 100 + i },
-      spent: true,
-      spentUnverified: false,
-      path: `C:/src/ph-runs/old-${String(i)}/batch`,
-      dirty: false,
-      nested: [],
-      ...r,
-    })),
-  },
-});
 
 describe('runResync — arguments', () => {
   it.each([BRANCH, { branch: BRANCH }, JSON.stringify({ branch: BRANCH })])(

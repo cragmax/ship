@@ -14,20 +14,16 @@
  * Pure: no filesystem or git access.
  */
 
+import type { z } from 'zod';
+
+import type { VersionTripleSchema } from './schemas-run.js';
 import { StepFailure } from './types.js';
 
 /** Which component a bump moved: the first that differs, or none. */
 export type VersionDelta = 'none' | 'patch' | 'minor' | 'major';
 
 /** A `package.json` version at the merge-base and on each side. */
-export interface VersionTriple {
-  /** At the merge-base of the batch and `origin/master`. */
-  readonly base: string;
-  /** On the batch's `HEAD`. */
-  readonly ours: string;
-  /** On `origin/master`. */
-  readonly theirs: string;
-}
+export type VersionTriple = z.infer<typeof VersionTripleSchema>;
 
 /**
  * The top-level `"version"` line of a `package.json` as npm writes it: two

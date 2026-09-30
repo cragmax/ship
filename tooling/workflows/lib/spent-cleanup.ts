@@ -1,14 +1,15 @@
 /**
- * The `resync` workflow's spent-run cleanup: tear down each live run whose
- * PR is over and whose tip is in that PR's head (`live-runs`' `spent`),
- * guarded — only a batch known clean, with no worktree nested inside it.
+ * The saved workflows' spent-run cleanup, run by `/ship`'s launch and
+ * `/resync`'s pre-flight: tear down each live run whose PR is over and
+ * whose tip is in that PR's head (`live-runs`' `spent`), guarded — only a
+ * batch known clean, with no worktree nested inside it.
  *
  * - **Unknown is not none**: a `live-runs` that failed, or answered without
- *   its runs, blocks the cleanup — no teardown at all — and the resync goes
- *   on to its merge.
+ *   its runs, blocks the cleanup — no teardown at all — and the caller goes
+ *   on.
  * - **Unverified is not spent**: a run whose PR head cannot be checked
  *   (`spentUnverified`) is skipped and reported, never torn down.
- * - **A shrunk link target stops the resync** (teardown's `source-shrank`
+ * - **A shrunk link target stops the caller** (teardown's `source-shrank`
  *   refusal): something outside the batch lost files. Any other teardown
  *   failure is residue, and the next spent run is still tried.
  *
@@ -43,7 +44,7 @@ export interface CleanupReport {
   readonly residue: string[];
   /** Why no run was looked at; `null` when `live-runs` answered. */
   blocked: string | null;
-  /** Why the resync must stop; `null` unless a teardown refused `source-shrank`. */
+  /** Why the caller must stop; `null` unless a teardown refused `source-shrank`. */
   stop: string | null;
 }
 
@@ -129,7 +130,7 @@ async function tearDownSpent(
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
   const path = run.path ?? run.branch;
-  if (run.spentUnverified === true) {
+  if (run.spentUnverified) {
     return { path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;

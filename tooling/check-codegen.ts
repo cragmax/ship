@@ -7,7 +7,10 @@
  *
  * 1. `src/init/templates/helpers-readme.md` — content equals
  *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
- * 2. Each saved workflow in {@link WORKFLOWS} — the committed
+ * 2. `tooling/workflows/lib/schemas.generated.ts` — equals a fresh emission
+ *    from its zod sources under `tooling/workflows/schemas/`, line endings
+ *    normalised ({@link checkSchemaModule}).
+ * 3. Each saved workflow in {@link WORKFLOWS} — the committed
  *    `.claude/workflows/<name>.js` equals a fresh render, line endings
  *    normalised ({@link checkRenderedWorkflows}).
  *
@@ -30,6 +33,7 @@ import {
   replaceBetweenMarkers,
 } from './generate-reserved-names-targets.js';
 import { checkRenderedWorkflows } from './lib/workflow-render.js';
+import { checkSchemaModule } from './lib/workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
 
 // ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
@@ -62,6 +66,7 @@ async function checkMarkersFile(absPath: string, displayPath: string): Promise<C
 async function main(): Promise<void> {
   const results: CheckResult[] = [
     await checkMarkersFile(SCAFFOLD_README, 'src/init/templates/helpers-readme.md'),
+    await checkSchemaModule(ROOT_DIR),
     ...(await checkRenderedWorkflows(WORKFLOWS, ROOT_DIR)),
   ];
 

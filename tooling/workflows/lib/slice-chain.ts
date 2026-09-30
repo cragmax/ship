@@ -42,7 +42,7 @@ import {
 import { landingEvent, teardownEvent, teardownResidue, type CommitQueue } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage } from './pr-body.js';
-import type { PlannerValues, PriorSlice, SliceReviewValues } from './prompts.js';
+import type { LeaseValues, PlannerValues, PriorSlice, SliceReviewValues } from './prompts.js';
 import { isTrivialSurface } from './stages.js';
 import {
   envelopeProblem,
@@ -324,6 +324,7 @@ async function planReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
     slice: at.slice ?? '',
     planPath: planPath(at),
     findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
+    reportDir: at.ctx.reportDir,
   };
   const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
@@ -353,7 +354,7 @@ async function tddStage(at: Attempt): Promise<SchedulerEvent | null> {
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
     message: commitMessage(at.issue, card),
-    lease: { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry },
+    lease: leaseValues(at),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return died(at);
@@ -388,7 +389,7 @@ async function reviewStage(at: Attempt): Promise<SchedulerEvent | null> {
  */
 async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = sliceReviewValues(at, 'test-review');
+  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
   const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
@@ -502,7 +503,20 @@ function plannerValues(at: Attempt, mode: 'plan' | 'apply', findingsPath?: strin
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
     ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
+    lease: leaseValues(at),
   };
+}
+
+/**
+ * Where the slice's server-tier runs lease from: the tdd, the planner and
+ * the test reviewer are handed one recipe.
+ *
+ * @param at - The attempt, past its provision.
+ * @returns The main checkout, the provision's `PH_PROJECT_DIR` and the
+ *   run's pool registry.
+ */
+function leaseValues(at: Attempt): LeaseValues {
+  return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
 }
 
 /**
@@ -516,6 +530,7 @@ function sliceReviewValues(at: Attempt, report: string): SliceReviewValues {
   return {
     issue: at.issue,
     slice: at.slice ?? '',
+    base: at.base,
     planPath: planPath(at),
     sha: at.sha,
     files: at.tdd?.files ?? [],

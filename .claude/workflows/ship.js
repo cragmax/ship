@@ -3,12 +3,12 @@ export const meta = {
   description:
     'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
   whenToUse:
-    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose.',
+    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
   phases: [
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure',
+        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -58,7 +58,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
-      'refuses on any failure',
+      'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
     title: PHASE_TITLES.issues,
@@ -572,6 +572,28 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
+function serverTierLines(lease) {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+  ];
+}
+const ISSUE_TEXT_JQ =
+  '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
+  '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+function issueLines(issue, reportDir) {
+  const dir = `${reportDir}/issues`;
+  const file = `${dir}/${String(issue)}.md`;
+  return [
+    `Issue file: ${file}`,
+    [
+      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
@@ -601,8 +623,10 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Report dir: ${values.reportDir}`,
       `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...serverTierLines(values.lease),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -615,6 +639,7 @@ const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -624,16 +649,14 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      `Lease command: ${leaseCommand(values.lease)}`,
-      `Lease version: the version of the chosen type's entry in ${values.lease.registry}`,
-      `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+      ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
+  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -659,12 +682,859 @@ function sliceReviewPrompt(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
+    `Slice base: ${values.base}`,
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
   ].join('\n');
 }
+
+const TOOL_ENVELOPE_SCHEMAS = {
+  preflight: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      worktree: { type: ['string', 'null'] },
+      snapshot: {
+        type: ['object', 'null'],
+        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
+        required: ['head', 'dirty'],
+      },
+      problems: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            check: {
+              type: 'string',
+              enum: ['master-ahead', 'master-behind', 'gh-auth', 'warm-unreachable'],
+            },
+            message: { type: 'string' },
+          },
+          required: ['check', 'message'],
+        },
+      },
+    },
+    required: ['status', 'errors', 'worktree', 'snapshot', 'problems'],
+  },
+  'live-runs': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      runs: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            branch: { type: 'string' },
+            landed: { type: 'array', items: { type: 'string' } },
+            pr: {
+              type: 'object',
+              properties: {
+                state: { type: 'string', enum: ['open', 'merged', 'closed', 'none', 'unknown'] },
+                number: { type: ['integer', 'null'] },
+              },
+              required: ['state', 'number'],
+            },
+            spent: { type: 'boolean' },
+            path: { type: 'string' },
+            dirty: { type: ['boolean', 'null'] },
+            nested: { type: 'array', items: { type: 'string' } },
+            spentUnverified: { type: 'boolean' },
+          },
+          required: [
+            'branch',
+            'landed',
+            'pr',
+            'spent',
+            'path',
+            'dirty',
+            'nested',
+            'spentUnverified',
+          ],
+        },
+      },
+    },
+    required: ['status', 'errors', 'runs'],
+  },
+  'cut-batch': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      worktree: { type: ['string', 'null'] },
+      branch: { type: ['string', 'null'] },
+      base: { type: ['string', 'null'] },
+      batch: { type: ['string', 'null'] },
+      reportDir: { type: ['string', 'null'] },
+      attach: {
+        type: ['object', 'null'],
+        properties: {
+          created: { type: 'boolean' },
+          fastForwarded: { type: 'boolean' },
+          pr: { type: 'integer' },
+        },
+        required: ['created', 'fastForwarded', 'pr'],
+      },
+    },
+    required: ['status', 'errors', 'worktree', 'branch', 'base', 'batch', 'reportDir', 'attach'],
+  },
+  'provision-batch': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      registry: { type: ['string', 'null'] },
+      env: {
+        type: ['object', 'null'],
+        properties: { PH_PROJECT_DIR: { type: 'string' }, PH_POOL_REGISTRY: { type: 'string' } },
+        required: ['PH_PROJECT_DIR', 'PH_POOL_REGISTRY'],
+      },
+    },
+    required: ['status', 'errors', 'registry', 'env'],
+  },
+  'cut-slice': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      branch: { type: ['string', 'null'] },
+      base: { type: ['string', 'null'] },
+      slice: { type: ['string', 'null'] },
+      at: { type: 'string' },
+    },
+    required: ['status', 'errors', 'branch', 'base', 'slice', 'at'],
+  },
+  provision: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      env: {
+        type: ['object', 'null'],
+        properties: { PH_PROJECT_DIR: { type: 'string' } },
+        required: ['PH_PROJECT_DIR'],
+      },
+    },
+    required: ['status', 'errors', 'env'],
+  },
+  land: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      commit: { type: ['string', 'null'] },
+      files: { type: 'array', items: { type: 'string' } },
+      conflicts: { type: 'array', items: { type: 'string' } },
+      rolledBack: { type: 'boolean' },
+      batchClean: { type: 'boolean' },
+      at: { type: 'string' },
+    },
+    required: [
+      'status',
+      'errors',
+      'commit',
+      'files',
+      'conflicts',
+      'rolledBack',
+      'batchClean',
+      'at',
+    ],
+  },
+  teardown: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      removed: { type: 'boolean' },
+      registered: { type: 'boolean' },
+    },
+    required: ['status', 'errors', 'removed', 'registered'],
+  },
+  'sync-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: {
+        type: ['string', 'null'],
+        enum: ['up-to-date', 'merged', 'needs-resolution', null],
+      },
+      commit: { type: ['string', 'null'] },
+      conflicts: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            kind: { type: 'string', enum: ['lockfile', 'doc-index', 'package', 'code'] },
+            landedBy: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['path', 'kind', 'landedBy'],
+        },
+      },
+      version: {
+        type: ['object', 'null'],
+        properties: {
+          base: { type: 'string' },
+          ours: { type: 'string' },
+          theirs: { type: 'string' },
+          result: { type: 'string' },
+        },
+        required: ['base', 'ours', 'theirs', 'result'],
+      },
+      pending: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['status', 'errors', 'outcome', 'commit', 'conflicts', 'version', 'pending'],
+  },
+  bump: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      kind: { type: ['string', 'null'], enum: ['minor', 'patch', null] },
+      from: { type: ['string', 'null'] },
+      to: { type: ['string', 'null'] },
+      commit: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'kind', 'from', 'to', 'commit'],
+  },
+  publish: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      pushed: { type: 'boolean' },
+      pr: {
+        type: ['object', 'null'],
+        properties: { number: { type: 'integer' }, url: { type: 'string' } },
+        required: ['number', 'url'],
+      },
+      mergeable: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+};
+const AGENT_OUTPUT_SCHEMAS = {
+  scout: {
+    type: 'object',
+    properties: {
+      issues: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            stale: { type: 'boolean' },
+            evidence: { type: 'string' },
+          },
+          required: ['issue', 'stale', 'evidence'],
+        },
+      },
+      overlaps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            branch: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            evidence: { type: 'string' },
+          },
+          required: ['issue', 'branch', 'files', 'evidence'],
+        },
+      },
+    },
+    required: ['issues', 'overlaps'],
+  },
+  overlapEstimator: {
+    type: 'object',
+    properties: {
+      issues: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            number: { type: 'integer' },
+            columns: { type: 'array', items: { type: 'string' } },
+            paths: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['number', 'columns', 'paths'],
+        },
+      },
+      pairs: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            a: { type: 'integer' },
+            b: { type: 'integer' },
+            confidence: { type: 'string', enum: ['likely', 'unsure'] },
+            shared: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string' },
+          },
+          required: ['a', 'b', 'confidence', 'shared', 'reason'],
+        },
+      },
+      areaMap: { type: 'string', enum: ['read', 'unavailable'] },
+    },
+    required: ['issues', 'pairs', 'areaMap'],
+  },
+  planCard: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['plan', 'stale', 'blocked'] },
+      planPath: { type: 'string' },
+      summary: { type: 'string' },
+      tier: { type: 'string' },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      closes: { type: 'string', enum: ['fixes', 'see'] },
+      evidence: { type: 'string' },
+    },
+    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence'],
+  },
+  planReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['approved', 'changes'] },
+      findings: { type: 'integer' },
+      findingsPath: { type: 'string' },
+    },
+    required: ['verdict', 'findings', 'findingsPath'],
+  },
+  tdd: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['GREEN', 'PARTIAL', 'BLOCKED'] },
+      sha: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+      probes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string' },
+            verdict: {
+              type: 'string',
+              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
+            },
+            followUp: { type: 'string' },
+          },
+          required: ['claim', 'verdict', 'followUp'],
+        },
+      },
+      reason: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+  },
+  review: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'summary'],
+  },
+  testReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'hardened', 'blocked'] },
+      sha: { type: 'string' },
+      survivors: { type: 'integer' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'survivors', 'summary'],
+  },
+  resolver: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['resolved', 'unresolvable'] },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'summary'],
+  },
+  critic: {
+    type: 'object',
+    properties: {
+      outcome: { type: 'string', enum: ['clean', 'applied'] },
+      sha: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            lens: { type: 'string' },
+            summary: { type: 'string' },
+            applied: { type: 'boolean' },
+          },
+          required: ['lens', 'summary', 'applied'],
+        },
+      },
+      checks: { type: 'string' },
+    },
+    required: ['outcome', 'sha', 'files', 'commit', 'findings', 'checks'],
+  },
+  retro: {
+    type: 'object',
+    properties: {
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            evidence: { type: 'string' },
+            kind: { type: 'string', enum: ['genuine', 'first-time'] },
+            suggestion: { type: 'string' },
+          },
+          required: ['title', 'evidence', 'kind', 'suggestion'],
+        },
+      },
+    },
+    required: ['findings'],
+  },
+};
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
@@ -691,21 +1561,7 @@ const TOOL_COMMANDS = {
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
 const INTEGERS = { type: 'array', items: INTEGER };
-const STRINGS = { type: 'array', items: STRING };
 const BOOLEAN = { type: 'boolean' };
-const NULLABLE_STRING = { type: ['string', 'null'] };
-const WORKTREE_STATUS = {
-  status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
-  reason: STRING,
-  errors: {
-    type: 'array',
-    items: {
-      type: 'object',
-      properties: { step: STRING, message: STRING },
-      required: ['step', 'message'],
-    },
-  },
-};
 const RUN_GRAPH = {
   runSet: {
     type: 'array',
@@ -724,9 +1580,6 @@ const RUN_GRAPH = {
     },
   },
 };
-function nullableObject(properties, required) {
-  return { type: ['object', 'null'], properties, required };
-}
 function toolSchema(consumed) {
   return {
     type: 'object',
@@ -734,148 +1587,63 @@ function toolSchema(consumed) {
       exitCode: INTEGER,
       envelopePath: STRING,
       stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
-      ...consumed,
+      ...consumed.properties,
     },
-    required: ['exitCode', 'envelopePath'],
+    required: ['exitCode', 'envelopePath', ...consumed.required],
   };
 }
-function worktreeSchema(consumed) {
-  return toolSchema({ ...WORKTREE_STATUS, ...consumed });
+function envelopeSchema(name) {
+  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
 }
 const TOOL_SCHEMAS = {
-  preflight: worktreeSchema({
-    worktree: STRING,
-    snapshot: nullableObject({ head: STRING, dirty: BOOLEAN }, ['head', 'dirty']),
-    problems: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { check: STRING, message: STRING },
-        required: ['check', 'message'],
-      },
-    },
-  }),
+  preflight: envelopeSchema('preflight'),
   'run-gate': toolSchema({
-    verdict: { type: 'string', enum: ['ok', 'refused'] },
-    failures: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { kind: STRING, issue: INTEGER, message: STRING },
-        required: ['kind', 'message'],
-      },
-    },
-    excluded: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { issue: INTEGER, cause: STRING, blockers: INTEGERS },
-        required: ['issue', 'cause'],
-      },
-    },
-    ...RUN_GRAPH,
-  }),
-  'live-runs': worktreeSchema({
-    runs: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          branch: STRING,
-          landed: STRINGS,
-          pr: {
-            type: 'object',
-            properties: { state: STRING, number: { type: ['integer', 'null'] } },
-            required: ['state'],
-          },
-          spent: BOOLEAN,
-          path: STRING,
-          dirty: { type: ['boolean', 'null'] },
-          nested: STRINGS,
-          spentUnverified: BOOLEAN,
+    properties: {
+      verdict: { type: 'string', enum: ['ok', 'refused'] },
+      failures: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { kind: STRING, issue: INTEGER, message: STRING },
+          required: ['kind', 'message'],
         },
-        required: ['branch', 'landed', 'pr', 'spent'],
       },
+      excluded: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { issue: INTEGER, cause: STRING, blockers: INTEGERS },
+          required: ['issue', 'cause'],
+        },
+      },
+      ...RUN_GRAPH,
     },
+    required: ['verdict', 'failures', 'excluded', 'runSet', 'edges'],
   }),
+  'live-runs': envelopeSchema('live-runs'),
   check: toolSchema({
-    ready: BOOLEAN,
-    failures: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { kind: STRING, issue: INTEGER, message: STRING },
-        required: ['kind', 'message'],
+    properties: {
+      ready: BOOLEAN,
+      failures: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { kind: STRING, issue: INTEGER, message: STRING },
+          required: ['kind', 'issue', 'message'],
+        },
       },
     },
+    required: ['ready', 'failures'],
   }),
-  'cut-batch': worktreeSchema({
-    worktree: STRING,
-    branch: NULLABLE_STRING,
-    base: NULLABLE_STRING,
-    batch: NULLABLE_STRING,
-    reportDir: NULLABLE_STRING,
-    attach: nullableObject({ created: BOOLEAN, fastForwarded: BOOLEAN, pr: INTEGER }, [
-      'created',
-      'fastForwarded',
-      'pr',
-    ]),
-  }),
-  'provision-batch': worktreeSchema({
-    registry: NULLABLE_STRING,
-    env: nullableObject({ PH_PROJECT_DIR: STRING, PH_POOL_REGISTRY: STRING }, [
-      'PH_PROJECT_DIR',
-      'PH_POOL_REGISTRY',
-    ]),
-  }),
-  'cut-slice': worktreeSchema({
-    branch: NULLABLE_STRING,
-    base: NULLABLE_STRING,
-    slice: NULLABLE_STRING,
-    at: STRING,
-  }),
-  provision: worktreeSchema({
-    env: nullableObject({ PH_PROJECT_DIR: STRING }, ['PH_PROJECT_DIR']),
-  }),
-  land: worktreeSchema({
-    commit: NULLABLE_STRING,
-    files: STRINGS,
-    conflicts: STRINGS,
-    rolledBack: BOOLEAN,
-    batchClean: BOOLEAN,
-    at: STRING,
-  }),
-  teardown: worktreeSchema({ removed: BOOLEAN, registered: BOOLEAN }),
-  'sync-master': worktreeSchema({
-    outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', 'needs-resolution', null] },
-    commit: NULLABLE_STRING,
-    conflicts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { path: STRING, kind: STRING, landedBy: STRINGS },
-        required: ['path', 'kind'],
-      },
-    },
-    version: nullableObject({ base: STRING, ours: STRING, theirs: STRING, result: STRING }, [
-      'base',
-      'ours',
-      'theirs',
-      'result',
-    ]),
-    pending: STRINGS,
-  }),
-  bump: worktreeSchema({
-    kind: { type: ['string', 'null'], enum: ['minor', 'patch', null] },
-    from: NULLABLE_STRING,
-    to: NULLABLE_STRING,
-    commit: NULLABLE_STRING,
-  }),
-  publish: worktreeSchema({
-    pushed: BOOLEAN,
-    pr: nullableObject({ number: INTEGER, url: STRING }, ['number', 'url']),
-    mergeable: NULLABLE_STRING,
-  }),
+  'cut-batch': envelopeSchema('cut-batch'),
+  'provision-batch': envelopeSchema('provision-batch'),
+  'cut-slice': envelopeSchema('cut-slice'),
+  provision: envelopeSchema('provision'),
+  land: envelopeSchema('land'),
+  teardown: envelopeSchema('teardown'),
+  'sync-master': envelopeSchema('sync-master'),
+  bump: envelopeSchema('bump'),
+  publish: envelopeSchema('publish'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -1034,119 +1802,29 @@ function leaseTenths(seconds) {
   return Math.round(seconds * 10) / 10;
 }
 
-function strictObject(properties) {
-  return { type: 'object', properties, required: Object.keys(properties) };
-}
-function oneOf(...values) {
-  return { type: 'string', enum: values };
-}
-const SCOUT_SCHEMA = strictObject({
-  issues: {
-    type: 'array',
-    items: strictObject({ issue: INTEGER, stale: BOOLEAN, evidence: STRING }),
-  },
-  overlaps: {
-    type: 'array',
-    items: strictObject({ issue: INTEGER, branch: STRING, files: STRINGS, evidence: STRING }),
-  },
-});
 function overlapSchema(issues) {
+  const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
+  const pairs = base.properties.pairs;
+  const pair = pairs.items;
   const issue = { type: 'integer', enum: issues };
-  return strictObject({
-    issues: {
-      type: 'array',
-      items: strictObject({ number: INTEGER, columns: STRINGS, paths: STRINGS }),
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      pairs: {
+        ...pairs,
+        items: { ...pair, properties: { ...pair.properties, a: issue, b: issue } },
+      },
     },
-    pairs: {
-      type: 'array',
-      items: strictObject({
-        a: issue,
-        b: issue,
-        confidence: oneOf('likely', 'unsure'),
-        shared: STRINGS,
-        reason: STRING,
-      }),
-    },
-    areaMap: oneOf('read', 'unavailable'),
-  });
+  };
 }
-const PLAN_CARD_SCHEMA = strictObject({
-  verdict: oneOf('plan', 'stale', 'blocked'),
-  planPath: STRING,
-  summary: STRING,
-  tier: STRING,
-  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
-  closes: oneOf('fixes', 'see'),
-  evidence: STRING,
-});
-const PLAN_REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('approved', 'changes'),
-  findings: INTEGER,
-  findingsPath: STRING,
-});
-const TDD_SCHEMA = {
-  type: 'object',
-  properties: {
-    verdict: oneOf('GREEN', 'PARTIAL', 'BLOCKED'),
-    sha: STRING,
-    files: STRINGS,
-    leaseLines: STRINGS,
-    probes: {
-      type: 'array',
-      items: strictObject({
-        claim: STRING,
-        verdict: oneOf('confirmed', 'falsified', 'inconclusive', 'cap-hit'),
-        followUp: STRING,
-      }),
-    },
-    reason: STRING,
-  },
-  required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
-};
-const REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('clean', 'fixed', 'blocked'),
-  sha: STRING,
-  summary: STRING,
-});
-const TEST_REVIEW_SCHEMA = strictObject({
-  verdict: oneOf('clean', 'hardened', 'blocked'),
-  sha: STRING,
-  survivors: INTEGER,
-  summary: STRING,
-});
-const RESOLVER_SCHEMA = strictObject({
-  verdict: oneOf('resolved', 'unresolvable'),
-  summary: STRING,
-});
-const CRITIC_SCHEMA = strictObject({
-  outcome: oneOf('clean', 'applied'),
-  sha: STRING,
-  files: STRINGS,
-  commit: strictObject({ type: STRING, scope: STRING, subject: STRING }),
-  findings: {
-    type: 'array',
-    items: strictObject({ lens: STRING, summary: STRING, applied: BOOLEAN }),
-  },
-  checks: STRING,
-});
-const RETRO_SCHEMA = strictObject({
-  findings: {
-    type: 'array',
-    items: strictObject({
-      title: STRING,
-      evidence: STRING,
-      kind: oneOf('genuine', 'first-time'),
-      suggestion: STRING,
-    }),
-  },
-});
 async function askAgent(hooks, prompt, options) {
   const out = await hooks.agent(prompt, options);
   return typeof out === 'object' && out !== null ? out : null;
 }
 const AGENT_CALLS = {
   scout: (hooks, values) =>
-    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, SCOUT_SCHEMA)),
+    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout)),
   overlapEstimator: (hooks, values) =>
     askAgent(
       hooks,
@@ -1157,30 +1835,46 @@ const AGENT_CALLS = {
     askAgent(
       hooks,
       PROMPTS.planner(values),
-      agentOptions(values.mode === 'plan' ? 'planner' : 'applier', tag, PLAN_CARD_SCHEMA),
+      agentOptions(
+        values.mode === 'plan' ? 'planner' : 'applier',
+        tag,
+        AGENT_OUTPUT_SCHEMAS.planCard,
+      ),
     ),
   planReviewer: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.planReviewer(values),
-      agentOptions('planReviewer', tag, PLAN_REVIEW_SCHEMA),
+      agentOptions('planReviewer', tag, AGENT_OUTPUT_SCHEMAS.planReview),
     ),
   tdd: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, TDD_SCHEMA)),
+    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
   reviewer: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.reviewer(values), reviewerOptions(tag, REVIEW_SCHEMA, values.files)),
+    askAgent(
+      hooks,
+      PROMPTS.reviewer(values),
+      reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+    ),
   testReview: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.testReview(values),
-      agentOptions('testReview', tag, TEST_REVIEW_SCHEMA),
+      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   resolver: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.resolver(values), agentOptions('resolver', tag, RESOLVER_SCHEMA)),
+    askAgent(
+      hooks,
+      PROMPTS.resolver(values),
+      agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
+    ),
   critic: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.critic(values), agentOptions('critic', tag, CRITIC_SCHEMA)),
+    askAgent(
+      hooks,
+      PROMPTS.critic(values),
+      agentOptions('critic', tag, AGENT_OUTPUT_SCHEMAS.critic),
+    ),
   retro: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, RETRO_SCHEMA)),
+    askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
 };
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
@@ -1688,6 +2382,7 @@ async function planReviewStage(at) {
     slice: at.slice ?? '',
     planPath: planPath(at),
     findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
+    reportDir: at.ctx.reportDir,
   };
   const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
@@ -1710,7 +2405,7 @@ async function tddStage(at) {
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
     message: commitMessage(at.issue, card),
-    lease: { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry },
+    lease: leaseValues(at),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return died(at);
@@ -1731,7 +2426,7 @@ async function reviewStage(at) {
 }
 async function testReviewStage(at) {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = sliceReviewValues(at, 'test-review');
+  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
   const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
@@ -1800,12 +2495,17 @@ function plannerValues(at, mode, findingsPath) {
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
     ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
+    lease: leaseValues(at),
   };
+}
+function leaseValues(at) {
+  return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
 }
 function sliceReviewValues(at, report) {
   return {
     issue: at.issue,
     slice: at.slice ?? '',
+    base: at.base,
     planPath: planPath(at),
     sha: at.sha,
     files: at.tdd?.files ?? [],
@@ -2231,11 +2931,11 @@ async function runPreflight(hooks, args) {
   const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(checks);
   if (gate?.runSet === undefined) {
-    return { refusals, dropped: [], graph: null, main, overlap: null };
+    return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
   const scout = await runScout(hooks, graph, live);
-  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null };
+  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
 }
 async function settleOverlap(hooks, found) {
@@ -2407,6 +3107,57 @@ function toolError(out, what) {
   );
 }
 
+async function cleanupSpent(hooks, live) {
+  const report = {
+    tornDown: [],
+    skipped: [],
+    residue: [],
+    blocked: null,
+    stop: null,
+  };
+  if (live?.status !== 'ok' || live.runs === undefined) {
+    report.blocked = envelopeProblem('live-runs', live);
+    return report;
+  }
+  for (const run of live.runs) {
+    await cleanupRun(hooks, run, report);
+    if (report.stop !== null) break;
+  }
+  return report;
+}
+async function cleanupRun(hooks, run, report) {
+  const target = spentTarget(run);
+  if (target === null) return;
+  if ('why' in target) report.skipped.push(target);
+  else await tearDownSpent(hooks, target.path, report);
+}
+async function tearDownSpent(hooks, path, report) {
+  const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
+  const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
+  if (out?.status === 'ok') {
+    report.tornDown.push(path);
+  } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
+    report.stop = envelopeProblem('teardown', out);
+  } else {
+    report.residue.push(`${path}: ${envelopeProblem('teardown', out)}`);
+  }
+}
+function spentTarget(run) {
+  const path = run.path ?? run.branch;
+  if (run.spentUnverified) {
+    return { path, why: 'its PR is over, but the PR head could not be checked' };
+  }
+  if (!run.spent) return null;
+  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
+  if (run.dirty !== false) {
+    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+  }
+  if (!Array.isArray(run.nested) || run.nested.length > 0) {
+    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  }
+  return { path: run.path };
+}
+
 async function runShip(hooks, rawArgs) {
   const parsed = parseShipArgs(rawArgs);
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
@@ -2419,13 +3170,20 @@ async function runShip(hooks, rawArgs) {
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
+  const cleanup = await cleanupSpent(hooks, pre.live);
+  if (cleanup.stop !== null) {
+    return {
+      ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
+      cleanup,
+    };
+  }
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics };
+  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
 async function runEntries(hooks, graph, opts) {
   const cuts = [];

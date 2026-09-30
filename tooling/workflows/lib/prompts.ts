@@ -4,10 +4,15 @@
  * discipline lives in its agent file (`.claude/agents/<agentType>.md`), so
  * a prompt never restates it.
  *
- * Every value sits on its own `Key: value` line, which the agent file names.
+ * Every value sits on its own `Key: value` line. The keys an agent's
+ * builders emit are exactly those its agent file's
+ * `## Inputs (from the prompt)` lists, no more and no fewer — a unit test
+ * pins the pairing.
  * A text the agent must copy to disk byte for byte goes in a
  * {@link verbatimBlock}; a command line's words are each quoted for bash by
- * {@link shellWord}, so the agent runs the line as given.
+ * {@link shellWord}, so the agent runs the line as given. An issue's text
+ * reaches a planning-stage agent as a file its `Issue command:` line writes
+ * ({@link issueLines}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -94,6 +99,8 @@ export interface PlannerValues {
   readonly priorSlices: readonly PriorSlice[];
   /** The files the previous attempt's landing conflicted on; absent after any other ending. */
   readonly conflicts?: readonly string[];
+  /** The slice's server-tier recipe, for the plan's server-tier runs. */
+  readonly lease: LeaseValues;
 }
 
 /** The plan reviewer's values. */
@@ -106,6 +113,8 @@ export interface PlanReviewerValues {
   readonly planPath: string;
   /** Where the findings go. */
   readonly findingsPath: string;
+  /** The run's report directory: the issue's text is written under it. */
+  readonly reportDir: string;
 }
 
 /** Where a slice's lease runs lease from. */
@@ -146,6 +155,8 @@ export interface SliceReviewValues {
   readonly issue: number;
   /** The slice worktree. */
   readonly slice: string;
+  /** The commit the slice was cut at: its one commit's parent. */
+  readonly base: string;
   /** The plan file. */
   readonly planPath: string;
   /** The slice's one commit. */
@@ -154,6 +165,12 @@ export interface SliceReviewValues {
   readonly files: readonly string[];
   /** The full report. */
   readonly reportPath: string;
+}
+
+/** The test reviewer's values: the slice's, and where its server-tier runs lease from. */
+export interface TestReviewValues extends SliceReviewValues {
+  /** The lease command's values. */
+  readonly lease: LeaseValues;
 }
 
 /** The critic's values. */
@@ -235,6 +252,53 @@ function leaseCommand(lease: LeaseValues): string {
 }
 
 /**
+ * A slice's server-tier recipe: the lease command template, where its
+ * version comes from, and the probe caps.
+ *
+ * @param lease - The lease command's values.
+ * @returns The `Lease command:`, `Lease version:` and `Probe caps:` lines.
+ */
+function serverTierLines(lease: LeaseValues): string[] {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+  ];
+}
+
+/**
+ * The jq program that prints an issue as markdown: a `# <title>` line, the
+ * state and labels, the body, then each comment under a
+ * `----- comment by <login> at <instant> -----` line. It holds no `'`, so
+ * {@link shellWord} quotes it whole.
+ */
+const ISSUE_TEXT_JQ =
+  '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
+  '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+
+/**
+ * Where an issue's text goes and the command that writes it there — so the
+ * agent reads the issue from a file, never from `gh` output in its context.
+ *
+ * @param issue - The issue.
+ * @param reportDir - The run's report directory.
+ * @returns The `Issue file:` line (`<reportDir>/issues/<issue>.md`) and the
+ *   `Issue command:` line, which makes the directory and writes the file.
+ */
+function issueLines(issue: number, reportDir: string): string[] {
+  const dir = `${reportDir}/issues`;
+  const file = `${dir}/${String(issue)}.md`;
+  return [
+    `Issue file: ${file}`,
+    [
+      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
+
+/**
  * An issue's number as prompts spell it.
  *
  * @param issue - The issue.
@@ -271,8 +335,10 @@ export const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Report dir: ${values.reportDir}`,
       `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
+      ...serverTierLines(values.lease),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -285,6 +351,7 @@ export const PROMPTS = {
       `Slice worktree: ${values.slice}`,
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   tdd: (values: TddValues): string =>
     [
@@ -294,9 +361,7 @@ export const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      `Lease command: ${leaseCommand(values.lease)}`,
-      `Lease version: the version of the chosen type's entry in ${values.lease.registry}`,
-      `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+      ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
@@ -304,7 +369,8 @@ export const PROMPTS = {
     ].join('\n'),
   reviewer: (values: SliceReviewValues): string =>
     ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
+  testReview: (values: TestReviewValues): string =>
+    [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
   resolver: (values: ResolverValues): string =>
     [
       'Mode: resolve',
@@ -337,6 +403,7 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
+    `Slice base: ${values.base}`,
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,

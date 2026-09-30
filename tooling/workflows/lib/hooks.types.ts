@@ -22,6 +22,15 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
  * The options of one `agent()` call. The runtime honours a per-call `model`
  * and `effort` — `effort` with a non-default model included (observed
  * 2026-09-29, #1035).
+ *
+ * **No working directory.** Every agent starts in the main checkout the
+ * session runs in, whatever worktree it works in (`isWorktree: false` in the
+ * #92 run's transcripts, #1054). No option here sets another: none was
+ * observed (#1026's capability questions never asked), and none can be
+ * probed inside an unattended run. So a worktree agent reaches its worktree
+ * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
+ * session loads are the main checkout's. Each worktree agent's file has it
+ * read the worktree's copies by path.
  */
 export interface AgentOptions {
   /** The call's label in the run's transcript: `<stage>` or `<stage>:<detail>`. */

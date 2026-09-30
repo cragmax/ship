@@ -1,33 +1,38 @@
-// Executes the committed render: ship.test.ts drives the TS sources, so a defect only the render carries passes it.
-import { readFileSync } from 'node:fs';
+// Executes a fresh in-memory render of the current sources (renderWorkflow over WORKFLOWS): ship.test.ts drives the TS sources, so a defect only the render carries passes it. The committed file's freshness is gate:codegen's.
 import { resolve } from 'node:path';
 import vm from 'node:vm';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
+import { renderWorkflow } from '../../../../tooling/lib/workflow-render.js';
+import { WORKFLOWS } from '../../../../tooling/render-workflows.js';
 import { SHIP_META } from '../../../../tooling/workflows/ship.meta.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, LAND_OK, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, LAND_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
 
-const SHIP_JS = readFileSync(
-  resolve(import.meta.dirname, '../../../../.claude/workflows/ship.js'),
-  'utf8',
-).replaceAll('\r\n', '\n');
-
+const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
 
+let shipJs = '';
+beforeAll(async () => {
+  const spec = WORKFLOWS.find((w) => w.name === 'ship');
+  if (spec === undefined) throw new Error('no ship row in WORKFLOWS');
+  shipJs = await renderWorkflow(spec, ROOT);
+});
+
 /**
- * Run the committed `ship.js` over a fake run's hooks.
+ * Run a rendered `ship.js` over a fake run's hooks.
  *
+ * @param js - The rendered workflow.
  * @param run - The fake run whose hooks become the globals.
  * @param args - The launch arguments, bound as the `args` global.
  * @returns The workflow's result.
  */
-function runRendered(run: FakeRun, args: string): Promise<unknown> {
+function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
   // The runtime's wrapper (observed #1035): the file, `export` dropped, as an async function body; hooks + `args` as globals.
-  const script = `(async function () {\n${SHIP_JS.replace(/^export /, '')}\n})()`;
-  // eslint-disable-next-line sonarjs/code-eval -- runs the committed render, never user input
+  const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
+  // eslint-disable-next-line sonarjs/code-eval -- runs a fresh render of the repo's own sources, never user input
   return vm.runInContext(script, vm.createContext({ ...run.hooks, args })) as Promise<unknown>;
 }
 
@@ -35,13 +40,14 @@ function runRendered(run: FakeRun, args: string): Promise<unknown> {
  * Drive the TS source and the render through one launch, each over its own fake hooks.
  *
  * @param args - The launch arguments.
+ * @param responses - Per-label answers over the fakes' defaults, given to both runs.
  * @returns Both fake runs, the source's report and the render's.
  */
-async function runBoth(args: string) {
-  const source = fakeHooks();
-  const rendered = fakeHooks();
+async function runBoth(args: string, responses: Readonly<Record<string, unknown>> = {}) {
+  const source = fakeHooks(responses);
+  const rendered = fakeHooks(responses);
   const expected = await runShip(source.hooks, args);
-  const report = await runRendered(rendered, args);
+  const report = await runRendered(shipJs, rendered, args);
   return { source, rendered, expected, report };
 }
 
@@ -58,13 +64,13 @@ function expectSameRun(both: Awaited<ReturnType<typeof runBoth>>): void {
   expect(both.rendered.violations).toEqual([]);
 }
 
-describe('ship.js — the committed render', () => {
+describe('ship.js — a fresh render of the current sources', () => {
   it('opens with a meta literal that evaluates to SHIP_META', () => {
-    const end = SHIP_JS.indexOf('\n};\n');
+    const end = shipJs.indexOf('\n};\n');
 
-    expect(SHIP_JS.startsWith(META_HEAD)).toBe(true);
-    // eslint-disable-next-line sonarjs/code-eval -- evaluates the committed render's literal alone
-    const meta: unknown = vm.runInNewContext(`(${SHIP_JS.slice(META_HEAD.length, end + 2)})`);
+    expect(shipJs.startsWith(META_HEAD)).toBe(true);
+    // eslint-disable-next-line sonarjs/code-eval -- evaluates the render's meta literal alone
+    const meta: unknown = vm.runInNewContext(`(${shipJs.slice(META_HEAD.length, end + 2)})`);
     expect(meta).toEqual(SHIP_META);
   });
 
@@ -93,6 +99,16 @@ describe('ship.js — the committed render', () => {
       ],
     });
     expect(both.rendered.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
+    expectSameRun(both);
+  });
+
+  it('tears a spent run down at launch with the same calls, timeline and phases as the source', async () => {
+    const both = await runBoth('issues 7', liveRuns({}));
+
+    expect(both.report).toMatchObject({
+      status: 'done',
+      cleanup: { tornDown: ['C:/src/ph-runs/old-0/batch'] },
+    });
     expectSameRun(both);
   });
 });

@@ -34,6 +34,10 @@ You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) 
 - **Never interpret.** Copy values; do not summarise, judge, retry or "fix" anything. A failing command is a result, not a problem for you to solve.
 - **Never end your turn while the command runs.** Keep polling until the `.exit` file exists.
 
+## Output
+
+Your envelope files and the `Write first` file are deliverables the workflow reads, not reports for a person: write them, even where a generic note says not to write report or findings files. Your answer is one StructuredOutput tool call, per your output schema — never a text reply, which the workflow does not read.
+
 </rules>
 
 <procedure>
@@ -50,7 +54,7 @@ You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) 
 6. Return, per your output schema:
    - `exitCode` — the exit code;
    - `envelopePath` — `D/<name>.json`, absolute;
-   - every other field the schema names, copied verbatim from the envelope — omit a field the envelope lacks, never invent one;
+   - every other field the schema names, copied verbatim from the envelope. Never invent a field, or fill one with a placeholder (`null`, `[]`, `false`, `""`), to satisfy the schema: when the envelope lacks a field the schema requires (exit 2 prints no verdict; a command that threw or failed its envelope schema prints only the base fields), return what the envelope has — the workflow reads an incomplete answer as a failure;
    - on exit code 2 only, `stderrTail` — the last 20 lines of `D/<name>.err`.
 
 </procedure>
