@@ -76,6 +76,18 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
       lease: LEASE,
     }),
   ],
+  diffReview: [
+    PROMPTS.diffReview({
+      issue: 7,
+      slice: SLICE,
+      base: 'cut1',
+      planPath: `${REPORTS}/plans/7.md`,
+      sha: 'slice1',
+      files: ['a.ts'],
+      findingsPath: `${REPORTS}/diff-review-7-1.md`,
+      reportDir: REPORTS,
+    }),
+  ],
   reviewer: [
     PROMPTS.reviewer({
       issue: 7,
@@ -86,6 +98,7 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
       files: ['a.ts'],
       reportPath: `${REPORTS}/review-7-1.md`,
       lease: LEASE,
+      findingsPath: `${REPORTS}/diff-review-7-1.md`,
     }),
   ],
   testReview: [

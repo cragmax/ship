@@ -2,9 +2,9 @@
  * One issue attempt of the `ship` workflow (ADR-0045 decisions 3–4): in a
  * slice worktree cut from the epic's branch head — the readiness re-check,
  * the cut and provision, plan, plan review (its findings applied once), tdd,
- * review and test review, each agent working in the slice and the last two
- * amending its one commit; then, through the epic's commit queue, the
- * landing.
+ * diff review, review and test review, each agent working in the slice and
+ * the last two amending its one commit; then, through the epic's commit
+ * queue, the landing.
  *
  * **Every attempt ends the same way** ({@link runAttempt}): its slice, when
  * one was cut, is torn down first, then the attempt reports its primary
@@ -33,6 +33,7 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,
+  type DiffReviewOutput,
   type PlanCard,
   type ReviewOutput,
   type SliceWork,
@@ -42,7 +43,13 @@ import {
 import { landingEvent, teardownEvent, teardownResidue, type CommitQueue } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage } from './pr-body.js';
-import type { LeaseValues, PlannerValues, PriorSlice, SliceReviewValues } from './prompts.js';
+import type {
+  LeaseValues,
+  PlannerValues,
+  PriorSlice,
+  SliceCommitValues,
+  SliceReviewValues,
+} from './prompts.js';
 import { isTrivialSurface } from './stages.js';
 import {
   envelopeProblem,
@@ -144,6 +151,7 @@ interface Attempt {
   sha: string;
   card: PlanCard | null;
   tdd: TddOutput | null;
+  diffReview: DiffReviewOutput | null;
   review: ReviewOutput | null;
   testReview: TestReviewOutput | null;
   work: SliceWork | null;
@@ -211,6 +219,7 @@ function newAttempt(
     sha: '',
     card: null,
     tdd: null,
+    diffReview: null,
     review: null,
     testReview: null,
     work: null,
@@ -226,6 +235,7 @@ const AUTHOR_STAGES: readonly Stage[] = [
   planStage,
   planReviewStage,
   tddStage,
+  diffReviewStage,
   reviewStage,
   testReviewStage,
 ];
@@ -243,10 +253,10 @@ async function authorSlice(at: Attempt): Promise<SchedulerEvent | null> {
     const stop = await stage(at);
     if (stop !== null) return stop;
   }
-  const { card, tdd, review, testReview } = at;
-  if (card === null || tdd === null || review === null)
+  const { card, tdd, diffReview, review, testReview } = at;
+  if (card === null || tdd === null || diffReview === null || review === null)
     return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, review, testReview };
+  at.work = { card, tdd, diffReview, review, testReview };
   return null;
 }
 
@@ -367,13 +377,35 @@ async function tddStage(at: Attempt): Promise<SchedulerEvent | null> {
 }
 
 /**
- * Review the slice, amending its commit with any fix.
+ * Check the slice's commit, read-only, against the repo's rules and its
+ * issue and plan; the findings go to {@link diffReviewPath} for the reviewer.
+ *
+ * @param at - The attempt; gains `diffReview`.
+ * @returns Resolves to `null` once the diff reviewer answers; `agent-died`
+ *   when it returns nothing.
+ */
+async function diffReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
+  const values = {
+    ...sliceCommitValues(at),
+    findingsPath: diffReviewPath(at),
+    reportDir: at.ctx.reportDir,
+  };
+  const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
+  if (out === null) return died(at);
+  at.diffReview = out;
+  return null;
+}
+
+/**
+ * Review the slice — the diff review's findings verified, its own
+ * correctness pass — amending its commit with any fix.
  *
  * @param at - The attempt; gains `review`, and the amended `sha`.
  * @returns Resolves to `null` unless the reviewer blocks.
  */
 async function reviewStage(at: Attempt): Promise<SchedulerEvent | null> {
-  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, sliceReviewValues(at, 'review'), at.tag);
+  const values = { ...sliceReviewValues(at, 'review'), findingsPath: diffReviewPath(at) };
+  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
   if (review.verdict === 'blocked') return blocked(at, `review: ${review.summary}`);
   at.review = review;
@@ -523,6 +555,24 @@ function leaseValues(at: Attempt): LeaseValues {
 }
 
 /**
+ * The slice's one commit as the stages after the tdd are handed it.
+ *
+ * @param at - The attempt, past its tdd.
+ * @returns The issue, the slice, its base and plan, the current commit and
+ *   the tdd's changed paths.
+ */
+function sliceCommitValues(at: Attempt): SliceCommitValues {
+  return {
+    issue: at.issue,
+    slice: at.slice ?? '',
+    base: at.base,
+    planPath: planPath(at),
+    sha: at.sha,
+    files: at.tdd?.files ?? [],
+  };
+}
+
+/**
  * The reviewer's or the test reviewer's values.
  *
  * @param at - The attempt.
@@ -532,12 +582,7 @@ function leaseValues(at: Attempt): LeaseValues {
  */
 function sliceReviewValues(at: Attempt, report: string): SliceReviewValues {
   return {
-    issue: at.issue,
-    slice: at.slice ?? '',
-    base: at.base,
-    planPath: planPath(at),
-    sha: at.sha,
-    files: at.tdd?.files ?? [],
+    ...sliceCommitValues(at),
     reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
     lease: leaseValues(at),
   };
@@ -561,6 +606,17 @@ function planPath(at: Attempt): string {
  */
 function messagePath(at: Attempt): string {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
+}
+
+/**
+ * The attempt's diff-review findings file: the diff reviewer writes it, the
+ * reviewer reads it.
+ *
+ * @param at - The attempt.
+ * @returns `<reportDir>/diff-review-<issue>-<attempt>.md`.
+ */
+function diffReviewPath(at: Attempt): string {
+  return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
 
 /**

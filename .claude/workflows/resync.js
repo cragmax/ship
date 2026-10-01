@@ -71,6 +71,7 @@ const STAGES = {
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
+  diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
@@ -105,7 +106,8 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail: 'per issue, in dependency order: plan, plan review, tdd, review, test review, land',
+    detail:
+      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -145,8 +147,8 @@ function agentOptions(stage, detail, schema) {
     schema,
   };
 }
-function reviewerOptions(detail, schema, files) {
-  return { ...agentOptions('reviewer', detail, schema), effort: reviewEffort(files) };
+function reviewOptions(stage, detail, schema, files) {
+  return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
@@ -255,7 +257,13 @@ const PROMPTS = {
         content: values.message,
       }),
     ].join('\n'),
-  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
+  diffReview: (values) =>
+    [
+      ...sliceCommitLines(values),
+      `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
+    ].join('\n'),
+  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
@@ -278,7 +286,7 @@ const PROMPTS = {
       `Run report (JSON): ${JSON.stringify(values.report)}`,
     ].join('\n'),
 };
-function sliceReviewPrompt(values) {
+function sliceCommitLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
@@ -286,7 +294,13 @@ function sliceReviewPrompt(values) {
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
+  ];
+}
+function sliceReviewPrompt(values, findingsPath) {
+  return [
+    ...sliceCommitLines(values),
     `Report file: ${values.reportPath}`,
+    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }
@@ -1171,6 +1185,15 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
   },
+  diffReview: {
+    type: 'object',
+    properties: {
+      rules: { type: 'integer' },
+      plan: { type: 'integer' },
+      findingsPath: { type: 'string' },
+    },
+    required: ['rules', 'plan', 'findingsPath'],
+  },
   review: {
     type: 'object',
     properties: {
@@ -1560,11 +1583,17 @@ const AGENT_CALLS = {
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
+  diffReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.diffReview(values),
+      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
+    ),
   reviewer: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.reviewer(values),
-      reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
   testReview: (hooks, values, tag) =>
     askAgent(

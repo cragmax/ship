@@ -257,6 +257,34 @@ describe('runShip — issues in flight at once', () => {
     ]);
   });
 
+  it('stops a halting entry’s attempt at the stage boundary before its diff review', async () => {
+    // #8's tdd is held until #7's landing has halted the entry, so #8's next stage boundary sees the halt.
+    const hold = holdable(/^tdd:8-1$/);
+    const run = fakeHooks(
+      { ...list([7, 8]), 'runner:land': LAND_BATCH_DIRTY },
+      { gate: hold.gate },
+    );
+
+    const done = runShip(run.hooks, 'issues 7 8');
+    await idle();
+    expect(hold.held()).toEqual(['tdd:8-1']);
+    expect(run.timeline).toContain('log fed epic-halt the issue list');
+    hold.releaseAll();
+    const report = await done;
+
+    expect(labels(run)).toContain('diffReview:7-1');
+    expect(labels(run).filter((l) => /^(tdd|diffReview|reviewer):8-1$/.test(l))).toEqual([
+      'tdd:8-1',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      issues: [
+        { issue: 7, outcome: 'halted', cite: 'see' },
+        { issue: 8, outcome: 'halted', cite: 'see', reason: 'its epic halted' },
+      ],
+    });
+  });
+
   it('reports each issue’s schedule: blockers, attempts, and the final attempt’s cut and land instants', async () => {
     const cutAt = (call: RecordedCall): unknown => ({
       ...CUT_OK,

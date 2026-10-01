@@ -3,7 +3,7 @@
  * `agentType`, `model` and `effort` (ADR-0045), plus the run's tunables and
  * each workflow's phase titles. No other workflow source spells a tier:
  * each `agent()` call takes its options from {@link agentOptions} (a
- * `reviewer` call from {@link reviewerOptions}).
+ * `diffReview` or `reviewer` call from {@link reviewOptions}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -27,12 +27,15 @@ export interface StageRow {
  * the current tree; `overlapEstimator` names the run-set pairs likely to
  * touch the same files; `planner` plans one issue and `applier` (the same
  * agent) applies the plan review's findings once; `planReviewer` reviews the
- * plan; `tdd` authors the slice's one commit; `reviewer` reviews and amends
- * it, its effort set per call by {@link reviewEffort}; `resolver` (the
- * reviewer agent) resolves the epic end's doc-index conflicts; `testReview`
- * hardens the tests on the slice's final shape; `critic` reviews the epic's
- * landed slices together in a slice of its own and may commit one fix;
- * `retro` reads the entry's reports and names what the run should learn.
+ * plan; `tdd` authors the slice's one commit; `diffReview` checks it,
+ * read-only, against the repo's rules and its issue and plan, writing
+ * findings for the reviewer; `reviewer` verifies those findings, hunts bugs
+ * and amends the commit — the two efforts set per call by
+ * {@link reviewEffort}; `resolver` (the reviewer agent) resolves the epic
+ * end's doc-index conflicts; `testReview` hardens the tests on the slice's
+ * final shape; `critic` reviews the epic's landed slices together in a
+ * slice of its own and may commit one fix; `retro` reads the entry's
+ * reports and names what the run should learn.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -42,6 +45,7 @@ export const STAGES = {
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
+  diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
@@ -84,7 +88,7 @@ const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'evals/']
 const HIGH_EFFORT_FILE_COUNT = 5;
 
 /**
- * The reviewer's effort for a slice.
+ * The diff reviewer's and the reviewer's effort for a slice.
  *
  * @param files - The slice commit's changed paths, repository-relative.
  * @returns `high` when any path is under `src/` or there are more than five
@@ -123,7 +127,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail: 'per issue, in dependency order: plan, plan review, tdd, review, test review, land',
+    detail:
+      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -184,18 +189,21 @@ export function agentOptions(
 }
 
 /**
- * The options of one `reviewer` call: {@link agentOptions}' plus the effort
+ * The options of one call that reviews a slice's commit — a `diffReview` or
+ * a `reviewer` call: {@link agentOptions}' plus the effort
  * {@link reviewEffort} picks for the slice.
  *
- * @param detail - What distinguishes this call (the label becomes `reviewer:<detail>`).
+ * @param stage - The stage.
+ * @param detail - What distinguishes this call (the label becomes `<stage>:<detail>`).
  * @param schema - The structured output's schema.
  * @param files - The slice commit's changed paths.
  * @returns The options.
  */
-export function reviewerOptions(
+export function reviewOptions(
+  stage: 'diffReview' | 'reviewer',
   detail: string,
   schema: JsonSchema,
   files: readonly string[],
 ): AgentOptions {
-  return { ...agentOptions('reviewer', detail, schema), effort: reviewEffort(files) };
+  return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }

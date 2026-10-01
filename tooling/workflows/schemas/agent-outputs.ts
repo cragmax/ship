@@ -140,6 +140,16 @@ export const TddOutputSchema = z.object({
   reason: z.string().exactOptional(),
 });
 
+/** The diff reviewer's answer. */
+export const DiffReviewOutputSchema = z.object({
+  /** How many findings the rules check reported. */
+  rules: z.int(),
+  /** How many findings the plan check reported. */
+  plan: z.int(),
+  /** The findings file written. */
+  findingsPath: z.string(),
+});
+
 /** The reviewer's answer. */
 export const ReviewOutputSchema = z.object({
   /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
@@ -225,6 +235,7 @@ export const AGENT_OUTPUTS = {
   planCard: PlanCardSchema,
   planReview: PlanReviewSchema,
   tdd: TddOutputSchema,
+  diffReview: DiffReviewOutputSchema,
   review: ReviewOutputSchema,
   testReview: TestReviewOutputSchema,
   resolver: ResolverOutputSchema,

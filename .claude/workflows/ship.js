@@ -12,7 +12,8 @@ export const meta = {
     },
     {
       title: 'Issues',
-      detail: 'per issue, in dependency order: plan, plan review, tdd, review, test review, land',
+      detail:
+        'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
     },
     {
       title: 'Epic end',
@@ -30,6 +31,7 @@ const STAGES = {
   applier: { agentType: 'planner' },
   planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
+  diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
@@ -64,7 +66,8 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail: 'per issue, in dependency order: plan, plan review, tdd, review, test review, land',
+    detail:
+      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -104,8 +107,8 @@ function agentOptions(stage, detail, schema) {
     schema,
   };
 }
-function reviewerOptions(detail, schema, files) {
-  return { ...agentOptions('reviewer', detail, schema), effort: reviewEffort(files) };
+function reviewOptions(stage, detail, schema, files) {
+  return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
 const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices'];
@@ -661,7 +664,13 @@ const PROMPTS = {
         content: values.message,
       }),
     ].join('\n'),
-  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
+  diffReview: (values) =>
+    [
+      ...sliceCommitLines(values),
+      `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
+    ].join('\n'),
+  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
@@ -684,7 +693,7 @@ const PROMPTS = {
       `Run report (JSON): ${JSON.stringify(values.report)}`,
     ].join('\n'),
 };
-function sliceReviewPrompt(values) {
+function sliceCommitLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
@@ -692,7 +701,13 @@ function sliceReviewPrompt(values) {
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
+  ];
+}
+function sliceReviewPrompt(values, findingsPath) {
+  return [
+    ...sliceCommitLines(values),
     `Report file: ${values.reportPath}`,
+    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }
@@ -1577,6 +1592,15 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
   },
+  diffReview: {
+    type: 'object',
+    properties: {
+      rules: { type: 'integer' },
+      plan: { type: 'integer' },
+      findingsPath: { type: 'string' },
+    },
+    required: ['rules', 'plan', 'findingsPath'],
+  },
   review: {
     type: 'object',
     properties: {
@@ -1998,11 +2022,17 @@ const AGENT_CALLS = {
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
+  diffReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.diffReview(values),
+      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
+    ),
   reviewer: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.reviewer(values),
-      reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
   testReview: (hooks, values, tag) =>
     askAgent(
@@ -2165,12 +2195,14 @@ function issueSection(landed) {
   const ref = `#${String(landed.issue)}`;
   const cite =
     landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
+  const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
     `- Issue: ${cite}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
+    `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
     test === null
       ? '- Test review: skipped — trivial surface'
@@ -2584,6 +2616,7 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     sha: '',
     card: null,
     tdd: null,
+    diffReview: null,
     review: null,
     testReview: null,
     work: null,
@@ -2597,6 +2630,7 @@ const AUTHOR_STAGES = [
   planStage,
   planReviewStage,
   tddStage,
+  diffReviewStage,
   reviewStage,
   testReviewStage,
 ];
@@ -2606,10 +2640,10 @@ async function authorSlice(at) {
     const stop = await stage(at);
     if (stop !== null) return stop;
   }
-  const { card, tdd, review, testReview } = at;
-  if (card === null || tdd === null || review === null)
+  const { card, tdd, diffReview, review, testReview } = at;
+  if (card === null || tdd === null || diffReview === null || review === null)
     return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, review, testReview };
+  at.work = { card, tdd, diffReview, review, testReview };
   return null;
 }
 async function recheckStage(at) {
@@ -2686,8 +2720,20 @@ async function tddStage(at) {
   at.sha = tdd.sha;
   return null;
 }
+async function diffReviewStage(at) {
+  const values = {
+    ...sliceCommitValues(at),
+    findingsPath: diffReviewPath(at),
+    reportDir: at.ctx.reportDir,
+  };
+  const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
+  if (out === null) return died(at);
+  at.diffReview = out;
+  return null;
+}
 async function reviewStage(at) {
-  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, sliceReviewValues(at, 'review'), at.tag);
+  const values = { ...sliceReviewValues(at, 'review'), findingsPath: diffReviewPath(at) };
+  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
   if (review.verdict === 'blocked') return blocked(at, `review: ${review.summary}`);
   at.review = review;
@@ -2774,7 +2820,7 @@ function plannerValues(at, mode, findingsPath) {
 function leaseValues(at) {
   return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
 }
-function sliceReviewValues(at, report) {
+function sliceCommitValues(at) {
   return {
     issue: at.issue,
     slice: at.slice ?? '',
@@ -2782,6 +2828,11 @@ function sliceReviewValues(at, report) {
     planPath: planPath(at),
     sha: at.sha,
     files: at.tdd?.files ?? [],
+  };
+}
+function sliceReviewValues(at, report) {
+  return {
+    ...sliceCommitValues(at),
     reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
     lease: leaseValues(at),
   };
@@ -2791,6 +2842,9 @@ function planPath(at) {
 }
 function messagePath(at) {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
+}
+function diffReviewPath(at) {
+  return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
 function requireCard(at) {
   if (at.card === null) throw new Error('ship: the tdd stage ran without a plan card');

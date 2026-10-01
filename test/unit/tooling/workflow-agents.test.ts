@@ -75,12 +75,18 @@ describe('workflow agents', () => {
     expect(toolsOf('planner')).toContain('Edit');
   });
 
+  // Hand-written: the diff reviewer reads and writes its findings, never edits (#1099).
+  it('diff-reviewer lists exactly Read, Glob, Grep, Bash and Write in its tools', () => {
+    expect(toolsOf('diff-reviewer')).toEqual(['Read', 'Glob', 'Grep', 'Bash', 'Write']);
+  });
+
   describe('the agents that write a file', () => {
     const writers = agentTypes.filter((agentType) => toolsOf(agentType).includes('Write'));
 
-    it('are exactly the seven the workflow hands a file to write', () => {
+    it('are exactly the eight the workflow hands a file to write', () => {
       expect([...writers].sort((a, b) => a.localeCompare(b))).toEqual([
         'critic',
+        'diff-reviewer',
         'planner',
         'reviewer',
         'runner',
@@ -114,6 +120,11 @@ describe('workflow agents', () => {
       ],
     ],
     ['ship-tdd', '.claude/skills/tdd/SKILL.md', ['surface it', 'Not for:']],
+    [
+      'diff-reviewer',
+      '.claude/skills/diff-review/SKILL.md',
+      ['ask for it', 'ask where the issue or plan is', 'Where you can start sub-agents'],
+    ],
   ])('%s overrides the interactive steps of %s', (agentType, skill, phrases) => {
     const overrides = section(agentText(agentType), '## Headless overrides');
     const skillText = readFileSync(join(REPO_ROOT, skill), 'utf8');
@@ -170,6 +181,32 @@ describe('workflow agents', () => {
     expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
   });
 
+  // Hand-written: the finding-line tokens the diff-review skill writes and the agents acting on its findings read (#1098, #1099).
+  const FINDING_TOKENS = ['F<n>', 'hard', 'judgement'];
+
+  // Its finding-line format, not the whole skill: its severity bullets repeat `hard` and `judgement`, so a renamed format would hide behind them.
+  it('diff-review defines the finding tokens in its report’s finding line', () => {
+    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
+    const format =
+      section(skill.replaceAll('\r\n', '\n'), '## 4. Report')
+        .split('\n')
+        .find((l) => l.startsWith('`F<n> ')) ?? '';
+
+    expect(FINDING_TOKENS.filter((token) => !format.includes(token))).toEqual([]);
+  });
+
+  it.each<[string, string, string[]]>([
+    ['reviewer', '## Review mode', FINDING_TOKENS],
+    ['diff-reviewer', '## Discipline', ['hard']],
+  ])(
+    '%s spells the finding tokens the diff-review skill writes, under its %s',
+    (agentType, heading, tokens) => {
+      const text = section(agentText(agentType), heading);
+
+      expect(tokens.filter((token) => !text.includes(`\`${token}\``))).toEqual([]);
+    },
+  );
+
   // Hand-written: the probe timing and the greppable duration token a cap review reads (#1086).
   const DURATION_TOKENS = ['date +%s', 'duration: <dur>', '`42s`', '`11m 04s`'];
 
@@ -193,6 +230,7 @@ describe('workflow agents', () => {
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
+      'diff-reviewer',
       'overlap-estimator',
       'planner',
       'retro',
@@ -241,6 +279,7 @@ describe('workflow agents', () => {
     ['ship-test-review', '.claude/skills/audit-tests/SKILL.md'],
     ['overlap-estimator', '.claude/skills/batch-issues/areas.md'],
     ['reviewer', '.claude/skills/manifest-tsdoc/SKILL.md'],
+    ['diff-reviewer', '.claude/skills/diff-review/SKILL.md'],
   ])('%s reads %s by repo path, not through the Skill tool', (agentType, path) => {
     const text = readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8');
 
