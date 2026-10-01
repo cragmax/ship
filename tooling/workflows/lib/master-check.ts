@@ -1,9 +1,12 @@
 /**
  * The epic end's forward-only check of `master` (#1080): before an epic's
  * push, `worktree.ts check-master` compares local `master` and `origin`'s
- * with the launch shas pre-flight recorded. The call runs inside the epic
- * end's publish task of the repo lock (`epic-end.ts`), so no other epic end
- * talks to `origin` between the check and the push.
+ * with the launch shas pre-flight recorded, and `origin`'s also with the
+ * synced sha — the `origin/master` the epic end's own sync left the batch
+ * containing (#1095), which a failed `origin` line names as its restore
+ * point. The call runs inside the epic end's publish task of the repo lock
+ * (`epic-end.ts`), so no other epic end talks to `origin` between the
+ * check and the push.
  *
  * - **Fail closed**: anything but an `ok` check naming two moves that are
  *   `equal` or `forward`, each with its current sha, is a failure — a
@@ -12,6 +15,8 @@
  * - **No launch snapshot stops the epic**: with no launch shas a rewind
  *   cannot be ruled out, so the check fails without a tool call rather than
  *   passing.
+ * - **No synced sha stops the epic**: a sync result naming no `upstream`
+ *   fails the check without a tool call, as a missing launch snapshot does.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -58,26 +63,33 @@ export type MasterCheck = PassedMasterCheck | FailedMasterCheck;
 /** The failure of a run pre-flight left no launch snapshot for. */
 const NO_LAUNCH = 'no launch snapshot of master to check against';
 
+/** The failure of an epic end whose sync named no `origin/master` sha. */
+const NO_SYNCED = 'master sync named no origin/master sha to check against';
+
 /**
  * Check that `master` only moved forward since the launch.
  *
  * @param hooks - The workflow hooks.
  * @param entry - The entry's main checkout, report directory and tag.
  * @param launch - The main checkout as pre-flight found it.
- * @returns Resolves to the check; with no launch snapshot, a failed check
- *   and no tool call.
+ * @param synced - The `origin/master` sha the epic end's sync left the
+ *   batch containing; `null` when the sync named none.
+ * @returns Resolves to the check; with no launch snapshot, or no synced
+ *   sha, a failed check and no tool call.
  */
 export async function checkMasterStep(
   hooks: WorkflowHooks,
   entry: Pick<EntrySetup, 'main' | 'reportDir' | 'tag'>,
   launch: MainSnapshot | null,
+  synced: string | null,
 ): Promise<MasterCheck> {
   if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
+  if (synced === null) return { passed: false, local: null, remote: null, failure: NO_SYNCED };
   const { master } = launch.snapshot;
   const out = await runTool(
     hooks,
     'check-master',
-    [entry.main, '--local', master.local, '--remote', master.remote],
+    [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
     runPlace(entry.reportDir, entry.tag),
   );
   return checkOf(out);
@@ -139,11 +151,15 @@ function isForward(move: MasterMove | null): move is ForwardMove {
  *
  * @param which - `local` or `origin`.
  * @param move - Its move.
- * @returns `<which> master <move>: launch <sha>, now <sha|deleted> — restore it from <launch>`.
+ * @returns `<which> master <move>: launch <sha>, now <sha|deleted> — restore it from <sha>`;
+ *   a move carrying a synced sha (`origin` only) adds `, synced <sha>` after
+ *   the launch sha and restores from the synced sha, any other from its
+ *   launch sha.
  */
 function moveLine(which: 'local' | 'origin', move: MasterMove): string {
+  const synced = move.synced === null ? '' : `, synced ${move.synced}`;
   return (
-    `${which} master ${move.move}: launch ${move.launch}, now ${move.current ?? 'deleted'}` +
-    ` — restore it from ${move.launch}`
+    `${which} master ${move.move}: launch ${move.launch}${synced}, now ${move.current ?? 'deleted'}` +
+    ` — restore it from ${move.synced ?? move.launch}`
   );
 }

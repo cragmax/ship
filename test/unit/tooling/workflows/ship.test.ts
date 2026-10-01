@@ -113,6 +113,7 @@ const DOC_INDEX_CONFLICT = {
     status: 'conflict',
     outcome: 'needs-resolution',
     commit: null,
+    upstream: null,
     conflicts: [{ path: ADR_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
     version: null,
     pending: [ADR_INDEX],
@@ -125,6 +126,7 @@ const DOC_INDEX_CONFLICT = {
     status: 'ok',
     outcome: 'merged',
     commit: 'merge1',
+    upstream: 'origin1',
     conflicts: [],
     version: null,
     pending: [],
@@ -771,6 +773,7 @@ describe('runShip — an attempt that does not land', () => {
         errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
         outcome: null,
         commit: null,
+        upstream: null,
         conflicts: [],
         version: null,
         pending: [],
@@ -977,6 +980,10 @@ describe('runShip — the epic end', () => {
       'sync-master',
       BATCH,
       '--continue',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv.slice(-2)).toEqual([
+      '--synced',
+      'origin1',
     ]);
     const resolver = promptOf(run, 'resolver:list');
     expect(resolver).toContain(`Batch worktree: ${BATCH}`);

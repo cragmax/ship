@@ -122,7 +122,7 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['cut-slice', 'C:/b', '--issue', '7', '--attempt', '1'],
       ['sync-master', 'C:/b'],
       ['bump', 'C:/b'],
-      ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb'],
+      ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),

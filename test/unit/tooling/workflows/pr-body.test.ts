@@ -157,6 +157,7 @@ const INPUT: PrBodyInput = {
   sync: {
     verdict: 'merged',
     commit: 'm1',
+    upstream: 'o0',
     message: 'merged origin/master as m1',
     conflicts: [],
     version: null,
@@ -164,8 +165,8 @@ const INPUT: PrBodyInput = {
   bump: { ...OK, kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
   masterCheck: {
     passed: true,
-    local: { launch: 'l0', current: 'l1', move: 'forward' },
-    remote: { launch: 'o0', current: 'o0', move: 'equal' },
+    local: { launch: 'l0', synced: null, current: 'l1', move: 'forward' },
+    remote: { launch: 'o0', synced: 'o0', current: 'o0', move: 'equal' },
   },
   mainUntouched: true,
   critic: {
@@ -313,7 +314,7 @@ describe('renderPrBody', () => {
       '',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
-      '- Master check: passed — local forward, l0 → l1; origin equal at o0',
+      '- Master check: passed — local forward, l0 → l1; origin equal at o0, checked against synced o0',
       '- Main checkout: untouched since pre-flight',
       '- Report dir: `C:/runs/epic-1025/reports`',
       '',

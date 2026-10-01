@@ -112,6 +112,7 @@ export const TOOL_ENVELOPES = {
     ...STATUS,
     outcome: true,
     commit: true,
+    upstream: true,
     conflicts: true,
     version: true,
     pending: true,

@@ -20,7 +20,7 @@
  * npx tsx <main-checkout>/tooling/worktree.ts live-runs MAIN
  * npx tsx <main-checkout>/tooling/worktree.ts sync-master BATCH [--continue]
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
- * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA
+ * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA --synced SHA
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * ```
  *
@@ -266,7 +266,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   },
   'check-master': {
     schema: CheckMasterResultSchema,
-    valueFlags: ['--local', '--remote'],
+    valueFlags: ['--local', '--remote', '--synced'],
     switchFlags: [],
     rest: NO_REST,
     run: (args) =>
@@ -274,6 +274,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         main: args.target,
         local: args.values.get('--local') ?? '',
         remote: args.values.get('--remote') ?? '',
+        synced: args.values.get('--synced') ?? '',
       }),
   },
   publish: {

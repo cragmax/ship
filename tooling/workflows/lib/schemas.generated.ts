@@ -541,6 +541,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         enum: ['up-to-date', 'merged', 'needs-resolution', null],
       },
       commit: { type: ['string', 'null'] },
+      upstream: { type: ['string', 'null'] },
       conflicts: {
         type: 'array',
         items: {
@@ -565,7 +566,16 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       },
       pending: { type: 'array', items: { type: 'string' } },
     },
-    required: ['status', 'errors', 'outcome', 'commit', 'conflicts', 'version', 'pending'],
+    required: [
+      'status',
+      'errors',
+      'outcome',
+      'commit',
+      'upstream',
+      'conflicts',
+      'version',
+      'pending',
+    ],
   },
   bump: {
     type: 'object',
@@ -720,19 +730,21 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         type: ['object', 'null'],
         properties: {
           launch: { type: 'string' },
+          synced: { type: ['string', 'null'] },
           current: { type: ['string', 'null'] },
           move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
         },
-        required: ['launch', 'current', 'move'],
+        required: ['launch', 'synced', 'current', 'move'],
       },
       remote: {
         type: ['object', 'null'],
         properties: {
           launch: { type: 'string' },
+          synced: { type: ['string', 'null'] },
           current: { type: ['string', 'null'] },
           move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
         },
-        required: ['launch', 'current', 'move'],
+        required: ['launch', 'synced', 'current', 'move'],
       },
     },
     required: ['status', 'errors', 'local', 'remote'],

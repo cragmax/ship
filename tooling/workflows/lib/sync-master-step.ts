@@ -30,6 +30,11 @@ export interface SyncStepResult {
   readonly verdict: SyncVerdict;
   /** The merge commit; `null` unless `merged` or `resolved`. */
   readonly commit: string | null;
+  /**
+   * `sync-master`'s `upstream`: the `origin/master` sha the batch contains
+   * after the step; `null` unless `up-to-date`, `merged` or `resolved`.
+   */
+  readonly upstream: string | null;
   /** One line on what happened. */
   readonly message: string;
   /** The start's classified conflicts — what landed each code conflict included; `[]` when it named none. */
@@ -39,7 +44,7 @@ export interface SyncStepResult {
 }
 
 /** How the step ended, before the start's findings are added. */
-type SyncOutcome = Pick<SyncStepResult, 'verdict' | 'commit' | 'message'>;
+type SyncOutcome = Pick<SyncStepResult, 'verdict' | 'commit' | 'upstream' | 'message'>;
 
 /** Where the step runs. */
 export interface SyncStepContext {
@@ -110,22 +115,30 @@ async function resolveAndContinue(
  * @param out - The output; `null` when the runner returned none.
  * @param merged - The verdict of a merge commit: `merged`, or `resolved` after the resolver.
  * @returns `up-to-date`; `merged` / `resolved` for an `ok` merge carrying
- *   its commit; `code-conflict` for that refusal; `failed` otherwise.
+ *   its commit; `code-conflict` for that refusal; `failed` otherwise. The
+ *   first two carry the output's `upstream` (`null` when it named none —
+ *   the master check then fails, not the sync); the rest carry `null`.
  */
 function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'): SyncOutcome {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
-    return { verdict: 'up-to-date', commit: null, message: 'origin/master already merged' };
+    return {
+      verdict: 'up-to-date',
+      commit: null,
+      upstream: out.upstream ?? null,
+      message: 'origin/master already merged',
+    };
   }
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
       verdict: merged,
       commit: out.commit,
+      upstream: out.upstream ?? null,
       message: `merged origin/master as ${out.commit}`,
     };
   }
   const message = envelopeProblem('sync-master', out);
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
-    return { verdict: 'code-conflict', commit: null, message };
+    return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
   return syncFailure(message);
 }
@@ -137,5 +150,5 @@ function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'
  * @returns The outcome.
  */
 function syncFailure(message: string): SyncOutcome {
-  return { verdict: 'failed', commit: null, message };
+  return { verdict: 'failed', commit: null, upstream: null, message };
 }

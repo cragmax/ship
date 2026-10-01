@@ -173,6 +173,7 @@ describe('sync-master', () => {
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', pending: [] });
     expect(r.json.commit).toBe(headSha(run.batch));
+    expect(r.json.upstream).toBe(theirs);
     expect(parents(run.batch)).toEqual([ours, theirs]);
     expect(show(run.batch, 'docs/guide.md')).toBe('master\n');
     expect(show(run.batch, 'notes.md')).toBe('batch\n');
@@ -187,8 +188,30 @@ describe('sync-master', () => {
     const r = sync(run.batch);
 
     expect(r.code).toBe(0);
-    expect(r.json).toMatchObject({ status: 'ok', outcome: 'up-to-date', commit: null });
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      outcome: 'up-to-date',
+      commit: null,
+      upstream: headSha(run.main),
+    });
     expect(snapshot(run.batch)).toEqual(before);
+  });
+
+  it('reports the origin/master it found already merged as upstream', TIMEOUT, () => {
+    const run = makeRun({ 'notes.md': 'one\n', 'docs/guide.md': 'guide\n' });
+    commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
+    const theirs = advanceOrigin(root, run.bare, { write: { 'docs/guide.md': 'master\n' } });
+    sync(run.batch);
+
+    const r = sync(run.batch);
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      outcome: 'up-to-date',
+      commit: null,
+      upstream: theirs,
+    });
   });
 
   it('refuses a src/ conflict without merging, naming the path and what landed it', TIMEOUT, () => {
@@ -201,7 +224,12 @@ describe('sync-master', () => {
     const r = sync(run.batch);
 
     expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict', outcome: null });
+    expect(r.json).toMatchObject({
+      status: 'refused',
+      reason: 'code-conflict',
+      outcome: null,
+      upstream: null,
+    });
     expect(r.json.conflicts).toEqual([{ path: 'src/x.ts', kind: 'code', landedBy: ['fix: x'] }]);
     expect(snapshot(run.batch)).toEqual(before);
   });
@@ -380,6 +408,7 @@ describe('sync-master batch refresh', () => {
       theirs: '1.1.0',
       result: '1.1.1',
     });
+    expect(r.json.upstream).toBe(theirs);
     expect(versionsOf(run.batch)).toEqual({ pkg: '1.1.1', lock: '1.1.1', lockRoot: '1.1.1' });
     expect(lockOf(run.batch).packages['node_modules/fake-dep']).toEqual(
       baseLock.packages['node_modules/fake-dep'],
@@ -436,6 +465,7 @@ describe('sync-master batch refresh', () => {
     expect(r.json).toMatchObject({ status: 'failed', outcome: 'merged' });
     expect(r.json.errors.map((e) => e.step)).toEqual(['build']);
     expect(r.json.commit).toBe(headSha(run.batch));
+    expect(r.json.upstream).toBe(theirs);
     expect(parents(run.batch)).toEqual([ours, theirs]);
     expect(snapshot(run.batch)).toMatchObject({ porcelain: '', merging: false });
   });
@@ -481,6 +511,7 @@ describe('sync-master doc-index resolution', () => {
       outcome: 'needs-resolution',
       pending: [ADR_INDEX],
       commit: null,
+      upstream: null,
     });
     expect(snapshot(run.batch)).toMatchObject({ head: run.ours, merging: true });
 
@@ -489,7 +520,12 @@ describe('sync-master doc-index resolution', () => {
     const done = sync(run.batch, '--continue');
 
     expect(done.code).toBe(0);
-    expect(done.json).toMatchObject({ status: 'ok', outcome: 'merged', pending: [] });
+    expect(done.json).toMatchObject({
+      status: 'ok',
+      outcome: 'merged',
+      pending: [],
+      upstream: run.theirs,
+    });
     expect(done.json.commit).toBe(headSha(run.batch));
     expect(parents(run.batch)).toEqual([run.ours, run.theirs]);
     expect(show(run.batch, ADR_INDEX)).toBe('# ADRs\n\n- ours\n- theirs\n');

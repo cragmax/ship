@@ -74,5 +74,5 @@ export type PublishResult = z.infer<typeof PublishResultSchema>;
 /** One `master` ref at the launch and now. */
 export type MasterMove = z.infer<typeof MasterMoveSchema>;
 
-/** Envelope of `check-master <main> --local SHA --remote SHA`. */
+/** Envelope of `check-master <main> --local SHA --remote SHA --synced SHA`. */
 export type CheckMasterResult = z.infer<typeof CheckMasterResultSchema>;

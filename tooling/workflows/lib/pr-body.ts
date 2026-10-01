@@ -524,11 +524,15 @@ function masterCheckText(check: PassedMasterCheck): string {
  * One ref's passing move as a phrase.
  *
  * @param move - The move.
- * @returns `equal at <launch>`, or `forward, <launch> → <current>`.
+ * @returns `equal at <current>`, or `forward, <launch> → <current>`; then,
+ *   for a move carrying a synced sha (`origin`), `, checked against synced <sha>`.
  */
 function forwardText(move: ForwardMove): string {
-  if (move.move === 'equal') return `equal at ${move.launch}`;
-  return `forward, ${move.launch} → ${move.current}`;
+  const text =
+    move.move === 'equal'
+      ? `equal at ${move.current}`
+      : `forward, ${move.launch} → ${move.current}`;
+  return move.synced === null ? text : `${text}, checked against synced ${move.synced}`;
 }
 
 /**

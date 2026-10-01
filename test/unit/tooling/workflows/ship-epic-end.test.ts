@@ -317,6 +317,7 @@ describe('runShip — the retro', () => {
           errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
           outcome: null,
           commit: null,
+          upstream: null,
           conflicts: [],
           version: null,
           pending: [],

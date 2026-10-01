@@ -156,12 +156,18 @@ export interface ScriptedMove {
   readonly move: MasterMove['move'];
   /** The current sha; `null` when deleted. */
   readonly current: string | null;
+  /**
+   * `origin`'s synced sha; defaults to `origin0`, the default sync's
+   * `upstream`; ignored for local.
+   */
+  readonly synced?: string | null;
 }
 
 /**
  * A `check-master` answer moving each ref from its launch sha in
  * {@link PREFLIGHT_OK} (`local0` / `origin0`): `ok` when both moves are
- * `equal` or `forward`, otherwise `refused` `master-not-forward`.
+ * `equal` or `forward`, otherwise `refused` `master-not-forward`. Local's
+ * `synced` is always `null`; `origin`'s defaults to `origin0`.
  *
  * @param local - Local `master`'s move.
  * @param remote - `origin`'s `master` move.
@@ -179,8 +185,8 @@ export const masterMoved = (
       status: passed ? 'ok' : 'refused',
       ...(passed ? {} : { reason: 'master-not-forward' }),
       errors: passed ? [] : [{ step: 'check', message: 'master is not forward of its launch' }],
-      local: { launch: 'local0', ...local },
-      remote: { launch: 'origin0', ...remote },
+      local: { launch: 'local0', ...local, synced: null },
+      remote: { launch: 'origin0', synced: 'origin0', ...remote },
     },
   };
 };
@@ -276,6 +282,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     ...OK,
     outcome: 'up-to-date',
     commit: null,
+    upstream: 'origin0',
     conflicts: [],
     version: null,
     pending: [],
@@ -283,8 +290,8 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
   'runner:check-master': {
     ...OK,
-    local: { launch: 'local0', current: 'local0', move: 'equal' },
-    remote: { launch: 'origin0', current: 'origin0', move: 'equal' },
+    local: { launch: 'local0', synced: null, current: 'local0', move: 'equal' },
+    remote: { launch: 'origin0', synced: 'origin0', current: 'origin0', move: 'equal' },
   },
   'runner:publish': {
     ...OK,

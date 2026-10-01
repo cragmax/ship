@@ -166,6 +166,15 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
   outcome: z.enum(['up-to-date', 'merged', 'needs-resolution']).nullable(),
   /** The merge commit; `null` unless `outcome` is `merged`. */
   commit: z.string().nullable(),
+  /**
+   * The `origin/master` sha the batch now contains — merged by this call or
+   * found already merged: read from `origin/master` after the fetch (start
+   * mode), or from `MERGE_HEAD` before a stopped merge's commit (`--continue`,
+   * and start mode's own finish). The high-water mark the epic end's master
+   * check measures `origin` against (#1095). `null` unless `outcome` is
+   * `up-to-date` or `merged`.
+   */
+  upstream: z.string().nullable(),
   /** Every path the merge conflicts on, classified; start mode only. */
   conflicts: z.array(ConflictPathSchema),
   /**
@@ -223,17 +232,28 @@ export const PublishResultSchema = ResultBaseSchema.extend({
 export const MasterMoveSchema = z.object({
   /** The launch sha, as given. */
   launch: z.string(),
+  /**
+   * `origin`'s high-water sha, as given (`--synced`): the `origin/master` the
+   * epic end's `sync-master` merged or found merged (#1095). `null` for local
+   * `master`, which is judged against its launch sha only.
+   */
+  synced: z.string().nullable(),
   /** The current sha; `null` when the ref is deleted. */
   current: z.string().nullable(),
   /**
-   * `equal`; `forward`: the launch sha is an ancestor of the current one;
-   * `rewound`: it is not (rewound or rewritten); `deleted`: the ref is
-   * gone; `undecidable`: a sha is missing locally even after a fetch.
+   * Judged against `launch`, then — when `synced` is set and that passed —
+   * against `synced`; the reference is the last sha judged. `equal`: the
+   * current sha is it; `forward`: it is an ancestor of the current one;
+   * `rewound`: it is not (rewound or rewritten); `deleted`: the ref is gone;
+   * `undecidable`: a sha is missing locally even after a fetch.
    */
   move: z.enum(['equal', 'forward', 'rewound', 'deleted', 'undecidable']),
 });
 
-/** Envelope of `check-master <main> --local SHA --remote SHA`; `worktree` is the main checkout. */
+/**
+ * Envelope of `check-master <main> --local SHA --remote SHA --synced SHA`;
+ * `worktree` is the main checkout.
+ */
 export const CheckMasterResultSchema = ResultBaseSchema.extend({
   /** Local `refs/heads/master`; `null` until checked. */
   local: MasterMoveSchema.nullable(),

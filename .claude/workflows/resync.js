@@ -824,6 +824,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
         enum: ['up-to-date', 'merged', 'needs-resolution', null],
       },
       commit: { type: ['string', 'null'] },
+      upstream: { type: ['string', 'null'] },
       conflicts: {
         type: 'array',
         items: {
@@ -848,7 +849,16 @@ const TOOL_ENVELOPE_SCHEMAS = {
       },
       pending: { type: 'array', items: { type: 'string' } },
     },
-    required: ['status', 'errors', 'outcome', 'commit', 'conflicts', 'version', 'pending'],
+    required: [
+      'status',
+      'errors',
+      'outcome',
+      'commit',
+      'upstream',
+      'conflicts',
+      'version',
+      'pending',
+    ],
   },
   bump: {
     type: 'object',
@@ -1003,19 +1013,21 @@ const TOOL_ENVELOPE_SCHEMAS = {
         type: ['object', 'null'],
         properties: {
           launch: { type: 'string' },
+          synced: { type: ['string', 'null'] },
           current: { type: ['string', 'null'] },
           move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
         },
-        required: ['launch', 'current', 'move'],
+        required: ['launch', 'synced', 'current', 'move'],
       },
       remote: {
         type: ['object', 'null'],
         properties: {
           launch: { type: 'string' },
+          synced: { type: ['string', 'null'] },
           current: { type: ['string', 'null'] },
           move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
         },
-        required: ['launch', 'current', 'move'],
+        required: ['launch', 'synced', 'current', 'move'],
       },
     },
     required: ['status', 'errors', 'local', 'remote'],
@@ -1606,23 +1618,29 @@ async function resolveAndContinue(hooks, ctx, pending) {
 }
 function syncVerdict(out, merged) {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
-    return { verdict: 'up-to-date', commit: null, message: 'origin/master already merged' };
+    return {
+      verdict: 'up-to-date',
+      commit: null,
+      upstream: out.upstream ?? null,
+      message: 'origin/master already merged',
+    };
   }
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
       verdict: merged,
       commit: out.commit,
+      upstream: out.upstream ?? null,
       message: `merged origin/master as ${out.commit}`,
     };
   }
   const message = envelopeProblem('sync-master', out);
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
-    return { verdict: 'code-conflict', commit: null, message };
+    return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
   return syncFailure(message);
 }
 function syncFailure(message) {
-  return { verdict: 'failed', commit: null, message };
+  return { verdict: 'failed', commit: null, upstream: null, message };
 }
 
 const RESYNC_MERGEABLE = 'MERGEABLE';

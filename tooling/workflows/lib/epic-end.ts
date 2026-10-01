@@ -26,10 +26,13 @@
  *   in the publish task before the push on the shipping path (so the PR body
  *   shows it), after the epic end on every other path; the run never works
  *   in the main checkout, so a difference is reported.
- * - **Master only moved forward**: {@link checkMasterStep}. A deleted,
- *   rewound or undecidable ref, a check that gives no verdict, or a missing
- *   launch snapshot stops the epic before the push: no push, no PR, the stop
- *   message naming the ref, both shas and the sha to restore from.
+ * - **Master only moved forward**: {@link checkMasterStep}, `origin` also
+ *   against the `origin/master` the epic end's own sync merged or found
+ *   merged. A deleted, rewound or undecidable ref, a check that gives no
+ *   verdict, a missing launch snapshot, or a sync naming no `origin/master`
+ *   sha stops the epic before the push: no push, no PR, the stop message
+ *   naming the ref, its shas and the sha to restore from — for `origin`,
+ *   that synced sha.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -257,7 +260,12 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
   return input.repoLock.enqueue(async (): Promise<Published> => {
     const untouched = await mainUntouched(input);
     found.state.mainUntouched = untouched;
-    const check = await checkMasterStep(input.hooks, input.entry, input.launch);
+    const check = await checkMasterStep(
+      input.hooks,
+      input.entry,
+      input.launch,
+      found.sync.upstream,
+    );
     found.state.masterCheck = check;
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };

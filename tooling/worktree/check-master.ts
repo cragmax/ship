@@ -1,15 +1,17 @@
 /**
- * `check-master <main> --local SHA --remote SHA` — whether local `master`
- * and `origin`'s only moved forward since the launch shas given (#1080):
- * the epic end runs it just before its push. `origin`'s side is read live
+ * `check-master <main> --local SHA --remote SHA --synced SHA` — whether
+ * local `master` and `origin`'s only moved forward since the launch shas
+ * given (#1080), and `origin`'s also since the `--synced` sha: the
+ * `origin/master` the epic end's own sync merged or found merged (#1095).
+ * The epic end runs it just before its push. `origin`'s side is read live
  * with `git ls-remote`, never the remote-tracking ref, which only says what
  * the last fetch saw. Each ref's move is one of the moves
  * `schemas-run.ts` `MasterMoveSchema` defines.
  *
- * **Fail closed.** A sha the object store lacks triggers a fetch of
- * `origin`, then a second look; a sha still missing makes the move
- * `undecidable`, which refuses like `deleted` and `rewound`. Only `equal`
- * and `forward` on both refs pass.
+ * **Fail closed.** A sha the object store lacks — launch, synced or
+ * current — triggers a fetch of `origin`, then a second look; a sha still
+ * missing makes the move `undecidable`, which refuses like `deleted` and
+ * `rewound`. Only `equal` and `forward` on both refs pass.
  *
  * Read-only toward every worktree, so there is no self-hosted guard (like
  * `preflight`): the fetch writes only `.git`'s remote-tracking refs.
@@ -29,17 +31,21 @@ export interface CheckMasterInput {
   readonly local: string;
   /** `origin`'s `master` launch sha, kept as given. */
   readonly remote: string;
+  /** `origin`'s high-water sha, kept as given. */
+  readonly synced: string;
 }
 
 /** The ref both sides are read at. */
 const MASTER_REF = `refs/heads/${RUN_BASE_BRANCH}`;
 
 /**
- * Check both `master` refs against their launch shas.
+ * Check both `master` refs against their launch shas, and `origin`'s
+ * against the synced sha.
  *
- * @param input - The main checkout and the two launch shas.
+ * @param input - The main checkout, the two launch shas and the synced sha.
  * @returns The envelope: `ok` with both moves `equal` or `forward`;
- *   `refused` `master-not-forward` at step `check`, naming each other ref;
+ *   `refused` `master-not-forward` at step `check`, naming each other ref
+ *   with its move, its launch sha, `origin`'s synced sha and its current sha;
  *   `refused` `not-main-worktree`; or `failed` with the step
  *   (`preconditions`, `local-master`, `ls-remote`, `fetch`).
  */
@@ -61,13 +67,14 @@ export function checkMaster(input: CheckMasterInput): CheckMasterResult {
   };
   try {
     assertMainWorktree(main, 'preconditions');
-    result.local = moveOf(main, input.local, localMaster(main), fetchOnce);
-    result.remote = moveOf(
-      main,
-      input.remote,
-      lsRemoteRef(main, MASTER_REF, 'ls-remote'),
-      fetchOnce,
-    );
+    const local = localMaster(main);
+    result.local = {
+      launch: input.local,
+      synced: null,
+      current: local,
+      move: moveFrom(main, input.local, local, fetchOnce),
+    };
+    result.remote = remoteMove(main, input, lsRemoteRef(main, MASTER_REF, 'ls-remote'), fetchOnce);
     assertForward(result.local, result.remote);
   } catch (err) {
     recordFailure(result, err);
@@ -96,30 +103,59 @@ function localMaster(main: string): string | null {
 }
 
 /**
- * Decide one ref's move from its launch sha to its current one.
+ * Judge `origin`'s move: against its launch sha, then — only when that
+ * passed — against the synced sha.
  *
  * @param main - The main checkout.
- * @param launch - The launch sha, as given.
+ * @param input - The launch and synced shas, as given.
+ * @param current - `origin`'s current sha; `null` when the ref is gone.
+ * @param fetchOnce - Fetches `origin`; a no-op after the command's first fetch.
+ * @returns The move from the launch sha when it is neither `equal` nor
+ *   `forward`, else the move from the synced sha.
+ * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
+ */
+function remoteMove(
+  main: string,
+  input: CheckMasterInput,
+  current: string | null,
+  fetchOnce: () => void,
+): MasterMove {
+  const fromLaunch = moveFrom(main, input.remote, current, fetchOnce);
+  const move: MasterMove = {
+    launch: input.remote,
+    synced: input.synced,
+    current,
+    move: fromLaunch,
+  };
+  if (fromLaunch !== 'equal' && fromLaunch !== 'forward') return move;
+  return { ...move, move: moveFrom(main, input.synced, current, fetchOnce) };
+}
+
+/**
+ * Decide one ref's move from a reference sha to its current one.
+ *
+ * @param main - The main checkout.
+ * @param from - The reference sha, as given.
  * @param current - The current sha; `null` when the ref is gone.
  * @param fetchOnce - Fetches `origin`; a no-op after the command's first fetch.
  * @returns The move.
  * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
  */
-function moveOf(
+function moveFrom(
   main: string,
-  launch: string,
+  from: string,
   current: string | null,
   fetchOnce: () => void,
-): MasterMove {
-  if (current === null) return { launch, current, move: 'deleted' };
-  if (current === launch) return { launch, current, move: 'equal' };
-  let pair = knownPair(main, launch, current);
+): MasterMove['move'] {
+  if (current === null) return 'deleted';
+  if (current === from) return 'equal';
+  let pair = knownPair(main, from, current);
   if (pair === null) {
     fetchOnce();
-    pair = knownPair(main, launch, current);
+    pair = knownPair(main, from, current);
   }
-  if (pair === null) return { launch, current, move: 'undecidable' };
-  return { launch, current, move: ancestry(main, pair[0], pair[1]) };
+  if (pair === null) return 'undecidable';
+  return ancestry(main, pair[0], pair[1]);
 }
 
 /**
@@ -185,7 +221,10 @@ function assertForward(local: MasterMove, remote: MasterMove): void {
     ] as const
   )
     .filter(([, m]) => m.move !== 'equal' && m.move !== 'forward')
-    .map(([which, m]) => `${which} ${m.move} (launch ${m.launch}, now ${m.current ?? 'deleted'})`);
+    .map(
+      ([which, m]) =>
+        `${which} ${m.move} (launch ${m.launch}${m.synced === null ? '' : `, synced ${m.synced}`}, now ${m.current ?? 'deleted'})`,
+    );
   if (parts.length === 0) return;
   throw new Refusal(
     'master-not-forward',

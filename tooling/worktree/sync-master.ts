@@ -20,9 +20,9 @@
  * before the envelope reports it: after a clean merge's own commit, or
  * before `needs-resolution` or the finishing commit. A refresh failing
  * after a clean merge leaves that merge commit — `outcome` `merged` with
- * `commit` set, status `failed` step `install` or `build`; the refreshed
- * `node_modules` and `dist` are never rolled back. `--continue` refreshes
- * nothing: the resolver edits only doc indexes.
+ * `commit` and `upstream` set, status `failed` step `install` or `build`;
+ * the refreshed `node_modules` and `dist` are never rolled back.
+ * `--continue` refreshes nothing: the resolver edits only doc indexes.
  *
  * The version-line rule (`package-version.ts`; its I/O in
  * `sync-master-version.ts`) intervenes only when both the batch and
@@ -104,7 +104,8 @@ interface Run {
  * resolver, keeping the file header's invariant.
  *
  * @param input - The batch, the mode and the self-hosted seam.
- * @returns The envelope: `ok` with `outcome` `up-to-date` or `merged`;
+ * @returns The envelope: `ok` with `outcome` `up-to-date` or `merged`,
+ *   `upstream` naming the `origin/master` sha the batch then contains;
  *   `conflict` with `needs-resolution` and `pending`; `refused` (harvest's
  *   linked-worktree reasons, `batch-dirty`, `slices-live`, `code-conflict`,
  *   `no-merge-in-progress`, `unresolved`); or `failed` with the step.
@@ -122,6 +123,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
       errors: [],
       outcome: null,
       commit: null,
+      upstream: null,
       conflicts: [],
       version: null,
       pending: [],
@@ -154,8 +156,10 @@ function start(run: Run): void {
   assertBatchClean(batch);
   assertNoLiveSlices(batch);
   fetchOrigin(batch);
+  const upstream = git(batch, ['rev-parse', '--verify', `${RUN_UPSTREAM}^{commit}`], 'upstream');
   if (isMerged(batch)) {
     result.outcome = 'up-to-date';
+    result.upstream = upstream;
     return;
   }
   const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'probe');
@@ -169,7 +173,7 @@ function start(run: Run): void {
   assertNoCodeConflict(result.conflicts);
   run.owned = true;
   if (merge(run, rule !== null)) {
-    recordMerged(run);
+    recordMerged(run, upstream);
     refresh(run, mergeBase);
     return;
   }
@@ -218,7 +222,9 @@ function settleStoppedMerge(batch: string, rule: VersionRule | null): string[] {
  * @throws Refusal `no-merge-in-progress` without `MERGE_HEAD`; Refusal
  *   `unresolved` when a pending path is outside the doc indexes, still
  *   holds a conflict-marker line (nothing staged then), or is still
- *   unmerged after staging; StepFailure `commit` when the commit fails.
+ *   unmerged after staging; StepFailure `continue` when reading
+ *   `MERGE_HEAD`, listing or staging the pending paths fails; StepFailure
+ *   `commit` when the commit fails.
  */
 function finish(run: Run): void {
   const { batch, result } = run;
@@ -226,6 +232,7 @@ function finish(run: Run): void {
     throw new Refusal('no-merge-in-progress', 'preconditions', `${batch} has no merge in progress`);
   }
   run.owned = true;
+  const upstream = git(batch, ['rev-parse', '--verify', 'MERGE_HEAD^{commit}'], 'continue');
   result.pending = unmergedPaths(batch, 'continue');
   assertResolved(batch, result.pending);
   if (result.pending.length > 0) git(batch, ['add', '--', ...result.pending], 'continue');
@@ -235,7 +242,7 @@ function finish(run: Run): void {
   }
   commitMerge(run);
   result.pending = [];
-  recordMerged(run);
+  recordMerged(run, upstream);
 }
 
 /**
@@ -500,13 +507,15 @@ function commitMerge(run: Run): void {
 }
 
 /**
- * Record the landed merge commit.
+ * Record the landed merge commit and the `origin/master` it merged.
  *
- * @param run - Call state; gains `outcome` `merged` and `commit`.
+ * @param run - Call state; gains `outcome` `merged`, `commit` and `upstream`.
+ * @param upstream - The merged-in `origin/master` sha.
  */
-function recordMerged(run: Run): void {
+function recordMerged(run: Run, upstream: string): void {
   run.result.outcome = 'merged';
   run.result.commit = git(run.batch, ['rev-parse', 'HEAD'], 'merge');
+  run.result.upstream = upstream;
 }
 
 /**
