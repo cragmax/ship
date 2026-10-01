@@ -22,7 +22,7 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Report dir:` — the run's report directory.
-- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (blockers, attempts, cut and land instants), the teardown residue.
+- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (each blocker with its source — declared, or overlap and its confidence — attempts, cut and land instants), the teardown residue.
 
 ## Discipline
 
@@ -38,8 +38,8 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 
 - retries and requeues — an issue with more than one attempt, and why (a harvest conflict, an agent that died);
 - blocked stages, and the reason each gave;
-- probes that hit their cap or stayed inconclusive (the tdd reports);
-- a lease wait longer than its hold (the lease lines in the tdd reports);
+- probes that hit their cap or stayed inconclusive, and how many each issue ran — the tdd reports, and the `plan-time` entries under each plan's Probes (`plans/<N>.md`);
+- a lease wait longer than its hold (the lease lines in the tdd, review and test-review reports);
 - plan deviations the tdd or the reviewer recorded;
 - tool refusals in the envelopes under `<report dir>/tool/`;
 - teardown residue.

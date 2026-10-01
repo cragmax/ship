@@ -275,7 +275,13 @@ describe('runShip — issues in flight at once', () => {
     expect(report.epics[0]?.schedule).toEqual([
       { issue: 7, blockers: [], attempts: 2, startedAt: 'cut 7-2', committedAt: 'land 7-2' },
       { issue: 8, blockers: [], attempts: 1, startedAt: 'cut 8-1', committedAt: null },
-      { issue: 9, blockers: [8], attempts: 0, startedAt: null, committedAt: null },
+      {
+        issue: 9,
+        blockers: [{ issue: 8, source: 'declared' }],
+        attempts: 0,
+        startedAt: null,
+        committedAt: null,
+      },
     ]);
   });
 
@@ -351,6 +357,7 @@ describe('runShip — epics side by side', () => {
   it.each([
     ['publishes', 'runner:publish:'],
     ['reads the main checkout at the epic end', 'runner:preflight:epic-'],
+    ['checks master', 'runner:check-master:epic-'],
   ])('%s for one epic at a time', async (_name, prefix) => {
     const hold = holdable(new RegExp(`^${prefix}`));
     const run = fakeHooks(

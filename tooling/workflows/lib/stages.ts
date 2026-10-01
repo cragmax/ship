@@ -59,11 +59,23 @@ export type StageName = keyof typeof STAGES;
  */
 export const MAX_SLICES = 4;
 
-/** The most minutes one in-run probe may take; a hit records a follow-up, never a verdict. */
+/**
+ * The most minutes one probe of the tdd, the reviewer or the test reviewer may
+ * take; a hit records a follow-up, never a verdict.
+ */
 export const PROBE_CAP_MINUTES = 15;
 
-/** The most probes one issue's tdd may run. */
+/** The most probes one issue's tdd, reviewer or test reviewer may run. */
 export const PROBES_PER_ISSUE = 3;
+
+/**
+ * The most minutes one plan-time probe may take — a cheap local probe the
+ * planner runs before plan review; a hit records a follow-up, never a verdict.
+ */
+export const PLAN_PROBE_CAP_MINUTES = 5;
+
+/** The most plan-time probes one issue attempt's planner may run, its plan and apply modes together. */
+export const PLAN_PROBES_PER_ISSUE = 2;
 
 /** The paths whose change is not a trivial surface: code, tooling, tests and evals. */
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'evals/'];
@@ -115,7 +127,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
   },
 ];
 

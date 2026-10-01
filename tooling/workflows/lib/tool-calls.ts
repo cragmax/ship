@@ -55,6 +55,7 @@ export type ToolName =
   | 'teardown'
   | 'sync-master'
   | 'bump'
+  | 'check-master'
   | 'publish';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's. */
@@ -145,6 +146,9 @@ export type SyncMasterOutput = EnvelopeOutput<'sync-master'>;
 /** `bump`'s consumed fields. */
 export type BumpOutput = EnvelopeOutput<'bump'>;
 
+/** `check-master`'s consumed fields. */
+export type CheckMasterOutput = EnvelopeOutput<'check-master'>;
+
 /** `publish`'s consumed fields. */
 export type PublishOutput = EnvelopeOutput<'publish'>;
 
@@ -162,6 +166,7 @@ interface ToolOutputs {
   teardown: TeardownOutput;
   'sync-master': SyncMasterOutput;
   bump: BumpOutput;
+  'check-master': CheckMasterOutput;
   publish: PublishOutput;
 }
 
@@ -185,6 +190,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
+  'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
 };
 
@@ -301,6 +307,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   teardown: envelopeSchema('teardown'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
+  'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
 };
 

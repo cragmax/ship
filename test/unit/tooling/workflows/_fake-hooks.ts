@@ -5,15 +5,21 @@
  * deterministic. Each answer passes through the call's schema as an agent's
  * would: cut to the schema's properties, a missing required key, an
  * off-enum value or a value of none of its `type`s recorded in
- * {@link FakeRun.violations}. A `null` answer is a dead agent's, and no
+ * {@link FakeRun.violations}. A required key held as `undefined` counts as
+ * missing, as JSON drops it. A test whose fake run recorded a violation fails
+ * when it finishes, with no assertion needed, unless the run opts out
+ * ({@link FakeOptions.offSchema}). A `null` answer is a dead agent's, and no
  * schema applies to it.
  */
+
+import { onTestFinished } from 'vitest';
 
 import type {
   AgentOptions,
   JsonSchema,
   WorkflowHooks,
 } from '../../../../tooling/workflows/lib/hooks.types.js';
+import type { MasterMove } from '../../../../tooling/worktree/types-run.js';
 
 /** One recorded `agent()` call. */
 export interface RecordedCall {
@@ -41,6 +47,12 @@ export interface FakeOptions {
    * settled yet.
    */
   readonly gate?: (call: RecordedCall, answer: unknown) => Promise<unknown>;
+  /**
+   * The run answers off its call schemas on purpose: its {@link FakeRun.violations}
+   * are recorded for the test to read, and do not fail it. By default any
+   * violation fails the test that made the run, when that test finishes.
+   */
+  readonly offSchema?: boolean;
 }
 
 /** A fake run: the hooks to pass, and what they recorded. */
@@ -53,7 +65,10 @@ export interface FakeRun {
   readonly phases: string[];
   /** Every `agent()` call (`call <label>`) and `log()` line (`log <message>`), interleaved in order. */
   readonly timeline: string[];
-  /** Where an answer broke its call's schema: `<label>.<path>: <what>`. */
+  /**
+   * Where an answer broke its call's schema: `<label>.<path>: <what>`. Any
+   * line fails the test when it finishes, unless {@link FakeOptions.offSchema}.
+   */
   readonly violations: string[];
 }
 
@@ -76,7 +91,7 @@ export const PREFLIGHT_OK = {
   envelopePath: 'reports/tool/preflight.json',
   status: 'ok',
   worktree: 'C:/src/main',
-  snapshot: { head: 'abc123', dirty: false },
+  snapshot: { head: 'abc123', dirty: false, master: { local: 'local0', remote: 'origin0' } },
   problems: [],
   errors: [],
 };
@@ -135,6 +150,41 @@ export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
   },
 });
 
+/** One ref's scripted move for {@link masterMoved}. */
+export interface ScriptedMove {
+  /** The move. */
+  readonly move: MasterMove['move'];
+  /** The current sha; `null` when deleted. */
+  readonly current: string | null;
+}
+
+/**
+ * A `check-master` answer moving each ref from its launch sha in
+ * {@link PREFLIGHT_OK} (`local0` / `origin0`): `ok` when both moves are
+ * `equal` or `forward`, otherwise `refused` `master-not-forward`.
+ *
+ * @param local - Local `master`'s move.
+ * @param remote - `origin`'s `master` move.
+ * @returns The answer, under `runner:check-master`.
+ */
+export const masterMoved = (
+  local: ScriptedMove,
+  remote: ScriptedMove,
+): Readonly<Record<string, unknown>> => {
+  const passed = [local, remote].every((m) => m.move === 'equal' || m.move === 'forward');
+  return {
+    'runner:check-master': {
+      exitCode: passed ? 0 : 1,
+      envelopePath: 'e.json',
+      status: passed ? 'ok' : 'refused',
+      ...(passed ? {} : { reason: 'master-not-forward' }),
+      errors: passed ? [] : [{ step: 'check', message: 'master is not forward of its launch' }],
+      local: { launch: 'local0', ...local },
+      remote: { launch: 'origin0', ...remote },
+    },
+  };
+};
+
 /** The run's report directory in the fakes. */
 export const REPORT_DIR = `${RUN_ROOT}/reports`;
 
@@ -162,6 +212,7 @@ export const PLAN_CARD = {
   commit: { type: 'feat', scope: 'build', subject: 'add the x tool' },
   closes: 'fixes',
   evidence: 'the issue asks for x',
+  probes: [],
 };
 
 /** A clean land of #7's slice. */
@@ -211,8 +262,14 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   planReviewer: { verdict: 'approved', findings: 0, findingsPath: `${REPORT_DIR}/pr.md` },
   tdd: TDD_GREEN,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
-  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper' },
-  testReview: { verdict: 'hardened', sha: 'slice3', survivors: 0, summary: 'pinned a bound' },
+  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper', leaseLines: [] },
+  testReview: {
+    verdict: 'hardened',
+    sha: 'slice3',
+    survivors: 0,
+    summary: 'pinned a bound',
+    leaseLines: [],
+  },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:sync-master': {
@@ -224,6 +281,11 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     pending: [],
   },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
+  'runner:check-master': {
+    ...OK,
+    local: { launch: 'local0', current: 'local0', move: 'equal' },
+    remote: { launch: 'origin0', current: 'origin0', move: 'equal' },
+  },
   'runner:publish': {
     ...OK,
     pushed: true,
@@ -248,8 +310,10 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
  * answers `null`, as a dead agent does.
  *
  * @param responses - Per-label answers (or {@link Responder}s) overriding the defaults.
- * @param options - The answer gate.
+ * @param options - The answer gate, and whether the run answers off its schemas on purpose.
  * @returns The hooks and their records.
+ * @throws When called outside a running test without `offSchema`: the finish
+ *   check registers through vitest's `onTestFinished`.
  */
 export function fakeHooks(
   responses: Readonly<Record<string, unknown>> = {},
@@ -261,6 +325,7 @@ export function fakeHooks(
   const phases: string[] = [];
   const timeline: string[] = [];
   const violations: string[] = [];
+  if (options.offSchema !== true) failTestOnViolations(violations);
   const answered = new Map<string, number>();
   const agent = (prompt: string, options: AgentOptions): Promise<unknown> => {
     const call: RecordedCall = {
@@ -303,6 +368,20 @@ export function fakeHooks(
     },
   };
   return { hooks, calls, phases, timeline, violations };
+}
+
+/**
+ * Fail the running test when it finishes with a violation recorded, its
+ * error naming each violation line.
+ *
+ * @param violations - The run's violation lines, read when the test finishes.
+ */
+function failTestOnViolations(violations: readonly string[]): void {
+  onTestFinished(() => {
+    if (violations.length > 0) {
+      throw new Error(`fake answers broke their call schemas:\n${violations.join('\n')}`);
+    }
+  });
 }
 
 /** Where a part of an answer sits, and where its violations go. */
@@ -401,7 +480,7 @@ function conformItems(value: readonly unknown[], schema: JsonSchema, place: Answ
 }
 
 /**
- * Record each `required` key an object lacks.
+ * Record each `required` key an object lacks, or holds as `undefined` (which JSON drops).
  *
  * @param record - The object.
  * @param schema - Its schema.
@@ -415,7 +494,7 @@ function checkRequired(
   const required = schema['required'];
   if (!Array.isArray(required)) return;
   for (const key of required as unknown[]) {
-    if (typeof key === 'string' && !Object.hasOwn(record, key)) {
+    if (typeof key === 'string' && (!Object.hasOwn(record, key) || record[key] === undefined)) {
       place.violations.push(`${place.at}: lacks required ${key}`);
     }
   }

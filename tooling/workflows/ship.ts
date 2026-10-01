@@ -139,9 +139,12 @@ async function runEntries(
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
   return cuts.map((c, k) => {
     if ('stopped' in c) {
-      return { ...c.stopped, schedule: c.issues.map((n) => neverStarted(n, graph)) };
+      return {
+        ...c.stopped,
+        schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
+      };
     }
-    return cutReport(c.setup, graph, k, driven);
+    return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
 
@@ -226,6 +229,8 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
  * @param graph - Pre-flight's graph.
  * @param k - The entry's index in it.
  * @param driven - The driven entries' reports.
+ * @param overlap - Pre-flight's overlap record, for each never-started
+ *   blocker's source.
  * @returns The report, its issues and schedule in the planned order.
  */
 function cutReport(
@@ -233,6 +238,7 @@ function cutReport(
   graph: RunGraph,
   k: number,
   driven: readonly EpicReport[],
+  overlap: OverlapRecord,
 ): EpicReport {
   const report: EpicReport = driven.find((r) => r.epic === setup.epic) ?? {
     epic: setup.epic,
@@ -253,7 +259,8 @@ function cutReport(
       },
   );
   const schedule = planned.map(
-    (issue) => report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph),
+    (issue) =>
+      report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph, overlap),
   );
   return { ...report, issues, schedule };
 }

@@ -2,10 +2,11 @@
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump` and `publish`. The canonical home of their shapes;
- * `types-run.ts` exports each as its `z.infer`. The base fields, path
- * spelling and integer rule are `schemas.ts`'s. A field that names
- * something the command creates or measures stays `null` until it exists.
+ * `sync-master`, `bump`, `check-master` and `publish`. The canonical home
+ * of their shapes; `types-run.ts` exports each as its `z.infer`. The base
+ * fields, path spelling and integer rule are `schemas.ts`'s. A field that
+ * names something the command creates or measures stays `null` until it
+ * exists.
  */
 
 import { z } from 'zod';
@@ -73,8 +74,23 @@ export const PreflightResultSchema = ResultBaseSchema.extend({
   ahead: z.int().nullable(),
   /** `origin/master` commits not on local `master`, after the fetch. */
   behind: z.int().nullable(),
-  /** The main checkout as the run starts from it. */
-  snapshot: z.object({ head: z.string(), dirty: z.boolean() }).nullable(),
+  /**
+   * The main checkout as the run starts from it, and the launch shas of
+   * local `master` and of `origin`'s as `git ls-remote` reports it: the
+   * baseline of the epic end's master check.
+   */
+  snapshot: z
+    .object({
+      head: z.string(),
+      dirty: z.boolean(),
+      master: z.object({
+        /** Local `refs/heads/master`. */
+        local: z.string(),
+        /** `origin`'s `refs/heads/master`, read live with `git ls-remote`, never the tracking ref. */
+        remote: z.string(),
+      }),
+    })
+    .nullable(),
   /**
    * Every failed check found before the command ended; when no step failed,
    * non-empty exactly when `reason` is `preflight-failed`.
@@ -201,4 +217,26 @@ export const PublishResultSchema = ResultBaseSchema.extend({
    * mode or before it was read.
    */
   mergeable: z.string().nullable(),
+});
+
+/** One `master` ref at the launch and now. */
+export const MasterMoveSchema = z.object({
+  /** The launch sha, as given. */
+  launch: z.string(),
+  /** The current sha; `null` when the ref is deleted. */
+  current: z.string().nullable(),
+  /**
+   * `equal`; `forward`: the launch sha is an ancestor of the current one;
+   * `rewound`: it is not (rewound or rewritten); `deleted`: the ref is
+   * gone; `undecidable`: a sha is missing locally even after a fetch.
+   */
+  move: z.enum(['equal', 'forward', 'rewound', 'deleted', 'undecidable']),
+});
+
+/** Envelope of `check-master <main> --local SHA --remote SHA`; `worktree` is the main checkout. */
+export const CheckMasterResultSchema = ResultBaseSchema.extend({
+  /** Local `refs/heads/master`; `null` until checked. */
+  local: MasterMoveSchema.nullable(),
+  /** `origin`'s `refs/heads/master`, read with `git ls-remote`; `null` until checked. */
+  remote: MasterMoveSchema.nullable(),
 });

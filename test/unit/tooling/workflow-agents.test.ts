@@ -22,6 +22,9 @@ const PERSONAL_SKILLS = [
 const RETIRED_RESTORE =
   /Edit-back|reversing (?:the|your) exact (?:mutation|edit)|git checkout <the-exact-impl-file|git checkout -- <file you mutated>|restore via `git checkout`/i;
 
+// A vitest run instruction without a worktree config, beside the right one.
+const BARE_VITEST = /\bnpx vitest (?:run|related)\b(?! --config vitest\.worktree\.)/;
+
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
@@ -133,6 +136,59 @@ describe('workflow agents', () => {
       expect(text).not.toMatch(RETIRED_RESTORE);
     },
   );
+
+  // regression: #1077 — a bare `npx vitest run` in a slice writes into the shared, junctioned node_modules/.vite.
+  it.each(['planner', 'ship-plan-reviewer', 'ship-tdd', 'reviewer', 'ship-test-review'])(
+    '%s runs unit tests under the worktree vitest config',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(text).toContain('npx vitest run --config vitest.worktree.config.ts <files>');
+      expect(text).not.toMatch(BARE_VITEST);
+    },
+  );
+
+  // Hand-written: the Probes-entry tokens the planner writes and the plan reviewer and the tdd read (#1071).
+  const PLAN_PROBE_TOKENS = ['plan-time', 'tdd-time', 'pending — tdd', 'plan allowance spent'];
+
+  // Its entry-format bullet, not the whole file: step 4 and apply mode repeat the tokens, so a drifted definition hid behind them.
+  it('planner defines the plan-probe tokens in its Probes-entry format', () => {
+    const entry =
+      section(agentText('planner'), '## Plan-time probes')
+        .split('\n')
+        .find((l) => l.startsWith('- **The entry.**')) ?? '';
+
+    expect(PLAN_PROBE_TOKENS.filter((token) => !entry.includes(token))).toEqual([]);
+  });
+
+  it.each<[string, string[]]>([
+    ['ship-plan-reviewer', PLAN_PROBE_TOKENS],
+    ['ship-tdd', ['plan-time', 'pending — tdd']],
+  ])('%s spells the plan-probe tokens the planner writes', (agentType, tokens) => {
+    const text = agentText(agentType);
+
+    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+  });
+
+  // Hand-written: the probe timing and the greppable duration token a cap review reads (#1086).
+  const DURATION_TOKENS = ['date +%s', 'duration: <dur>', '`42s`', '`11m 04s`'];
+
+  it.each(['planner', 'ship-tdd'])(
+    '%s times each probe and writes its duration token',
+    (agentType) => {
+      const text = agentText(agentType);
+
+      expect(DURATION_TOKENS.filter((token) => !text.includes(token))).toEqual([]);
+    },
+  );
+
+  // Its return section, not the whole file: the planner's step 4 also names `seconds`, so a dropped return field hid behind it.
+  it.each<[string, string]>([
+    ['planner', '## Return'],
+    ['ship-tdd', '## Report and return'],
+  ])('%s returns each probe record’s seconds under its %s', (agentType, heading) => {
+    expect(section(agentText(agentType), heading)).toContain('`seconds`');
+  });
 
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([

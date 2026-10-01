@@ -30,6 +30,7 @@ import {
 } from '../../worktree/schemas.js';
 import {
   BumpResultSchema,
+  CheckMasterResultSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
@@ -119,6 +120,9 @@ export const TOOL_ENVELOPES = {
     { errors: ERRORS },
   ),
   publish: PublishResultSchema.pick({ ...STATUS, pushed: true, pr: true, mergeable: true }).extend({
+    errors: ERRORS,
+  }),
+  'check-master': CheckMasterResultSchema.pick({ ...STATUS, local: true, remote: true }).extend({
     errors: ERRORS,
   }),
 } satisfies Record<WorktreeToolName, z.ZodObject>;

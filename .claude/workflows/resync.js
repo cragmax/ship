@@ -80,6 +80,8 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
+const PLAN_PROBE_CAP_MINUTES = 5;
+const PLAN_PROBES_PER_ISSUE = 2;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -107,7 +109,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -166,11 +168,14 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
-function serverTierLines(lease) {
+function probeCapsLine(minutes, probes) {
+  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
+}
+function serverTierLines(lease, minutes, probes) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    probeCapsLine(minutes, probes),
   ];
 }
 const ISSUE_TEXT_JQ =
@@ -220,7 +225,7 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -234,6 +239,7 @@ const PROMPTS = {
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
+      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -243,14 +249,14 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
+  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -281,6 +287,7 @@ function sliceReviewPrompt(values) {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
+    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }
 
@@ -318,6 +325,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -331,8 +339,16 @@ const TOOL_ENVELOPE_SCHEMAS = {
       worktree: { type: ['string', 'null'] },
       snapshot: {
         type: ['object', 'null'],
-        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
-        required: ['head', 'dirty'],
+        properties: {
+          head: { type: 'string' },
+          dirty: { type: 'boolean' },
+          master: {
+            type: 'object',
+            properties: { local: { type: 'string' }, remote: { type: 'string' } },
+            required: ['local', 'remote'],
+          },
+        },
+        required: ['head', 'dirty', 'master'],
       },
       problems: {
         type: 'array',
@@ -384,6 +400,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -463,6 +480,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -523,6 +541,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -575,6 +594,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -625,6 +645,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -676,6 +697,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -737,6 +759,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -785,6 +808,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -859,6 +883,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -909,6 +934,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -928,6 +954,71 @@ const TOOL_ENVELOPE_SCHEMAS = {
       mergeable: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+  'check-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      local: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+      remote: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+    },
+    required: ['status', 'errors', 'local', 'remote'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1013,8 +1104,24 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
       closes: { type: 'string', enum: ['fixes', 'see'] },
       evidence: { type: 'string' },
+      probes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string' },
+            verdict: {
+              type: 'string',
+              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
+            },
+            followUp: { type: 'string' },
+            seconds: { type: 'integer' },
+          },
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
+        },
+      },
     },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence'],
+    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
   },
   planReview: {
     type: 'object',
@@ -1043,8 +1150,9 @@ const AGENT_OUTPUT_SCHEMAS = {
               enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
             },
             followUp: { type: 'string' },
+            seconds: { type: 'integer' },
           },
-          required: ['claim', 'verdict', 'followUp'],
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
       reason: { type: 'string' },
@@ -1057,8 +1165,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
       sha: { type: 'string' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'summary'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
   testReview: {
     type: 'object',
@@ -1067,8 +1176,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       sha: { type: 'string' },
       survivors: { type: 'integer' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'survivors', 'summary'],
+    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
   },
   resolver: {
     type: 'object',
@@ -1150,6 +1260,7 @@ const TOOL_COMMANDS = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
+  'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
 };
 const STRING = { type: 'string' };
@@ -1237,6 +1348,7 @@ const TOOL_SCHEMAS = {
   teardown: envelopeSchema('teardown'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
+  'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
@@ -1299,17 +1411,18 @@ async function tearDownSpent(hooks, path, report) {
   }
 }
 function spentTarget(run) {
-  const path = run.path ?? run.branch;
   if (run.spentUnverified) {
-    return { path, why: 'its PR is over, but the PR head could not be checked' };
+    return { path: run.path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;
-  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
   if (run.dirty !== false) {
-    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+    return {
+      path: run.path,
+      why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown',
+    };
   }
-  if (!Array.isArray(run.nested) || run.nested.length > 0) {
-    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  if (run.nested.length > 0) {
+    return { path: run.path, why: `nested worktrees: ${run.nested.join(', ')}` };
   }
   return { path: run.path };
 }

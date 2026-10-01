@@ -33,6 +33,7 @@ const CRITIC_CUT = {
   branch: 'slice/7-8/critic',
   base: 'batchhead',
   slice: 'C:/src/ph-runs/7/slice-critic',
+  at: '2026-09-29T10:30:00.000Z',
 };
 
 const CRITIC_APPLIED = {
@@ -42,6 +43,21 @@ const CRITIC_APPLIED = {
   commit: { type: 'refactor', scope: 'build', subject: 'share the x helper' },
   findings: [{ lens: 'duplication', summary: 'two copies of the x helper', applied: true }],
   checks: 'build, eslint, vitest related, prettier',
+};
+
+const TEST_REVIEW_LEASED = {
+  verdict: 'hardened',
+  sha: 'slice3',
+  survivors: 0,
+  summary: 'pinned a bound',
+  leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
+};
+
+const REVIEW_LEASED = {
+  verdict: 'fixed',
+  sha: 'slice2',
+  summary: 'renamed a helper',
+  leaseLines: ['with-lease: waited 0.5s for paper@localhost:25702, held 12.5s'],
 };
 
 const LAND_BATCH_DIRTY = {
@@ -86,8 +102,9 @@ describe('runShip — the critic', () => {
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
-      'runner:publish:list',
       'runner:preflight:list',
+      'runner:check-master:list',
+      'runner:publish:list',
     ]);
     const land = run.calls.find((c) => c.label === 'runner:land:critic');
     expect(land?.argv).toEqual([
@@ -216,6 +233,7 @@ describe('runShip — the critic', () => {
         base: null,
         slice: null,
         errors: [{ step: 'preconditions', message: 'slice/7-8/critic exists' }],
+        at: '2026-09-29T10:30:00.000Z',
       },
     });
 
@@ -297,6 +315,11 @@ describe('runShip — the retro', () => {
           status: 'refused',
           reason: 'code-conflict',
           errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+          outcome: null,
+          commit: null,
+          conflicts: [],
+          version: null,
+          pending: [],
         },
       },
     ],
@@ -346,6 +369,82 @@ describe('runShip — the lease totals', () => {
     });
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
       '- paper: 1 leases, waited 1.5s total (max 1.5s), held 42.0s total',
+    );
+  });
+
+  it('labels the test review’s leases after the tdd’s in the issue’s lease timings', async () => {
+    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Lease timings: ')),
+    ).toEqual([
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ]);
+  });
+
+  it('labels the review’s leases between the tdd’s and the test review’s in the issue’s lease timings', async () => {
+    const run = fakeHooks({ reviewer: REVIEW_LEASED, testReview: TEST_REVIEW_LEASED });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Lease timings: ')),
+    ).toEqual([
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ]);
+  });
+
+  it('counts a landed issue’s reviewer lease in its engine’s and its issue’s totals', async () => {
+    const run = fakeHooks({ reviewer: REVIEW_LEASED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 2, waitedSeconds: 2, waitedMaxSeconds: 1.5, heldSeconds: 54.5 },
+        { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 2, heldSeconds: 54.5 }],
+      unparsed: [],
+    });
+  });
+
+  it('counts a landed issue’s test-review lease in its engine’s and its issue’s totals', async () => {
+    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
+        { type: 'folia', leases: 1, waitedSeconds: 1.2, waitedMaxSeconds: 1.2, heldSeconds: 40.3 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 2.7, heldSeconds: 82.3 }],
+      unparsed: [],
+    });
+  });
+
+  it('keeps a test review’s malformed lease line unparsed, under its issue', async () => {
+    const run = fakeHooks({
+      testReview: {
+        ...TEST_REVIEW_LEASED,
+        leaseLines: [...TEST_REVIEW_LEASED.leaseLines, 'with-lease: waited ?s'],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases?.unparsed).toEqual([
+      { issue: 7, line: 'with-lease: waited ?s' },
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- unparsed (#7): with-lease: waited ?s',
     );
   });
 

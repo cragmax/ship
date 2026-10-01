@@ -20,13 +20,15 @@
  * npx tsx <main-checkout>/tooling/worktree.ts live-runs MAIN
  * npx tsx <main-checkout>/tooling/worktree.ts sync-master BATCH [--continue]
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
+ * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
  * staged set as `staged-guard` does, builds when needed, then commits. The
- * epic end runs the last three, in that order. A resync runs
- * `cut-batch --attach`, `sync-master` and `publish --push-only`.
+ * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
+ * that order. A resync runs `cut-batch --attach`, `sync-master` and
+ * `publish --push-only`.
  * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
@@ -63,6 +65,7 @@ import type { z } from 'zod';
 
 import { toPosix } from './shared.js';
 import { bump } from './worktree/bump.js';
+import { checkMaster } from './worktree/check-master.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
 import { attachBatch } from './worktree/cut-attach.js';
 import { harvest } from './worktree/harvest.js';
@@ -86,6 +89,7 @@ import {
 } from './worktree/schemas.js';
 import {
   BumpResultSchema,
+  CheckMasterResultSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
@@ -259,6 +263,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: (args) => bump({ batch: args.target }),
+  },
+  'check-master': {
+    schema: CheckMasterResultSchema,
+    valueFlags: ['--local', '--remote'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      checkMaster({
+        main: args.target,
+        local: args.values.get('--local') ?? '',
+        remote: args.values.get('--remote') ?? '',
+      }),
   },
   publish: {
     schema: PublishResultSchema,

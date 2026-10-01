@@ -2,9 +2,10 @@
  * Envelope types of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump` and `publish`. Each is the `z.infer` of its schema
- * in `schemas-run.ts`, the canonical home of the shapes and their field
- * docs. The status semantics and error classes are `types.ts`'s.
+ * `sync-master`, `bump`, `check-master` and `publish`. Each is the
+ * `z.infer` of its schema in `schemas-run.ts`, the canonical home of the
+ * shapes and their field docs. The status semantics and error classes are
+ * `types.ts`'s.
  */
 
 import type { z } from 'zod';
@@ -12,11 +13,13 @@ import type { z } from 'zod';
 import type {
   AttachInfoSchema,
   BumpResultSchema,
+  CheckMasterResultSchema,
   ConflictKindSchema,
   ConflictPathSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
+  MasterMoveSchema,
   OpenedPrSchema,
   PreflightCheckSchema,
   PreflightProblemSchema,
@@ -67,3 +70,9 @@ export type OpenedPr = z.infer<typeof OpenedPrSchema>;
 
 /** Envelope of `publish <batch> (--title T --body-file F | --push-only) --log L`. */
 export type PublishResult = z.infer<typeof PublishResultSchema>;
+
+/** One `master` ref at the launch and now. */
+export type MasterMove = z.infer<typeof MasterMoveSchema>;
+
+/** Envelope of `check-master <main> --local SHA --remote SHA`. */
+export type CheckMasterResult = z.infer<typeof CheckMasterResultSchema>;

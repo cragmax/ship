@@ -16,7 +16,7 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail: 'per epic: critic, master sync, version bump, retro, pull request',
+      detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
     },
   ],
 };
@@ -39,6 +39,8 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
+const PLAN_PROBE_CAP_MINUTES = 5;
+const PLAN_PROBES_PER_ISSUE = 2;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -66,7 +68,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, pull request',
+    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -572,11 +574,14 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
-function serverTierLines(lease) {
+function probeCapsLine(minutes, probes) {
+  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
+}
+function serverTierLines(lease, minutes, probes) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    probeCapsLine(minutes, probes),
   ];
 }
 const ISSUE_TEXT_JQ =
@@ -626,7 +631,7 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -640,6 +645,7 @@ const PROMPTS = {
       `Plan file: ${values.planPath}`,
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
+      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -649,14 +655,14 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       `Plan file: ${values.planPath}`,
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
+      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
       ...verbatimBlock('Commit message file', {
         path: values.messagePath,
         content: values.message,
       }),
     ].join('\n'),
   reviewer: (values) => ['Mode: review', sliceReviewPrompt(values)].join('\n'),
-  testReview: (values) => [sliceReviewPrompt(values), ...serverTierLines(values.lease)].join('\n'),
+  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       'Mode: resolve',
@@ -687,6 +693,7 @@ function sliceReviewPrompt(values) {
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
     `Report file: ${values.reportPath}`,
+    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }
 
@@ -724,6 +731,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -737,8 +745,16 @@ const TOOL_ENVELOPE_SCHEMAS = {
       worktree: { type: ['string', 'null'] },
       snapshot: {
         type: ['object', 'null'],
-        properties: { head: { type: 'string' }, dirty: { type: 'boolean' } },
-        required: ['head', 'dirty'],
+        properties: {
+          head: { type: 'string' },
+          dirty: { type: 'boolean' },
+          master: {
+            type: 'object',
+            properties: { local: { type: 'string' }, remote: { type: 'string' } },
+            required: ['local', 'remote'],
+          },
+        },
+        required: ['head', 'dirty', 'master'],
       },
       problems: {
         type: 'array',
@@ -790,6 +806,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -869,6 +886,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -929,6 +947,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -981,6 +1000,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1031,6 +1051,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1082,6 +1103,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1143,6 +1165,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1191,6 +1214,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1265,6 +1289,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1315,6 +1340,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'already-bumped',
           'pr-exists',
           'no-open-pr',
+          'master-not-forward',
         ],
       },
       errors: {
@@ -1334,6 +1360,71 @@ const TOOL_ENVELOPE_SCHEMAS = {
       mergeable: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'pushed', 'pr', 'mergeable'],
+  },
+  'check-master': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      local: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+      remote: {
+        type: ['object', 'null'],
+        properties: {
+          launch: { type: 'string' },
+          current: { type: ['string', 'null'] },
+          move: { type: 'string', enum: ['equal', 'forward', 'rewound', 'deleted', 'undecidable'] },
+        },
+        required: ['launch', 'current', 'move'],
+      },
+    },
+    required: ['status', 'errors', 'local', 'remote'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1419,8 +1510,24 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
       closes: { type: 'string', enum: ['fixes', 'see'] },
       evidence: { type: 'string' },
+      probes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string' },
+            verdict: {
+              type: 'string',
+              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
+            },
+            followUp: { type: 'string' },
+            seconds: { type: 'integer' },
+          },
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
+        },
+      },
     },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence'],
+    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
   },
   planReview: {
     type: 'object',
@@ -1449,8 +1556,9 @@ const AGENT_OUTPUT_SCHEMAS = {
               enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
             },
             followUp: { type: 'string' },
+            seconds: { type: 'integer' },
           },
-          required: ['claim', 'verdict', 'followUp'],
+          required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
       reason: { type: 'string' },
@@ -1463,8 +1571,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
       sha: { type: 'string' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'summary'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
   testReview: {
     type: 'object',
@@ -1473,8 +1582,9 @@ const AGENT_OUTPUT_SCHEMAS = {
       sha: { type: 'string' },
       survivors: { type: 'integer' },
       summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['verdict', 'sha', 'survivors', 'summary'],
+    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
   },
   resolver: {
     type: 'object',
@@ -1556,6 +1666,7 @@ const TOOL_COMMANDS = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
+  'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
 };
 const STRING = { type: 'string' };
@@ -1643,6 +1754,7 @@ const TOOL_SCHEMAS = {
   teardown: envelopeSchema('teardown'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
+  'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
@@ -1725,17 +1837,39 @@ function settleEvents(primary, teardown, at) {
 }
 
 const LEASE_LINE =
-  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s\r?$/u;
+  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
 function formatLeaseLine(timing) {
   const waited = timing.waitedSeconds.toFixed(1);
   const held = timing.heldSeconds.toFixed(1);
-  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s`;
+  const suffix = timing.waitedOn === undefined ? '' : `, waited on ${timing.waitedOn}`;
+  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s${suffix}`;
+}
+const LEASE_WAIT_LINE = /^with-lease: waiting for \w+@\S+ /u;
+const LEASE_UNKNOWN_HOLDER = 'an unknown holder';
+function formatLeaseWaitLine(wait) {
+  const { holder } = wait;
+  const head = `with-lease: waiting for ${wait.type}@${wait.endpoint} — held by`;
+  if (holder === null) return `${head} ${LEASE_UNKNOWN_HOLDER}`;
+  const state = holder.alive ? 'alive' : 'dead, lock reclaimed once stale';
+  return `${head} ${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)}, since ${holder.since}, ${state}): ${holder.command}`;
+}
+function leaseWaitedOn(holder) {
+  if (holder === null) return LEASE_UNKNOWN_HOLDER;
+  return `${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)})`;
+}
+function leaseHolderLabel(cwd) {
+  return cwd
+    .split(/[\\/]/u)
+    .filter((segment) => segment !== '')
+    .slice(-2)
+    .join('/');
 }
 function parseLeaseLine(line) {
   const match = LEASE_LINE.exec(line);
   if (match === null) return null;
-  const [, waited = '', type = '', endpoint = '', held = ''] = match;
-  return { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+  const [, waited = '', type = '', endpoint = '', held = '', waitedOn] = match;
+  const timing = { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+  return waitedOn === undefined ? timing : { ...timing, waitedOn };
 }
 function parseLeaseLines(text) {
   const timings = [];
@@ -1756,7 +1890,7 @@ function aggregateLeaseTimings(samples) {
   }));
   const issues = new Map();
   const unparsed = [];
-  for (const sample of samples) {
+  for (const sample of samples.filter((s) => !leaseIsWaitLine(s))) {
     const lease = 'lease' in sample ? sample.lease : parseLeaseLine(sample.line);
     const engine = engines.find((e) => e.type === lease?.type);
     if (lease === null || engine === undefined) {
@@ -1782,6 +1916,9 @@ function aggregateLeaseTimings(samples) {
       })),
     unparsed,
   };
+}
+function leaseIsWaitLine(sample) {
+  return 'line' in sample && LEASE_WAIT_LINE.test(sample.line);
 }
 function leaseSampleLine(sample) {
   return 'line' in sample ? sample.line : formatLeaseLine(sample.lease);
@@ -1916,6 +2053,16 @@ function prTitle(input) {
   if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
+function sliceLeaseLines(work) {
+  const roles = [
+    { role: 'tdd', lines: work.tdd.leaseLines },
+    { role: 'review', lines: work.review.leaseLines },
+  ];
+  if (work.testReview !== null) {
+    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
+  }
+  return roles;
+}
 function renderPrBody(input) {
   const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
   const closing = new Set(
@@ -1937,6 +2084,8 @@ function renderPrBody(input) {
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
+    `- Master check: ${masterCheckText(input.masterCheck)}`,
+    `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
@@ -1970,11 +2119,15 @@ function overlapLine(edge) {
 }
 function scheduleLine(entry) {
   const blockers =
-    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
     `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
   );
+}
+function blockerText(blocker) {
+  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
+  return `#${String(blocker.issue)} (${source})`;
 }
 function leaseLines(leases) {
   return [
@@ -2010,33 +2163,59 @@ function issueSection(landed) {
     test === null
       ? '- Test review: skipped — trivial surface'
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
-    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
-    ...probeLines(landed.tdd.probes),
+    `- Lease timings: ${sliceLeaseText(landed)}`,
+    ...probeLines(landed),
     '',
   ];
 }
-function probeLines(probes) {
-  if (probes.length === 0) return ['- Probes: no probe needed'];
-  return [
-    '- Probes:',
-    ...probes.map((p) => {
-      const followUp = p.followUp === '' ? '' : `; follow-up: ${p.followUp}`;
-      return `  - ${p.claim}: ${p.verdict}${followUp}`;
-    }),
+function probeLines(work) {
+  const records = [
+    ...work.card.probes.map((p) => probeLine('plan', p)),
+    ...work.tdd.probes.map((p) => probeLine('tdd', p)),
   ];
+  if (records.length === 0) return ['- Probes: no probe needed'];
+  return ['- Probes:', ...records];
+}
+function probeLine(stage, probe) {
+  const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
+  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+}
+function durationText(seconds) {
+  if (seconds < 60) return `${String(seconds)}s`;
+  const rest = String(seconds % 60).padStart(2, '0');
+  return `${String(Math.floor(seconds / 60))}m ${rest}s`;
+}
+function sliceLeaseText(work) {
+  const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
+    const timings = parseLeaseLines(lines.join('\n'));
+    return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];
+  });
+  return parts.length === 0 ? 'none' : parts.join('; ');
 }
 function leaseText(timings) {
-  if (timings.length === 0) return 'none';
   return timings
-    .map(
-      (t) =>
-        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
-    )
+    .map((t) => {
+      const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
+      return `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s${on}, held ${String(t.heldSeconds)}s`;
+    })
     .join('; ');
 }
 function unlandedLine(issue) {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+}
+function masterCheckText(check) {
+  return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
+}
+function forwardText(move) {
+  if (move.move === 'equal') return `equal at ${move.launch}`;
+  return `forward, ${move.launch} → ${move.current}`;
+}
+function mainCheckoutText(untouched) {
+  if (untouched === null) return 'not compared (a snapshot could not be read)';
+  return untouched
+    ? 'untouched since pre-flight'
+    : 'touched since pre-flight (HEAD or dirtiness changed)';
 }
 function bumpText(bump) {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
@@ -2122,6 +2301,48 @@ function criticNotRun(reason) {
   return { outcome: 'not-run', reason, findings: [], halt: null };
 }
 
+const NO_LAUNCH = 'no launch snapshot of master to check against';
+async function checkMasterStep(hooks, entry, launch) {
+  if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
+  const { master } = launch.snapshot;
+  const out = await runTool(
+    hooks,
+    'check-master',
+    [entry.main, '--local', master.local, '--remote', master.remote],
+    runPlace(entry.reportDir, entry.tag),
+  );
+  return checkOf(out);
+}
+function checkOf(out) {
+  const local = out?.local ?? null;
+  const remote = out?.remote ?? null;
+  if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
+    return { passed: true, local, remote };
+  }
+  return { passed: false, local, remote, failure: failureOf(out, local, remote) };
+}
+function failureOf(out, local, remote) {
+  const lines = [
+    ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
+    ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
+  ];
+  if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
+    return lines.join('; ');
+  }
+  return envelopeProblem('check-master', out);
+}
+function isForward(move) {
+  return (
+    move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
+  );
+}
+function moveLine(which, move) {
+  return (
+    `${which} master ${move.move}: launch ${move.launch}, now ${move.current ?? 'deleted'}` +
+    ` — restore it from ${move.launch}`
+  );
+}
+
 async function syncMasterStep(hooks, ctx) {
   const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
   const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
@@ -2185,7 +2406,8 @@ async function epicEnd(input) {
     ...published,
     issues: input.issues,
     schedule: input.schedule,
-    mainUntouched: await input.repoLock.enqueue(() => mainUntouched(input)),
+    mainUntouched: await mainAtEnd(input, state),
+    ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
@@ -2220,6 +2442,17 @@ async function shipSteps(input, state) {
   return publishStep(input, { sync, bump, state });
 }
 async function publishStep(input, found) {
+  return input.repoLock.enqueue(async () => {
+    const untouched = await mainUntouched(input);
+    found.state.mainUntouched = untouched;
+    const check = await checkMasterStep(input.hooks, input.entry, input.launch);
+    found.state.masterCheck = check;
+    if (!check.passed)
+      return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
+    return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
+  });
+}
+async function openPr(input, found, checked) {
   const { hooks, entry } = input;
   const body = renderPrBody({
     epic: entry.epic,
@@ -2229,6 +2462,8 @@ async function publishStep(input, found) {
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
     bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
@@ -2246,7 +2481,7 @@ async function publishStep(input, found) {
     `${entry.reportDir}/publish.log`,
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await input.repoLock.enqueue(() => runTool(hooks, 'publish', argv, place));
+  const out = await runTool(hooks, 'publish', argv, place);
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
@@ -2255,7 +2490,9 @@ async function publishStep(input, found) {
 }
 function leaseTotals(landed) {
   return aggregateLeaseTimings(
-    landed.flatMap((l) => l.tdd.leaseLines.map((line) => ({ issue: l.issue, line }))),
+    landed.flatMap((l) =>
+      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
+    ),
   );
 }
 async function retroStep(input, report) {
@@ -2273,6 +2510,10 @@ function retroReport(input, published) {
     schedule: input.schedule,
     residue: input.residue,
   };
+}
+async function mainAtEnd(input, state) {
+  if (state.mainUntouched !== undefined) return state.mainUntouched;
+  return input.repoLock.enqueue(() => mainUntouched(input));
 }
 async function mainUntouched(input) {
   const { entry, launch } = input;
@@ -2426,8 +2667,11 @@ async function reviewStage(at) {
 }
 async function testReviewStage(at) {
   if (isTrivialSurface(at.tdd?.files ?? [])) return null;
-  const values = { ...sliceReviewValues(at, 'test-review'), lease: leaseValues(at) };
-  const out = await AGENT_CALLS.testReview(at.ctx.hooks, values, at.tag);
+  const out = await AGENT_CALLS.testReview(
+    at.ctx.hooks,
+    sliceReviewValues(at, 'test-review'),
+    at.tag,
+  );
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
   at.testReview = out;
@@ -2510,6 +2754,7 @@ function sliceReviewValues(at, report) {
     sha: at.sha,
     files: at.tdd?.files ?? [],
     reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
+    lease: leaseValues(at),
   };
 }
 function planPath(at) {
@@ -2775,14 +3020,23 @@ function issueReports(d, i) {
 }
 function scheduleOf(d, i) {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({ ...neverStarted(issue, d.input.graph), ...d.timing.get(issue) }));
+  return issues.map((issue) => ({
+    ...neverStarted(issue, d.input.graph, d.input.overlap),
+    ...d.timing.get(issue),
+  }));
 }
-function neverStarted(issue, graph) {
+function neverStarted(issue, graph, overlap) {
   const blockers = graph.edges
     .filter((e) => e.dependent === issue)
     .map((e) => e.blocker)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a - b)
+    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
   return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+}
+function scheduleBlocker(blocker, dependent, overlap) {
+  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
+  if (added === undefined) return { issue: blocker, source: 'declared' };
+  return { issue: blocker, source: 'overlap', confidence: added.confidence };
 }
 function entryOverlap(d, i) {
   const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
@@ -3143,17 +3397,18 @@ async function tearDownSpent(hooks, path, report) {
   }
 }
 function spentTarget(run) {
-  const path = run.path ?? run.branch;
   if (run.spentUnverified) {
-    return { path, why: 'its PR is over, but the PR head could not be checked' };
+    return { path: run.path, why: 'its PR is over, but the PR head could not be checked' };
   }
   if (!run.spent) return null;
-  if (typeof run.path !== 'string') return { path, why: 'live-runs named no path' };
   if (run.dirty !== false) {
-    return { path, why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown' };
+    return {
+      path: run.path,
+      why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown',
+    };
   }
-  if (!Array.isArray(run.nested) || run.nested.length > 0) {
-    return { path, why: `nested worktrees: ${(run.nested ?? ['unknown']).join(', ')}` };
+  if (run.nested.length > 0) {
+    return { path: run.path, why: `nested worktrees: ${run.nested.join(', ')}` };
   }
   return { path: run.path };
 }
@@ -3198,9 +3453,12 @@ async function runEntries(hooks, graph, opts) {
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
   return cuts.map((c, k) => {
     if ('stopped' in c) {
-      return { ...c.stopped, schedule: c.issues.map((n) => neverStarted(n, graph)) };
+      return {
+        ...c.stopped,
+        schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
+      };
     }
-    return cutReport(c.setup, graph, k, driven);
+    return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
 async function cutEntry(hooks, entry) {
@@ -3249,7 +3507,7 @@ function stoppedEntry(entry, branch, message) {
   };
   return { stopped, issues: entry.issues };
 }
-function cutReport(setup, graph, k, driven) {
+function cutReport(setup, graph, k, driven, overlap) {
   const report = driven.find((r) => r.epic === setup.epic) ?? {
     epic: setup.epic,
     branch: setup.branch,
@@ -3269,7 +3527,8 @@ function cutReport(setup, graph, k, driven) {
       },
   );
   const schedule = planned.map(
-    (issue) => report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph),
+    (issue) =>
+      report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph, overlap),
   );
   return { ...report, issues, schedule };
 }

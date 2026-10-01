@@ -47,7 +47,6 @@ import {
   type ScoutValues,
   type SliceReviewValues,
   type TddValues,
-  type TestReviewValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
 import { agentOptions, reviewerOptions } from './stages.js';
@@ -73,7 +72,7 @@ export type PlanCard = z.infer<typeof PlanCardSchema>;
 /** The plan reviewer's answer. */
 export type PlanReview = z.infer<typeof PlanReviewSchema>;
 
-/** One probe the tdd ran, or chose not to finish. */
+/** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
 
 /** The tdd's answer. */
@@ -199,7 +198,7 @@ export const AGENT_CALLS = {
       PROMPTS.reviewer(values),
       reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
-  testReview: (hooks: WorkflowHooks, values: TestReviewValues, tag: string) =>
+  testReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
     askAgent<TestReviewOutput>(
       hooks,
       PROMPTS.testReview(values),

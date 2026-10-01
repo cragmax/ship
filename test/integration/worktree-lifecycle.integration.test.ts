@@ -540,7 +540,7 @@ describe('teardown with other worktrees nearby', () => {
 
   it('keeps a torn-down batch branch and the run record beside it', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
-    // `batch` and `reports/` side by side, as a run's are under `ph-runs/<slug>/`.
+    // `batch` and `reports/` side by side, as a run's `ship-<head>` and `reports/` are under `ph-ship/<slug>/`.
     const batch = addWorktree(main, join(root, 'batch'), 'ship/run');
     const record = join(root, 'reports', 'run.md');
     mkdirSync(dirname(record), { recursive: true });

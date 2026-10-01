@@ -61,7 +61,6 @@ function expectSameRun(both: Awaited<ReturnType<typeof runBoth>>): void {
   expect(both.rendered.calls).toEqual(both.source.calls);
   expect(both.rendered.timeline).toEqual(both.source.timeline);
   expect(both.rendered.phases).toEqual(both.source.phases);
-  expect(both.rendered.violations).toEqual([]);
 }
 
 describe('ship.js — a fresh render of the current sources', () => {

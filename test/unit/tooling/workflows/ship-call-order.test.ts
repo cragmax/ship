@@ -67,7 +67,6 @@ describe('runShip — call order under different settle timings', () => {
     expect(labels(oldest.run)).toEqual(
       expect.arrayContaining(['critic:list', 'retro:list', 'runner:publish:list']),
     );
-    expect(oldest.run.violations).toEqual([]);
     expect(newest.run.calls).toEqual(oldest.run.calls);
     expect(oldest.run.calls).toEqual(atOnce.run.calls);
     expect(newest.report).toEqual(oldest.report);

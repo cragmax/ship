@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SliceWork } from '../../../../tooling/workflows/lib/agent-calls.js';
+import type { ProbeRecord, SliceWork } from '../../../../tooling/workflows/lib/agent-calls.js';
 import {
   commitMessage,
   prTitle,
   renderPrBody,
   type LandedIssue,
   type PrBodyInput,
+  type ScheduleBlocker,
 } from '../../../../tooling/workflows/lib/pr-body.js';
 
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
@@ -16,6 +17,8 @@ const work = (fields: {
   closes: 'fixes' | 'see';
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
+  planProbes?: SliceWork['tdd']['probes'];
+  review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
 }): SliceWork => ({
   card: {
@@ -26,6 +29,7 @@ const work = (fields: {
     commit: { type: 'feat', scope: 'tools', subject: fields.subject },
     closes: fields.closes,
     evidence: '',
+    probes: fields.planProbes ?? [],
   },
   tdd: {
     verdict: 'GREEN',
@@ -34,10 +38,21 @@ const work = (fields: {
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
   },
-  review: { verdict: 'fixed', sha: 's2', summary: 'renamed a helper' },
+  review: fields.review ?? {
+    verdict: 'fixed',
+    sha: 's2',
+    summary: 'renamed a helper',
+    leaseLines: [],
+  },
   testReview:
     fields.testReview === undefined
-      ? { verdict: 'hardened', sha: 's3', survivors: 1, summary: 'pinned the bound' }
+      ? {
+          verdict: 'hardened',
+          sha: 's3',
+          survivors: 1,
+          summary: 'pinned the bound',
+          leaseLines: [],
+        }
       : fields.testReview,
 });
 
@@ -62,11 +77,72 @@ const EIGHT: LandedIssue = {
     subject: 'wire y — fixes #12 in passing',
     closes: 'see',
     probes: [
-      { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '' },
-      { claim: 'Paper drops y', verdict: 'cap-hit', followUp: 'probe y offline; closes #13 maybe' },
+      { claim: 'Folia ticks x', verdict: 'confirmed', followUp: '', seconds: 42 },
+      {
+        claim: 'Paper drops y',
+        verdict: 'cap-hit',
+        followUp: 'probe y offline; closes #13 maybe',
+        seconds: 900,
+      },
     ],
     testReview: null,
   }),
+};
+
+const ELEVEN: LandedIssue = {
+  issue: 11,
+  commit: 'c11',
+  ...work({
+    subject: 'wait on a held lease',
+    closes: 'fixes',
+    leaseLines: [
+      'with-lease: waiting for paper@localhost:25701 — held by epic-911/slice-913-1 (pid 1234, since 2026-09-30T18:23:58.961Z, alive): npx vitest run a.test.ts',
+      'with-lease: waited 38.9s for paper@localhost:25701, held 27.0s, waited on epic-911/slice-913-1 (pid 1234)',
+    ],
+  }),
+};
+
+const TDD_LEASE = 'with-lease: waited 38.9s for paper@localhost:25701, held 27.0s';
+const REVIEW_LEASE = 'with-lease: waited 1.2s for folia@localhost:25711, held 40.3s';
+// A wait line is no release line: a role holding only one had no lease to show.
+const WAIT_LINE = 'with-lease: waiting for paper@localhost:25701 — held by an unknown holder';
+
+const reviewed = (leaseLines: string[]): SliceWork['testReview'] => ({
+  verdict: 'hardened',
+  sha: 's3',
+  survivors: 1,
+  summary: 'pinned the bound',
+  leaseLines,
+});
+
+const REVIEWER_LEASE = 'with-lease: waited 0.5s for paper@localhost:25702, held 12.5s';
+
+const fixedReview = (leaseLines: string[]): SliceWork['review'] => ({
+  verdict: 'fixed',
+  sha: 's2',
+  summary: 'renamed a helper',
+  leaseLines,
+});
+
+const PLAN_FALSIFIED: ProbeRecord = {
+  claim: 'taskkill /T reaches every hook descendant',
+  verdict: 'falsified',
+  followUp: '',
+  seconds: 664,
+};
+
+const PLAN_CAPPED: ProbeRecord = {
+  claim: 'git grep -P runs on Windows',
+  verdict: 'cap-hit',
+  followUp: 'probe grep -P offline',
+  seconds: 300,
+};
+
+const TDD_CONFIRMED: ProbeRecord = {
+  claim: 'Folia ticks x',
+  verdict: 'confirmed',
+  followUp: '',
+  seconds: 42,
 };
 
 const INPUT: PrBodyInput = {
@@ -86,6 +162,12 @@ const INPUT: PrBodyInput = {
     version: null,
   },
   bump: { ...OK, kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
+  masterCheck: {
+    passed: true,
+    local: { launch: 'l0', current: 'l1', move: 'forward' },
+    remote: { launch: 'o0', current: 'o0', move: 'equal' },
+  },
+  mainUntouched: true,
   critic: {
     outcome: 'landed',
     commit: 'k1',
@@ -107,7 +189,16 @@ const INPUT: PrBodyInput = {
       startedAt: '2026-09-29T10:00:00.000Z',
       committedAt: '2026-09-29T10:20:00.000Z',
     },
-    { issue: 9, blockers: [7, 8], attempts: 0, startedAt: null, committedAt: null },
+    {
+      issue: 9,
+      blockers: [
+        { issue: 7, source: 'declared' },
+        { issue: 8, source: 'declared' },
+      ],
+      attempts: 0,
+      startedAt: null,
+      committedAt: null,
+    },
   ],
   leases: {
     engines: [
@@ -202,10 +293,10 @@ describe('renderPrBody', () => {
       '- Review: fixed — renamed a helper',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
       '- Test review: skipped — trivial surface',
-      '- Lease timings: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
-      '  - Folia ticks x: confirmed',
+      '  - tdd: Folia ticks x: confirmed in 42s',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
@@ -215,16 +306,25 @@ describe('renderPrBody', () => {
     }
   });
 
-  it('reports the master sync, the bump and the report dir as the whole epic end', () => {
+  it('reports the master sync, the bump, the master check, the main checkout and the report dir as the whole epic end', () => {
     const lines = body.split('\n');
 
     expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Critic'))).toEqual([
       '',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
+      '- Master check: passed — local forward, l0 → l1; origin equal at o0',
+      '- Main checkout: untouched since pre-flight',
       '- Report dir: `C:/runs/epic-1025/reports`',
       '',
     ]);
+  });
+
+  it.each([
+    ['touched', false, '- Main checkout: touched since pre-flight (HEAD or dirtiness changed)'],
+    ['not compared', null, '- Main checkout: not compared (a snapshot could not be read)'],
+  ])('reports a main checkout that is %s', (_name, mainUntouched, line) => {
+    expect(renderPrBody({ ...INPUT, mainUntouched }).split('\n')).toContain(line);
   });
 
   it('reports the critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
@@ -246,7 +346,7 @@ describe('renderPrBody', () => {
       '- [test-gaps] no cross-slice test (not applied)',
       '- #7 → #8 (likely): both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
-      '- #9: blockers #7, #8; started never; committed never; attempts 0',
+      '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0',
       '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
       '- folia: 0 leases, waited 0.0s total (max 0.0s), held 0.0s total',
       '- #7: waited 1.5s, held 42.0s',
@@ -255,6 +355,35 @@ describe('renderPrBody', () => {
     ]) {
       expect(lines).toContain(line);
     }
+  });
+
+  it.each<[string, readonly ScheduleBlocker[], string]>([
+    ['none', [], '- #9: blockers none; started never; committed never; attempts 0'],
+    [
+      'one declared',
+      [{ issue: 7, source: 'declared' }],
+      '- #9: blockers #7 (declared); started never; committed never; attempts 0',
+    ],
+    [
+      'one overlap, likely',
+      [{ issue: 7, source: 'overlap', confidence: 'likely' }],
+      '- #9: blockers #7 (overlap, likely); started never; committed never; attempts 0',
+    ],
+    [
+      'mixed',
+      [
+        { issue: 7, source: 'declared' },
+        { issue: 8, source: 'overlap', confidence: 'unsure' },
+      ],
+      '- #9: blockers #7 (declared), #8 (overlap, unsure); started never; committed never; attempts 0',
+    ],
+  ])('renders a schedule line whose blockers are %s', (_name, blockers, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      schedule: [{ issue: 9, blockers, attempts: 0, startedAt: null, committedAt: null }],
+    }).split('\n');
+
+    expect(lines[lines.indexOf('## Schedule') + 2]).toBe(line);
   });
 
   it('renders None. for an empty section and the critic’s other outcomes', () => {
@@ -288,8 +417,178 @@ describe('renderPrBody', () => {
     expect(text).toMatch(closes(7));
   });
 
+  it('names the holder a lease waited on in its lease timings', () => {
+    expect(renderPrBody({ ...INPUT, landed: [ELEVEN] }).split('\n')).toContain(
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s on epic-911/slice-913-1 (pid 1234), held 27s',
+    );
+  });
+
+  it.each<[string, string[], SliceWork['testReview'], string]>([
+    [
+      'the tdd alone',
+      [TDD_LEASE],
+      reviewed([]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
+    ],
+    [
+      'the test review alone',
+      [],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'both roles, tdd first',
+      [TDD_LEASE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    ['neither role', [], reviewed([]), '- Lease timings: none'],
+    [
+      'a skipped test review',
+      [TDD_LEASE],
+      null,
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
+    ],
+    [
+      'a tdd with only a wait line',
+      [WAIT_LINE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+  ])('renders the lease timings of %s', (_name, tdd, testReview, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, testReview }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
+  });
+
+  it.each<[string, string[], string[], SliceWork['testReview'], string]>([
+    [
+      'all three roles, the review between',
+      [TDD_LEASE],
+      [REVIEWER_LEASE],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'a reviewer that leased nothing',
+      [TDD_LEASE],
+      [],
+      reviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+    ],
+    [
+      'the review alone',
+      [],
+      [REVIEWER_LEASE],
+      reviewed([]),
+      '- Lease timings: review: paper@localhost:25702 waited 0.5s, held 12.5s',
+    ],
+    [
+      'a review before a skipped test review',
+      [TDD_LEASE],
+      [REVIEWER_LEASE],
+      null,
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s',
+    ],
+  ])('renders the review’s lease timings for %s', (_name, tdd, review, testReview, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'lease x',
+            closes: 'fixes',
+            leaseLines: tdd,
+            review: fixedReview(review),
+            testReview,
+          }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
+  });
+
   it('records a capped probe with its follow-up', () => {
-    expect(body).toContain('  - Paper drops y: cap-hit; follow-up: probe y offline;');
+    expect(body).toContain(
+      '  - tdd: Paper drops y: cap-hit in 15m 00s; follow-up: probe y offline;',
+    );
+  });
+
+  it.each<[string, ProbeRecord[], ProbeRecord[], string[]]>([
+    [
+      'the plan’s alone',
+      [PLAN_FALSIFIED],
+      [],
+      ['- Probes:', '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s'],
+    ],
+    [
+      'the plan’s before the tdd’s',
+      [PLAN_FALSIFIED, PLAN_CAPPED],
+      [TDD_CONFIRMED],
+      [
+        '- Probes:',
+        '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s',
+        '  - plan: git grep -P runs on Windows: cap-hit in 5m 00s; follow-up: probe grep -P offline',
+        '  - tdd: Folia ticks x: confirmed in 42s',
+      ],
+    ],
+    [
+      'the tdd’s alone',
+      [],
+      [TDD_CONFIRMED],
+      ['- Probes:', '  - tdd: Folia ticks x: confirmed in 42s'],
+    ],
+    ['neither', [], [], ['- Probes: no probe needed']],
+  ])('renders the probe lines of %s', (_name, planProbes, probes, expected) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({ subject: 'probe x', closes: 'fixes', planProbes, probes }),
+        },
+      ],
+    }).split('\n');
+    const at = lines.findIndex((l) => l.startsWith('- Probes'));
+
+    expect(lines.slice(at, at + expected.length + 1)).toEqual([...expected, '']);
+  });
+
+  it.each<[number, string]>([
+    [59, '59s'],
+    [60, '1m 00s'],
+    [119, '1m 59s'],
+    [664, '11m 04s'],
+  ])('renders a probe of %s seconds as %s', (seconds, text) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'probe x',
+            closes: 'fixes',
+            probes: [{ ...TDD_CONFIRMED, seconds }],
+          }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines).toContain(`  - tdd: Folia ticks x: confirmed in ${text}`);
   });
 
   it('defuses a closing reference in the tier, a critic reason and every reference form', () => {

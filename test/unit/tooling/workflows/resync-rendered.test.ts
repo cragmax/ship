@@ -60,6 +60,5 @@ describe('resync.js — a fresh render of the current sources', () => {
     expect(rendered.calls).toEqual(source.calls);
     expect(rendered.timeline).toEqual(source.timeline);
     expect(rendered.phases).toEqual(source.phases);
-    expect(rendered.violations).toEqual([]);
   });
 });

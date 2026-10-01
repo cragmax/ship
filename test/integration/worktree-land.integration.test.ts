@@ -45,6 +45,7 @@ vi.mock('../../tooling/worktree/exec.js', async (importOriginal) => {
 });
 
 const TIMEOUT = { timeout: 60_000 };
+const WIN32 = process.platform === 'win32';
 const MESSAGE = 'feat(build): land one slice\n\nBody line of the slice commit.\n';
 const HOOK_SAYS = 'fixture hook: commit refused';
 // `dist/` is ignored by the real .gitignore, so the build leaves the batch clean.
@@ -131,6 +132,16 @@ function rawMessage(dir: string, sha: string): string {
   const raw = mustRun('git', ['cat-file', 'commit', sha], dir);
   // execa strips the final newline git's stored message always ends with.
   return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
+}
+
+/** The Windows budget-kill warning for a child started in `cwd`, hand-written as the oracle for its wording. */
+function orphanLine(cwd: string): string {
+  return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
+}
+
+/** The last non-blank line of `text`. */
+function lastLine(text: string): string | undefined {
+  return text.trimEnd().split(/\r?\n/u).at(-1);
 }
 
 describe('land', () => {
@@ -373,6 +384,70 @@ describe('runCaptured budget kill (in-process)', () => {
     expect(r.tail).toContain('child started');
     expect(r.tail).toContain('timed out after 3000 milliseconds');
     expect(readFileSync(log, 'utf8')).toContain('timed out after 3000 milliseconds');
+  });
+
+  it.skipIf(!WIN32)(
+    'ends the tail and the log with the orphan warning naming the cwd on win32',
+    TIMEOUT,
+    () => {
+      const log = `${root}/killed.log`;
+      const r = runCaptured(
+        process.execPath,
+        ['-e', "console.log('child started'); setTimeout(() => {}, 60_000);"],
+        { cwd: root, timeoutMs: 3_000, logFile: log },
+      );
+
+      expect(r.exitCode).toBe(-1);
+      expect(r.tail).toContain('timed out after 3000 milliseconds');
+      expect(lastLine(r.tail)).toBe(orphanLine(root));
+      expect(lastLine(readFileSync(log, 'utf8'))).toBe(orphanLine(root));
+    },
+  );
+
+  it.skipIf(!WIN32)(
+    'ends the tail and the log with the orphan warning on win32 when the child printed nothing',
+    TIMEOUT,
+    () => {
+      const log = `${root}/silent.log`;
+      const r = runCaptured(process.execPath, ['-e', 'setTimeout(() => {}, 60_000);'], {
+        cwd: root,
+        timeoutMs: 3_000,
+        logFile: log,
+      });
+
+      expect(r.exitCode).toBe(-1);
+      expect(r.tail).toContain('timed out after 3000 milliseconds');
+      expect(lastLine(r.tail)).toBe(orphanLine(root));
+      expect(lastLine(readFileSync(log, 'utf8'))).toBe(orphanLine(root));
+    },
+  );
+
+  it('carries no orphan warning when the child fails fast within its budget', TIMEOUT, () => {
+    const log = `${root}/failed.log`;
+    // `exitCode`, not `process.exit(3)`: the child exits only after stdout flushed.
+    const r = runCaptured(
+      process.execPath,
+      ['-e', "console.log('child failed'); process.exitCode = 3;"],
+      { cwd: root, timeoutMs: 3_000, logFile: log },
+    );
+
+    expect(r.exitCode).toBe(3);
+    expect(lastLine(r.tail)).toBe('child failed');
+    expect(lastLine(readFileSync(log, 'utf8'))).toBe('child failed');
+  });
+
+  it.skipIf(WIN32)('carries no orphan warning after a budget kill off win32', TIMEOUT, () => {
+    const log = `${root}/killed.log`;
+    const r = runCaptured(
+      process.execPath,
+      ['-e', "console.log('child started'); setTimeout(() => {}, 60_000);"],
+      { cwd: root, timeoutMs: 3_000, logFile: log },
+    );
+
+    expect(r.exitCode).toBe(-1);
+    expect(r.tail).toContain('timed out after 3000 milliseconds');
+    expect(r.tail).not.toContain(orphanLine(root));
+    expect(readFileSync(log, 'utf8')).not.toContain(orphanLine(root));
   });
 });
 

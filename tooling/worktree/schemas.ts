@@ -77,6 +77,8 @@ export const RefusalReasonSchema = z.enum([
   // Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;
   // the message names the state and the number.
   'no-open-pr',
+  // Check-master: a master ref was deleted or rewound since the launch, or its move could not be decided; local / remote name each.
+  'master-not-forward',
 ]);
 
 /** One entry of the envelope's `errors` list. */

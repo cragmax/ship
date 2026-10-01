@@ -1,6 +1,6 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots): the fixture main checkout
- * sits at `<root>/main`, so a run it cuts lands under `<root>/ph-runs/`,
+ * sits at `<root>/main`, so a run it cuts lands under `<root>/ph-ship/`,
  * inside the temp root. `preflight` gets a bare `origin` and a fake `gh`;
  * its RCON probe is injected in-process, never aimed at the real warm-set
  * ports, which may be live.
@@ -102,21 +102,25 @@ describe('cut-batch', () => {
       status: 'ok',
       branch: 'ship/epic-900',
       base: master,
-      runRoot: `${root}/ph-runs/epic-900`,
-      batch: `${root}/ph-runs/epic-900/batch`,
-      reportDir: `${root}/ph-runs/epic-900/reports`,
+      runRoot: `${root}/ph-ship/epic-900`,
+      batch: `${root}/ph-ship/epic-900/ship-epic-900`,
+      reportDir: `${root}/ph-ship/epic-900/reports`,
     });
-    expect(branchOf(`${root}/ph-runs/epic-900/batch`)).toBe('ship/epic-900');
-    expect(headSha(`${root}/ph-runs/epic-900/batch`)).toBe(master);
-    expect(existsSync(`${root}/ph-runs/epic-900/reports`)).toBe(true);
+    expect(branchOf(`${root}/ph-ship/epic-900/ship-epic-900`)).toBe('ship/epic-900');
+    expect(headSha(`${root}/ph-ship/epic-900/ship-epic-900`)).toBe(master);
+    expect(existsSync(`${root}/ph-ship/epic-900/reports`)).toBe(true);
     expect(porcelain(main)).toBe('');
   });
 
   it('names an explicit-list run by its issues ascending', TIMEOUT, () => {
     const r = runCli<CutBatchResult>(['cut-batch', main, '--issues', '12,3']);
 
-    expect(r.json).toMatchObject({ status: 'ok', branch: 'ship/3-12' });
-    expect(branchOf(`${root}/ph-runs/3-12/batch`)).toBe('ship/3-12');
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      branch: 'ship/3-12',
+      batch: `${root}/ph-ship/3-12/ship-3`,
+    });
+    expect(branchOf(`${root}/ph-ship/3-12/ship-3`)).toBe('ship/3-12');
   });
 
   it.each([
@@ -130,7 +134,7 @@ describe('cut-batch', () => {
     {
       guard: 'path-exists',
       target: () => {
-        mkdirSync(`${root}/ph-runs/epic-900`, { recursive: true });
+        mkdirSync(`${root}/ph-ship/epic-900`, { recursive: true });
         return main;
       },
     },
@@ -151,7 +155,7 @@ describe('cut-batch', () => {
 });
 
 describe('cut-batch --attach', () => {
-  const BATCH = (): string => `${root}/ph-runs/s/batch`;
+  const BATCH = (): string => `${root}/ph-ship/s/ship-s`;
   const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
   let bare: string;
 
@@ -196,14 +200,14 @@ describe('cut-batch --attach', () => {
       status: 'ok',
       branch: 'ship/s',
       base: tip,
-      runRoot: `${root}/ph-runs/s`,
+      runRoot: `${root}/ph-ship/s`,
       batch: BATCH(),
-      reportDir: `${root}/ph-runs/s/reports`,
+      reportDir: `${root}/ph-ship/s/reports`,
       attach: { created: true, fastForwarded: false, pr: 9 },
     });
     expect(branchOf(BATCH())).toBe('ship/s');
     expect(headSha(BATCH())).toBe(tip);
-    expect(existsSync(`${root}/ph-runs/s/reports`)).toBe(true);
+    expect(existsSync(`${root}/ph-ship/s/reports`)).toBe(true);
   });
 
   it('checks out a branch only origin has as a new tracking branch', TIMEOUT, () => {
@@ -235,7 +239,7 @@ describe('cut-batch --attach', () => {
     expect(r.json).toMatchObject({
       status: 'ok',
       batch: BATCH(),
-      reportDir: `${root}/ph-runs/s/reports`,
+      reportDir: `${root}/ph-ship/s/reports`,
       attach: { created: false, fastForwarded: false, pr: 9 },
     });
     expect(repoState(main)).toEqual(before);
@@ -248,7 +252,7 @@ describe('cut-batch --attach', () => {
       branch: 'ship/s',
       setup: () => {
         localBranch();
-        mkdirSync(`${root}/ph-runs/s/batch`, { recursive: true });
+        mkdirSync(BATCH(), { recursive: true });
       },
     },
     {
@@ -353,7 +357,7 @@ describe('cut-batch --attach', () => {
     expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-checked-out', batch: null });
     expect(r.json.errors[0]?.message).toContain('(prunable)');
     expect(repoState(main)).toEqual(before);
-    expect(existsSync(`${root}/ph-runs/s/reports`)).toBe(false);
+    expect(existsSync(`${root}/ph-ship/s/reports`)).toBe(false);
   });
 
   /** Check an existing branch out at `path`. */
@@ -371,7 +375,7 @@ describe('cut-slice', () => {
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--issue', '41', '--attempt', '2']);
 
     expect(r.code).toBe(0);
-    const slice = `${root}/ph-runs/epic-900/slice-41-2`;
+    const slice = `${root}/ph-ship/epic-900/slice-41-2`;
     expect(r.json).toMatchObject({
       status: 'ok',
       branch: 'slice/epic-900/41-2',
@@ -388,7 +392,7 @@ describe('cut-slice', () => {
 
   it('refuses an attempt whose slice path exists, cutting nothing', TIMEOUT, () => {
     const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
-    mkdirSync(`${root}/ph-runs/epic-900/slice-41-1`);
+    mkdirSync(`${root}/ph-ship/epic-900/slice-41-1`);
     const before = repoState(main);
 
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--issue', '41', '--attempt', '1']);
@@ -406,7 +410,7 @@ describe('cut-slice', () => {
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-exists', branch: null });
     expect(repoState(main)).toEqual(before);
-    expect(existsSync(`${root}/ph-runs/epic-900/slice-41-1`)).toBe(false);
+    expect(existsSync(`${root}/ph-ship/epic-900/slice-41-1`)).toBe(false);
   });
 
   it('refuses a linked worktree that is not on a ship/ branch', TIMEOUT, () => {
@@ -427,7 +431,7 @@ describe('cut-slice', () => {
       const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
 
       expect(r.code).toBe(0);
-      const slice = `${root}/ph-runs/epic-900/slice-critic`;
+      const slice = `${root}/ph-ship/epic-900/slice-critic`;
       expect(r.json).toMatchObject({
         status: 'ok',
         branch: 'slice/epic-900/critic',
@@ -473,7 +477,11 @@ describe('preflight (in-process)', () => {
     const r = await preflightWith({});
 
     expect(r).toMatchObject({ status: 'ok', ahead: 0, behind: 0, problems: [] });
-    expect(r.snapshot).toEqual({ head: headSha(main), dirty: false });
+    expect(r.snapshot).toEqual({
+      head: headSha(main),
+      dirty: false,
+      master: { local: headSha(main), remote: headSha(main) },
+    });
   });
 
   it('refuses one unpushed local master commit as master-ahead', TIMEOUT, async () => {
@@ -535,7 +543,69 @@ describe('preflight (in-process)', () => {
     const r = await preflightWith({});
 
     expect(r.status).toBe('ok');
-    expect(r.snapshot).toEqual({ head: headSha(main), dirty: true });
+    expect(r.snapshot).toEqual({
+      head: headSha(main),
+      dirty: true,
+      master: { local: headSha(main), remote: headSha(main) },
+    });
+  });
+
+  it(
+    "snapshots origin's master as ls-remote reports it, apart from local master",
+    TIMEOUT,
+    async () => {
+      const pushed = advanceOrigin(root, `${root}/origin.git`, {
+        write: { 'remote.txt': 'pushed elsewhere\n' },
+      });
+
+      const r = await preflightWith({});
+
+      expect(r.status).toBe('refused');
+      expect(r.problems.map((p) => p.check)).toEqual(['master-behind']);
+      expect(r.snapshot).toEqual({
+        head: headSha(main),
+        dirty: false,
+        master: { local: headSha(main), remote: pushed },
+      });
+    },
+  );
+
+  it(
+    'snapshots local master, not HEAD, when the main checkout is on another branch',
+    TIMEOUT,
+    async () => {
+      const master = headSha(main);
+      mustRun('git', ['checkout', '-q', '-b', 'side'], main);
+      const side = commitChanges(main, { write: { 'side.txt': 'side work\n' } }, 'side work');
+
+      const r = await preflightWith({});
+
+      expect(r.status).toBe('ok');
+      expect(r.snapshot).toEqual({
+        head: side,
+        dirty: false,
+        master: { local: master, remote: master },
+      });
+    },
+  );
+
+  it('fails at step snapshot when origin has no master', TIMEOUT, async () => {
+    // No prune: the stale tracking ref survives, so the master-level check
+    // passes whatever the global config says.
+    mustRun('git', ['config', 'fetch.prune', 'false'], main);
+    mustRun('git', ['push', '-q', 'origin', 'master:refs/heads/keep'], main);
+    mustRun('git', ['symbolic-ref', 'HEAD', 'refs/heads/keep'], `${root}/origin.git`);
+    mustRun('git', ['update-ref', '-d', 'refs/heads/master'], `${root}/origin.git`);
+
+    const r = await preflightWith({});
+
+    expect(r).toMatchObject({
+      status: 'failed',
+      snapshot: null,
+      errors: [
+        { step: 'snapshot', message: 'git ls-remote origin refs/heads/master names no ref' },
+      ],
+    });
   });
 });
 

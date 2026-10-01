@@ -22,11 +22,13 @@ import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../li
 import type {
   CommitSpec,
   CriticFinding,
+  OverlapConfidence,
   PlanCard,
   ProbeRecord,
   RetroFinding,
   SliceWork,
 } from './agent-calls.js';
+import type { ForwardMove, PassedMasterCheck } from './master-check.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput } from './tool-calls.js';
@@ -51,6 +53,14 @@ export interface LandedIssue extends SliceWork {
   readonly commit: string;
 }
 
+/** A slice's lease lines from one agent role. */
+export interface RoleLeaseLines {
+  /** The agent whose lease runs printed them: `tdd`, `review` or `test-review`. */
+  readonly role: 'tdd' | 'review' | 'test-review';
+  /** Its `with-lease:` lines, as the agent transcribed them. */
+  readonly lines: readonly string[];
+}
+
 /** An issue that did not land, as the run report records it. */
 export interface UnlandedIssue {
   /** The issue. */
@@ -61,12 +71,29 @@ export interface UnlandedIssue {
   readonly reason?: string;
 }
 
+/** One blocker of a scheduled issue, with where its edge came from. */
+export type ScheduleBlocker =
+  | {
+      /** The blocking issue. */
+      readonly issue: number;
+      /** `declared`: a `blocked_by` edge the run gate declared. */
+      readonly source: 'declared';
+    }
+  | {
+      /** The blocking issue. */
+      readonly issue: number;
+      /** `overlap`: an edge pre-flight's overlap estimate added. */
+      readonly source: 'overlap';
+      /** The estimator's word for the edge. */
+      readonly confidence: OverlapConfidence;
+    };
+
 /** One issue's line of an entry's schedule. */
 export interface ScheduleEntry {
   /** The issue. */
   readonly issue: number;
-  /** Its blockers in the scheduled graph (overlap edges included), ascending. */
-  readonly blockers: readonly number[];
+  /** Its blockers in the scheduled graph, ascending, each with its source. */
+  readonly blockers: readonly ScheduleBlocker[];
   /** How many attempts it took; 0 when it never started. */
   readonly attempts: number;
   /** When its final attempt's slice was cut; `null` when none was. */
@@ -108,6 +135,13 @@ export interface PrBodyInput {
   readonly sync: SyncStepResult;
   /** The bump; `null` when the runner returned none. */
   readonly bump: BumpOutput | null;
+  /** The master check, passed: a failed check opens no PR. */
+  readonly masterCheck: PassedMasterCheck;
+  /**
+   * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
+   * read before the push; `null` when a read failed.
+   */
+  readonly mainUntouched: boolean | null;
   /** The critic's part. */
   readonly critic: CriticReport;
   /** The overlap edges pre-flight added to the entry. */
@@ -192,11 +226,33 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 }
 
 /**
+ * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
+ *
+ * @param work - The slice's tdd, review and test-review answers.
+ * @returns The tdd's, then the review's, then the test review's; no
+ *   test-review entry when it was skipped (`null`); lines unparsed and
+ *   unfiltered.
+ */
+export function sliceLeaseLines(
+  work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>,
+): RoleLeaseLines[] {
+  const roles: RoleLeaseLines[] = [
+    { role: 'tdd', lines: work.tdd.leaseLines },
+    { role: 'review', lines: work.review.leaseLines },
+  ];
+  if (work.testReview !== null) {
+    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
+  }
+  return roles;
+}
+
+/**
  * An epic's pull request body.
  *
  * @param input - The epic's report.
  * @returns Markdown: a summary, one section per landed issue, the unlanded
- *   issues, the epic end, then the critic, the overlap edges, the schedule,
+ *   issues, the epic end (master sync, version bump, master check, main
+ *   checkout, report dir), then the critic, the overlap edges, the schedule,
  *   the lease timings and the retro findings (an empty one `None.`) —
  *   neutralised whole but for the landed `fixes` issues.
  */
@@ -221,6 +277,8 @@ export function renderPrBody(input: PrBodyInput): string {
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
     `- Version bump: ${bumpText(input.bump)}`,
+    `- Master check: ${masterCheckText(input.masterCheck)}`,
+    `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
@@ -279,16 +337,28 @@ function overlapLine(edge: OverlapEdge): string {
  * One issue's schedule line.
  *
  * @param entry - Its schedule.
- * @returns `- #N: blockers …; started …; committed …; attempts K`, `never`
+ * @returns `- #N: blockers …; started …; committed …; attempts K`: each
+ *   blocker per {@link blockerText}, `, `-joined, `none` for none; `never`
  *   for a missing instant.
  */
 function scheduleLine(entry: ScheduleEntry): string {
   const blockers =
-    entry.blockers.length === 0 ? 'none' : entry.blockers.map((b) => `#${String(b)}`).join(', ');
+    entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
     `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
   );
+}
+
+/**
+ * One schedule blocker as a phrase.
+ *
+ * @param blocker - The blocker.
+ * @returns `#B (declared)`, or `#B (overlap, <confidence>)`.
+ */
+function blockerText(blocker: ScheduleBlocker): string {
+  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
+  return `#${String(blocker.issue)} (${source})`;
 }
 
 /**
@@ -329,7 +399,8 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
  * One landed issue's section.
  *
  * @param landed - The issue.
- * @returns The section's lines, blank-line terminated.
+ * @returns The section's lines, blank-line terminated; its lease line per
+ *   {@link sliceLeaseText}, its probe lines per {@link probeLines}.
  */
 function issueSection(landed: LandedIssue): string[] {
   const ref = `#${String(landed.issue)}`;
@@ -345,44 +416,86 @@ function issueSection(landed: LandedIssue): string[] {
     test === null
       ? '- Test review: skipped — trivial surface'
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
-    `- Lease timings: ${leaseText(parseLeaseLines(landed.tdd.leaseLines.join('\n')))}`,
-    ...probeLines(landed.tdd.probes),
+    `- Lease timings: ${sliceLeaseText(landed)}`,
+    ...probeLines(landed),
     '',
   ];
 }
 
 /**
- * A slice's probe lines.
+ * A slice's probe lines: the planner's plan-time records, then the tdd's.
  *
- * @param probes - The tdd's probe records.
- * @returns `- Probes: no probe needed`, or one nested line per probe with its
- *   verdict and follow-up.
+ * @param work - The slice's plan card and tdd answer.
+ * @returns `- Probes: no probe needed` when neither has a record; else
+ *   `- Probes:`, then one nested line per record, the card's first, each per
+ *   {@link probeLine}.
  */
-function probeLines(probes: readonly ProbeRecord[]): string[] {
-  if (probes.length === 0) return ['- Probes: no probe needed'];
-  return [
-    '- Probes:',
-    ...probes.map((p) => {
-      const followUp = p.followUp === '' ? '' : `; follow-up: ${p.followUp}`;
-      return `  - ${p.claim}: ${p.verdict}${followUp}`;
-    }),
+function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
+  const records = [
+    ...work.card.probes.map((p) => probeLine('plan', p)),
+    ...work.tdd.probes.map((p) => probeLine('tdd', p)),
   ];
+  if (records.length === 0) return ['- Probes: no probe needed'];
+  return ['- Probes:', ...records];
+}
+
+/**
+ * One probe record's nested line.
+ *
+ * @param stage - The stage that ran it.
+ * @param probe - The record.
+ * @returns `  - <stage>: <claim>: <verdict> in <dur>`, `<dur>` per
+ *   {@link durationText}, with `; follow-up: <followUp>` when it has one.
+ */
+function probeLine(stage: 'plan' | 'tdd', probe: ProbeRecord): string {
+  const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
+  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+}
+
+/**
+ * A probe's measured duration as a phrase.
+ *
+ * @param seconds - Its whole seconds.
+ * @returns `<s>s` below 60 (`42s`); from 60 up, `<m>m <ss>s`, the seconds
+ *   zero-padded to two digits (`11m 04s`).
+ */
+function durationText(seconds: number): string {
+  if (seconds < 60) return `${String(seconds)}s`;
+  const rest = String(seconds % 60).padStart(2, '0');
+  return `${String(Math.floor(seconds / 60))}m ${rest}s`;
+}
+
+/**
+ * A slice's lease timings as one phrase.
+ *
+ * @param work - The slice's tdd, review and test-review answers.
+ * @returns `<role>: <leases>` for each role with at least one release line,
+ *   in {@link sliceLeaseLines} order, `; `-joined, each role's leases per
+ *   {@link leaseText}; a role with none is omitted; `none` when no role has
+ *   one.
+ */
+function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>): string {
+  const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
+    const timings = parseLeaseLines(lines.join('\n'));
+    return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];
+  });
+  return parts.length === 0 ? 'none' : parts.join('; ');
 }
 
 /**
  * Lease timings as one phrase.
  *
- * @param timings - The parsed release lines.
- * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s`, `; `-joined;
- *   `none` for none.
+ * @param timings - The parsed release lines, at least one.
+ * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s` — with
+ *   ` on <waitedOn>` after `waited <W>s` when the line names the holder
+ *   waited on — `; `-joined.
  */
 function leaseText(timings: readonly LeaseTiming[]): string {
-  if (timings.length === 0) return 'none';
   return timings
-    .map(
-      (t) =>
-        `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s, held ${String(t.heldSeconds)}s`,
-    )
+    .map((t) => {
+      const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
+      return `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s${on}, held ${String(t.heldSeconds)}s`;
+    })
     .join('; ');
 }
 
@@ -395,6 +508,42 @@ function leaseText(timings: readonly LeaseTiming[]): string {
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+}
+
+/**
+ * The passed master check as one phrase.
+ *
+ * @param check - The check.
+ * @returns `passed — local <move>; origin <move>`, each per {@link forwardText}.
+ */
+function masterCheckText(check: PassedMasterCheck): string {
+  return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
+}
+
+/**
+ * One ref's passing move as a phrase.
+ *
+ * @param move - The move.
+ * @returns `equal at <launch>`, or `forward, <launch> → <current>`.
+ */
+function forwardText(move: ForwardMove): string {
+  if (move.move === 'equal') return `equal at ${move.launch}`;
+  return `forward, ${move.launch} → ${move.current}`;
+}
+
+/**
+ * The main-checkout comparison as a phrase.
+ *
+ * @param untouched - The comparison; `null` when a read failed.
+ * @returns `untouched since pre-flight` for `true`; for `false`, touched
+ *   since pre-flight, naming `HEAD` or dirtiness; for `null`, not compared,
+ *   a snapshot unread.
+ */
+function mainCheckoutText(untouched: boolean | null): string {
+  if (untouched === null) return 'not compared (a snapshot could not be read)';
+  return untouched
+    ? 'untouched since pre-flight'
+    : 'touched since pre-flight (HEAD or dirtiness changed)';
 }
 
 /**

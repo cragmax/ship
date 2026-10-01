@@ -42,7 +42,6 @@ describe('runShip — spent-run cleanup at launch', () => {
       blocked: null,
       stop: null,
     });
-    expect(run.violations).toEqual([]);
   });
 
   it("names only the spent run's batch, never its branch or its run record", async () => {
@@ -108,6 +107,8 @@ describe('runShip — spent-run cleanup at launch', () => {
         envelopePath: 'e.json',
         status: 'failed',
         errors: [{ step: 'remove', message: 'busy' }],
+        removed: false,
+        registered: true,
       },
       residue: `${SPENT_BATCH}: teardown failed: busy`,
     },
@@ -119,6 +120,8 @@ describe('runShip — spent-run cleanup at launch', () => {
         status: 'refused',
         reason: 'links-remain',
         errors: [{ step: 'gate', message: 'a link remains' }],
+        removed: false,
+        registered: true,
       },
       residue: `${SPENT_BATCH}: teardown refused (links-remain): a link remains`,
     },
@@ -147,6 +150,8 @@ describe('runShip — spent-run cleanup at launch', () => {
       status: 'refused',
       reason: 'source-shrank',
       errors: [{ step: 'gate', message: 'node_modules lost files' }],
+      removed: false,
+      registered: true,
     };
     const run = fakeHooks({
       ...liveRuns({}),

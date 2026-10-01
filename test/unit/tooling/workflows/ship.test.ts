@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  PROBE_CAP_MINUTES,
-  PROBES_PER_ISSUE,
   reviewEffort,
   STAGES,
   type StageName,
@@ -172,7 +170,7 @@ const TWO_ISSUES = {
   },
 };
 
-/** The runs the tier and schema checks drive. */
+/** The runs the tier check drives. */
 const SCENARIOS = [
   { name: 'pre-flight only', responses: EPIC_FRESH, args: 'epics 1025 --preflight-only' },
   { name: 'three refusals', responses: THREE_REFUSALS, args: { issues: [7, 8] } },
@@ -285,8 +283,9 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
-      'runner:publish:list',
       'runner:preflight:list',
+      'runner:check-master:list',
+      'runner:publish:list',
     ]);
     const at = (entry: string): number => run.timeline.indexOf(entry);
     expect(at('call runner:teardown:7-1')).toBeGreaterThan(-1);
@@ -302,6 +301,11 @@ describe('runShip — one issue from launch to PR', () => {
           outcome: 'pr',
           pr: 42,
           mainUntouched: true,
+          masterCheck: {
+            passed: true,
+            local: { launch: 'local0', current: 'local0', move: 'equal' },
+            remote: { launch: 'origin0', current: 'origin0', move: 'equal' },
+          },
           issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
         },
       ],
@@ -374,7 +378,22 @@ describe('runShip — one issue from launch to PR', () => {
 });
 
 describe('runShip — every tool failure is a refusal', () => {
-  const OTHER_RUN = { branch: 'ship/epic-9', landed: ['src/a.ts'], spent: false };
+  const OTHER_RUN = {
+    branch: 'ship/epic-9',
+    landed: ['src/a.ts'],
+    spent: false,
+    path: 'C:/src/ph-runs/epic-9/batch',
+    dirty: false,
+    nested: [],
+    spentUnverified: false,
+  };
+
+  const refuses = async (run: FakeRun, args: string, refusals: unknown): Promise<void> => {
+    const report = await runShip(run.hooks, args);
+
+    expect(report.status).toBe('refused');
+    expect(report.refusals).toEqual(refusals);
+  };
 
   it.each([
     [
@@ -383,6 +402,65 @@ describe('runShip — every tool failure is a refusal', () => {
       'issues 7 --preflight-only',
       [{ kind: 'preflight-error', message: 'the runner returned nothing for preflight' }],
     ],
+    [
+      'a failed live-runs',
+      {
+        'runner:live-runs': {
+          ...LIVE_RUNS_NONE,
+          exitCode: 1,
+          status: 'failed',
+          errors: [{ step: 'pr-state', message: 'gh pr list failed for ship/epic-9' }],
+        },
+      },
+      'issues 7 --preflight-only',
+      [{ kind: 'live-runs-failed', message: 'gh pr list failed for ship/epic-9' }],
+    ],
+    [
+      'an unknown PR state, never read as no PR',
+      {
+        'runner:live-runs': {
+          ...LIVE_RUNS_NONE,
+          runs: [{ ...OTHER_RUN, pr: { state: 'unknown', number: null } }],
+        },
+      },
+      'issues 7 --preflight-only',
+      [{ kind: 'live-runs-failed', message: 'pull request state unknown for ship/epic-9' }],
+    ],
+    [
+      'a scout that returned nothing',
+      { scout: null },
+      'issues 7 --preflight-only',
+      [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
+    ],
+    [
+      'a code overlap, even in exclude mode',
+      {
+        scout: {
+          issues: [{ issue: 7, stale: false, evidence: 'fresh' }],
+          overlaps: [
+            {
+              issue: 7,
+              branch: 'ship/epic-9',
+              files: ['src/a.ts'],
+              evidence: 'both edit src/a.ts',
+            },
+          ],
+        },
+      },
+      'issues 7 --exclude --preflight-only',
+      [{ kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' }],
+    ],
+    [
+      'exclude mode dropping every issue',
+      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] } },
+      'issues 7 --exclude --preflight-only',
+      [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
+    ],
+  ])('refuses %s', async (_name, responses, args, refusals) => {
+    await refuses(fakeHooks(responses), args, refusals);
+  });
+
+  it.each([
     [
       'a pre-flight usage error',
       {
@@ -443,73 +521,17 @@ describe('runShip — every tool failure is a refusal', () => {
       'issues 7 --preflight-only',
       [{ kind: 'live-runs-failed', message: 'live-runs exited 0 with no usable verdict' }],
     ],
-    [
-      'a failed live-runs',
-      {
-        'runner:live-runs': {
-          ...LIVE_RUNS_NONE,
-          exitCode: 1,
-          status: 'failed',
-          errors: [{ step: 'pr-state', message: 'gh pr list failed for ship/epic-9' }],
-        },
-      },
-      'issues 7 --preflight-only',
-      [{ kind: 'live-runs-failed', message: 'gh pr list failed for ship/epic-9' }],
-    ],
-    [
-      'an unknown PR state, never read as no PR',
-      {
-        'runner:live-runs': {
-          ...LIVE_RUNS_NONE,
-          runs: [{ ...OTHER_RUN, pr: { state: 'unknown', number: null } }],
-        },
-      },
-      'issues 7 --preflight-only',
-      [{ kind: 'live-runs-failed', message: 'pull request state unknown for ship/epic-9' }],
-    ],
-    [
-      'a scout that returned nothing',
-      { scout: null },
-      'issues 7 --preflight-only',
-      [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
-    ],
-    [
-      'a code overlap, even in exclude mode',
-      {
-        scout: {
-          issues: [{ issue: 7, stale: false, evidence: 'fresh' }],
-          overlaps: [
-            {
-              issue: 7,
-              branch: 'ship/epic-9',
-              files: ['src/a.ts'],
-              evidence: 'both edit src/a.ts',
-            },
-          ],
-        },
-      },
-      'issues 7 --exclude --preflight-only',
-      [{ kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' }],
-    ],
-    [
-      'exclude mode dropping every issue',
-      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] } },
-      'issues 7 --exclude --preflight-only',
-      [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
-    ],
   ])('refuses %s', async (_name, responses, args, refusals) => {
-    const run = fakeHooks(responses);
-
-    const report = await runShip(run.hooks, args);
-
-    expect(report.status).toBe('refused');
-    expect(report.refusals).toEqual(refusals);
+    await refuses(fakeHooks(responses, { offSchema: true }), args, refusals);
   });
 
   it('refuses a gate with no verdict, and skips the scout for want of a run set', async () => {
-    const run = fakeHooks({
-      'runner:run-gate': { exitCode: 2, envelopePath: 'g', stderrTail: 'run-gate: schema error' },
-    });
+    const run = fakeHooks(
+      {
+        'runner:run-gate': { exitCode: 2, envelopePath: 'g', stderrTail: 'run-gate: schema error' },
+      },
+      { offSchema: true },
+    );
 
     const report = await runShip(run.hooks, 'issues 7 --preflight-only');
 
@@ -527,6 +549,10 @@ describe('runShip — every tool failure is a refusal', () => {
             landed: ['src/old.ts'],
             pr: { state: 'merged', number: 3 },
             spent: true,
+            path: 'C:/src/ph-runs/epic-8/batch',
+            dirty: false,
+            nested: [],
+            spentUnverified: false,
           },
           { ...OTHER_RUN, pr: { state: 'open', number: 4 } },
         ],
@@ -743,6 +769,11 @@ describe('runShip — an attempt that does not land', () => {
         status: 'refused',
         reason: 'code-conflict',
         errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+        outcome: null,
+        commit: null,
+        conflicts: [],
+        version: null,
+        pending: [],
       },
     });
 
@@ -806,8 +837,8 @@ describe('runShip — what an attempt hands on', () => {
     );
   });
 
-  it.each(['planner:7-1', 'applier:7-1', 'testReview:7-1'])(
-    'hands %s the tdd’s server-tier recipe',
+  it.each(['planner:7-1', 'applier:7-1', 'reviewer:7-1', 'testReview:7-1'])(
+    'hands %s the tdd’s lease recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
       const projectDir = 'C:/src/ph-runs/7/project-7-1';
@@ -825,18 +856,40 @@ describe('runShip — what an attempt hands on', () => {
       await runShip(run.hooks, 'issues 7');
 
       const tddLines = promptOf(run, 'tdd:7-1').split('\n');
-      const recipe = ['Lease command: ', 'Lease version: ', 'Probe caps: '].map(
+      const recipe = ['Lease command: ', 'Lease version: '].map(
         (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
       );
       const registry = `${REPORT_DIR}/pool-registry.batch.json`;
       expect(recipe).toEqual([
         `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
         `Lease version: the version of the chosen type's entry in ${registry}`,
-        `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
       ]);
       expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
     },
   );
+
+  // Hand-written: the plan-time allowance #1071 decided, and the tdd's #1038 confirmed.
+  const PLAN_CAPS = 'Probe caps: 5 min per probe, 2 probes per issue';
+  const TDD_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
+
+  it.each([
+    ['planner:7-1', PLAN_CAPS],
+    ['applier:7-1', PLAN_CAPS],
+    ['planReviewer:7-1', PLAN_CAPS],
+    ['tdd:7-1', TDD_CAPS],
+    ['reviewer:7-1', TDD_CAPS],
+    ['testReview:7-1', TDD_CAPS],
+  ])('hands %s its stage’s probe caps', async (label, line) => {
+    const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Probe caps: ')),
+    ).toEqual([line]);
+  });
 
   it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1'])(
     'hands %s the command that fetches the issue as markdown into the report dir',
@@ -863,6 +916,32 @@ describe('runShip — what an attempt hands on', () => {
       expect(promptOf(run, label).split('\n')).toContain('Slice base: cut1');
     },
   );
+
+  it.each<[string, string[]]>([
+    ['reviewer:7-1', ['Mode']],
+    ['testReview:7-1', []],
+  ])('orders %s’s prompt: the slice’s lines, then the server-tier recipe', async (label, head) => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const keys = promptOf(run, label)
+      .split('\n')
+      .map((l) => l.slice(0, l.indexOf(': ')));
+    expect(keys).toEqual([
+      ...head,
+      'Issue',
+      'Slice worktree',
+      'Slice base',
+      'Plan file',
+      'Slice commit',
+      'Changed files',
+      'Report file',
+      'Lease command',
+      'Lease version',
+      'Probe caps',
+    ]);
+  });
 
   it('skips the test review for a slice that changes no code, landing the reviewer’s commit', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
@@ -926,14 +1005,17 @@ describe('runShip — the epic end', () => {
   });
 
   it.each([
-    ['its HEAD moved', { head: 'moved1', dirty: false }],
-    ['it turned dirty', { head: 'abc123', dirty: true }],
+    ['its HEAD moved', { ...PREFLIGHT_OK.snapshot, head: 'moved1' }],
+    ['it turned dirty', { ...PREFLIGHT_OK.snapshot, dirty: true }],
   ])('reports the main checkout touched when %s', async (_name, snapshot) => {
     const run = fakeHooks({ 'runner:preflight:list': { ...PREFLIGHT_OK, snapshot } });
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', mainUntouched: false });
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Main checkout: touched since pre-flight (HEAD or dirtiness changed)',
+    );
   });
 });
 
@@ -1036,6 +1118,12 @@ describe('runShip — a failed cut', () => {
         envelopePath: 'e.json',
         status: 'failed',
         errors: [{ step: 'worktree', message: 'worktree add failed' }],
+        worktree: 'C:/src/main',
+        branch: null,
+        base: null,
+        batch: null,
+        reportDir: null,
+        attach: null,
       },
     });
 
@@ -1044,7 +1132,7 @@ describe('runShip — a failed cut', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('runner:check:'))).toEqual([]);
     expect(report.epics).toMatchObject([
       { epic: 1, outcome: 'stopped' },
       {
@@ -1060,7 +1148,7 @@ describe('runShip — a failed cut', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check'))).toEqual(['runner:check:3-1']);
+    expect(labels(run).filter((l) => l.startsWith('runner:check:'))).toEqual(['runner:check:3-1']);
     expect(report.epics).toMatchObject([
       { epic: 1, outcome: 'stopped', issues: [{ issue: 1, outcome: 'blocked', cite: 'see' }] },
       {
@@ -1119,17 +1207,6 @@ describe('agent-call tiers', () => {
       retro: { agentType: 'retro', model: 'sonnet' },
     });
   });
-
-  it.each(SCENARIOS)(
-    'answers every agent call of the $name run within the call’s schema',
-    async ({ responses, args }) => {
-      const run = fakeHooks(responses);
-
-      await runShip(run.hooks, args);
-
-      expect(run.violations).toEqual([]);
-    },
-  );
 
   it.each(SCENARIOS)(
     'gives every agent call of the $name run its STAGES row',
