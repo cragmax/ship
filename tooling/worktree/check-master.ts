@@ -1,8 +1,8 @@
 /**
- * `check-master <main> --local SHA --remote SHA --synced SHA` — whether
+ * `check-master <main> --local SHA --remote SHA [--synced SHA]` — whether
  * local `master` and `origin`'s only moved forward since the launch shas
- * given (#1080), and `origin`'s also since the `--synced` sha: the
- * `origin/master` the epic end's own sync merged or found merged (#1095).
+ * given (#1080), and `origin`'s also since the `--synced` sha, when given:
+ * the `origin/master` the epic end's own sync merged or found merged (#1095).
  * The epic end runs it just before its push. `origin`'s side is read live
  * with `git ls-remote`, never the remote-tracking ref, which only says what
  * the last fetch saw. Each ref's move is one of the moves
@@ -31,8 +31,13 @@ export interface CheckMasterInput {
   readonly local: string;
   /** `origin`'s `master` launch sha, kept as given. */
   readonly remote: string;
-  /** `origin`'s high-water sha, kept as given. */
-  readonly synced: string;
+  /**
+   * `origin`'s high-water sha, kept as given; `null` judges `origin` against
+   * its launch sha only. Optional only so a run whose saved workflow script
+   * predates #1113 — which never passes `--synced` — still reaches its push;
+   * every current caller passes it.
+   */
+  readonly synced: string | null;
 }
 
 /** The ref both sides are read at. */
@@ -104,14 +109,14 @@ function localMaster(main: string): string | null {
 
 /**
  * Judge `origin`'s move: against its launch sha, then — only when that
- * passed — against the synced sha.
+ * passed and a synced sha was given — against the synced sha.
  *
  * @param main - The main checkout.
  * @param input - The launch and synced shas, as given.
  * @param current - `origin`'s current sha; `null` when the ref is gone.
  * @param fetchOnce - Fetches `origin`; a no-op after the command's first fetch.
  * @returns The move from the launch sha when it is neither `equal` nor
- *   `forward`, else the move from the synced sha.
+ *   `forward` or no synced sha was given, else the move from the synced sha.
  * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
  */
 function remoteMove(
@@ -127,7 +132,7 @@ function remoteMove(
     current,
     move: fromLaunch,
   };
-  if (fromLaunch !== 'equal' && fromLaunch !== 'forward') return move;
+  if (input.synced === null || (fromLaunch !== 'equal' && fromLaunch !== 'forward')) return move;
   return { ...move, move: moveFrom(main, input.synced, current, fetchOnce) };
 }
 

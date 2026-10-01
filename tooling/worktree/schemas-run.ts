@@ -235,7 +235,8 @@ export const MasterMoveSchema = z.object({
   /**
    * `origin`'s high-water sha, as given (`--synced`): the `origin/master` the
    * epic end's `sync-master` merged or found merged (#1095). `null` for local
-   * `master`, which is judged against its launch sha only.
+   * `master`, and for `origin` when `--synced` was not given; either is then
+   * judged against its launch sha only.
    */
   synced: z.string().nullable(),
   /** The current sha; `null` when the ref is deleted. */
@@ -251,7 +252,7 @@ export const MasterMoveSchema = z.object({
 });
 
 /**
- * Envelope of `check-master <main> --local SHA --remote SHA --synced SHA`;
+ * Envelope of `check-master <main> --local SHA --remote SHA [--synced SHA]`;
  * `worktree` is the main checkout.
  */
 export const CheckMasterResultSchema = ResultBaseSchema.extend({

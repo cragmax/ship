@@ -82,7 +82,10 @@ describe('check-master', () => {
     });
   });
 
-  it('refuses to run without --synced, exit 2', TIMEOUT, () => {
+  // regression: a run whose saved script predates #1113 sends no --synced.
+  it('judges origin against its launch only without --synced, exit 0', TIMEOUT, () => {
+    const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
+
     const r = runCli<CheckMasterResult>([
       'check-master',
       main,
@@ -92,13 +95,25 @@ describe('check-master', () => {
       first,
     ]);
 
-    expect(r.code).toBe(2);
+    expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
-      command: 'check-master',
-      status: 'failed',
-      worktree: null,
-      errors: [{ step: 'usage', message: 'missing required flag --synced' }],
+      status: 'ok',
+      remote: { launch: first, synced: null, current: pushed, move: 'forward' },
     });
+  });
+
+  it("refuses origin's master rewound since the launch without a synced sha", TIMEOUT, () => {
+    const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
+    mustRun('git', ['fetch', '-q', 'origin'], main);
+    mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+
+    const r = checkMaster({ main, local: first, remote: pushed, synced: null });
+
+    expect(r).toMatchObject({ status: 'refused', reason: 'master-not-forward' });
+    expect(r.remote).toEqual({ launch: pushed, synced: null, current: first, move: 'rewound' });
+    expect(r.errors[0]?.message).toBe(
+      `master is not forward of its launch: origin rewound (launch ${pushed}, now ${first})`,
+    );
   });
 
   it('passes both refs level with their launch as equal', TIMEOUT, () => {
