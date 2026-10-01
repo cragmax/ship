@@ -181,6 +181,32 @@ describe('workflow agents', () => {
     expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
   });
 
+  // Hand-written: the finding-line tokens the diff-review skill writes and the agents acting on its findings read (#1098, #1099).
+  const FINDING_TOKENS = ['F<n>', 'hard', 'judgement'];
+
+  // Its finding-line format, not the whole skill: its severity bullets repeat `hard` and `judgement`, so a renamed format would hide behind them.
+  it('diff-review defines the finding tokens in its report’s finding line', () => {
+    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
+    const format =
+      section(skill.replaceAll('\r\n', '\n'), '## 4. Report')
+        .split('\n')
+        .find((l) => l.startsWith('`F<n> ')) ?? '';
+
+    expect(FINDING_TOKENS.filter((token) => !format.includes(token))).toEqual([]);
+  });
+
+  it.each<[string, string, string[]]>([
+    ['reviewer', '## Review mode', FINDING_TOKENS],
+    ['diff-reviewer', '## Discipline', ['hard']],
+  ])(
+    '%s spells the finding tokens the diff-review skill writes, under its %s',
+    (agentType, heading, tokens) => {
+      const text = section(agentText(agentType), heading);
+
+      expect(tokens.filter((token) => !text.includes(`\`${token}\``))).toEqual([]);
+    },
+  );
+
   // Hand-written: the probe timing and the greppable duration token a cap review reads (#1086).
   const DURATION_TOKENS = ['date +%s', 'duration: <dur>', '`42s`', '`11m 04s`'];
 
