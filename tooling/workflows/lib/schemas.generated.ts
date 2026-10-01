@@ -890,6 +890,15 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
   },
+  diffReview: {
+    type: 'object',
+    properties: {
+      rules: { type: 'integer' },
+      plan: { type: 'integer' },
+      findingsPath: { type: 'string' },
+    },
+    required: ['rules', 'plan', 'findingsPath'],
+  },
   review: {
     type: 'object',
     properties: {

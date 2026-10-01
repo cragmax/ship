@@ -13,7 +13,7 @@ import {
 } from '../../../tooling/workflows/lib/schemas.generated.js';
 import { runTool, TOOL_SCHEMAS } from '../../../tooling/workflows/lib/tool-calls.js';
 
-import { fakeHooks, LAND_OK } from './workflows/_fake-hooks.js';
+import { DIFF_REVIEW_OK, fakeHooks, LAND_OK } from './workflows/_fake-hooks.js';
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 
@@ -73,6 +73,17 @@ const ALLOWED_TYPES = ['array', 'boolean', 'integer', 'null', 'object', 'string'
 /** {@link LAND_OK} with its required `at` dropped. */
 const LAND_WITHOUT_AT = Object.fromEntries(Object.entries(LAND_OK).filter(([key]) => key !== 'at'));
 
+const DIFF_REVIEW_VALUES = {
+  issue: 7,
+  slice: 'C:/r/slice-7-1',
+  base: 'cut1',
+  planPath: 'C:/r/reports/plans/7.md',
+  sha: 'slice1',
+  files: ['a.ts'],
+  findingsPath: 'C:/r/reports/diff-review-7-1.md',
+  reportDir: 'C:/r/reports',
+};
+
 describe('consumed fields are required', () => {
   it('leaves only the legitimately absent fields optional in every tool schema', () => {
     expect(optionalOf(TOOL_SCHEMAS)).toEqual({
@@ -100,6 +111,7 @@ describe('consumed fields are required', () => {
       planCard: [],
       planReview: [],
       tdd: ['reason'],
+      diffReview: [],
       review: [],
       testReview: [],
       resolver: [],
@@ -116,6 +128,34 @@ describe('consumed fields are required', () => {
 
       expect(probe.properties.seconds).toEqual({ type: 'integer' });
       expect(probe.required).toContain('seconds');
+    },
+  );
+});
+
+describe('the diff review’s output schema', () => {
+  it('requires the two finding counts as integers and the findings path as a string', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.diffReview).toEqual({
+      type: 'object',
+      properties: {
+        rules: { type: 'integer' },
+        plan: { type: 'integer' },
+        findingsPath: { type: 'string' },
+      },
+      required: ['rules', 'plan', 'findingsPath'],
+    });
+  });
+
+  it.each(['rules', 'plan', 'findingsPath'])(
+    'records a diff review answer lacking %s',
+    async (field) => {
+      const answer = Object.fromEntries(
+        Object.entries(DIFF_REVIEW_OK).filter(([key]) => key !== field),
+      );
+      const run = fakeHooks({ diffReview: answer }, { offSchema: true });
+
+      await AGENT_CALLS.diffReview(run.hooks, DIFF_REVIEW_VALUES, '7-1');
+
+      expect(run.violations).toEqual([`diffReview:7-1: lacks required ${field}`]);
     },
   );
 });

@@ -278,6 +278,7 @@ describe('runShip — one issue from launch to PR', () => {
       'planner:7-1',
       'planReviewer:7-1',
       'tdd:7-1',
+      'diffReview:7-1',
       'reviewer:7-1',
       'testReview:7-1',
       'runner:land:7-1',
@@ -730,6 +731,46 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
+  it('retries the issue when the diff reviewer returns nothing, never calling the reviewer, then blocks it', async () => {
+    const run = fakeHooks({ diffReview: null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+      'diffReview:7-1',
+      'runner:teardown:7-1',
+      'diffReview:7-2',
+      'runner:teardown:7-2',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      issues: [
+        { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+      ],
+    });
+  });
+
+  it('blocks the issue, with no retry and no reviewer call, when the diff review call throws', async () => {
+    const run = fakeHooks({
+      diffReview: () => {
+        throw new Error('runtime crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+      'diffReview:7-1',
+      'runner:teardown:7-1',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      issues: [
+        { issue: 7, outcome: 'blocked', cite: 'see', reason: 'a stage threw: runtime crashed' },
+      ],
+    });
+  });
+
   it('records a teardown that threw as residue and still lands the issue', async () => {
     const run = fakeHooks({
       'runner:teardown': () => {
@@ -894,7 +935,7 @@ describe('runShip — what an attempt hands on', () => {
     ).toEqual([line]);
   });
 
-  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1'])(
+  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1', 'diffReview:7-1'])(
     'hands %s the command that fetches the issue as markdown into the report dir',
     async (label) => {
       const run = fakeHooks(PLAN_REVIEW_FINDINGS);
@@ -920,30 +961,71 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each<[string, string[]]>([
-    ['reviewer:7-1', ['Mode']],
-    ['testReview:7-1', []],
-  ])('orders %s’s prompt: the slice’s lines, then the server-tier recipe', async (label, head) => {
+  it.each<[string, string[], string[]]>([
+    ['reviewer:7-1', ['Mode'], ['Findings file']],
+    ['testReview:7-1', [], []],
+  ])(
+    'orders %s’s prompt: the slice’s lines, the report and findings files, then the server-tier recipe',
+    async (label, head, own) => {
+      const run = fakeHooks();
+
+      await runShip(run.hooks, 'issues 7');
+
+      const keys = promptOf(run, label)
+        .split('\n')
+        .map((l) => l.slice(0, l.indexOf(': ')));
+      expect(keys).toEqual([
+        ...head,
+        'Issue',
+        'Slice worktree',
+        'Slice base',
+        'Plan file',
+        'Slice commit',
+        'Changed files',
+        'Report file',
+        ...own,
+        'Lease command',
+        'Lease version',
+        'Probe caps',
+      ]);
+    },
+  );
+
+  it('hands the diff reviewer the tdd’s commit, its findings file and the issue’s lines, nothing else', async () => {
     const run = fakeHooks();
 
     await runShip(run.hooks, 'issues 7');
 
-    const keys = promptOf(run, label)
-      .split('\n')
-      .map((l) => l.slice(0, l.indexOf(': ')));
-    expect(keys).toEqual([
-      ...head,
-      'Issue',
-      'Slice worktree',
-      'Slice base',
-      'Plan file',
-      'Slice commit',
-      'Changed files',
-      'Report file',
-      'Lease command',
-      'Lease version',
-      'Probe caps',
+    const lines = promptOf(run, 'diffReview:7-1').split('\n');
+    expect(lines.slice(0, -1)).toEqual([
+      'Issue: #7',
+      'Slice worktree: C:/src/ph-runs/7/slice-7-1',
+      'Slice base: cut1',
+      `Plan file: ${REPORT_DIR}/plans/7.md`,
+      'Slice commit: slice1',
+      'Changed files: tooling/x.ts, test/unit/tooling/x.test.ts',
+      `Findings file: ${REPORT_DIR}/diff-review-7-1.md`,
+      `Issue file: ${REPORT_DIR}/issues/7.md`,
     ]);
+    expect(lines.at(-1)).toMatch(/^Issue command: /);
+  });
+
+  it.each([
+    ['diffReview:7-1', 'diff-review-7-1.md'],
+    ['reviewer:7-1', 'diff-review-7-1.md'],
+    ['diffReview:7-2', 'diff-review-7-2.md'],
+    ['reviewer:7-2', 'diff-review-7-2.md'],
+  ])('hands %s its attempt’s diff review findings file, %s', async (label, file) => {
+    // A land conflict re-cuts the issue, so attempt 2's hand-off shows beside attempt 1's.
+    const run = fakeHooks({ 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Findings file: ')),
+    ).toEqual([`Findings file: ${REPORT_DIR}/${file}`]);
   });
 
   it('skips the test review for a slice that changes no code, landing the reviewer’s commit', async () => {
@@ -957,6 +1039,18 @@ describe('runShip — what an attempt hands on', () => {
       '- Test review: skipped — trivial surface',
     );
     expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+  });
+
+  it('runs the diff review on a slice that changes no code, though test review is skipped', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => /^(tdd|diffReview|reviewer|testReview):/.test(l))).toEqual([
+      'tdd:7-1',
+      'diffReview:7-1',
+      'reviewer:7-1',
+    ]);
   });
 });
 
@@ -1207,6 +1301,7 @@ describe('agent-call tiers', () => {
       applier: { agentType: 'planner' },
       planReviewer: { agentType: 'ship-plan-reviewer' },
       tdd: { agentType: 'ship-tdd', model: 'opus' },
+      diffReview: { agentType: 'diff-reviewer', model: 'opus' },
       reviewer: { agentType: 'reviewer', model: 'opus' },
       resolver: { agentType: 'reviewer', model: 'opus' },
       testReview: { agentType: 'ship-test-review', model: 'opus' },
@@ -1227,14 +1322,31 @@ describe('agent-call tiers', () => {
         const stage = call.label.split(':')[0] ?? '';
         expect(Object.keys(STAGES)).toContain(stage);
         const row: StageRow = STAGES[stage as StageName];
-        // The reviewer's effort is per slice; every fake tdd commits TDD_FILES.
-        const effort = stage === 'reviewer' ? reviewEffort(TDD_FILES) : row.effort;
+        // The diff reviewer's and the reviewer's effort is per slice; every fake tdd commits TDD_FILES.
+        const effort =
+          stage === 'diffReview' || stage === 'reviewer' ? reviewEffort(TDD_FILES) : row.effort;
         expect({ agentType: call.agentType, model: call.model, effort: call.effort }).toEqual({
           agentType: row.agentType,
           model: row.model,
           effort,
         });
       }
+    },
+  );
+
+  it.each<[string[], string]>([
+    [['docs/x.md'], 'medium'],
+    [['src/x.ts'], 'high'],
+  ])(
+    'gives the diff reviewer and the reviewer the effort a slice changing %j picks: %s',
+    async (files, effort) => {
+      const run = fakeHooks({ tdd: { ...TDD_GREEN, files } });
+
+      await runShip(run.hooks, 'issues 7');
+
+      const effortOf = (label: string): string | undefined =>
+        run.calls.find((c) => c.label === label)?.effort;
+      expect([effortOf('diffReview:7-1'), effortOf('reviewer:7-1')]).toEqual([effort, effort]);
     },
   );
 });

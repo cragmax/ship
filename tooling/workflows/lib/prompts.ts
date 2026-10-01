@@ -11,8 +11,8 @@
  * A text the agent must copy to disk byte for byte goes in a
  * {@link verbatimBlock}; a command line's words are each quoted for bash by
  * {@link shellWord}, so the agent runs the line as given. An issue's text
- * reaches a planning-stage agent as a file its `Issue command:` line writes
- * ({@link issueLines}).
+ * reaches a planning-stage agent or the diff reviewer as a file its
+ * `Issue command:` line writes ({@link issueLines}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -154,11 +154,8 @@ export interface TddValues {
   readonly lease: LeaseValues;
 }
 
-/**
- * The reviewer's and the test reviewer's values: the slice's, and where its
- * server-tier runs lease from.
- */
-export interface SliceReviewValues {
+/** A slice's one commit, as the stages after the tdd are handed it. */
+export interface SliceCommitValues {
   /** The issue. */
   readonly issue: number;
   /** The slice worktree. */
@@ -171,10 +168,34 @@ export interface SliceReviewValues {
   readonly sha: string;
   /** Its changed paths. */
   readonly files: readonly string[];
+}
+
+/**
+ * The diff reviewer's values: the slice's commit, where its findings go, and
+ * where the issue's text goes.
+ */
+export interface DiffReviewValues extends SliceCommitValues {
+  /** Where the findings go; the reviewer reads them. */
+  readonly findingsPath: string;
+  /** The run's report directory: the issue's text is written under it. */
+  readonly reportDir: string;
+}
+
+/**
+ * The reviewer's and the test reviewer's values: the slice's, and where its
+ * server-tier runs lease from.
+ */
+export interface SliceReviewValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;
   /** The lease command's values. */
   readonly lease: LeaseValues;
+}
+
+/** The reviewer's values: the slice's, and the diff review's findings. */
+export interface ReviewerValues extends SliceReviewValues {
+  /** The diff review's findings file. */
+  readonly findingsPath: string;
 }
 
 /** The critic's values. */
@@ -385,8 +406,14 @@ export const PROMPTS = {
         content: values.message,
       }),
     ].join('\n'),
-  reviewer: (values: SliceReviewValues): string =>
-    ['Mode: review', sliceReviewPrompt(values)].join('\n'),
+  diffReview: (values: DiffReviewValues): string =>
+    [
+      ...sliceCommitLines(values),
+      `Findings file: ${values.findingsPath}`,
+      ...issueLines(values.issue, values.reportDir),
+    ].join('\n'),
+  reviewer: (values: ReviewerValues): string =>
+    ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
   testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   resolver: (values: ResolverValues): string =>
     [
@@ -411,13 +438,13 @@ export const PROMPTS = {
 };
 
 /**
- * The prompt of a stage that reviews the slice's commit and may amend it.
+ * A slice's one commit as a prompt carries it.
  *
- * @param values - The slice's values.
- * @returns The prompt: the slice's lines, then its server-tier lines
- *   ({@link serverTierLines}).
+ * @param values - The slice's commit.
+ * @returns The `Issue:`, `Slice worktree:`, `Slice base:`, `Plan file:`,
+ *   `Slice commit:` and `Changed files:` lines, the paths comma-joined.
  */
-function sliceReviewPrompt(values: SliceReviewValues): string {
+function sliceCommitLines(values: SliceCommitValues): string[] {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
@@ -425,7 +452,23 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
     `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
+  ];
+}
+
+/**
+ * The prompt of a stage that reviews the slice's commit and may amend it.
+ *
+ * @param values - The slice's values.
+ * @param findingsPath - The diff review's findings file; the reviewer's only.
+ * @returns The prompt: the slice's lines ({@link sliceCommitLines}), the
+ *   report file and any findings file, then the server-tier lines
+ *   ({@link serverTierLines}).
+ */
+function sliceReviewPrompt(values: SliceReviewValues, findingsPath?: string): string {
+  return [
+    ...sliceCommitLines(values),
     `Report file: ${values.reportPath}`,
+    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
   ].join('\n');
 }

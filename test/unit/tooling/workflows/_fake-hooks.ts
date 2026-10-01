@@ -209,6 +209,13 @@ export const TDD_GREEN = {
   probes: [],
 };
 
+/** A diff review that found two rules findings and one plan finding. */
+export const DIFF_REVIEW_OK = {
+  rules: 2,
+  plan: 1,
+  findingsPath: `${REPORT_DIR}/diff-review-7-1.md`,
+};
+
 /** A plan card for #7. */
 export const PLAN_CARD = {
   verdict: 'plan',
@@ -267,6 +274,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   planner: PLAN_CARD,
   planReviewer: { verdict: 'approved', findings: 0, findingsPath: `${REPORT_DIR}/pr.md` },
   tdd: TDD_GREEN,
+  diffReview: DIFF_REVIEW_OK,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
   reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper', leaseLines: [] },
   testReview: {

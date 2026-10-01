@@ -21,6 +21,7 @@ import type {
   CommitSpecSchema,
   CriticFindingSchema,
   CriticOutputSchema,
+  DiffReviewOutputSchema,
   EstimatedPairSchema,
   OverlapEstimateSchema,
   PlanCardSchema,
@@ -39,17 +40,19 @@ import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
   type CriticValues,
+  type DiffReviewValues,
   type OverlapValues,
   type PlannerValues,
   type PlanReviewerValues,
   type ResolverValues,
   type RetroValues,
+  type ReviewerValues,
   type ScoutValues,
   type SliceReviewValues,
   type TddValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
-import { agentOptions, reviewerOptions } from './stages.js';
+import { agentOptions, reviewOptions } from './stages.js';
 
 /** The scout's answer. */
 export type ScoutVerdict = z.infer<typeof ScoutVerdictSchema>;
@@ -77,6 +80,9 @@ export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
 
 /** The tdd's answer. */
 export type TddOutput = z.infer<typeof TddOutputSchema>;
+
+/** The diff reviewer's answer. */
+export type DiffReviewOutput = z.infer<typeof DiffReviewOutputSchema>;
 
 /** The reviewer's answer. */
 export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
@@ -192,11 +198,17 @@ export const AGENT_CALLS = {
       PROMPTS.tdd(values),
       agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd),
     ),
-  reviewer: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
+  diffReview: (hooks: WorkflowHooks, values: DiffReviewValues, tag: string) =>
+    askAgent<DiffReviewOutput>(
+      hooks,
+      PROMPTS.diffReview(values),
+      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
+    ),
+  reviewer: (hooks: WorkflowHooks, values: ReviewerValues, tag: string) =>
     askAgent<ReviewOutput>(
       hooks,
       PROMPTS.reviewer(values),
-      reviewerOptions(tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
   testReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
     askAgent<TestReviewOutput>(
