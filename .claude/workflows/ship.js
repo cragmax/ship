@@ -2195,12 +2195,14 @@ function issueSection(landed) {
   const ref = `#${String(landed.issue)}`;
   const cite =
     landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
+  const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
     `- Issue: ${cite}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
+    `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
     test === null
       ? '- Test review: skipped — trivial surface'
@@ -2614,6 +2616,7 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     sha: '',
     card: null,
     tdd: null,
+    diffReview: null,
     review: null,
     testReview: null,
     work: null,
@@ -2637,10 +2640,10 @@ async function authorSlice(at) {
     const stop = await stage(at);
     if (stop !== null) return stop;
   }
-  const { card, tdd, review, testReview } = at;
-  if (card === null || tdd === null || review === null)
+  const { card, tdd, diffReview, review, testReview } = at;
+  if (card === null || tdd === null || diffReview === null || review === null)
     return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, review, testReview };
+  at.work = { card, tdd, diffReview, review, testReview };
   return null;
 }
 async function recheckStage(at) {
@@ -2724,7 +2727,9 @@ async function diffReviewStage(at) {
     reportDir: at.ctx.reportDir,
   };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
-  return out === null ? died(at) : null;
+  if (out === null) return died(at);
+  at.diffReview = out;
+  return null;
 }
 async function reviewStage(at) {
   const values = { ...sliceReviewValues(at, 'review'), findingsPath: diffReviewPath(at) };

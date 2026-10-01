@@ -399,19 +399,24 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
  * One landed issue's section.
  *
  * @param landed - The issue.
- * @returns The section's lines, blank-line terminated; its lease line per
- *   {@link sliceLeaseText}, its probe lines per {@link probeLines}.
+ * @returns The section's lines, blank-line terminated: the heading, then the
+ *   issue, plan, diff review
+ *   (`- Diff review: <rules> rules, <plan> plan findings`), review, test
+ *   review, lease and probe lines; its lease line per {@link sliceLeaseText},
+ *   its probe lines per {@link probeLines}.
  */
 function issueSection(landed: LandedIssue): string[] {
   const ref = `#${String(landed.issue)}`;
   const cite =
     landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
+  const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
     `- Issue: ${cite}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
+    `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
     test === null
       ? '- Test review: skipped — trivial surface'

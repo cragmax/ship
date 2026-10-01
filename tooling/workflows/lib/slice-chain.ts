@@ -33,6 +33,7 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,
+  type DiffReviewOutput,
   type PlanCard,
   type ReviewOutput,
   type SliceWork,
@@ -150,6 +151,7 @@ interface Attempt {
   sha: string;
   card: PlanCard | null;
   tdd: TddOutput | null;
+  diffReview: DiffReviewOutput | null;
   review: ReviewOutput | null;
   testReview: TestReviewOutput | null;
   work: SliceWork | null;
@@ -217,6 +219,7 @@ function newAttempt(
     sha: '',
     card: null,
     tdd: null,
+    diffReview: null,
     review: null,
     testReview: null,
     work: null,
@@ -250,10 +253,10 @@ async function authorSlice(at: Attempt): Promise<SchedulerEvent | null> {
     const stop = await stage(at);
     if (stop !== null) return stop;
   }
-  const { card, tdd, review, testReview } = at;
-  if (card === null || tdd === null || review === null)
+  const { card, tdd, diffReview, review, testReview } = at;
+  if (card === null || tdd === null || diffReview === null || review === null)
     return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, review, testReview };
+  at.work = { card, tdd, diffReview, review, testReview };
   return null;
 }
 
@@ -377,7 +380,7 @@ async function tddStage(at: Attempt): Promise<SchedulerEvent | null> {
  * Check the slice's commit, read-only, against the repo's rules and its
  * issue and plan; the findings go to {@link diffReviewPath} for the reviewer.
  *
- * @param at - The attempt.
+ * @param at - The attempt; gains `diffReview`.
  * @returns Resolves to `null` once the diff reviewer answers; `agent-died`
  *   when it returns nothing.
  */
@@ -388,7 +391,9 @@ async function diffReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
     reportDir: at.ctx.reportDir,
   };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
-  return out === null ? died(at) : null;
+  if (out === null) return died(at);
+  at.diffReview = out;
+  return null;
 }
 
 /**

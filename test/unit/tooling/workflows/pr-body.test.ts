@@ -18,6 +18,7 @@ const work = (fields: {
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
   planProbes?: SliceWork['tdd']['probes'];
+  diffReview?: SliceWork['diffReview'];
   review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
 }): SliceWork => ({
@@ -38,6 +39,7 @@ const work = (fields: {
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
   },
+  diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
   review: fields.review ?? {
     verdict: 'fixed',
     sha: 's2',
@@ -591,6 +593,36 @@ describe('renderPrBody', () => {
 
     expect(lines).toContain(`  - tdd: Folia ticks x: confirmed in ${text}`);
   });
+
+  it.each<[number, number, string]>([
+    [3, 0, '- Diff review: 3 rules, 0 plan findings'],
+    [0, 5, '- Diff review: 0 rules, 5 plan findings'],
+  ])(
+    'renders a diff review of %s rules and %s plan findings between the plan and the review',
+    (rules, plan, line) => {
+      const lines = renderPrBody({
+        ...INPUT,
+        landed: [
+          {
+            issue: 11,
+            commit: 'c11',
+            ...work({
+              subject: 'review x',
+              closes: 'fixes',
+              diffReview: { rules, plan, findingsPath: 'd.md' },
+            }),
+          },
+        ],
+      }).split('\n');
+      const at = lines.indexOf('- Plan: plan the thing (tier: server)');
+
+      expect(lines.slice(at, at + 3)).toEqual([
+        '- Plan: plan the thing (tier: server)',
+        line,
+        '- Review: fixed — renamed a helper',
+      ]);
+    },
+  );
 
   it('defuses a closing reference in the tier, a critic reason and every reference form', () => {
     const tricky = renderPrBody({

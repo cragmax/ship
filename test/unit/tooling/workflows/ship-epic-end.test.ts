@@ -472,3 +472,24 @@ describe('runShip — the lease totals', () => {
     });
   });
 });
+
+describe('runShip — the diff review counts', () => {
+  it('carries each landed issue’s own diff review counts into its PR-body section', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      'diffReview:7-1': { rules: 3, plan: 0, findingsPath: `${REPORT_DIR}/diff-review-7-1.md` },
+      'diffReview:8-1': { rules: 0, plan: 4, findingsPath: `${REPORT_DIR}/diff-review-8-1.md` },
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Diff review: ')),
+    ).toEqual([
+      '- Diff review: 3 rules, 0 plan findings',
+      '- Diff review: 0 rules, 4 plan findings',
+    ]);
+  });
+});

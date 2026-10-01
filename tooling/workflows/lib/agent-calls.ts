@@ -96,6 +96,8 @@ export interface SliceWork {
   readonly card: PlanCard;
   /** The tdd's answer. */
   readonly tdd: TddOutput;
+  /** The diff reviewer's answer: its two checks' finding counts and its findings file. */
+  readonly diffReview: DiffReviewOutput;
   /** The reviewer's answer. */
   readonly review: ReviewOutput;
   /** The test reviewer's answer; `null` when skipped for a trivial surface. */
