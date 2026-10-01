@@ -8,7 +8,8 @@
  * tool steps: the CLI owns them, and the workflow that calls it sets none
  * of its own. Every spawn that can outlast local git plumbing — a network
  * call, an install, a build, a hooked commit — names its constant here; the
- * local `git` plumbing (`git.ts`) runs under the default.
+ * local `git` plumbing (`git.ts`) runs under the default. The one
+ * exception is `pr-review`'s review session: see `pr-review-session.ts`.
  *
  * A budget kill is `execaSync`'s `timeout`. On Windows (#1048; Windows 11,
  * Node 24, Git for Windows 2.55) it reaches only the direct child, and its
@@ -102,8 +103,31 @@ export interface CaptureOptions {
  * @param text - Captured output.
  * @returns The trailing lines, joined with `\n`.
  */
-function lastLines(text: string): string {
+export function lastLines(text: string): string {
   return text.split(/\r?\n/u).slice(-TAIL_LINES).join('\n');
+}
+
+/**
+ * A child's environment: this process's, minus every variable whose name
+ * starts with one of `dropPrefixes` (case-sensitive), with `overlay` laid
+ * over it.
+ *
+ * @param dropPrefixes - Name prefixes to drop, e.g. `GIT_`.
+ * @param overlay - Variables set after the drop; it is not filtered.
+ * @returns The environment, for execa's `env` with `extendEnv: false`.
+ */
+export function childEnv(
+  dropPrefixes: readonly string[],
+  overlay: Readonly<Record<string, string>> = {},
+): Record<string, string | undefined> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => !dropPrefixes.some((prefix) => key.startsWith(prefix)),
+      ),
+    ),
+    ...overlay,
+  };
 }
 
 /**
@@ -131,13 +155,9 @@ export function runCaptured(
   args: readonly string[],
   options: CaptureOptions,
 ): Captured {
-  const env = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-    ...options.env,
-  };
   const r = execaSync(file, args, {
     cwd: options.cwd,
-    env,
+    env: childEnv(['GIT_'], options.env),
     extendEnv: false,
     all: true,
     reject: false,

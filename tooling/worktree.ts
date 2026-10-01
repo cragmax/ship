@@ -1,9 +1,10 @@
 /**
  * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears
- * down the batch and slice worktrees of an unattended run, and lists the
- * live runs (ADR-0045). Each command prints exactly one JSON object on one
- * stdout line — the envelope whose schema is in `worktree/schemas.ts` or
- * `worktree/schemas-run.ts` — and nothing else.
+ * down the batch and slice worktrees of an unattended run, lists the live
+ * runs, and reviews a PR in a throwaway clone (ADR-0045). Each command
+ * prints exactly one JSON object on one stdout line — the envelope whose
+ * schema is in `worktree/schemas.ts` or `worktree/schemas-run.ts` — and
+ * nothing else.
  *
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
  *
@@ -22,6 +23,7 @@
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
+ * npx tsx <main-checkout>/tooling/worktree.ts pr-review MAIN --pr N --level (xhigh|max) --model M --report-dir DIR
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
@@ -38,7 +40,9 @@
  * `worktree/git.ts`) when the CLI lies inside its target. The one exception
  * is `cut-batch`, whose target is the main checkout the CLI runs from: it
  * writes only `.git` and a sibling directory, never that checkout's working
- * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
+ * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). `pr-review` mutates
+ * no worktree — its fetch writes only remote-tracking refs, like
+ * `check-master`'s — so it has no guard either. Target paths and the
  * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
  * `--body-file`) come only from argv, resolved against the starting cwd;
  * every other argument — a sha, repo-relative paths, a number, a title, the
@@ -72,6 +76,7 @@ import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
 import { preflight } from './worktree/preflight.js';
+import { prReview } from './worktree/pr-review.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
@@ -94,12 +99,15 @@ import {
   CutSliceResultSchema,
   LandResultSchema,
   PreflightResultSchema,
+  PrReviewLevelSchema,
+  PrReviewResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
 } from './worktree/schemas-run.js';
 import { stagedGuard } from './worktree/staged-set.js';
 import { syncMaster } from './worktree/sync-master.js';
 import { teardownWorktree } from './worktree/teardown.js';
+import type { PrReviewLevel } from './worktree/types-run.js';
 import { recordFailure, type ResultBase } from './worktree/types.js';
 
 /** A command line that cannot be dispatched — exit 2. */
@@ -278,6 +286,20 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         synced: args.values.get('--synced') ?? null,
       }),
   },
+  'pr-review': {
+    schema: PrReviewResultSchema,
+    valueFlags: ['--pr', '--level', '--model', '--report-dir'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      prReview({
+        source: args.target,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        level: prReviewLevel(args.values.get('--level') ?? ''),
+        model: args.values.get('--model') ?? '',
+        reportDir: pathFlag(args, '--report-dir'),
+      }),
+  },
   publish: {
     schema: PublishResultSchema,
     valueFlags: ['--log'],
@@ -362,6 +384,19 @@ function positiveInt(text: string, flag: string): number {
     throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
   }
   return Number(text);
+}
+
+/**
+ * Read `pr-review`'s `--level`.
+ *
+ * @param text - The value as given.
+ * @returns The level.
+ * @throws UsageError unless `text` is `xhigh` or `max`.
+ */
+function prReviewLevel(text: string): PrReviewLevel {
+  const level = PrReviewLevelSchema.safeParse(text);
+  if (!level.success) throw new UsageError(`flag --level needs xhigh or max, got '${text}'`);
+  return level.data;
 }
 
 /**

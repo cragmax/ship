@@ -34,6 +34,7 @@ vi.mock('../../../tooling/worktree/harvest.js', () => ({ harvest: commandMock })
 vi.mock('../../../tooling/worktree/land.js', () => ({ land: commandMock }));
 vi.mock('../../../tooling/worktree/live-runs.js', () => ({ liveRuns: commandMock }));
 vi.mock('../../../tooling/worktree/preflight.js', () => ({ preflight: commandMock }));
+vi.mock('../../../tooling/worktree/pr-review.js', () => ({ prReview: commandMock }));
 vi.mock('../../../tooling/worktree/provision.js', () => ({ provision: commandMock }));
 vi.mock('../../../tooling/worktree/provision-batch.js', () => ({ provisionBatch: commandMock }));
 vi.mock('../../../tooling/worktree/publish.js', () => ({ publish: commandMock }));
@@ -125,6 +126,18 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
+      [
+        'pr-review',
+        'C:/main',
+        '--pr',
+        '7',
+        '--level',
+        'xhigh',
+        '--model',
+        'opus',
+        '--report-dir',
+        'C:/r',
+      ],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;
@@ -136,6 +149,54 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(result.status).toBe('failed');
     expect(result.errors[0]?.step).toBe('envelope');
     expect(exitCode).toBe(1);
+  });
+
+  it.each(['high', 'ultra', 'off'])(
+    'refuses pr-review --level %s as a usage error, exit 2',
+    async (level) => {
+      const { result, exitCode } = await runWorktreeCli([
+        'pr-review',
+        'C:/main',
+        '--pr',
+        '7',
+        '--level',
+        level,
+        '--model',
+        'opus',
+        '--report-dir',
+        'C:/r',
+      ]);
+
+      expect(result).toEqual({
+        command: 'pr-review',
+        status: 'failed',
+        worktree: null,
+        errors: [{ step: 'usage', message: `flag --level needs xhigh or max, got '${level}'` }],
+        at: expect.any(String),
+      });
+      expect(exitCode).toBe(2);
+      expect(commandMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('hands pr-review its PR, level and model', async () => {
+    await runWorktreeCli([
+      'pr-review',
+      'C:/main',
+      '--pr',
+      '7',
+      '--level',
+      'max',
+      '--model',
+      'opus',
+      '--report-dir',
+      'C:/r',
+    ]);
+
+    expect(commandMock).toHaveBeenCalledTimes(1);
+    expect(commandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pr: 7, level: 'max', model: 'opus' }),
+    );
   });
 
   it('keeps an unknown command’s usage envelope and exit 2', async () => {

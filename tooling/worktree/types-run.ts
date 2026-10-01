@@ -1,11 +1,11 @@
 /**
  * Envelope types of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
- * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish`. Each is the
- * `z.infer` of its schema in `schemas-run.ts`, the canonical home of the
- * shapes and their field docs. The status semantics and error classes are
- * `types.ts`'s.
+ * `cut-slice`, `preflight` and `land` — of its epic-end commands:
+ * `sync-master`, `bump`, `check-master` and `publish` — and of `pr-review`,
+ * with the findings file it writes. Each is the `z.infer` of its schema in
+ * `schemas-run.ts`, the canonical home of the shapes and their field docs.
+ * The status semantics and error classes are `types.ts`'s.
  */
 
 import type { z } from 'zod';
@@ -24,7 +24,12 @@ import type {
   PreflightCheckSchema,
   PreflightProblemSchema,
   PreflightResultSchema,
+  PrReviewLevelSchema,
+  PrReviewOutcomeSchema,
+  PrReviewResultSchema,
   PublishResultSchema,
+  ReviewFindingSchema,
+  ReviewFindingsFileSchema,
   SyncMasterResultSchema,
   VersionLineSchema,
 } from './schemas-run.js';
@@ -76,3 +81,18 @@ export type MasterMove = z.infer<typeof MasterMoveSchema>;
 
 /** Envelope of `check-master <main> --local SHA --remote SHA --synced SHA`. */
 export type CheckMasterResult = z.infer<typeof CheckMasterResultSchema>;
+
+/** The `/code-review` effort level `pr-review` runs at. */
+export type PrReviewLevel = z.infer<typeof PrReviewLevelSchema>;
+
+/** How `pr-review` ended. */
+export type PrReviewOutcome = z.infer<typeof PrReviewOutcomeSchema>;
+
+/** One finding of a review, as the findings file carries it. */
+export type ReviewFinding = z.infer<typeof ReviewFindingSchema>;
+
+/** The findings file `pr-review` writes. */
+export type ReviewFindingsFile = z.infer<typeof ReviewFindingsFileSchema>;
+
+/** Envelope of `pr-review <checkout> --pr N --level (xhigh|max) --model M --report-dir DIR`. */
+export type PrReviewResult = z.infer<typeof PrReviewResultSchema>;
