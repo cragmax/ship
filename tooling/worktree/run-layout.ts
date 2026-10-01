@@ -7,10 +7,10 @@
  *   joined with `-` for an explicit list;
  * - the feature branch `ship/<slug>` — the namespace pre-flight's live-run
  *   check keys on, which nothing else may use;
- * - the run root `<dirname(main)>/ph-runs/<slug>/`, a sibling of the main
- *   checkout, holding `batch/` (the batch worktree), `slice-<N>-<K>/` (one
- *   per issue attempt), `slice-critic/` (the epic end's critic) and
- *   `reports/`;
+ * - the run root `<dirname(main)>/ph-ship/<slug>/`, a sibling of the main
+ *   checkout, holding `ship-<head>/` (the batch worktree, head per
+ *   {@link runHead}), `slice-<N>-<K>/` (one per issue attempt),
+ *   `slice-critic/` (the epic end's critic) and `reports/`;
  * - the slice branch `slice/<slug>/<N>-<K>`, and the critic's
  *   `slice/<slug>/critic` — never under `ship/`.
  *
@@ -45,7 +45,7 @@ export type RunSelection = { readonly epic: number } | { readonly issues: readon
 export interface RunLayout {
   /** The run root. */
   readonly root: string;
-  /** The batch worktree. */
+  /** The batch worktree, `<root>/ship-<head>`. */
   readonly batch: string;
   /** The run's report directory. */
   readonly reports: string;
@@ -61,6 +61,9 @@ export interface SliceLayout {
   readonly branch: string;
 }
 
+/** The prefix of an epic run's slug. */
+const EPIC_SLUG_PREFIX = 'epic-';
+
 /**
  * The slug of a run.
  *
@@ -69,11 +72,36 @@ export interface SliceLayout {
  * @returns `epic-<E>`, or the numbers ascending joined with `-`.
  */
 export function runSlug(selection: RunSelection): string {
-  if ('epic' in selection) return `epic-${String(selection.epic)}`;
+  if ('epic' in selection) return `${EPIC_SLUG_PREFIX}${String(selection.epic)}`;
   return [...selection.issues]
     .sort((a, b) => a - b)
     .map(String)
     .join('-');
+}
+
+/**
+ * The head of a run's slug, which names its batch worktree `ship-<head>`.
+ * An epic slug is its own head. Any other slug's head is its text before
+ * the first `-` — for an explicit list the lowest issue, since
+ * {@link runSlug} sorts ascending; a slug with no `-` is its own head.
+ *
+ * Derived from the slug alone because `cut-batch --attach` knows only the
+ * branch ({@link runSlugOf}), never the run selection.
+ *
+ * Not `ship-<slug>`: #1079 measured it (2026-09-30) — the deepest file
+ * under a batch's real `node_modules` is 154 characters below the batch
+ * folder. With the longest real slug, `ship-<slug>` brings that path to
+ * 256 characters against Windows' traditional 260-character limit
+ * (`core.longpaths` unset); `ship-<head>` gives 226.
+ *
+ * @param slug - From {@link runSlug} or {@link runSlugOf}.
+ * @returns The slug for an epic run; otherwise the text before its first
+ *   `-`, or the whole slug when it has none.
+ */
+function runHead(slug: string): string {
+  if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
+  const dash = slug.indexOf('-');
+  return dash === -1 ? slug : slug.slice(0, dash);
 }
 
 /**
@@ -82,14 +110,15 @@ export function runSlug(selection: RunSelection): string {
  *
  * @param main - The main checkout, either slash direction.
  * @param slug - From {@link runSlug}.
- * @returns The run root, its batch and report directories, and the
- *   feature branch.
+ * @returns The run root `<dirname(main)>/ph-ship/<slug>`, its batch
+ *   worktree `<root>/ship-<head>` (head per {@link runHead}), its report
+ *   directory `<root>/reports`, and the feature branch `ship/<slug>`.
  */
 export function runLayout(main: string, slug: string): RunLayout {
-  const root = `${posix.dirname(toPosix(main))}/ph-runs/${slug}`;
+  const root = `${posix.dirname(toPosix(main))}/ph-ship/${slug}`;
   return {
     root,
-    batch: `${root}/batch`,
+    batch: `${root}/ship-${runHead(slug)}`,
     reports: `${root}/reports`,
     branch: `${RUN_BRANCH_PREFIX.slice('refs/heads/'.length)}${slug}`,
   };

@@ -28,24 +28,34 @@ describe('runSlug', () => {
 });
 
 describe('runLayout', () => {
-  it('roots a run beside the main checkout, under ph-runs', () => {
-    expect(runLayout('C:/Users/gse/source/paper-harness', 'epic-1025')).toEqual({
-      root: 'C:/Users/gse/source/ph-runs/epic-1025',
-      batch: 'C:/Users/gse/source/ph-runs/epic-1025/batch',
-      reports: 'C:/Users/gse/source/ph-runs/epic-1025/reports',
-      branch: 'ship/epic-1025',
+  it('roots an epic run beside the main checkout under ph-ship, its batch at ship-<slug>', () => {
+    expect(runLayout('C:/Users/gse/source/paper-harness', 'epic-997')).toEqual({
+      root: 'C:/Users/gse/source/ph-ship/epic-997',
+      batch: 'C:/Users/gse/source/ph-ship/epic-997/ship-epic-997',
+      reports: 'C:/Users/gse/source/ph-ship/epic-997/reports',
+      branch: 'ship/epic-997',
     });
   });
 
+  it('names an explicit-list batch ship-<lowest issue>', () => {
+    expect(runLayout('C:/Users/gse/source/paper-harness', '1047-1048-1061').batch).toBe(
+      'C:/Users/gse/source/ph-ship/1047-1048-1061/ship-1047',
+    );
+  });
+
+  it('names a one-issue batch ship-<issue>', () => {
+    expect(runLayout('C:/src/paper-harness', '914').batch).toBe('C:/src/ph-ship/914/ship-914');
+  });
+
   it('accepts a backslash main path', () => {
-    expect(runLayout('C:\\src\\paper-harness', '7').root).toBe('C:/src/ph-runs/7');
+    expect(runLayout('C:\\src\\paper-harness', '7').root).toBe('C:/src/ph-ship/7');
   });
 });
 
 describe('sliceLayout', () => {
   it('puts attempt K of issue N beside the batch, on a slice/ branch', () => {
-    expect(sliceLayout('C:/src/ph-runs/epic-1025', 'epic-1025', 1043, 2)).toEqual({
-      path: 'C:/src/ph-runs/epic-1025/slice-1043-2',
+    expect(sliceLayout('C:/src/ph-ship/epic-1025', 'epic-1025', 1043, 2)).toEqual({
+      path: 'C:/src/ph-ship/epic-1025/slice-1043-2',
       branch: 'slice/epic-1025/1043-2',
     });
   });
@@ -53,8 +63,8 @@ describe('sliceLayout', () => {
 
 describe('criticSliceLayout', () => {
   it('puts the epic end’s critic slice beside the batch, on slice/<slug>/critic', () => {
-    expect(criticSliceLayout('C:/src/ph-runs/epic-9', 'epic-9')).toEqual({
-      path: 'C:/src/ph-runs/epic-9/slice-critic',
+    expect(criticSliceLayout('C:/src/ph-ship/epic-9', 'epic-9')).toEqual({
+      path: 'C:/src/ph-ship/epic-9/slice-critic',
       branch: 'slice/epic-9/critic',
     });
   });
