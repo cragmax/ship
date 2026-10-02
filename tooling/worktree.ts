@@ -32,7 +32,8 @@
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
  * that order. A resync runs `cut-batch --attach`, `sync-master` and
  * `publish --push-only`.
- * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
+ * `publish --push-only` reads `PH_WORKTREE_POLL_MS` and `pr-review` reads
+ * `PH_PR_REVIEW_CAP_MS`: test-only seams ({@link msFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
  * the main checkout: every command that mutates a worktree (cut-slice,
@@ -74,6 +75,7 @@ import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
 import { attachBatch } from './worktree/cut-attach.js';
+import { PR_REVIEW_CAP_MS } from './worktree/exec.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
@@ -302,6 +304,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         level: prReviewLevel(args.values.get('--level') ?? ''),
         model: args.values.get('--model') ?? '',
         reportDir: pathFlag(args, '--report-dir'),
+        capMs: msFromEnv('PH_PR_REVIEW_CAP_MS') ?? PR_REVIEW_CAP_MS,
       }),
   },
   'pr-comment': {
@@ -325,7 +328,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: (args) => {
       const logFile = pathFlag(args, '--log');
       if (publishMode(args) === 'push-only') {
-        const pollMs = pollMsFromEnv();
+        const pollMs = msFromEnv('PH_WORKTREE_POLL_MS');
         return publishPushOnly({
           batch: args.target,
           logFile,
@@ -480,15 +483,17 @@ function publishMode(args: ParsedArgs): 'push-only' | 'create' {
 }
 
 /**
- * The wait between `publish --push-only`'s mergeable reads, from
- * `PH_WORKTREE_POLL_MS` — a test-only seam, so a fixture run need not wait
- * the production interval.
+ * A duration from a test-only environment seam, so a fixture run need not
+ * wait a production interval: `PH_WORKTREE_POLL_MS`, the wait between
+ * `publish --push-only`'s mergeable reads, and `PH_PR_REVIEW_CAP_MS`,
+ * `pr-review`'s session cap.
  *
+ * @param name - The variable's name.
  * @returns The variable's value when it is a positive integer in decimal;
  *   otherwise `undefined` (the command's default).
  */
-function pollMsFromEnv(): number | undefined {
-  const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
+function msFromEnv(name: string): number | undefined {
+  const text = process.env[name] ?? '';
   return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
 }
 

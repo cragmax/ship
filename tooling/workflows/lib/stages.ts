@@ -104,8 +104,9 @@ export const PR_REVIEW_MODEL: ModelAlias = 'opus';
  * The Bash `timeout` the runner gives the `pr-review` command, in
  * milliseconds: the tool's 120-minute maximum (#1106). Without it the
  * 30-minute default kills the runner's wrapper shell, orphaning the nested
- * session and writing no exit code (PF-59). #1109 adds the review's own cap,
- * below this one.
+ * session and writing no exit code (PF-59). The review's own cap,
+ * `PR_REVIEW_CAP_MS` (`tooling/worktree/exec.ts`), must stay below this
+ * value; its TSDoc owns why.
  */
 export const PR_REVIEW_RUNNER_TIMEOUT_MS = 7_200_000;
 

@@ -268,12 +268,14 @@ export const PrReviewLevelSchema = z.enum(['xhigh', 'max']);
 
 /**
  * How `pr-review` ended: `reviewed`, the one `ok` outcome, or the outcome of
- * the phase that failed (`pr-review.ts` maps each).
+ * the phase that failed (`pr-review.ts` maps each) — `cap` when the session
+ * ran past its cap and its process tree was killed.
  */
 export const PrReviewOutcomeSchema = z.enum([
   'reviewed',
   'setup-failed',
   'launch-failed',
+  'cap',
   'exit-nonzero',
   'unparseable',
   'write-failed',
@@ -324,7 +326,10 @@ export const PrReviewResultSchema = ResultBaseSchema.extend({
   clone: z.string().nullable(),
   /** `false` only when a temp root was made and still exists after cleanup. */
   cloneRemoved: z.boolean(),
-  /** The session's exit code; `null` when it never started or ended by a signal. */
+  /**
+   * The session's exit code; `null` when it never started, ended by a
+   * signal, or was killed at the cap.
+   */
   exitCode: z.int().nullable(),
   /** Wallclock from the command's start to after its cleanup. */
   durationMs: z.int().nonnegative(),

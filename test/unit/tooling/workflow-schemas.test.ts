@@ -183,6 +183,7 @@ describe('the pr-review row', () => {
           'reviewed',
           'setup-failed',
           'launch-failed',
+          'cap',
           'exit-nonzero',
           'unparseable',
           'write-failed',

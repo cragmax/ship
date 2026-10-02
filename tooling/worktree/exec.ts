@@ -8,8 +8,10 @@
  * tool steps: the CLI owns them, and the workflow that calls it sets none
  * of its own. Every spawn that can outlast local git plumbing — a network
  * call, an install, a build, a hooked commit — names its constant here; the
- * local `git` plumbing (`git.ts`) runs under the default. The one
- * exception is `pr-review`'s review session: see `pr-review-session.ts`.
+ * local `git` plumbing (`git.ts`) runs under the default. `pr-review`'s
+ * review session is the one async spawn. Its budget, {@link PR_REVIEW_CAP_MS},
+ * ends in a process-tree kill (`pr-review-session.ts`), not in execa's
+ * `timeout`.
  *
  * A budget kill is `execaSync`'s `timeout`. On Windows (#1048; Windows 11,
  * Node 24, Git for Windows 2.55) it reaches only the direct child, and its
@@ -64,6 +66,16 @@ export const GH_TIMEOUT_MS = 120_000;
 
 /** Budget for one `git push` whose pre-push hook runs the full gate. */
 export const PUSH_TIMEOUT_MS = 2_700_000;
+
+/**
+ * The wall-clock cap on `pr-review`'s nested review session, timed from its
+ * spawn (`pr-review-session.ts`): 100 minutes. #1106 set the value: 20
+ * minutes below the 120-minute Bash `timeout` the runner gives the command
+ * (`PR_REVIEW_RUNNER_TIMEOUT_MS`, `tooling/workflows/lib/stages.ts`), so the
+ * cap's process-tree kill fires before Bash's kill, which orphans the
+ * session (PF-59). The setup steps before the spawn keep their own budgets.
+ */
+export const PR_REVIEW_CAP_MS = 6_000_000;
 
 /** Budget for any child without an explicit one. */
 const DEFAULT_TIMEOUT_MS = 120_000;

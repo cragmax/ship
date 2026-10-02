@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PR_REVIEW_CAP_MS } from '../../../tooling/worktree/exec.js';
 import {
   ResultBaseSchema,
   TeardownResultSchema,
@@ -199,6 +200,39 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(commandMock).toHaveBeenCalledWith(
       expect.objectContaining({ pr: 7, level: 'max', model: 'opus' }),
     );
+  });
+
+  it.each([
+    ['unset', undefined, PR_REVIEW_CAP_MS],
+    ['4000', '4000', 4000],
+    ['0', '0', PR_REVIEW_CAP_MS],
+    ['abc', 'abc', PR_REVIEW_CAP_MS],
+    // Starts like a positive integer, but is not one.
+    ['1.5', '1.5', PR_REVIEW_CAP_MS],
+  ])('hands pr-review the cap (PH_PR_REVIEW_CAP_MS %s)', async (_name, value, expected) => {
+    const saved = process.env['PH_PR_REVIEW_CAP_MS'];
+    if (value === undefined) delete process.env['PH_PR_REVIEW_CAP_MS'];
+    else process.env['PH_PR_REVIEW_CAP_MS'] = value;
+    try {
+      await runWorktreeCli([
+        'pr-review',
+        'C:/main',
+        '--pr',
+        '7',
+        '--level',
+        'max',
+        '--model',
+        'opus',
+        '--report-dir',
+        'C:/r',
+      ]);
+    } finally {
+      if (saved === undefined) delete process.env['PH_PR_REVIEW_CAP_MS'];
+      else process.env['PH_PR_REVIEW_CAP_MS'] = saved;
+    }
+
+    expect(commandMock).toHaveBeenCalledTimes(1);
+    expect(commandMock).toHaveBeenCalledWith(expect.objectContaining({ capMs: expected }));
   });
 
   it('refuses pr-comment --pr 0 as a usage error, exit 2', async () => {

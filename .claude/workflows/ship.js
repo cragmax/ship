@@ -1539,6 +1539,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'reviewed',
           'setup-failed',
           'launch-failed',
+          'cap',
           'exit-nonzero',
           'unparseable',
           'write-failed',
