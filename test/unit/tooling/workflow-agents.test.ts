@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { COMMENT_MAX_CHARS } from '../../../tooling/lib/pr-review-comment.js';
 import { STAGES } from '../../../tooling/workflows/lib/stages.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../');
@@ -116,6 +117,13 @@ describe('workflow agents', () => {
         '`<file>:<line>`',
       ].filter((t) => !discipline.includes(t)),
     ).toEqual([]);
+  });
+
+  // The constant is the oracle: its value is still unconfirmed against GitHub (#1110), so the agent file must follow it.
+  it('curator states the comment limit pr-comment enforces under ## Discipline', () => {
+    expect(section(agentText('curator'), '## Discipline')).toContain(
+      `at most ${String(COMMENT_MAX_CHARS)} characters`,
+    );
   });
 
   describe('the agents that write a file', () => {

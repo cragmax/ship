@@ -357,8 +357,8 @@ export const PrCommentOutcomeSchema = z.enum([
 ]);
 
 /**
- * Envelope of `pr-comment <checkout> --pr N --body-file F`; `worktree` is the
- * checkout. A failure's reason is `errors[0].message`.
+ * Envelope of `pr-comment <checkout> --pr N --body-file F [--findings-file J]`;
+ * `worktree` is the checkout. A failure's reason is `errors[0].message`.
  */
 export const PrCommentResultSchema = ResultBaseSchema.extend({
   pr: z.int(),

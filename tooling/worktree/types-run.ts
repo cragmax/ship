@@ -103,5 +103,5 @@ export type PrReviewResult = z.infer<typeof PrReviewResultSchema>;
 /** How `pr-comment` ended. */
 export type PrCommentOutcome = z.infer<typeof PrCommentOutcomeSchema>;
 
-/** Envelope of `pr-comment <checkout> --pr N --body-file F`. */
+/** Envelope of `pr-comment <checkout> --pr N --body-file F [--findings-file J]`. */
 export type PrCommentResult = z.infer<typeof PrCommentResultSchema>;
