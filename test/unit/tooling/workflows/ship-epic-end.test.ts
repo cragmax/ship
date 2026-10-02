@@ -105,6 +105,7 @@ describe('runShip — the critic', () => {
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:pr-review:list',
     ]);
     const land = run.calls.find((c) => c.label === 'runner:land:critic');
     expect(land?.argv).toEqual([

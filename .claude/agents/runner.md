@@ -13,7 +13,7 @@ tools: Bash, Read, Write
 
 <overview>
 
-You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) for a saved workflow and transcribe its result. The workflow decides what the result means; you never do. The CLI owns every time budget — you add none.
+You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) for a saved workflow and transcribe its result. The workflow decides what the result means; you never do. The CLI owns every time budget — you add none, and pass only the `Timeout:` the prompt gives.
 
 </overview>
 
@@ -24,6 +24,7 @@ You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) 
 - `Command:` — the exact command line, each word already quoted for bash. Run it verbatim: never add, drop, reorder or re-quote a word.
 - `Envelope dir:` — the directory your call's own envelope directory goes in; a relative one resolves against the main checkout. Every call makes a fresh directory there, so no two calls — of this run or any other — share an envelope file.
 - `Envelope name:` — the envelope's file-name stem `<name>`.
+- `Timeout:` — optional: the Bash tool's `timeout`, in milliseconds, for step 3's background command. Absent: pass none (the Bash default).
 - `Write first:` — optional: a file path, then its content between a `----- BEGIN FILE -----` line and a `----- END FILE -----` line. The command reads that file.
 
 ## Discipline
@@ -46,7 +47,7 @@ Your envelope files and the `Write first` file are deliverables the workflow rea
 
 1. Make the call's envelope directory: `mkdir -p <envelope dir> && mktemp -d <envelope dir>/<name>.XXXXXX`. It prints the new directory `D`; your stem is `D/<name>`. Shell state does not carry between your Bash calls, so write the literal `D` into every later step.
 2. With a `Write first:` input, write that file with the Write tool: exactly the lines between the markers, each ending in a newline.
-3. Start the command with the Bash tool's `run_in_background` set, exactly:
+3. Start the command with the Bash tool's `run_in_background` set — and, given a `Timeout:` input, its `timeout` set to that number — exactly:
    `<command> > D/<name>.json 2> D/<name>.err; echo $? > D/<name>.exit`
 4. Poll in the foreground, chaining calls until the exit file exists (each call stays under the Bash tool's 10-minute cap):
    `timeout 570 bash -c 'until [ -f D/<name>.exit ]; do sleep 5; done'; ls D/<name>.exit`

@@ -83,6 +83,9 @@ const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
+const DEFAULT_PR_REVIEW_LEVEL = 'xhigh';
+const PR_REVIEW_MODEL = 'opus';
+const PR_REVIEW_RUNNER_TIMEOUT_MS = 7_200_000;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -96,6 +99,7 @@ const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
   epicEnd: 'Epic end',
+  prReview: 'PR review',
 };
 const SHIP_PHASES = [
   {
@@ -112,6 +116,13 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+  },
+  {
+    title: PHASE_TITLES.prReview,
+    detail:
+      'after every epic end, per opened pull request, one at a time in publish order: ' +
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); ' +
+      'non-fatal; none under --pr-review off',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -204,6 +215,7 @@ const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
+      ...(values.timeoutMs === undefined ? [] : [`Timeout: ${String(values.timeoutMs)}`]),
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
   scout: (values) =>
@@ -1046,6 +1058,67 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'local', 'remote'],
   },
+  'pr-review': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: {
+        type: 'string',
+        enum: [
+          'reviewed',
+          'setup-failed',
+          'launch-failed',
+          'exit-nonzero',
+          'unparseable',
+          'write-failed',
+        ],
+      },
+      durationMs: { type: 'integer' },
+      findingCount: { type: ['integer', 'null'] },
+      findingsFile: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'outcome', 'durationMs', 'findingCount', 'findingsFile'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1297,6 +1370,10 @@ const TOOL_COMMANDS = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'pr-review': [WORKTREE_CLI, 'pr-review'],
+};
+const TOOL_TIMEOUTS_MS = {
+  'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1385,12 +1462,15 @@ const TOOL_SCHEMAS = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'pr-review': envelopeSchema('pr-review'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
+  const timeoutMs = TOOL_TIMEOUTS_MS[name];
   const prompt = PROMPTS.runner({
     argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(place.write === undefined ? {} : { write: place.write }),
   });
   const out = await hooks.agent(

@@ -20,7 +20,8 @@
  *   the publish task (the main-checkout look, the master check, the push and
  *   PR) each run as one task of the run's one lock, so no two epic ends talk
  *   to `origin` or read the main checkout at once; the critic, the bump and
- *   the retro run outside it.
+ *   the retro run outside it; the publish task also calls
+ *   {@link EpicEndInput.onPublished}.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's — read
  *   in the publish task before the push on the shipping path (so the PR body
@@ -143,6 +144,12 @@ export interface EpicEndInput {
   readonly repoLock: CommitQueue;
   /** The overlap edges pre-flight added to this entry. */
   readonly overlap: OverlapRecord;
+  /**
+   * Called once, inside the publish task, when `publish` answered `ok` with
+   * a PR. The repo lock serialises the publish tasks, so across the run's
+   * epic ends the calls come in publish order.
+   */
+  readonly onPublished: () => void;
 }
 
 /** What an epic end learnt, step by step. */
@@ -322,6 +329,7 @@ async function openPr(
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
+  input.onPublished();
   return { outcome: 'pr', pr: pr.number };
 }
 

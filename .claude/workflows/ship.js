@@ -1,9 +1,9 @@
 export const meta = {
   name: 'ship',
   description:
-    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
+    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic, then a PR review of each.',
   whenToUse:
-    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
+    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight), `--max-slices K` (most issues in flight, start until settled, default 4) and `--pr-review off|xhigh|max` (the level of the PR review each opened pull request gets after every epic end, default xhigh, each a nested Claude Code session — launching consents to one per opened PR; off runs none); or the object { epics | issues, exclude?, preflightOnly?, maxSlices?, prReview? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
   phases: [
     {
       title: 'Pre-flight',
@@ -18,6 +18,11 @@ export const meta = {
     {
       title: 'Epic end',
       detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    },
+    {
+      title: 'PR review',
+      detail:
+        'after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); non-fatal; none under --pr-review off',
     },
   ],
 };
@@ -43,6 +48,9 @@ const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
+const DEFAULT_PR_REVIEW_LEVEL = 'xhigh';
+const PR_REVIEW_MODEL = 'opus';
+const PR_REVIEW_RUNNER_TIMEOUT_MS = 7_200_000;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -56,6 +64,7 @@ const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
   epicEnd: 'Epic end',
+  prReview: 'PR review',
 };
 const SHIP_PHASES = [
   {
@@ -72,6 +81,13 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+  },
+  {
+    title: PHASE_TITLES.prReview,
+    detail:
+      'after every epic end, per opened pull request, one at a time in publish order: ' +
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); ' +
+      'non-fatal; none under --pr-review off',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -111,7 +127,7 @@ function reviewOptions(stage, detail, schema, files) {
   return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
-const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices'];
+const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'prReview'];
 class ArgsError extends Error {}
 function parseShipArgs(raw) {
   try {
@@ -121,7 +137,7 @@ function parseShipArgs(raw) {
     return {
       refusal: {
         kind: 'usage',
-        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K]`,
+        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--pr-review off|xhigh|max]`,
       },
     };
   }
@@ -142,7 +158,13 @@ function selectionWord(word) {
 }
 function parseTokens(tokens) {
   const numbers = [];
-  const args = { numbers, exclude: false, preflightOnly: false, maxSlices: MAX_SLICES };
+  const args = {
+    numbers,
+    exclude: false,
+    preflightOnly: false,
+    maxSlices: MAX_SLICES,
+    prReview: DEFAULT_PR_REVIEW_LEVEL,
+  };
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] ?? '';
     switch (token) {
@@ -154,6 +176,9 @@ function parseTokens(tokens) {
         break;
       case '--max-slices':
         args.maxSlices = positiveInteger(tokens[++i], '--max-slices');
+        break;
+      case '--pr-review':
+        args.prReview = prReviewSetting(tokens[++i], '--pr-review');
         break;
       default:
         numbers.push(...numberList(token));
@@ -180,11 +205,13 @@ function parseObject(raw) {
     numbers: list.map((n) => positiveInteger(n, selection)),
     exclude: flag(record, 'exclude'),
     preflightOnly: flag(record, 'preflightOnly'),
-    maxSlices:
-      record['maxSlices'] === undefined
-        ? MAX_SLICES
-        : positiveInteger(record['maxSlices'], 'maxSlices'),
+    maxSlices: optionalKey(record, 'maxSlices', MAX_SLICES, positiveInteger),
+    prReview: optionalKey(record, 'prReview', DEFAULT_PR_REVIEW_LEVEL, prReviewSetting),
   });
+}
+function optionalKey(record, key, fallback, parse) {
+  const value = record[key];
+  return value === undefined ? fallback : parse(value, key);
 }
 function parseJson(text) {
   try {
@@ -206,6 +233,14 @@ function positiveInteger(value, what) {
     throw new ArgsError(`${what}: '${String(value)}' is not a positive integer`);
   }
   return n;
+}
+const PR_REVIEW_SETTINGS = ['off', 'xhigh', 'max'];
+function prReviewSetting(value, what) {
+  const setting = PR_REVIEW_SETTINGS.find((s) => s === value);
+  if (setting === undefined) {
+    throw new ArgsError(`${what}: '${String(value)}' is not off, xhigh or max`);
+  }
+  return setting;
 }
 function flag(record, key) {
   const value = record[key];
@@ -611,6 +646,7 @@ const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
+      ...(values.timeoutMs === undefined ? [] : [`Timeout: ${String(values.timeoutMs)}`]),
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
   scout: (values) =>
@@ -1453,6 +1489,67 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'local', 'remote'],
   },
+  'pr-review': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: {
+        type: 'string',
+        enum: [
+          'reviewed',
+          'setup-failed',
+          'launch-failed',
+          'exit-nonzero',
+          'unparseable',
+          'write-failed',
+        ],
+      },
+      durationMs: { type: 'integer' },
+      findingCount: { type: ['integer', 'null'] },
+      findingsFile: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'outcome', 'durationMs', 'findingCount', 'findingsFile'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1704,6 +1801,10 @@ const TOOL_COMMANDS = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'pr-review': [WORKTREE_CLI, 'pr-review'],
+};
+const TOOL_TIMEOUTS_MS = {
+  'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1792,12 +1893,15 @@ const TOOL_SCHEMAS = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'pr-review': envelopeSchema('pr-review'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
+  const timeoutMs = TOOL_TIMEOUTS_MS[name];
   const prompt = PROMPTS.runner({
     argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(place.write === undefined ? {} : { write: place.write }),
   });
   const out = await hooks.agent(
@@ -2547,6 +2651,7 @@ async function openPr(input, found, checked) {
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
+  input.onPublished();
   return { outcome: 'pr', pr: pr.number };
 }
 function leaseTotals(landed) {
@@ -2874,7 +2979,7 @@ async function drive(input) {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return input.entries.map((_entry, i) => entryReport(d, i));
+  return { epics: input.entries.map((_entry, i) => entryReport(d, i)), published: d.published };
 }
 function newDrive(input) {
   const d = {
@@ -2892,6 +2997,7 @@ function newDrive(input) {
     residue: new Map(),
     ends: new Map(),
     repoLock: createCommitQueue(),
+    published: [],
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -3044,6 +3150,9 @@ function endEpic(d, i) {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    onPublished: () => {
+      d.published.push(i);
+    },
   }).catch((err) => ({
     epic: entry.epic,
     branch: entry.branch,
@@ -3496,6 +3605,64 @@ function spentTarget(run) {
   return { path: run.path };
 }
 
+function reviewTargets(entries, driven) {
+  return driven.published.flatMap((i) => {
+    const entry = entries[i];
+    const report = driven.epics[i];
+    if (entry === undefined || report?.outcome !== 'pr' || report.pr === undefined) return [];
+    return [{ pr: report.pr, main: entry.main, reportDir: entry.reportDir, tag: entry.tag }];
+  });
+}
+async function runPrReviews(hooks, targets, setting) {
+  if (setting === 'off' || targets.length === 0) return [];
+  hooks.phase(PHASE_TITLES.prReview);
+  const reports = [];
+  for (const target of targets) reports.push(await reviewPr(hooks, target, setting));
+  return reports;
+}
+async function reviewPr(hooks, t, level) {
+  const argv = [
+    t.main,
+    '--pr',
+    String(t.pr),
+    '--level',
+    level,
+    '--model',
+    PR_REVIEW_MODEL,
+    '--report-dir',
+    t.reportDir,
+  ];
+  const ending = await runTool(hooks, 'pr-review', argv, runPlace(t.reportDir, t.tag))
+    .then(reviewEnding)
+    .catch((err) =>
+      noVerdict(`the pr-review call threw: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  return { pr: t.pr, level, ...ending };
+}
+function reviewEnding(out) {
+  if (out === null) return noVerdict(envelopeProblem('pr-review', null));
+  const { outcome, durationMs, findingCount, findingsFile } = out;
+  const lacking = (field) => noVerdict(`${envelopeProblem('pr-review', out)} (no ${field})`);
+  if (outcome === undefined) return lacking('outcome');
+  if (durationMs === undefined) return lacking('durationMs');
+  if (outcome !== 'reviewed') {
+    const reason = out.errors?.[0]?.message ?? envelopeProblem('pr-review', out);
+    return { outcome, reason, durationMs, findingCount: null, findingsFile: null };
+  }
+  if (typeof findingCount !== 'number') return lacking('findingCount');
+  if (typeof findingsFile !== 'string') return lacking('findingsFile');
+  return { outcome, reason: null, durationMs, findingCount, findingsFile };
+}
+function noVerdict(reason) {
+  return {
+    outcome: 'no-verdict',
+    reason,
+    durationMs: null,
+    findingCount: null,
+    findingsFile: null,
+  };
+}
+
 async function runShip(hooks, rawArgs) {
   const parsed = parseShipArgs(rawArgs);
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
@@ -3516,12 +3683,13 @@ async function runShip(hooks, rawArgs) {
     };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, graph, {
+  const run = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
+  const prReviews = await runPrReviews(hooks, run.targets, parsed.args.prReview);
+  return { status: 'done', dropped: pre.dropped, overlap, epics: run.epics, cleanup, prReviews };
 }
 async function runEntries(hooks, graph, opts) {
   const cuts = [];
@@ -3533,16 +3701,19 @@ async function runEntries(hooks, graph, opts) {
     return cut !== undefined && 'setup' in cut ? [cut.setup] : [];
   });
   const driven =
-    setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
-  return cuts.map((c, k) => {
+    setups.length === 0
+      ? { epics: [], published: [] }
+      : await drive({ hooks, graph: kept, entries: setups, ...opts });
+  const epics = cuts.map((c, k) => {
     if ('stopped' in c) {
       return {
         ...c.stopped,
         schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
       };
     }
-    return cutReport(c.setup, graph, k, driven, opts.overlap);
+    return cutReport(c.setup, graph, k, driven.epics, opts.overlap);
   });
+  return { epics, targets: reviewTargets(setups, driven) };
 }
 async function cutEntry(hooks, entry) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;

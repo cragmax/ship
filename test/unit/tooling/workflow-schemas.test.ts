@@ -101,6 +101,7 @@ describe('consumed fields are required', () => {
       bump: WORKTREE_OPTIONAL,
       publish: WORKTREE_OPTIONAL,
       'check-master': WORKTREE_OPTIONAL,
+      'pr-review': WORKTREE_OPTIONAL,
     });
   });
 
@@ -158,6 +159,38 @@ describe('the diff review’s output schema', () => {
       expect(run.violations).toEqual([`diffReview:7-1: lacks required ${field}`]);
     },
   );
+});
+
+describe('the pr-review row', () => {
+  it('carries the consumed fields, its counts as plain integers', () => {
+    const row = TOOL_ENVELOPE_SCHEMAS['pr-review'];
+
+    expect(Object.keys(row.properties).sort(compareStrings)).toEqual([
+      'durationMs',
+      'errors',
+      'findingCount',
+      'findingsFile',
+      'outcome',
+      'reason',
+      'status',
+    ]);
+    expect(row.properties).toMatchObject({
+      outcome: {
+        type: 'string',
+        enum: [
+          'reviewed',
+          'setup-failed',
+          'launch-failed',
+          'exit-nonzero',
+          'unparseable',
+          'write-failed',
+        ],
+      },
+      durationMs: { type: 'integer' },
+      findingCount: { type: ['integer', 'null'] },
+      findingsFile: { type: ['string', 'null'] },
+    });
+  });
 });
 
 describe('the construct set', () => {

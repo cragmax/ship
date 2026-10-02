@@ -39,7 +39,7 @@ import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 import type { JsonSchema, WorkflowHooks } from './hooks.types.js';
 import { PROMPTS, type FileToWrite } from './prompts.js';
 import { TOOL_ENVELOPE_SCHEMAS } from './schemas.generated.js';
-import { agentOptions } from './stages.js';
+import { agentOptions, PR_REVIEW_RUNNER_TIMEOUT_MS } from './stages.js';
 
 /** A tooling command the workflow runs. */
 export type ToolName =
@@ -56,7 +56,8 @@ export type ToolName =
   | 'sync-master'
   | 'bump'
   | 'check-master'
-  | 'publish';
+  | 'publish'
+  | 'pr-review';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's. */
 export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check'>;
@@ -152,6 +153,9 @@ export type CheckMasterOutput = EnvelopeOutput<'check-master'>;
 /** `publish`'s consumed fields. */
 export type PublishOutput = EnvelopeOutput<'publish'>;
 
+/** `pr-review`'s consumed fields. */
+export type PrReviewOutput = EnvelopeOutput<'pr-review'>;
+
 /** Each tool's output type. */
 interface ToolOutputs {
   preflight: PreflightOutput;
@@ -168,6 +172,7 @@ interface ToolOutputs {
   bump: BumpOutput;
   'check-master': CheckMasterOutput;
   publish: PublishOutput;
+  'pr-review': PrReviewOutput;
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
@@ -192,6 +197,17 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'pr-review': [WORKTREE_CLI, 'pr-review'],
+};
+
+/**
+ * The Bash `timeout` the runner gives a tool's command, in milliseconds: a
+ * row only for a tool that may outrun the Bash default
+ * ({@link PR_REVIEW_RUNNER_TIMEOUT_MS}). A tool without a row gets no
+ * `Timeout:` line.
+ */
+const TOOL_TIMEOUTS_MS: Readonly<Partial<Record<ToolName, number>>> = {
+  'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
 };
 
 /** A string property's schema. */
@@ -309,10 +325,12 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'pr-review': envelopeSchema('pr-review'),
 };
 
 /**
- * Run one tooling command through the runner.
+ * Run one tooling command through the runner. The prompt carries a
+ * `Timeout:` line only for a tool with a {@link TOOL_TIMEOUTS_MS} row.
  *
  * @param hooks - The workflow hooks.
  * @param name - The tool.
@@ -327,10 +345,12 @@ export async function runTool<N extends ToolName>(
   argv: readonly string[],
   place: ToolPlace = PRE_CUT,
 ): Promise<ToolOutputs[N] | null> {
+  const timeoutMs = TOOL_TIMEOUTS_MS[name];
   const prompt = PROMPTS.runner({
     argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(place.write === undefined ? {} : { write: place.write }),
   });
   const out = await hooks.agent(

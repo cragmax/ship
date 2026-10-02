@@ -35,6 +35,7 @@ import {
   CutSliceResultSchema,
   LandResultSchema,
   PreflightResultSchema,
+  PrReviewResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
 } from '../../worktree/schemas-run.js';
@@ -125,5 +126,17 @@ export const TOOL_ENVELOPES = {
   }),
   'check-master': CheckMasterResultSchema.pick({ ...STATUS, local: true, remote: true }).extend({
     errors: ERRORS,
+  }),
+  'pr-review': PrReviewResultSchema.pick({
+    ...STATUS,
+    outcome: true,
+    durationMs: true,
+    findingCount: true,
+    findingsFile: true,
+  }).extend({
+    errors: ERRORS,
+    // The envelope's `.nonnegative()` emits `minimum`, which the emitter refuses: plain integers here.
+    durationMs: z.int(),
+    findingCount: z.int().nullable(),
   }),
 } satisfies Record<WorktreeToolName, z.ZodObject>;

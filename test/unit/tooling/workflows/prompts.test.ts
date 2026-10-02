@@ -20,6 +20,7 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
       argv: ['tooling/worktree.ts', 'check', '7'],
       envelopeDir: `${REPORTS}/tool`,
       envelopeName: 'check',
+      timeoutMs: 7200000,
       write: { path: `${REPORTS}/in.json`, content: 'Not a key: inside the file\n' },
     }),
   ],

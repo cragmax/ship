@@ -3,7 +3,8 @@
  * scheduler over every cut entry. It keeps the scheduler state, one
  * in-flight promise per issue (and per running epic end), and each entry's
  * halt state; it runs every action in the order the scheduler emits it, and
- * feeds each settled attempt's events in order.
+ * feeds each settled attempt's events in order. It ends with each entry's
+ * report and the entries that opened a PR ({@link DriveResult}).
  *
  * - `start` logs `start #N attempt K` and runs an attempt (`slice-chain.ts`),
  *   handing it the files the issue's last landing conflicted on; `requeue`
@@ -81,6 +82,18 @@ export interface DriveInput {
   readonly overlap: OverlapRecord;
 }
 
+/** What the drive loop ends with. */
+export interface DriveResult {
+  /** Each entry's report, in run-set order. */
+  readonly epics: EpicReport[];
+  /**
+   * The entries whose epic end opened a PR, as indices into
+   * {@link DriveInput.entries}, in publish order: each pushed by its epic
+   * end's `onPublished` (`epic-end.ts`), which owns the ordering.
+   */
+  readonly published: readonly number[];
+}
+
 /** A settled flight. */
 type Note =
   | AttemptNote
@@ -108,6 +121,8 @@ interface Drive {
   readonly ends: Map<number, EpicReport>;
   /** The run's repo lock, shared by every epic end. */
   readonly repoLock: CommitQueue;
+  /** The entries whose epic end opened a PR, in publish order. */
+  readonly published: number[];
   epicEndEntered: boolean;
 }
 
@@ -115,9 +130,10 @@ interface Drive {
  * Drive every entry until each has ended.
  *
  * @param input - The graph, the entries and the cap.
- * @returns Resolves to each entry's report, in run-set order.
+ * @returns Resolves to each entry's report, in run-set order, and the
+ *   entries that opened a PR, in publish order.
  */
-export async function drive(input: DriveInput): Promise<EpicReport[]> {
+export async function drive(input: DriveInput): Promise<DriveResult> {
   const d = newDrive(input);
   apply(d, createScheduler({ ...input.graph, maxSlices: input.maxSlices }));
   while (d.flights.size > 0) {
@@ -125,7 +141,7 @@ export async function drive(input: DriveInput): Promise<EpicReport[]> {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return input.entries.map((_entry, i) => entryReport(d, i));
+  return { epics: input.entries.map((_entry, i) => entryReport(d, i)), published: d.published };
 }
 
 /**
@@ -150,6 +166,7 @@ function newDrive(input: DriveInput): Drive {
     residue: new Map(),
     ends: new Map(),
     repoLock: createCommitQueue(),
+    published: [],
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -395,6 +412,9 @@ function endEpic(d: Drive, i: number): void {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    onPublished: () => {
+      d.published.push(i);
+    },
   }).catch(
     (err: unknown): EpicReport => ({
       epic: entry.epic,
