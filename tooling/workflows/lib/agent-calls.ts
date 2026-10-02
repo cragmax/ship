@@ -21,6 +21,7 @@ import type {
   CommitSpecSchema,
   CriticFindingSchema,
   CriticOutputSchema,
+  CuratorOutputSchema,
   DiffReviewOutputSchema,
   EstimatedPairSchema,
   OverlapEstimateSchema,
@@ -40,6 +41,7 @@ import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
   type CriticValues,
+  type CuratorValues,
   type DiffReviewValues,
   type OverlapValues,
   type PlannerValues,
@@ -118,6 +120,9 @@ export type RetroOutput = z.infer<typeof RetroOutputSchema>;
 
 /** The doc-index resolver's answer. */
 export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
+
+/** The curator's answer. */
+export type CuratorOutput = z.infer<typeof CuratorOutputSchema>;
 
 /**
  * The overlap estimator's output schema, built per call: a pair's endpoints
@@ -235,5 +240,11 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.retro(values),
       agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
+    ),
+  curator: (hooks: WorkflowHooks, values: CuratorValues, tag: string) =>
+    askAgent<CuratorOutput>(
+      hooks,
+      PROMPTS.curator(values),
+      agentOptions('curator', tag, AGENT_OUTPUT_SCHEMAS.curator),
     ),
 };

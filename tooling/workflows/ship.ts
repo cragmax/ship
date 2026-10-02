@@ -80,9 +80,9 @@ export interface ShipReport {
    */
   readonly cleanup?: CleanupReport;
   /**
-   * Each opened PR's review and its one comment, in review (publish) order;
-   * present only when `done`, and `[]` under `--pr-review off` or when no
-   * entry opened a PR.
+   * Each opened PR's review, its curator's part and its one comment, in
+   * review (publish) order; present only when `done`, and `[]` under
+   * `--pr-review off` or when no entry opened a PR.
    */
   readonly prReviews?: readonly PrReviewReport[];
 }
@@ -157,7 +157,7 @@ async function runEntries(
   });
   const driven: DriveResult =
     setups.length === 0
-      ? { epics: [], published: [] }
+      ? { epics: [], published: [], landed: [] }
       : await drive({ hooks, graph: kept, entries: setups, ...opts });
   const epics = cuts.map((c, k) => {
     if ('stopped' in c) {

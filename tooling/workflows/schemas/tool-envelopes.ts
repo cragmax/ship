@@ -135,6 +135,7 @@ export const TOOL_ENVELOPES = {
     findingCount: true,
     findingsFile: true,
     plainFile: true,
+    resultFile: true,
   }).extend({
     errors: ERRORS,
     // The envelope's `.nonnegative()` emits `minimum`, which the emitter refuses: plain integers here.

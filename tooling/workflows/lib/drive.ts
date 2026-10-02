@@ -4,7 +4,8 @@
  * in-flight promise per issue (and per running epic end), and each entry's
  * halt state; it runs every action in the order the scheduler emits it, and
  * feeds each settled attempt's events in order. It ends with each entry's
- * report and the entries that opened a PR ({@link DriveResult}).
+ * report and landed issues, and the entries that opened a PR
+ * ({@link DriveResult}).
  *
  * - `start` logs `start #N attempt K` and runs an attempt (`slice-chain.ts`),
  *   handing it the files the issue's last landing conflicted on; `requeue`
@@ -58,6 +59,7 @@ import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './
 import type { WorkflowHooks } from './hooks.types.js';
 import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
+import type { PriorSlice } from './prompts.js';
 import {
   runAttempt,
   type AttemptEnding,
@@ -95,6 +97,11 @@ export interface DriveResult {
    * end's `onPublished` (`epic-end.ts`), which owns the ordering.
    */
   readonly published: readonly number[];
+  /**
+   * Each entry's landed issues, `issue`, `commit` and `plan`, in landing
+   * order; indexed like `epics`.
+   */
+  readonly landed: readonly (readonly PriorSlice[])[];
 }
 
 /** A settled flight. */
@@ -133,8 +140,8 @@ interface Drive {
  * Drive every entry until each has ended.
  *
  * @param input - The graph, the entries and the cap.
- * @returns Resolves to each entry's report, in run-set order, and the
- *   entries that opened a PR, in publish order.
+ * @returns Resolves to each entry's report and landed issues, in run-set
+ *   order, and the entries that opened a PR, in publish order.
  */
 export async function drive(input: DriveInput): Promise<DriveResult> {
   const d = newDrive(input);
@@ -144,7 +151,11 @@ export async function drive(input: DriveInput): Promise<DriveResult> {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return { epics: input.entries.map((_entry, i) => entryReport(d, i)), published: d.published };
+  return {
+    epics: input.entries.map((_entry, i) => entryReport(d, i)),
+    published: d.published,
+    landed: input.entries.map((_entry, i) => landedSlices(d, i)),
+  };
 }
 
 /**
@@ -181,15 +192,26 @@ function newDrive(input: DriveInput): Drive {
       markHalting: () => {
         d.halting.add(i);
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
+      priorSlices: () => landedSlices(d, i),
     });
   });
   return d;
+}
+
+/**
+ * What an entry has landed so far, as a later stage is handed it.
+ *
+ * @param d - The loop state.
+ * @param i - The entry's index.
+ * @returns One `{ issue, commit, plan }` per landed issue, in landing order;
+ *   `plan` is its card's plan file.
+ */
+function landedSlices(d: Drive, i: number): PriorSlice[] {
+  return (d.landed.get(i) ?? []).map((l) => ({
+    issue: l.issue,
+    commit: l.commit,
+    plan: l.card.planPath,
+  }));
 }
 
 /**

@@ -40,7 +40,8 @@ export interface StageRow {
  * end's doc-index conflicts; `testReview` hardens the tests on the slice's
  * final shape; `critic` reviews the epic's landed slices together in a
  * slice of its own and may commit one fix; `retro` reads the entry's
- * reports and names what the run should learn.
+ * reports and names what the run should learn; `curator` turns one reviewed
+ * PR's findings into its one comment.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -56,6 +57,7 @@ export const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  curator: { agentType: 'curator', model: 'opus' },
 } as const satisfies Readonly<Record<string, StageRow>>;
 
 /** A stage's key in {@link STAGES}. */
@@ -168,8 +170,9 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
     title: PHASE_TITLES.prReview,
     detail:
       'after every epic end, per opened pull request, one at a time in publish order: ' +
-      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); ' +
-      'non-fatal; none under --pr-review off',
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
+      "then its one comment — the curator's, or the plain render when the curator fails " +
+      '(pr-comment); non-fatal; none under --pr-review off',
   },
 ];
 

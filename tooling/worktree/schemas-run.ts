@@ -345,9 +345,16 @@ export const PrReviewResultSchema = ResultBaseSchema.extend({
 
 /**
  * How `pr-comment` ended: `posted`, the one `ok` outcome, or the step that
- * stopped it — `unreadable` (read), `too-long` (size), `post-failed` (post).
+ * stopped it — `unreadable` (read), `too-long` (size), `missing-findings`
+ * (check), `post-failed` (post).
  */
-export const PrCommentOutcomeSchema = z.enum(['posted', 'unreadable', 'too-long', 'post-failed']);
+export const PrCommentOutcomeSchema = z.enum([
+  'posted',
+  'unreadable',
+  'too-long',
+  'missing-findings',
+  'post-failed',
+]);
 
 /**
  * Envelope of `pr-comment <checkout> --pr N --body-file F`; `worktree` is the

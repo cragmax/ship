@@ -809,6 +809,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
       plainFile: { type: ['string', 'null'] },
+      resultFile: { type: ['string', 'null'] },
     },
     required: [
       'status',
@@ -818,6 +819,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       'findingCount',
       'findingsFile',
       'plainFile',
+      'resultFile',
     ],
   },
   'pr-comment': {
@@ -864,7 +866,10 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      outcome: {
+        type: 'string',
+        enum: ['posted', 'unreadable', 'too-long', 'missing-findings', 'post-failed'],
+      },
       url: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'outcome', 'url'],
@@ -1097,5 +1102,10 @@ export const AGENT_OUTPUT_SCHEMAS = {
       },
     },
     required: ['findings'],
+  },
+  curator: {
+    type: 'object',
+    properties: { commentPath: { type: 'string' }, beforeMerge: { type: 'integer' } },
+    required: ['commentPath', 'beforeMerge'],
   },
 } as const;

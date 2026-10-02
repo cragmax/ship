@@ -77,6 +77,7 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  curator: { agentType: 'curator', model: 'opus' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -121,8 +122,9 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.prReview,
     detail:
       'after every epic end, per opened pull request, one at a time in publish order: ' +
-      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); ' +
-      'non-fatal; none under --pr-review off',
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
+      "then its one comment — the curator's, or the plain render when the curator fails " +
+      '(pr-comment); non-fatal; none under --pr-review off',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -296,6 +298,14 @@ const PROMPTS = {
       `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  curator: (values) =>
+    [
+      `PR: ${issueRef(values.pr)}`,
+      `Findings file: ${values.findingsPath}`,
+      `Result file: ${values.resultPath}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Comment file: ${values.commentPath}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1118,6 +1128,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
       plainFile: { type: ['string', 'null'] },
+      resultFile: { type: ['string', 'null'] },
     },
     required: [
       'status',
@@ -1127,6 +1138,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       'findingCount',
       'findingsFile',
       'plainFile',
+      'resultFile',
     ],
   },
   'pr-comment': {
@@ -1173,7 +1185,10 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      outcome: {
+        type: 'string',
+        enum: ['posted', 'unreadable', 'too-long', 'missing-findings', 'post-failed'],
+      },
       url: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'outcome', 'url'],
@@ -1404,6 +1419,11 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
     },
     required: ['findings'],
+  },
+  curator: {
+    type: 'object',
+    properties: { commentPath: { type: 'string' }, beforeMerge: { type: 'integer' } },
+    required: ['commentPath', 'beforeMerge'],
   },
 };
 
@@ -1756,6 +1776,12 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  curator: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.curator(values),
+      agentOptions('curator', tag, AGENT_OUTPUT_SCHEMAS.curator),
+    ),
 };
 
 async function syncMasterStep(hooks, ctx) {

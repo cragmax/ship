@@ -13,7 +13,7 @@ import {
 } from '../../../tooling/workflows/lib/schemas.generated.js';
 import { runTool, TOOL_SCHEMAS } from '../../../tooling/workflows/lib/tool-calls.js';
 
-import { DIFF_REVIEW_OK, fakeHooks, LAND_OK } from './workflows/_fake-hooks.js';
+import { CURATOR_OK, DIFF_REVIEW_OK, fakeHooks, LAND_OK } from './workflows/_fake-hooks.js';
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 
@@ -84,6 +84,14 @@ const DIFF_REVIEW_VALUES = {
   reportDir: 'C:/r/reports',
 };
 
+const CURATOR_VALUES = {
+  pr: 42,
+  findingsPath: 'C:/r/reports/pr-review-42-findings.json',
+  resultPath: 'C:/r/reports/pr-review-42-result.md',
+  landed: [{ issue: 7, commit: 'c7', plan: 'C:/r/reports/plans/7.md' }],
+  commentPath: 'C:/r/reports/pr-review-42-curated.md',
+};
+
 describe('consumed fields are required', () => {
   it('leaves only the legitimately absent fields optional in every tool schema', () => {
     expect(optionalOf(TOOL_SCHEMAS)).toEqual({
@@ -119,6 +127,7 @@ describe('consumed fields are required', () => {
       resolver: [],
       critic: [],
       retro: [],
+      curator: [],
     });
   });
 
@@ -162,6 +171,25 @@ describe('the diff review’s output schema', () => {
   );
 });
 
+describe('the curator’s output schema', () => {
+  it('requires the comment path as a string and the before-merge count as an integer', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.curator).toEqual({
+      type: 'object',
+      properties: { commentPath: { type: 'string' }, beforeMerge: { type: 'integer' } },
+      required: ['commentPath', 'beforeMerge'],
+    });
+  });
+
+  it.each(['commentPath', 'beforeMerge'])('records a curator answer lacking %s', async (field) => {
+    const answer = Object.fromEntries(Object.entries(CURATOR_OK).filter(([key]) => key !== field));
+    const run = fakeHooks({ curator: answer }, { offSchema: true });
+
+    await AGENT_CALLS.curator(run.hooks, CURATOR_VALUES, 'list');
+
+    expect(run.violations).toEqual([`curator:list: lacks required ${field}`]);
+  });
+});
+
 describe('the pr-review row', () => {
   it('carries the consumed fields, its counts as plain integers', () => {
     const row = TOOL_ENVELOPE_SCHEMAS['pr-review'];
@@ -174,6 +202,7 @@ describe('the pr-review row', () => {
       'outcome',
       'plainFile',
       'reason',
+      'resultFile',
       'status',
     ]);
     expect(row.properties).toMatchObject({
@@ -193,6 +222,7 @@ describe('the pr-review row', () => {
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
       plainFile: { type: ['string', 'null'] },
+      resultFile: { type: ['string', 'null'] },
     });
   });
 });
@@ -209,7 +239,10 @@ describe('the pr-comment row', () => {
       'url',
     ]);
     expect(row.properties).toMatchObject({
-      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      outcome: {
+        type: 'string',
+        enum: ['posted', 'unreadable', 'too-long', 'missing-findings', 'post-failed'],
+      },
       url: { type: ['string', 'null'] },
     });
   });

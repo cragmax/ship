@@ -24,7 +24,7 @@
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * npx tsx <main-checkout>/tooling/worktree.ts pr-review MAIN --pr N --level (xhigh|max) --model M --report-dir DIR
- * npx tsx <main-checkout>/tooling/worktree.ts pr-comment MAIN --pr N --body-file F
+ * npx tsx <main-checkout>/tooling/worktree.ts pr-comment MAIN --pr N --body-file F [--findings-file J]
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
@@ -45,11 +45,11 @@
  * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). `pr-review` and
  * `pr-comment` mutate no worktree — `pr-review`'s fetch writes only
  * remote-tracking refs, like `check-master`'s, and `pr-comment` only reads
- * its body file — so they have no guard either. Target paths and the
- * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
- * `--body-file`) come only from argv, resolved against the starting cwd;
- * every other argument — a sha, repo-relative paths, a number, a title, the
- * `--attach` branch — is kept as given.
+ * its body and findings files — so they have no guard either. Target paths
+ * and the path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
+ * `--body-file`, `--findings-file`) come only from argv, resolved against
+ * the starting cwd; every other argument — a sha, repo-relative paths, a
+ * number, a title, the `--attach` branch — is kept as given.
  *
  * Every envelope carries `at`, the instant the command finished, and is
  * checked against its command's schema before it is printed: one that
@@ -310,6 +310,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   'pr-comment': {
     schema: PrCommentResultSchema,
     valueFlags: ['--pr', '--body-file'],
+    optionFlags: ['--findings-file'],
     switchFlags: [],
     rest: NO_REST,
     run: (args) =>
@@ -317,6 +318,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         checkout: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         bodyFile: pathFlag(args, '--body-file'),
+        findingsFile: args.values.has('--findings-file') ? pathFlag(args, '--findings-file') : null,
       }),
   },
   publish: {

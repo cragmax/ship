@@ -22,7 +22,7 @@ export const meta = {
     {
       title: 'PR review',
       detail:
-        'after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); non-fatal; none under --pr-review off',
+        "after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), then its one comment — the curator's, or the plain render when the curator fails (pr-comment); non-fatal; none under --pr-review off",
     },
   ],
 };
@@ -42,6 +42,7 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  curator: { agentType: 'curator', model: 'opus' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -86,8 +87,9 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.prReview,
     detail:
       'after every epic end, per opened pull request, one at a time in publish order: ' +
-      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review); ' +
-      'non-fatal; none under --pr-review off',
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
+      "then its one comment — the curator's, or the plain render when the curator fails " +
+      '(pr-comment); non-fatal; none under --pr-review off',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -727,6 +729,14 @@ const PROMPTS = {
       `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  curator: (values) =>
+    [
+      `PR: ${issueRef(values.pr)}`,
+      `Findings file: ${values.findingsPath}`,
+      `Result file: ${values.resultPath}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Comment file: ${values.commentPath}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1549,6 +1559,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
       plainFile: { type: ['string', 'null'] },
+      resultFile: { type: ['string', 'null'] },
     },
     required: [
       'status',
@@ -1558,6 +1569,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       'findingCount',
       'findingsFile',
       'plainFile',
+      'resultFile',
     ],
   },
   'pr-comment': {
@@ -1604,7 +1616,10 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      outcome: {
+        type: 'string',
+        enum: ['posted', 'unreadable', 'too-long', 'missing-findings', 'post-failed'],
+      },
       url: { type: ['string', 'null'] },
     },
     required: ['status', 'errors', 'outcome', 'url'],
@@ -1835,6 +1850,11 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
     },
     required: ['findings'],
+  },
+  curator: {
+    type: 'object',
+    properties: { commentPath: { type: 'string' }, beforeMerge: { type: 'integer' } },
+    required: ['commentPath', 'beforeMerge'],
   },
 };
 
@@ -2219,6 +2239,12 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  curator: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.curator(values),
+      agentOptions('curator', tag, AGENT_OUTPUT_SCHEMAS.curator),
+    ),
 };
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
@@ -3046,7 +3072,11 @@ async function drive(input) {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return { epics: input.entries.map((_entry, i) => entryReport(d, i)), published: d.published };
+  return {
+    epics: input.entries.map((_entry, i) => entryReport(d, i)),
+    published: d.published,
+    landed: input.entries.map((_entry, i) => landedSlices(d, i)),
+  };
 }
 function newDrive(input) {
   const d = {
@@ -3076,15 +3106,17 @@ function newDrive(input) {
       markHalting: () => {
         d.halting.add(i);
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
+      priorSlices: () => landedSlices(d, i),
     });
   });
   return d;
+}
+function landedSlices(d, i) {
+  return (d.landed.get(i) ?? []).map((l) => ({
+    issue: l.issue,
+    commit: l.commit,
+    plan: l.card.planPath,
+  }));
 }
 function flightKey(note) {
   return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
@@ -3701,6 +3733,17 @@ function plainReviewComment(input, limit = COMMENT_MAX_CHARS) {
   );
   return summaryCut ?? render({ summary: 0, scenario: 0 });
 }
+function commentMissingRefs(body, findings) {
+  const left = new Map();
+  const missing = [];
+  for (const f of findings) {
+    const ref = commentFindingRef(f);
+    const count = left.get(ref) ?? body.split(ref).length - 1;
+    if (count === 0) missing.push(ref);
+    left.set(ref, Math.max(0, count - 1));
+  }
+  return missing;
+}
 function incompleteReviewComment(reason, limit = COMMENT_MAX_CHARS) {
   const whole = `${COMMENT_INCOMPLETE}${reason}\n`;
   if (whole.length <= limit) return whole;
@@ -3739,9 +3782,12 @@ function commentItem(f, n, caps) {
   const summary = commentCap(f.summary, caps?.summary ?? null);
   const scenario = commentCap(f.failure_scenario, caps?.scenario ?? null);
   return [
-    `${String(n)}. \`${f.file}:${String(f.line)}\` — ${verdict}${summary}`,
+    `${String(n)}. ${commentFindingRef(f)} — ${verdict}${summary}`,
     `    - Failure scenario: ${scenario}`,
   ];
+}
+function commentFindingRef(f) {
+  return `\`${f.file}:${String(f.line)}\``;
 }
 function commentCap(text, cap) {
   return cap === null || text.length <= cap ? text : `${text.slice(0, cap)}…`;
@@ -3752,14 +3798,15 @@ function commentOneLine(text) {
 
 async function postPrComment(hooks, t, source) {
   const file =
-    source.kind === 'plain'
-      ? source.file
-      : `${t.reportDir}/pr-review-${String(t.pr)}-incomplete.md`;
+    source.kind === 'incomplete'
+      ? `${t.reportDir}/pr-review-${String(t.pr)}-incomplete.md`
+      : source.file;
   const write =
-    source.kind === 'plain'
-      ? undefined
-      : { path: file, content: incompleteReviewComment(source.reason) };
-  const argv = [t.main, '--pr', String(t.pr), '--body-file', file];
+    source.kind === 'incomplete'
+      ? { path: file, content: incompleteReviewComment(source.reason) }
+      : undefined;
+  const check = source.kind === 'curated' ? ['--findings-file', source.findingsFile] : [];
+  const argv = [t.main, '--pr', String(t.pr), '--body-file', file, ...check];
   return runTool(hooks, 'pr-comment', argv, runPlace(t.reportDir, t.tag, write))
     .then((out) => commentEnding(out, file))
     .catch((err) =>
@@ -3785,12 +3832,80 @@ function notPosted(outcome, file, reason) {
   return { outcome, url: null, file, reason };
 }
 
+const CURATOR_NOT_RUN = {
+  outcome: 'not-run',
+  reason: null,
+  beforeMerge: null,
+};
+const CURATOR_REFUSALS = ['unreadable', 'too-long', 'missing-findings'];
+async function curateAndPost(hooks, t, files) {
+  const commentPath = `${t.reportDir}/pr-review-${String(t.pr)}-curated.md`;
+  const answer = await askCurator(hooks, t, files, commentPath);
+  if ('failed' in answer) return postPlain(hooks, t, files, answer.failed);
+  const comment = await postPrComment(hooks, t, {
+    kind: 'curated',
+    file: commentPath,
+    findingsFile: files.findingsFile,
+  });
+  if (curatorRefused(comment.outcome)) {
+    return postPlain(hooks, t, files, comment.reason ?? 'no reason named');
+  }
+  return {
+    curator: { outcome: 'curated', reason: null, beforeMerge: answer.beforeMerge },
+    comment,
+  };
+}
+function askCurator(hooks, t, files, commentPath) {
+  const values = {
+    pr: t.pr,
+    findingsPath: files.findingsFile,
+    resultPath: files.resultFile,
+    landed: t.landed,
+    commentPath,
+  };
+  return AGENT_CALLS.curator(hooks, values, t.tag)
+    .then(curatorAnswer)
+    .catch((err) => ({
+      failed: `the curator call threw: ${err instanceof Error ? err.message : String(err)}`,
+    }));
+}
+function curatorAnswer(out) {
+  if (out === null) return { failed: 'the curator returned nothing' };
+  if (typeof out.commentPath !== 'string') {
+    return { failed: "the curator's answer lacks commentPath" };
+  }
+  if (typeof out.beforeMerge !== 'number') {
+    return { failed: "the curator's answer lacks beforeMerge" };
+  }
+  return { beforeMerge: out.beforeMerge };
+}
+async function postPlain(hooks, t, files, reason) {
+  return {
+    curator: curatorFailed(reason),
+    comment: await postPrComment(hooks, t, { kind: 'plain', file: files.plainFile }),
+  };
+}
+function curatorRefused(outcome) {
+  return CURATOR_REFUSALS.includes(outcome);
+}
+function curatorFailed(reason) {
+  return { outcome: 'failed', reason, beforeMerge: null };
+}
+
 function reviewTargets(entries, driven) {
   return driven.published.flatMap((i) => {
     const entry = entries[i];
     const report = driven.epics[i];
     if (entry === undefined || report?.outcome !== 'pr' || report.pr === undefined) return [];
-    return [{ pr: report.pr, main: entry.main, reportDir: entry.reportDir, tag: entry.tag }];
+    return [
+      {
+        pr: report.pr,
+        main: entry.main,
+        reportDir: entry.reportDir,
+        tag: entry.tag,
+        landed: driven.landed[i] ?? [],
+      },
+    ];
   });
 }
 async function runPrReviews(hooks, targets, setting) {
@@ -3798,16 +3913,27 @@ async function runPrReviews(hooks, targets, setting) {
   hooks.phase(PHASE_TITLES.prReview);
   const reports = [];
   for (const target of targets) {
-    const { plainFile, ...review } = await reviewPr(hooks, target, setting);
-    const comment = await postPrComment(hooks, target, commentSource(review, plainFile));
-    reports.push({ ...review, comment });
+    const { plainFile, resultFile, ...review } = await reviewPr(hooks, target, setting);
+    const { curator, comment } = await commentFor(hooks, target, review, plainFile, resultFile);
+    reports.push({ ...review, curator, comment });
   }
   return reports;
 }
-function commentSource(review, plainFile) {
-  return review.outcome === 'reviewed' && plainFile !== null
-    ? { kind: 'plain', file: plainFile }
-    : { kind: 'incomplete', reason: review.reason ?? 'no reason named' };
+async function commentFor(hooks, target, review, plainFile, resultFile) {
+  const { findingsFile } = review;
+  if (
+    review.outcome === 'reviewed' &&
+    findingsFile !== null &&
+    plainFile !== null &&
+    resultFile !== null
+  ) {
+    return curateAndPost(hooks, target, { findingsFile, resultFile, plainFile });
+  }
+  const reason = review.reason ?? 'no reason named';
+  return {
+    curator: CURATOR_NOT_RUN,
+    comment: await postPrComment(hooks, target, { kind: 'incomplete', reason }),
+  };
 }
 async function reviewPr(hooks, t, level) {
   const argv = [
@@ -3830,18 +3956,35 @@ async function reviewPr(hooks, t, level) {
 }
 function reviewEnding(out) {
   if (out === null) return noVerdict(envelopeProblem('pr-review', null));
-  const { outcome, durationMs, findingCount, findingsFile, plainFile } = out;
+  const { outcome, durationMs, findingCount, findingsFile, plainFile, resultFile } = out;
   const lacking = (field) => noVerdict(`${envelopeProblem('pr-review', out)} (no ${field})`);
   if (outcome === undefined) return lacking('outcome');
   if (durationMs === undefined) return lacking('durationMs');
   if (outcome !== 'reviewed') {
     const reason = out.errors?.[0]?.message ?? envelopeProblem('pr-review', out);
-    return { outcome, reason, durationMs, findingCount: null, findingsFile: null, plainFile: null };
+    return {
+      outcome,
+      reason,
+      durationMs,
+      findingCount: null,
+      findingsFile: null,
+      plainFile: null,
+      resultFile: null,
+    };
   }
   if (typeof findingCount !== 'number') return lacking('findingCount');
   if (typeof findingsFile !== 'string') return lacking('findingsFile');
   if (typeof plainFile !== 'string') return lacking('plainFile');
-  return { outcome, reason: null, durationMs, findingCount, findingsFile, plainFile };
+  if (typeof resultFile !== 'string') return lacking('resultFile');
+  return {
+    outcome,
+    reason: null,
+    durationMs,
+    findingCount,
+    findingsFile,
+    plainFile,
+    resultFile,
+  };
 }
 function noVerdict(reason) {
   return {
@@ -3851,6 +3994,7 @@ function noVerdict(reason) {
     findingCount: null,
     findingsFile: null,
     plainFile: null,
+    resultFile: null,
   };
 }
 
@@ -3894,7 +4038,7 @@ async function runEntries(hooks, graph, opts) {
   });
   const driven =
     setups.length === 0
-      ? { epics: [], published: [] }
+      ? { epics: [], published: [], landed: [] }
       : await drive({ hooks, graph: kept, entries: setups, ...opts });
   const epics = cuts.map((c, k) => {
     if ('stopped' in c) {

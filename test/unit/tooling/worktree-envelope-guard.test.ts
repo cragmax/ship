@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PR_REVIEW_CAP_MS } from '../../../tooling/worktree/exec.js';
@@ -261,7 +263,32 @@ describe('runWorktreeCli — the envelope guard', () => {
 
     expect(commandMock).toHaveBeenCalledTimes(1);
     expect(commandMock).toHaveBeenCalledWith(
-      expect.objectContaining({ pr: 42, bodyFile: expect.stringMatching(/\/c\.md$/u) }),
+      expect.objectContaining({
+        pr: 42,
+        bodyFile: expect.stringMatching(/\/c\.md$/u),
+        findingsFile: null,
+      }),
+    );
+  });
+
+  it('hands pr-comment its findings file, resolved', async () => {
+    await runWorktreeCli([
+      'pr-comment',
+      'C:/main',
+      '--pr',
+      '42',
+      '--body-file',
+      'C:/c.md',
+      '--findings-file',
+      'reports/f.json',
+    ]);
+
+    expect(commandMock).toHaveBeenCalledTimes(1);
+    // A relative path: an absolute one reads the same resolved or not.
+    expect(commandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findingsFile: resolve('reports/f.json').replaceAll('\\', '/'),
+      }),
     );
   });
 

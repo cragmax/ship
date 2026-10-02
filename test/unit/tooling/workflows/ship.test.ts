@@ -293,6 +293,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:check-master:list',
       'runner:publish:list',
       'runner:pr-review:list',
+      'curator:list',
       'runner:pr-comment:list',
     ]);
     const at = (entry: string): number => run.timeline.indexOf(entry);
@@ -1312,6 +1313,7 @@ describe('agent-call tiers', () => {
       testReview: { agentType: 'ship-test-review', model: 'opus' },
       critic: { agentType: 'critic' },
       retro: { agentType: 'retro', model: 'sonnet' },
+      curator: { agentType: 'curator', model: 'opus' },
     });
   });
 
