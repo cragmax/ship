@@ -1547,8 +1547,66 @@ const TOOL_ENVELOPE_SCHEMAS = {
       durationMs: { type: 'integer' },
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
+      plainFile: { type: ['string', 'null'] },
     },
-    required: ['status', 'errors', 'outcome', 'durationMs', 'findingCount', 'findingsFile'],
+    required: [
+      'status',
+      'errors',
+      'outcome',
+      'durationMs',
+      'findingCount',
+      'findingsFile',
+      'plainFile',
+    ],
+  },
+  'pr-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'outcome', 'url'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1802,6 +1860,7 @@ const TOOL_COMMANDS = {
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'pr-review': [WORKTREE_CLI, 'pr-review'],
+  'pr-comment': [WORKTREE_CLI, 'pr-comment'],
 };
 const TOOL_TIMEOUTS_MS = {
   'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
@@ -1894,6 +1953,7 @@ const TOOL_SCHEMAS = {
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'pr-review': envelopeSchema('pr-review'),
+  'pr-comment': envelopeSchema('pr-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const timeoutMs = TOOL_TIMEOUTS_MS[name];
@@ -2219,6 +2279,8 @@ function renderPrBody(input) {
     '',
     `Unattended run on \`${input.branch}\` — ${container}.`,
     '',
+    prReviewLine(input.prReview),
+    '',
     '## Issues',
     '',
     ...input.landed.flatMap(issueSection),
@@ -2241,6 +2303,9 @@ function renderPrBody(input) {
     ...section('Retro findings', retroLines(input.retro)),
   ].join('\n');
   return neutralText(body, closing);
+}
+function prReviewLine(setting) {
+  return setting === 'off' ? 'PR review: off' : `PR review: pending (${setting})`;
 }
 function section(heading, lines) {
   return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
@@ -2634,6 +2699,7 @@ async function openPr(input, found, checked) {
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    prReview: input.prReview,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -3150,6 +3216,7 @@ function endEpic(d, i) {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    prReview: d.input.prReview,
     onPublished: () => {
       d.published.push(i);
     },
@@ -3605,6 +3672,118 @@ function spentTarget(run) {
   return { path: run.path };
 }
 
+const COMMENT_MAX_CHARS = 65_536;
+const COMMENT_NOTE =
+  "_Shortened to fit GitHub's comment size limit; the run's report directory holds every finding in full._";
+const COMMENT_INCOMPLETE = 'PR review did not complete: ';
+function plainReviewComment(input, limit = COMMENT_MAX_CHARS) {
+  const findings = input.findings.map((f) => ({
+    ...f,
+    summary: commentOneLine(f.summary),
+    failure_scenario: commentOneLine(f.failure_scenario),
+    verdict: f.verdict === null ? null : commentOneLine(f.verdict),
+  }));
+  const render = (caps) => commentLayout(input.level, findings, caps);
+  const full = render(null);
+  if (full.length <= limit) return full;
+  const longest = (key) => Math.max(0, ...findings.map((f) => f[key].length));
+  const scenarioCut = commentLargestFit(
+    longest('failure_scenario'),
+    (k) => render({ summary: null, scenario: k }),
+    limit,
+  );
+  if (scenarioCut !== null) return scenarioCut;
+  const summaryCut = commentLargestFit(
+    longest('summary'),
+    (k) => render({ summary: k, scenario: 0 }),
+    limit,
+  );
+  return summaryCut ?? render({ summary: 0, scenario: 0 });
+}
+function incompleteReviewComment(reason, limit = COMMENT_MAX_CHARS) {
+  const whole = `${COMMENT_INCOMPLETE}${reason}\n`;
+  if (whole.length <= limit) return whole;
+  const cap = Math.max(0, limit - COMMENT_INCOMPLETE.length - 2);
+  return `${COMMENT_INCOMPLETE}${commentCap(reason, cap)}\n`;
+}
+function commentLargestFit(longest, render, limit) {
+  let best = null;
+  let low = 0;
+  let high = longest;
+  while (low <= high) {
+    const cap = Math.floor((low + high) / 2);
+    const out = render(cap);
+    if (out.length <= limit) {
+      best = out;
+      low = cap + 1;
+    } else {
+      high = cap - 1;
+    }
+  }
+  return best;
+}
+function commentLayout(level, findings, caps) {
+  const head = `**PR review** (\`/code-review ${level}\`): ${commentCount(findings.length)}`;
+  if (findings.length === 0) return `${head}\n`;
+  const items = findings.flatMap((f, i) => commentItem(f, i + 1, caps));
+  const note = caps === null ? [] : ['', COMMENT_NOTE];
+  return `${[head, '', ...items, ...note].join('\n')}\n`;
+}
+function commentCount(n) {
+  if (n === 0) return 'no findings.';
+  return `${String(n)} finding${n === 1 ? '' : 's'}, in the review's order.`;
+}
+function commentItem(f, n, caps) {
+  const verdict = f.verdict === null ? '' : `**${f.verdict}** — `;
+  const summary = commentCap(f.summary, caps?.summary ?? null);
+  const scenario = commentCap(f.failure_scenario, caps?.scenario ?? null);
+  return [
+    `${String(n)}. \`${f.file}:${String(f.line)}\` — ${verdict}${summary}`,
+    `    - Failure scenario: ${scenario}`,
+  ];
+}
+function commentCap(text, cap) {
+  return cap === null || text.length <= cap ? text : `${text.slice(0, cap)}…`;
+}
+function commentOneLine(text) {
+  return text.replace(/\s+/gu, ' ').trim();
+}
+
+async function postPrComment(hooks, t, source) {
+  const file =
+    source.kind === 'plain'
+      ? source.file
+      : `${t.reportDir}/pr-review-${String(t.pr)}-incomplete.md`;
+  const write =
+    source.kind === 'plain'
+      ? undefined
+      : { path: file, content: incompleteReviewComment(source.reason) };
+  const argv = [t.main, '--pr', String(t.pr), '--body-file', file];
+  return runTool(hooks, 'pr-comment', argv, runPlace(t.reportDir, t.tag, write))
+    .then((out) => commentEnding(out, file))
+    .catch((err) =>
+      notPosted(
+        'no-verdict',
+        file,
+        `the pr-comment call threw: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+}
+function commentEnding(out, file) {
+  if (out === null) return notPosted('no-verdict', file, envelopeProblem('pr-comment', null));
+  const { outcome } = out;
+  if (outcome === undefined) {
+    return notPosted('no-verdict', file, `${envelopeProblem('pr-comment', out)} (no outcome)`);
+  }
+  if (outcome !== 'posted') {
+    return notPosted(outcome, file, out.errors?.[0]?.message ?? envelopeProblem('pr-comment', out));
+  }
+  return { outcome, url: out.url ?? null, file: null, reason: null };
+}
+function notPosted(outcome, file, reason) {
+  return { outcome, url: null, file, reason };
+}
+
 function reviewTargets(entries, driven) {
   return driven.published.flatMap((i) => {
     const entry = entries[i];
@@ -3617,8 +3796,17 @@ async function runPrReviews(hooks, targets, setting) {
   if (setting === 'off' || targets.length === 0) return [];
   hooks.phase(PHASE_TITLES.prReview);
   const reports = [];
-  for (const target of targets) reports.push(await reviewPr(hooks, target, setting));
+  for (const target of targets) {
+    const { plainFile, ...review } = await reviewPr(hooks, target, setting);
+    const comment = await postPrComment(hooks, target, commentSource(review, plainFile));
+    reports.push({ ...review, comment });
+  }
   return reports;
+}
+function commentSource(review, plainFile) {
+  return review.outcome === 'reviewed' && plainFile !== null
+    ? { kind: 'plain', file: plainFile }
+    : { kind: 'incomplete', reason: review.reason ?? 'no reason named' };
 }
 async function reviewPr(hooks, t, level) {
   const argv = [
@@ -3641,17 +3829,18 @@ async function reviewPr(hooks, t, level) {
 }
 function reviewEnding(out) {
   if (out === null) return noVerdict(envelopeProblem('pr-review', null));
-  const { outcome, durationMs, findingCount, findingsFile } = out;
+  const { outcome, durationMs, findingCount, findingsFile, plainFile } = out;
   const lacking = (field) => noVerdict(`${envelopeProblem('pr-review', out)} (no ${field})`);
   if (outcome === undefined) return lacking('outcome');
   if (durationMs === undefined) return lacking('durationMs');
   if (outcome !== 'reviewed') {
     const reason = out.errors?.[0]?.message ?? envelopeProblem('pr-review', out);
-    return { outcome, reason, durationMs, findingCount: null, findingsFile: null };
+    return { outcome, reason, durationMs, findingCount: null, findingsFile: null, plainFile: null };
   }
   if (typeof findingCount !== 'number') return lacking('findingCount');
   if (typeof findingsFile !== 'string') return lacking('findingsFile');
-  return { outcome, reason: null, durationMs, findingCount, findingsFile };
+  if (typeof plainFile !== 'string') return lacking('plainFile');
+  return { outcome, reason: null, durationMs, findingCount, findingsFile, plainFile };
 }
 function noVerdict(reason) {
   return {
@@ -3660,6 +3849,7 @@ function noVerdict(reason) {
     durationMs: null,
     findingCount: null,
     findingsFile: null,
+    plainFile: null,
   };
 }
 
@@ -3687,6 +3877,7 @@ async function runShip(hooks, rawArgs) {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
+    prReview: parsed.args.prReview,
   });
   const prReviews = await runPrReviews(hooks, run.targets, parsed.args.prReview);
   return { status: 'done', dropped: pre.dropped, overlap, epics: run.epics, cleanup, prReviews };

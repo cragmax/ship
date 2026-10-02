@@ -2,10 +2,11 @@
  * Envelope types of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish` — and of `pr-review`,
- * with the findings file it writes. Each is the `z.infer` of its schema in
- * `schemas-run.ts`, the canonical home of the shapes and their field docs.
- * The status semantics and error classes are `types.ts`'s.
+ * `sync-master`, `bump`, `check-master` and `publish` — of `pr-review`,
+ * with the findings file it writes, and of `pr-comment`. Each is the
+ * `z.infer` of its schema in `schemas-run.ts`, the canonical home of the
+ * shapes and their field docs. The status semantics and error classes are
+ * `types.ts`'s.
  */
 
 import type { z } from 'zod';
@@ -24,6 +25,8 @@ import type {
   PreflightCheckSchema,
   PreflightProblemSchema,
   PreflightResultSchema,
+  PrCommentOutcomeSchema,
+  PrCommentResultSchema,
   PrReviewLevelSchema,
   PrReviewOutcomeSchema,
   PrReviewResultSchema,
@@ -96,3 +99,9 @@ export type ReviewFindingsFile = z.infer<typeof ReviewFindingsFileSchema>;
 
 /** Envelope of `pr-review <checkout> --pr N --level (xhigh|max) --model M --report-dir DIR`. */
 export type PrReviewResult = z.infer<typeof PrReviewResultSchema>;
+
+/** How `pr-comment` ended. */
+export type PrCommentOutcome = z.infer<typeof PrCommentOutcomeSchema>;
+
+/** Envelope of `pr-comment <checkout> --pr N --body-file F`. */
+export type PrCommentResult = z.infer<typeof PrCommentResultSchema>;

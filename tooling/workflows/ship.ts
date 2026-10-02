@@ -17,7 +17,8 @@
  * (`lib/drive.ts`), and returns the run report.
  *
  * **PR review**: once `drive` has returned, each PR the drive opened is
- * reviewed (`lib/pr-review-phase.ts` owns the phase's contract).
+ * reviewed and gets one comment (`lib/pr-review-phase.ts` owns the phase's
+ * contract).
  *
  * The epic end never tears down its own batch: while its PR is open, that
  * worktree is how `live-runs` — and so the next launch's collision check —
@@ -79,8 +80,9 @@ export interface ShipReport {
    */
   readonly cleanup?: CleanupReport;
   /**
-   * Each opened PR's review, in review (publish) order; present only when
-   * `done`, and `[]` under `--pr-review off` or when no entry opened a PR.
+   * Each opened PR's review and its one comment, in review (publish) order;
+   * present only when `done`, and `[]` under `--pr-review off` or when no
+   * entry opened a PR.
    */
   readonly prReviews?: readonly PrReviewReport[];
 }
@@ -121,6 +123,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
+    prReview: parsed.args.prReview,
   });
   const prReviews = await runPrReviews(hooks, run.targets, parsed.args.prReview);
   return { status: 'done', dropped: pre.dropped, overlap, epics: run.epics, cleanup, prReviews };
@@ -134,14 +137,15 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
  *
  * @param hooks - The workflow hooks.
  * @param graph - Pre-flight's graph, overlap edges merged.
- * @param opts - The in-flight cap, the launch snapshot and the overlap record.
+ * @param opts - The in-flight cap, the launch snapshot, the overlap record
+ *   and the `--pr-review` setting.
  * @returns Resolves to every entry's report, in run-set order, and the PRs
  *   the drive opened, in publish order.
  */
 async function runEntries(
   hooks: WorkflowHooks,
   graph: RunGraph,
-  opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap'>,
+  opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap' | 'prReview'>,
 ): Promise<{ readonly epics: EpicReport[]; readonly targets: ReviewTarget[] }> {
   const cuts: EntryCut[] = [];
   for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry));

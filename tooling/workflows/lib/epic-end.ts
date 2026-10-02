@@ -42,6 +42,7 @@
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
 
 import { AGENT_CALLS, type RetroFinding } from './agent-calls.js';
+import type { PrReviewSetting } from './args.js';
 import type { CommitQueue } from './commit-queue.js';
 import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -144,6 +145,8 @@ export interface EpicEndInput {
   readonly repoLock: CommitQueue;
   /** The overlap edges pre-flight added to this entry. */
   readonly overlap: OverlapRecord;
+  /** The launch's `--pr-review` setting, for the PR body's PR review line. */
+  readonly prReview: PrReviewSetting;
   /**
    * Called once, inside the publish task, when `publish` answered `ok` with
    * a PR. The repo lock serialises the publish tasks, so across the run's
@@ -312,6 +315,7 @@ async function openPr(
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    prReview: input.prReview,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [

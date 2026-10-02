@@ -293,6 +293,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:check-master:list',
       'runner:publish:list',
       'runner:pr-review:list',
+      'runner:pr-comment:list',
     ]);
     const at = (entry: string): number => run.timeline.indexOf(entry);
     expect(at('call runner:teardown:7-1')).toBeGreaterThan(-1);

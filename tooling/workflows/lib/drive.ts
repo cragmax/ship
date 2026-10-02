@@ -52,6 +52,7 @@ import type {
 } from '../../lib/run-scheduler.types.js';
 import type { RunGraph } from '../../lib/run-set.js';
 
+import type { PrReviewSetting } from './args.js';
 import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
 import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -80,6 +81,8 @@ export interface DriveInput {
   readonly launch: MainSnapshot | null;
   /** The overlap edges pre-flight added, run-wide. */
   readonly overlap: OverlapRecord;
+  /** The launch's `--pr-review` setting, for each PR body. */
+  readonly prReview: PrReviewSetting;
 }
 
 /** What the drive loop ends with. */
@@ -412,6 +415,7 @@ function endEpic(d: Drive, i: number): void {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    prReview: d.input.prReview,
     onPublished: () => {
       d.published.push(i);
     },

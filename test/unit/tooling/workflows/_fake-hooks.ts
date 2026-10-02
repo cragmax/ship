@@ -247,6 +247,14 @@ export const PR_REVIEW_OK = {
   durationMs: 561000,
   findingCount: 15,
   findingsFile: `${REPORT_DIR}/pr-review-42-findings.json`,
+  plainFile: `${REPORT_DIR}/pr-review-42-plain.md`,
+};
+
+/** A `pr-comment` that posted on PR 42 and printed the comment's URL. */
+export const PR_COMMENT_OK = {
+  ...OK,
+  outcome: 'posted',
+  url: 'https://github.com/fixture/repo/pull/42#issuecomment-1',
 };
 
 /** The all-pass answers of a full run of `issues 7`, by label. */
@@ -295,6 +303,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   },
   'runner:land': LAND_OK,
   'runner:pr-review': PR_REVIEW_OK,
+  'runner:pr-comment': PR_COMMENT_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:sync-master': {
     ...OK,

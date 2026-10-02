@@ -219,6 +219,7 @@ const INPUT: PrBodyInput = {
       suggestion: 'warm a second paper',
     },
   ],
+  prReview: 'xhigh',
 };
 
 /**
@@ -319,6 +320,21 @@ describe('renderPrBody', () => {
       '- Master check: passed — local forward, l0 → l1; origin equal at o0, checked against synced o0',
       '- Main checkout: untouched since pre-flight',
       '- Report dir: `C:/runs/epic-1025/reports`',
+      '',
+    ]);
+  });
+
+  it.each([
+    ['max', 'PR review: pending (max)'],
+    ['off', 'PR review: off'],
+  ] as const)('says under --pr-review %s whether a PR review follows', (prReview, line) => {
+    const lines = renderPrBody({ ...INPUT, prReview }).split('\n');
+
+    expect(lines.slice(lines.indexOf('## Summary') + 1, lines.indexOf('## Issues'))).toEqual([
+      '',
+      'Unattended run on `ship/epic-1025` — see #1025.',
+      '',
+      line,
       '',
     ]);
   });

@@ -102,6 +102,7 @@ describe('consumed fields are required', () => {
       publish: WORKTREE_OPTIONAL,
       'check-master': WORKTREE_OPTIONAL,
       'pr-review': WORKTREE_OPTIONAL,
+      'pr-comment': WORKTREE_OPTIONAL,
     });
   });
 
@@ -171,6 +172,7 @@ describe('the pr-review row', () => {
       'findingCount',
       'findingsFile',
       'outcome',
+      'plainFile',
       'reason',
       'status',
     ]);
@@ -189,6 +191,25 @@ describe('the pr-review row', () => {
       durationMs: { type: 'integer' },
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
+      plainFile: { type: ['string', 'null'] },
+    });
+  });
+});
+
+describe('the pr-comment row', () => {
+  it('carries the outcome and the comment URL', () => {
+    const row = TOOL_ENVELOPE_SCHEMAS['pr-comment'];
+
+    expect(Object.keys(row.properties).sort(compareStrings)).toEqual([
+      'errors',
+      'outcome',
+      'reason',
+      'status',
+      'url',
+    ]);
+    expect(row.properties).toMatchObject({
+      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      url: { type: ['string', 'null'] },
     });
   });
 });

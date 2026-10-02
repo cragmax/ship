@@ -57,7 +57,8 @@ export type ToolName =
   | 'bump'
   | 'check-master'
   | 'publish'
-  | 'pr-review';
+  | 'pr-review'
+  | 'pr-comment';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's. */
 export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check'>;
@@ -156,6 +157,9 @@ export type PublishOutput = EnvelopeOutput<'publish'>;
 /** `pr-review`'s consumed fields. */
 export type PrReviewOutput = EnvelopeOutput<'pr-review'>;
 
+/** `pr-comment`'s consumed fields. */
+export type PrCommentOutput = EnvelopeOutput<'pr-comment'>;
+
 /** Each tool's output type. */
 interface ToolOutputs {
   preflight: PreflightOutput;
@@ -173,6 +177,7 @@ interface ToolOutputs {
   'check-master': CheckMasterOutput;
   publish: PublishOutput;
   'pr-review': PrReviewOutput;
+  'pr-comment': PrCommentOutput;
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
@@ -198,6 +203,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'pr-review': [WORKTREE_CLI, 'pr-review'],
+  'pr-comment': [WORKTREE_CLI, 'pr-comment'],
 };
 
 /**
@@ -326,6 +332,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'pr-review': envelopeSchema('pr-review'),
+  'pr-comment': envelopeSchema('pr-comment'),
 };
 
 /**

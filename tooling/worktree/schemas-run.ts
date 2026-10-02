@@ -2,11 +2,12 @@
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish` — and of `pr-review`,
- * with the findings file it writes. The canonical home of their shapes;
- * `types-run.ts` exports each as its `z.infer`. The base fields, path
- * spelling and integer rule are `schemas.ts`'s. A field that names
- * something the command creates or measures stays `null` until it exists.
+ * `sync-master`, `bump`, `check-master` and `publish` — of `pr-review`,
+ * with the findings file it writes, and of `pr-comment`. The canonical home
+ * of their shapes; `types-run.ts` exports each as its `z.infer`. The base
+ * fields, path spelling and integer rule are `schemas.ts`'s. A field that
+ * names something the command creates or measures stays `null` until it
+ * exists.
  */
 
 import { z } from 'zod';
@@ -333,4 +334,27 @@ export const PrReviewResultSchema = ResultBaseSchema.extend({
   findingsFile: z.string().nullable(),
   /** The `/code-review` result text, verbatim; `null` unless `reviewed`. */
   resultFile: z.string().nullable(),
+  /** `pr-review-<N>-plain.md`, the plain render of the findings; `null` unless `reviewed`. */
+  plainFile: z.string().nullable(),
+});
+
+/**
+ * How `pr-comment` ended: `posted`, the one `ok` outcome, or the step that
+ * stopped it — `unreadable` (read), `too-long` (size), `post-failed` (post).
+ */
+export const PrCommentOutcomeSchema = z.enum(['posted', 'unreadable', 'too-long', 'post-failed']);
+
+/**
+ * Envelope of `pr-comment <checkout> --pr N --body-file F`; `worktree` is the
+ * checkout. A failure's reason is `errors[0].message`.
+ */
+export const PrCommentResultSchema = ResultBaseSchema.extend({
+  pr: z.int(),
+  /** The comment file, as given; never removed. */
+  file: z.string(),
+  outcome: PrCommentOutcomeSchema,
+  /** The file's length in UTF-16 code units; `null` when it could not be read. */
+  chars: z.int().nonnegative().nullable(),
+  /** The comment URL `gh` printed; `null` unless posted, or when it printed none. */
+  url: z.string().nullable(),
 });

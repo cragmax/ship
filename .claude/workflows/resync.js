@@ -1116,8 +1116,66 @@ const TOOL_ENVELOPE_SCHEMAS = {
       durationMs: { type: 'integer' },
       findingCount: { type: ['integer', 'null'] },
       findingsFile: { type: ['string', 'null'] },
+      plainFile: { type: ['string', 'null'] },
     },
-    required: ['status', 'errors', 'outcome', 'durationMs', 'findingCount', 'findingsFile'],
+    required: [
+      'status',
+      'errors',
+      'outcome',
+      'durationMs',
+      'findingCount',
+      'findingsFile',
+      'plainFile',
+    ],
+  },
+  'pr-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: { type: 'string', enum: ['posted', 'unreadable', 'too-long', 'post-failed'] },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'outcome', 'url'],
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
@@ -1371,6 +1429,7 @@ const TOOL_COMMANDS = {
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'pr-review': [WORKTREE_CLI, 'pr-review'],
+  'pr-comment': [WORKTREE_CLI, 'pr-comment'],
 };
 const TOOL_TIMEOUTS_MS = {
   'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
@@ -1463,6 +1522,7 @@ const TOOL_SCHEMAS = {
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'pr-review': envelopeSchema('pr-review'),
+  'pr-comment': envelopeSchema('pr-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const timeoutMs = TOOL_TIMEOUTS_MS[name];

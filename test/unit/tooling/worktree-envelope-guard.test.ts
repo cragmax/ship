@@ -34,6 +34,7 @@ vi.mock('../../../tooling/worktree/harvest.js', () => ({ harvest: commandMock })
 vi.mock('../../../tooling/worktree/land.js', () => ({ land: commandMock }));
 vi.mock('../../../tooling/worktree/live-runs.js', () => ({ liveRuns: commandMock }));
 vi.mock('../../../tooling/worktree/preflight.js', () => ({ preflight: commandMock }));
+vi.mock('../../../tooling/worktree/pr-comment.js', () => ({ prComment: commandMock }));
 vi.mock('../../../tooling/worktree/pr-review.js', () => ({ prReview: commandMock }));
 vi.mock('../../../tooling/worktree/provision.js', () => ({ provision: commandMock }));
 vi.mock('../../../tooling/worktree/provision-batch.js', () => ({ provisionBatch: commandMock }));
@@ -138,6 +139,7 @@ describe('runWorktreeCli — the envelope guard', () => {
         '--report-dir',
         'C:/r',
       ],
+      ['pr-comment', 'C:/main', '--pr', '42', '--body-file', 'C:/c.md'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;
@@ -196,6 +198,36 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(commandMock).toHaveBeenCalledTimes(1);
     expect(commandMock).toHaveBeenCalledWith(
       expect.objectContaining({ pr: 7, level: 'max', model: 'opus' }),
+    );
+  });
+
+  it('refuses pr-comment --pr 0 as a usage error, exit 2', async () => {
+    const { result, exitCode } = await runWorktreeCli([
+      'pr-comment',
+      'C:/main',
+      '--pr',
+      '0',
+      '--body-file',
+      'C:/c.md',
+    ]);
+
+    expect(result).toEqual({
+      command: 'pr-comment',
+      status: 'failed',
+      worktree: null,
+      errors: [{ step: 'usage', message: "flag --pr needs a positive integer, got '0'" }],
+      at: expect.any(String),
+    });
+    expect(exitCode).toBe(2);
+    expect(commandMock).not.toHaveBeenCalled();
+  });
+
+  it('hands pr-comment its PR and body file', async () => {
+    await runWorktreeCli(['pr-comment', 'C:/main', '--pr', '42', '--body-file', 'C:/c.md']);
+
+    expect(commandMock).toHaveBeenCalledTimes(1);
+    expect(commandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pr: 42, bodyFile: expect.stringMatching(/\/c\.md$/u) }),
     );
   });
 

@@ -1,10 +1,10 @@
 /**
  * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears
  * down the batch and slice worktrees of an unattended run, lists the live
- * runs, and reviews a PR in a throwaway clone (ADR-0045). Each command
- * prints exactly one JSON object on one stdout line — the envelope whose
- * schema is in `worktree/schemas.ts` or `worktree/schemas-run.ts` — and
- * nothing else.
+ * runs, and reviews a PR in a throwaway clone and posts one comment on it
+ * (ADR-0045). Each command prints exactly one JSON object on one stdout
+ * line — the envelope whose schema is in `worktree/schemas.ts` or
+ * `worktree/schemas-run.ts` — and nothing else.
  *
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
  *
@@ -24,6 +24,7 @@
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * npx tsx <main-checkout>/tooling/worktree.ts pr-review MAIN --pr N --level (xhigh|max) --model M --report-dir DIR
+ * npx tsx <main-checkout>/tooling/worktree.ts pr-comment MAIN --pr N --body-file F
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
@@ -40,9 +41,10 @@
  * `worktree/git.ts`) when the CLI lies inside its target. The one exception
  * is `cut-batch`, whose target is the main checkout the CLI runs from: it
  * writes only `.git` and a sibling directory, never that checkout's working
- * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). `pr-review` mutates
- * no worktree — its fetch writes only remote-tracking refs, like
- * `check-master`'s — so it has no guard either. Target paths and the
+ * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). `pr-review` and
+ * `pr-comment` mutate no worktree — `pr-review`'s fetch writes only
+ * remote-tracking refs, like `check-master`'s, and `pr-comment` only reads
+ * its body file — so they have no guard either. Target paths and the
  * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
  * `--body-file`) come only from argv, resolved against the starting cwd;
  * every other argument — a sha, repo-relative paths, a number, a title, the
@@ -76,6 +78,7 @@ import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
 import { preflight } from './worktree/preflight.js';
+import { prComment } from './worktree/pr-comment.js';
 import { prReview } from './worktree/pr-review.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
@@ -99,6 +102,7 @@ import {
   CutSliceResultSchema,
   LandResultSchema,
   PreflightResultSchema,
+  PrCommentResultSchema,
   PrReviewLevelSchema,
   PrReviewResultSchema,
   PublishResultSchema,
@@ -298,6 +302,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         level: prReviewLevel(args.values.get('--level') ?? ''),
         model: args.values.get('--model') ?? '',
         reportDir: pathFlag(args, '--report-dir'),
+      }),
+  },
+  'pr-comment': {
+    schema: PrCommentResultSchema,
+    valueFlags: ['--pr', '--body-file'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      prComment({
+        checkout: args.target,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        bodyFile: pathFlag(args, '--body-file'),
       }),
   },
   publish: {
