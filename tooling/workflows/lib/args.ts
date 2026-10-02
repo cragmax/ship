@@ -6,8 +6,8 @@
  * its numbers space- or comma-separated, each with an optional leading `#`:
  *
  * ```
- * { epics | issues, exclude?, preflightOnly?, maxSlices? }
- * epics|issues N... [--exclude] [--preflight-only] [--max-slices K]
+ * { epics | issues, exclude?, preflightOnly?, maxSlices?, prReview? }
+ * epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--pr-review off|xhigh|max]
  * ```
  *
  * Bare numbers are refused — epic or issue would be a guess — and so is
@@ -18,11 +18,16 @@
  * no top-level side effect.
  */
 
+import type { PrReviewLevel } from '../../worktree/types-run.js';
+
 import type { ShipRefusal } from './preflight.js';
-import { MAX_SLICES } from './stages.js';
+import { DEFAULT_PR_REVIEW_LEVEL, MAX_SLICES } from './stages.js';
 
 /** What a run ships: whole epics, or an explicit issue list. */
 export type Selection = 'epics' | 'issues';
+
+/** The PR review's launch setting: a `/code-review` level, or `off` for no review. */
+export type PrReviewSetting = 'off' | PrReviewLevel;
 
 /** The parsed launch arguments. */
 export interface ShipArgs {
@@ -36,6 +41,8 @@ export interface ShipArgs {
   readonly preflightOnly: boolean;
   /** The most issues in flight at once, from start until settled; default `MAX_SLICES`. */
   readonly maxSlices: number;
+  /** The level each opened PR's review runs at, or `off`; default `DEFAULT_PR_REVIEW_LEVEL`. */
+  readonly prReview: PrReviewSetting;
 }
 
 /** The parse's outcome: the arguments, or the usage refusal. */
@@ -44,7 +51,7 @@ export type ArgsOutcome =
   | { readonly refusal: ShipRefusal; readonly args?: never };
 
 /** The keys the object shape accepts. */
-const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices'];
+const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'prReview'];
 
 /** A usage error while parsing; caught by {@link parseShipArgs}. */
 class ArgsError extends Error {}
@@ -63,7 +70,7 @@ export function parseShipArgs(raw: unknown): ArgsOutcome {
     return {
       refusal: {
         kind: 'usage',
-        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K]`,
+        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--pr-review off|xhigh|max]`,
       },
     };
   }
@@ -104,11 +111,18 @@ function selectionWord(word: string | undefined): Selection {
  *
  * @param tokens - The words.
  * @returns Everything but the selection.
- * @throws {@link ArgsError}on an unknown flag or a bad number.
+ * @throws {@link ArgsError}on an unknown flag, a bad number, or a missing or
+ *   bad `--pr-review` setting.
  */
 function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
   const numbers: number[] = [];
-  const args = { numbers, exclude: false, preflightOnly: false, maxSlices: MAX_SLICES };
+  const args: { -readonly [K in Exclude<keyof ShipArgs, 'selection'>]: ShipArgs[K] } = {
+    numbers,
+    exclude: false,
+    preflightOnly: false,
+    maxSlices: MAX_SLICES,
+    prReview: DEFAULT_PR_REVIEW_LEVEL,
+  };
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] ?? '';
     switch (token) {
@@ -120,6 +134,9 @@ function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
         break;
       case '--max-slices':
         args.maxSlices = positiveInteger(tokens[++i], '--max-slices');
+        break;
+      case '--pr-review':
+        args.prReview = prReviewSetting(tokens[++i], '--pr-review');
         break;
       default:
         numbers.push(...numberList(token));
@@ -154,11 +171,30 @@ function parseObject(raw: unknown): ShipArgs {
     numbers: list.map((n: unknown) => positiveInteger(n, selection)),
     exclude: flag(record, 'exclude'),
     preflightOnly: flag(record, 'preflightOnly'),
-    maxSlices:
-      record['maxSlices'] === undefined
-        ? MAX_SLICES
-        : positiveInteger(record['maxSlices'], 'maxSlices'),
+    maxSlices: optionalKey(record, 'maxSlices', MAX_SLICES, positiveInteger),
+    prReview: optionalKey(record, 'prReview', DEFAULT_PR_REVIEW_LEVEL, prReviewSetting),
   });
+}
+
+/**
+ * An optional key, parsed when present.
+ *
+ * @param record - The object.
+ * @param key - The key, also its name in a usage message.
+ * @param fallback - Its value when absent.
+ * @param parse - Its parser, handed the value and the key.
+ * @returns `fallback` when the key is absent (or `undefined`); otherwise
+ *   what `parse` returns.
+ * @throws {@link ArgsError}when present and `parse` refuses it.
+ */
+function optionalKey<T>(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  fallback: T,
+  parse: (value: unknown, what: string) => T,
+): T {
+  const value = record[key];
+  return value === undefined ? fallback : parse(value, key);
 }
 
 /**
@@ -206,6 +242,25 @@ function positiveInteger(value: unknown, what: string): number {
     throw new ArgsError(`${what}: '${String(value)}' is not a positive integer`);
   }
   return n;
+}
+
+/** The PR review settings, as given; compared case-sensitively. */
+const PR_REVIEW_SETTINGS: readonly PrReviewSetting[] = ['off', 'xhigh', 'max'];
+
+/**
+ * A PR review setting.
+ *
+ * @param value - The value.
+ * @param what - What it is, for the message.
+ * @returns The setting.
+ * @throws {@link ArgsError}when it is not exactly `off`, `xhigh` or `max`.
+ */
+function prReviewSetting(value: unknown, what: string): PrReviewSetting {
+  const setting = PR_REVIEW_SETTINGS.find((s) => s === value);
+  if (setting === undefined) {
+    throw new ArgsError(`${what}: '${String(value)}' is not off, xhigh or max`);
+  }
+  return setting;
 }
 
 /**

@@ -18,7 +18,7 @@
  */
 
 import { runCaptured } from './exec.js';
-import { assertMainWorktree, fetchOrigin, lsRemoteRef } from './git.js';
+import { assertMainWorktree, fetchOrigin, knownCommit, lsRemoteRef } from './git.js';
 import { RUN_BASE_BRANCH } from './run-layout.js';
 import type { CheckMasterResult, MasterMove } from './types-run.js';
 import { Refusal, recordFailure, StepFailure } from './types.js';
@@ -175,23 +175,6 @@ function knownPair(main: string, launch: string, current: string): [string, stri
   const from = knownCommit(main, launch);
   const to = knownCommit(main, current);
   return from === null || to === null ? null : [from, to];
-}
-
-/**
- * Resolve a sha to a commit the checkout holds.
- *
- * @param main - The main checkout.
- * @param sha - The sha; never read as an option.
- * @returns The full sha; `null` when no such commit is in the object store
- *   (the `^{commit}` peel is what makes an absent full sha fail).
- */
-function knownCommit(main: string, sha: string): string | null {
-  const r = runCaptured(
-    'git',
-    ['-C', main, 'rev-parse', '-q', '--verify', '--end-of-options', `${sha}^{commit}`],
-    { cwd: process.cwd() },
-  );
-  return r.exitCode === 0 ? r.stdout.trim() : null;
 }
 
 /**

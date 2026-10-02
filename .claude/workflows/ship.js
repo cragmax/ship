@@ -1,9 +1,9 @@
 export const meta = {
   name: 'ship',
   description:
-    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
+    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, authored, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic, then a PR review of each.',
   whenToUse:
-    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues in flight, start until settled, default 4); or the object { epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
+    'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), plus optional `--exclude` (drop failing or stale issues with their dependents instead of refusing), `--preflight-only` (stop after pre-flight), `--max-slices K` (most issues in flight, start until settled, default 4) and `--pr-review off|xhigh|max` (the level of the PR review each opened pull request gets after every epic end, default xhigh, each a nested Claude Code session — launching consents to one per opened PR; off runs none); or the object { epics | issues, exclude?, preflightOnly?, maxSlices?, prReview? }. Bare numbers are refused: when the user gives bare numbers, ask whether they are epics or issues — never choose. Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with `--max-slices 1`, its script unchanged or changed only in code after its last finished call; never resume any other run once its batch is cut — recover it by hand (ADR-0045 decision 10).',
   phases: [
     {
       title: 'Pre-flight',
@@ -18,6 +18,11 @@ export const meta = {
     {
       title: 'Epic end',
       detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    },
+    {
+      title: 'PR review',
+      detail:
+        "after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), then its one comment — the curator's, or the plain render when the curator fails (pr-comment); non-fatal; none under --pr-review off; a PR whose epic changed only markdown outside .claude/ skipped",
     },
   ],
 };
@@ -37,12 +42,16 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  curator: { agentType: 'curator', model: 'opus' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
+const DEFAULT_PR_REVIEW_LEVEL = 'xhigh';
+const PR_REVIEW_MODEL = 'opus';
+const PR_REVIEW_RUNNER_TIMEOUT_MS = 7_200_000;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -52,10 +61,19 @@ function reviewEffort(files) {
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
+const MARKDOWN_SUFFIX = '.md';
+const REVIEWED_DOCS_PREFIX = '.claude/';
+function isDocsOnly(files) {
+  return (
+    files.length > 0 &&
+    files.every((path) => path.endsWith(MARKDOWN_SUFFIX) && !path.startsWith(REVIEWED_DOCS_PREFIX))
+  );
+}
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
   epicEnd: 'Epic end',
+  prReview: 'PR review',
 };
 const SHIP_PHASES = [
   {
@@ -72,6 +90,15 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+  },
+  {
+    title: PHASE_TITLES.prReview,
+    detail:
+      'after every epic end, per opened pull request, one at a time in publish order: ' +
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
+      "then its one comment — the curator's, or the plain render when the curator fails " +
+      '(pr-comment); non-fatal; none under --pr-review off; ' +
+      'a PR whose epic changed only markdown outside .claude/ skipped',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -111,7 +138,7 @@ function reviewOptions(stage, detail, schema, files) {
   return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
-const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices'];
+const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'prReview'];
 class ArgsError extends Error {}
 function parseShipArgs(raw) {
   try {
@@ -121,7 +148,7 @@ function parseShipArgs(raw) {
     return {
       refusal: {
         kind: 'usage',
-        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K]`,
+        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--pr-review off|xhigh|max]`,
       },
     };
   }
@@ -142,7 +169,13 @@ function selectionWord(word) {
 }
 function parseTokens(tokens) {
   const numbers = [];
-  const args = { numbers, exclude: false, preflightOnly: false, maxSlices: MAX_SLICES };
+  const args = {
+    numbers,
+    exclude: false,
+    preflightOnly: false,
+    maxSlices: MAX_SLICES,
+    prReview: DEFAULT_PR_REVIEW_LEVEL,
+  };
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] ?? '';
     switch (token) {
@@ -154,6 +187,9 @@ function parseTokens(tokens) {
         break;
       case '--max-slices':
         args.maxSlices = positiveInteger(tokens[++i], '--max-slices');
+        break;
+      case '--pr-review':
+        args.prReview = prReviewSetting(tokens[++i], '--pr-review');
         break;
       default:
         numbers.push(...numberList(token));
@@ -180,11 +216,13 @@ function parseObject(raw) {
     numbers: list.map((n) => positiveInteger(n, selection)),
     exclude: flag(record, 'exclude'),
     preflightOnly: flag(record, 'preflightOnly'),
-    maxSlices:
-      record['maxSlices'] === undefined
-        ? MAX_SLICES
-        : positiveInteger(record['maxSlices'], 'maxSlices'),
+    maxSlices: optionalKey(record, 'maxSlices', MAX_SLICES, positiveInteger),
+    prReview: optionalKey(record, 'prReview', DEFAULT_PR_REVIEW_LEVEL, prReviewSetting),
   });
+}
+function optionalKey(record, key, fallback, parse) {
+  const value = record[key];
+  return value === undefined ? fallback : parse(value, key);
 }
 function parseJson(text) {
   try {
@@ -206,6 +244,14 @@ function positiveInteger(value, what) {
     throw new ArgsError(`${what}: '${String(value)}' is not a positive integer`);
   }
   return n;
+}
+const PR_REVIEW_SETTINGS = ['off', 'xhigh', 'max'];
+function prReviewSetting(value, what) {
+  const setting = PR_REVIEW_SETTINGS.find((s) => s === value);
+  if (setting === undefined) {
+    throw new ArgsError(`${what}: '${String(value)}' is not off, xhigh or max`);
+  }
+  return setting;
 }
 function flag(record, key) {
   const value = record[key];
@@ -611,6 +657,7 @@ const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
+      ...(values.timeoutMs === undefined ? [] : [`Timeout: ${String(values.timeoutMs)}`]),
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
   scout: (values) =>
@@ -691,6 +738,14 @@ const PROMPTS = {
       `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  curator: (values) =>
+    [
+      `PR: ${issueRef(values.pr)}`,
+      `Findings file: ${values.findingsPath}`,
+      `Result file: ${values.resultPath}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Comment file: ${values.commentPath}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1453,6 +1508,131 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'local', 'remote'],
   },
+  'pr-review': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: {
+        type: 'string',
+        enum: [
+          'reviewed',
+          'setup-failed',
+          'launch-failed',
+          'cap',
+          'exit-nonzero',
+          'unparseable',
+          'write-failed',
+        ],
+      },
+      durationMs: { type: 'integer' },
+      findingCount: { type: ['integer', 'null'] },
+      findingsFile: { type: ['string', 'null'] },
+      plainFile: { type: ['string', 'null'] },
+      resultFile: { type: ['string', 'null'] },
+    },
+    required: [
+      'status',
+      'errors',
+      'outcome',
+      'durationMs',
+      'findingCount',
+      'findingsFile',
+      'plainFile',
+      'resultFile',
+    ],
+  },
+  'pr-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'already-bumped',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      outcome: {
+        type: 'string',
+        enum: ['posted', 'unreadable', 'too-long', 'missing-findings', 'post-failed'],
+      },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'outcome', 'url'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1680,6 +1860,11 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['findings'],
   },
+  curator: {
+    type: 'object',
+    properties: { commentPath: { type: 'string' }, beforeMerge: { type: 'integer' } },
+    required: ['commentPath', 'beforeMerge'],
+  },
 };
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
@@ -1704,6 +1889,11 @@ const TOOL_COMMANDS = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'pr-review': [WORKTREE_CLI, 'pr-review'],
+  'pr-comment': [WORKTREE_CLI, 'pr-comment'],
+};
+const TOOL_TIMEOUTS_MS = {
+  'pr-review': PR_REVIEW_RUNNER_TIMEOUT_MS,
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1792,12 +1982,16 @@ const TOOL_SCHEMAS = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'pr-review': envelopeSchema('pr-review'),
+  'pr-comment': envelopeSchema('pr-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
+  const timeoutMs = TOOL_TIMEOUTS_MS[name];
   const prompt = PROMPTS.runner({
     argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(place.write === undefined ? {} : { write: place.write }),
   });
   const out = await hooks.agent(
@@ -2054,6 +2248,12 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  curator: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.curator(values),
+      agentOptions('curator', tag, AGENT_OUTPUT_SCHEMAS.curator),
+    ),
 };
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
@@ -2115,6 +2315,8 @@ function renderPrBody(input) {
     '',
     `Unattended run on \`${input.branch}\` — ${container}.`,
     '',
+    prReviewLine(input.prReview, input.docsOnly),
+    '',
     '## Issues',
     '',
     ...input.landed.flatMap(issueSection),
@@ -2137,6 +2339,11 @@ function renderPrBody(input) {
     ...section('Retro findings', retroLines(input.retro)),
   ].join('\n');
   return neutralText(body, closing);
+}
+function prReviewLine(setting, docsOnly) {
+  if (setting === 'off') return 'PR review: off';
+  if (docsOnly) return 'PR review: skipped (docs-only)';
+  return `PR review: pending (${setting})`;
 }
 function section(heading, lines) {
   return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
@@ -2271,7 +2478,7 @@ function bumpText(bump) {
 
 const CRITIC_TAG = 'critic';
 async function criticStep(input) {
-  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null };
+  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null, files: [] };
   const { hooks, entry } = input;
   const place = runPlace(entry.reportDir, CRITIC_TAG);
   const cut = await runTool(hooks, 'cut-slice', [entry.batch, '--critic'], place).catch(() => null);
@@ -2298,13 +2505,16 @@ async function criticInSlice(input, slice, base) {
   };
   const out = await AGENT_CALLS.critic(hooks, values, entry.tag);
   if (out === null) return criticNotRun('the critic returned nothing');
-  if (out.outcome === 'clean') return { outcome: 'clean', findings: out.findings, halt: null };
+  if (out.outcome === 'clean') {
+    return { outcome: 'clean', findings: out.findings, halt: null, files: [] };
+  }
   if (out.sha === '') {
     return {
       outcome: 'dropped',
       reason: 'the critic applied no commit',
       findings: out.findings,
       halt: null,
+      files: [],
     };
   }
   return criticLand(input, out, base);
@@ -2327,7 +2537,13 @@ async function criticLand(input, out, base) {
   const land = await runTool(hooks, 'land', argv, place).catch(() => null);
   const kind = classifyLanding(land);
   if (kind === 'committed' && typeof land?.commit === 'string') {
-    return { outcome: 'landed', commit: land.commit, findings: out.findings, halt: null };
+    return {
+      outcome: 'landed',
+      commit: land.commit,
+      findings: out.findings,
+      halt: null,
+      files: land.files ?? null,
+    };
   }
   const reason = envelopeProblem('land', land);
   return {
@@ -2335,6 +2551,7 @@ async function criticLand(input, out, base) {
     reason,
     findings: out.findings,
     halt: kind === 'halt' ? reason : null,
+    files: [],
   };
 }
 async function criticTornDown(input, slice, result) {
@@ -2345,7 +2562,7 @@ async function criticTornDown(input, slice, result) {
   return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
 }
 function criticNotRun(reason) {
-  return { outcome: 'not-run', reason, findings: [], halt: null };
+  return { outcome: 'not-run', reason, findings: [], halt: null, files: [] };
 }
 
 const NO_LAUNCH = 'no launch snapshot of master to check against';
@@ -2468,6 +2685,7 @@ async function epicEnd(input) {
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
+    ...(state.docsOnly === undefined ? {} : { docsOnly: state.docsOnly }),
   };
 }
 async function unshippedEpicEnd(input, outcome) {
@@ -2484,10 +2702,11 @@ async function unshippedEpicEnd(input, outcome) {
 async function shipSteps(input, state) {
   const { hooks, entry } = input;
   const critic = await criticStep(input);
-  const { halt, ...criticReport } = critic;
+  const { halt, files, ...criticReport } = critic;
   state.critic = criticReport;
   state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  state.docsOnly = epicDocsOnly(input.landed, files);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -2530,6 +2749,8 @@ async function openPr(input, found, checked) {
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    prReview: input.prReview,
+    docsOnly: found.state.docsOnly ?? false,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -2547,6 +2768,7 @@ async function openPr(input, found, checked) {
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
+  input.onPublished();
   return { outcome: 'pr', pr: pr.number };
 }
 function leaseTotals(landed) {
@@ -2555,6 +2777,11 @@ function leaseTotals(landed) {
       sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
     ),
   );
+}
+function epicDocsOnly(landed, criticFiles) {
+  const lists = [...landed.map((l) => l.files ?? null), criticFiles];
+  const named = lists.filter((list) => list !== null);
+  return named.length === lists.length && isDocsOnly(named.flat());
 }
 async function retroStep(input, report) {
   const { entry } = input;
@@ -2621,6 +2848,7 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     testReview: null,
     work: null,
     commit: null,
+    files: null,
   };
 }
 const AUTHOR_STAGES = [
@@ -2771,6 +2999,7 @@ async function landSlice(at) {
   if (event.kind === 'committed') {
     at.commit = out?.commit ?? null;
     at.committedAt = out?.at ?? null;
+    at.files = out?.files ?? null;
   }
   if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
@@ -2791,6 +3020,7 @@ async function endAttempt(at, primary) {
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
+    files: at.files,
     conflicts: at.conflicts,
     startedAt: at.startedAt,
     committedAt: at.committedAt,
@@ -2874,7 +3104,11 @@ async function drive(input) {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return input.entries.map((_entry, i) => entryReport(d, i));
+  return {
+    epics: input.entries.map((_entry, i) => entryReport(d, i)),
+    published: d.published,
+    landed: input.entries.map((_entry, i) => landedSlices(d, i)),
+  };
 }
 function newDrive(input) {
   const d = {
@@ -2892,6 +3126,7 @@ function newDrive(input) {
     residue: new Map(),
     ends: new Map(),
     repoLock: createCommitQueue(),
+    published: [],
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -2903,15 +3138,17 @@ function newDrive(input) {
       markHalting: () => {
         d.halting.add(i);
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
+      priorSlices: () => landedSlices(d, i),
     });
   });
   return d;
+}
+function landedSlices(d, i) {
+  return (d.landed.get(i) ?? []).map((l) => ({
+    issue: l.issue,
+    commit: l.commit,
+    plan: l.card.planPath,
+  }));
 }
 function flightKey(note) {
   return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
@@ -2950,7 +3187,7 @@ function settle(d, issue, ending) {
 function record(d, i, issue, ending, events) {
   const { work, commit } = ending;
   if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit, files: ending.files }]);
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
@@ -3044,6 +3281,10 @@ function endEpic(d, i) {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    prReview: d.input.prReview,
+    onPublished: () => {
+      d.published.push(i);
+    },
   }).catch((err) => ({
     epic: entry.epic,
     branch: entry.branch,
@@ -3496,6 +3737,318 @@ function spentTarget(run) {
   return { path: run.path };
 }
 
+const COMMENT_MAX_CHARS = 65_536;
+const COMMENT_NOTE =
+  "_Shortened to fit GitHub's comment size limit; the run's report directory holds every finding in full._";
+const COMMENT_INCOMPLETE = 'PR review did not complete: ';
+function plainReviewComment(input, limit = COMMENT_MAX_CHARS) {
+  const findings = input.findings.map((f) => ({
+    ...f,
+    summary: commentOneLine(f.summary),
+    failure_scenario: commentOneLine(f.failure_scenario),
+    verdict: f.verdict === null ? null : commentOneLine(f.verdict),
+  }));
+  const render = (caps) => commentLayout(input.level, findings, caps);
+  const full = render(null);
+  if (full.length <= limit) return full;
+  const longest = (key) => Math.max(0, ...findings.map((f) => f[key].length));
+  const scenarioCut = commentLargestFit(
+    longest('failure_scenario'),
+    (k) => render({ summary: null, scenario: k }),
+    limit,
+  );
+  if (scenarioCut !== null) return scenarioCut;
+  const summaryCut = commentLargestFit(
+    longest('summary'),
+    (k) => render({ summary: k, scenario: 0 }),
+    limit,
+  );
+  return summaryCut ?? render({ summary: 0, scenario: 0 });
+}
+function commentMissingRefs(body, findings) {
+  const left = new Map();
+  const missing = [];
+  for (const f of findings) {
+    const ref = commentFindingRef(f);
+    const count = left.get(ref) ?? body.split(ref).length - 1;
+    if (count === 0) missing.push(ref);
+    left.set(ref, Math.max(0, count - 1));
+  }
+  return missing;
+}
+function incompleteReviewComment(reason, limit = COMMENT_MAX_CHARS) {
+  const whole = `${COMMENT_INCOMPLETE}${reason}\n`;
+  if (whole.length <= limit) return whole;
+  const cap = Math.max(0, limit - COMMENT_INCOMPLETE.length - 2);
+  return `${COMMENT_INCOMPLETE}${commentCap(reason, cap)}\n`;
+}
+function commentLargestFit(longest, render, limit) {
+  let best = null;
+  let low = 0;
+  let high = longest;
+  while (low <= high) {
+    const cap = Math.floor((low + high) / 2);
+    const out = render(cap);
+    if (out.length <= limit) {
+      best = out;
+      low = cap + 1;
+    } else {
+      high = cap - 1;
+    }
+  }
+  return best;
+}
+function commentLayout(level, findings, caps) {
+  const head = `**PR review** (\`/code-review ${level}\`): ${commentCount(findings.length)}`;
+  if (findings.length === 0) return `${head}\n`;
+  const items = findings.flatMap((f, i) => commentItem(f, i + 1, caps));
+  const note = caps === null ? [] : ['', COMMENT_NOTE];
+  return `${[head, '', ...items, ...note].join('\n')}\n`;
+}
+function commentCount(n) {
+  if (n === 0) return 'no findings.';
+  return `${String(n)} finding${n === 1 ? '' : 's'}, in the review's order.`;
+}
+function commentItem(f, n, caps) {
+  const verdict = f.verdict === null ? '' : `**${f.verdict}** — `;
+  const summary = commentCap(f.summary, caps?.summary ?? null);
+  const scenario = commentCap(f.failure_scenario, caps?.scenario ?? null);
+  return [
+    `${String(n)}. ${commentFindingRef(f)} — ${verdict}${summary}`,
+    `    - Failure scenario: ${scenario}`,
+  ];
+}
+function commentFindingRef(f) {
+  return `\`${f.file}:${String(f.line)}\``;
+}
+function commentCap(text, cap) {
+  return cap === null || text.length <= cap ? text : `${text.slice(0, cap)}…`;
+}
+function commentOneLine(text) {
+  return text.replace(/\s+/gu, ' ').trim();
+}
+
+async function postPrComment(hooks, t, source) {
+  const file =
+    source.kind === 'incomplete'
+      ? `${t.reportDir}/pr-review-${String(t.pr)}-incomplete.md`
+      : source.file;
+  const write =
+    source.kind === 'incomplete'
+      ? { path: file, content: incompleteReviewComment(source.reason) }
+      : undefined;
+  const check = source.kind === 'curated' ? ['--findings-file', source.findingsFile] : [];
+  const argv = [t.main, '--pr', String(t.pr), '--body-file', file, ...check];
+  return runTool(hooks, 'pr-comment', argv, runPlace(t.reportDir, t.tag, write))
+    .then((out) => commentEnding(out, file))
+    .catch((err) =>
+      notPosted(
+        'no-verdict',
+        file,
+        `the pr-comment call threw: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+}
+function commentEnding(out, file) {
+  if (out === null) return notPosted('no-verdict', file, envelopeProblem('pr-comment', null));
+  const { outcome } = out;
+  if (outcome === undefined) {
+    return notPosted('no-verdict', file, `${envelopeProblem('pr-comment', out)} (no outcome)`);
+  }
+  if (outcome !== 'posted') {
+    return notPosted(outcome, file, out.errors?.[0]?.message ?? envelopeProblem('pr-comment', out));
+  }
+  return { outcome, url: out.url ?? null, file: null, reason: null };
+}
+function notPosted(outcome, file, reason) {
+  return { outcome, url: null, file, reason };
+}
+
+const CURATOR_NOT_RUN = {
+  outcome: 'not-run',
+  reason: null,
+  beforeMerge: null,
+};
+const CURATOR_REFUSALS = ['unreadable', 'too-long', 'missing-findings'];
+async function curateAndPost(hooks, t, files) {
+  const commentPath = `${t.reportDir}/pr-review-${String(t.pr)}-curated.md`;
+  const answer = await askCurator(hooks, t, files, commentPath);
+  if ('failed' in answer) return postPlain(hooks, t, files, answer.failed);
+  const comment = await postPrComment(hooks, t, {
+    kind: 'curated',
+    file: commentPath,
+    findingsFile: files.findingsFile,
+  });
+  if (curatorRefused(comment.outcome)) {
+    return postPlain(hooks, t, files, comment.reason ?? 'no reason named');
+  }
+  return {
+    curator: { outcome: 'curated', reason: null, beforeMerge: answer.beforeMerge },
+    comment,
+  };
+}
+function askCurator(hooks, t, files, commentPath) {
+  const values = {
+    pr: t.pr,
+    findingsPath: files.findingsFile,
+    resultPath: files.resultFile,
+    landed: t.landed,
+    commentPath,
+  };
+  return AGENT_CALLS.curator(hooks, values, t.tag)
+    .then(curatorAnswer)
+    .catch((err) => ({
+      failed: `the curator call threw: ${err instanceof Error ? err.message : String(err)}`,
+    }));
+}
+function curatorAnswer(out) {
+  if (out === null) return { failed: 'the curator returned nothing' };
+  if (typeof out.commentPath !== 'string') {
+    return { failed: "the curator's answer lacks commentPath" };
+  }
+  if (typeof out.beforeMerge !== 'number') {
+    return { failed: "the curator's answer lacks beforeMerge" };
+  }
+  return { beforeMerge: out.beforeMerge };
+}
+async function postPlain(hooks, t, files, reason) {
+  return {
+    curator: curatorFailed(reason),
+    comment: await postPrComment(hooks, t, { kind: 'plain', file: files.plainFile }),
+  };
+}
+function curatorRefused(outcome) {
+  return CURATOR_REFUSALS.includes(outcome);
+}
+function curatorFailed(reason) {
+  return { outcome: 'failed', reason, beforeMerge: null };
+}
+
+const DOCS_ONLY_REASON = 'docs-only: every file the epic changed is markdown outside .claude/';
+function reviewTargets(entries, driven) {
+  return driven.published.flatMap((i) => {
+    const entry = entries[i];
+    const report = driven.epics[i];
+    if (entry === undefined || report?.outcome !== 'pr' || report.pr === undefined) return [];
+    return [
+      {
+        pr: report.pr,
+        main: entry.main,
+        reportDir: entry.reportDir,
+        tag: entry.tag,
+        landed: driven.landed[i] ?? [],
+        docsOnly: report.docsOnly === true,
+      },
+    ];
+  });
+}
+async function runPrReviews(hooks, targets, setting) {
+  if (setting === 'off' || targets.length === 0) return [];
+  hooks.phase(PHASE_TITLES.prReview);
+  const reports = [];
+  for (const target of targets) {
+    if (target.docsOnly) {
+      reports.push(skippedReview(target, setting));
+      continue;
+    }
+    const { plainFile, resultFile, ...review } = await reviewPr(hooks, target, setting);
+    const { curator, comment } = await commentFor(hooks, target, review, plainFile, resultFile);
+    reports.push({ ...review, curator, comment });
+  }
+  return reports;
+}
+function skippedReview(t, level) {
+  return {
+    pr: t.pr,
+    level,
+    outcome: 'skipped',
+    reason: DOCS_ONLY_REASON,
+    durationMs: null,
+    findingCount: null,
+    findingsFile: null,
+    curator: CURATOR_NOT_RUN,
+    comment: null,
+  };
+}
+async function commentFor(hooks, target, review, plainFile, resultFile) {
+  const { findingsFile } = review;
+  if (
+    review.outcome === 'reviewed' &&
+    findingsFile !== null &&
+    plainFile !== null &&
+    resultFile !== null
+  ) {
+    return curateAndPost(hooks, target, { findingsFile, resultFile, plainFile });
+  }
+  const reason = review.reason ?? 'no reason named';
+  return {
+    curator: CURATOR_NOT_RUN,
+    comment: await postPrComment(hooks, target, { kind: 'incomplete', reason }),
+  };
+}
+async function reviewPr(hooks, t, level) {
+  const argv = [
+    t.main,
+    '--pr',
+    String(t.pr),
+    '--level',
+    level,
+    '--model',
+    PR_REVIEW_MODEL,
+    '--report-dir',
+    t.reportDir,
+  ];
+  const ending = await runTool(hooks, 'pr-review', argv, runPlace(t.reportDir, t.tag))
+    .then(reviewEnding)
+    .catch((err) =>
+      noVerdict(`the pr-review call threw: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  return { pr: t.pr, level, ...ending };
+}
+function reviewEnding(out) {
+  if (out === null) return noVerdict(envelopeProblem('pr-review', null));
+  const { outcome, durationMs, findingCount, findingsFile, plainFile, resultFile } = out;
+  const lacking = (field) => noVerdict(`${envelopeProblem('pr-review', out)} (no ${field})`);
+  if (outcome === undefined) return lacking('outcome');
+  if (durationMs === undefined) return lacking('durationMs');
+  if (outcome !== 'reviewed') {
+    const reason = out.errors?.[0]?.message ?? envelopeProblem('pr-review', out);
+    return {
+      outcome,
+      reason,
+      durationMs,
+      findingCount: null,
+      findingsFile: null,
+      plainFile: null,
+      resultFile: null,
+    };
+  }
+  if (typeof findingCount !== 'number') return lacking('findingCount');
+  if (typeof findingsFile !== 'string') return lacking('findingsFile');
+  if (typeof plainFile !== 'string') return lacking('plainFile');
+  if (typeof resultFile !== 'string') return lacking('resultFile');
+  return {
+    outcome,
+    reason: null,
+    durationMs,
+    findingCount,
+    findingsFile,
+    plainFile,
+    resultFile,
+  };
+}
+function noVerdict(reason) {
+  return {
+    outcome: 'no-verdict',
+    reason,
+    durationMs: null,
+    findingCount: null,
+    findingsFile: null,
+    plainFile: null,
+    resultFile: null,
+  };
+}
+
 async function runShip(hooks, rawArgs) {
   const parsed = parseShipArgs(rawArgs);
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
@@ -3516,12 +4069,14 @@ async function runShip(hooks, rawArgs) {
     };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, graph, {
+  const run = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
+    prReview: parsed.args.prReview,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
+  const prReviews = await runPrReviews(hooks, run.targets, parsed.args.prReview);
+  return { status: 'done', dropped: pre.dropped, overlap, epics: run.epics, cleanup, prReviews };
 }
 async function runEntries(hooks, graph, opts) {
   const cuts = [];
@@ -3533,16 +4088,19 @@ async function runEntries(hooks, graph, opts) {
     return cut !== undefined && 'setup' in cut ? [cut.setup] : [];
   });
   const driven =
-    setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
-  return cuts.map((c, k) => {
+    setups.length === 0
+      ? { epics: [], published: [], landed: [] }
+      : await drive({ hooks, graph: kept, entries: setups, ...opts });
+  const epics = cuts.map((c, k) => {
     if ('stopped' in c) {
       return {
         ...c.stopped,
         schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
       };
     }
-    return cutReport(c.setup, graph, k, driven, opts.overlap);
+    return cutReport(c.setup, graph, k, driven.epics, opts.overlap);
   });
+  return { epics, targets: reviewTargets(setups, driven) };
 }
 async function cutEntry(hooks, entry) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;

@@ -3,7 +3,9 @@
  * scheduler over every cut entry. It keeps the scheduler state, one
  * in-flight promise per issue (and per running epic end), and each entry's
  * halt state; it runs every action in the order the scheduler emits it, and
- * feeds each settled attempt's events in order.
+ * feeds each settled attempt's events in order. It ends with each entry's
+ * report and landed issues, and the entries that opened a PR
+ * ({@link DriveResult}).
  *
  * - `start` logs `start #N attempt K` and runs an attempt (`slice-chain.ts`),
  *   handing it the files the issue's last landing conflicted on; `requeue`
@@ -51,11 +53,13 @@ import type {
 } from '../../lib/run-scheduler.types.js';
 import type { RunGraph } from '../../lib/run-set.js';
 
+import type { PrReviewSetting } from './args.js';
 import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
 import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
+import type { PriorSlice } from './prompts.js';
 import {
   runAttempt,
   type AttemptEnding,
@@ -79,6 +83,25 @@ export interface DriveInput {
   readonly launch: MainSnapshot | null;
   /** The overlap edges pre-flight added, run-wide. */
   readonly overlap: OverlapRecord;
+  /** The launch's `--pr-review` setting, for each PR body. */
+  readonly prReview: PrReviewSetting;
+}
+
+/** What the drive loop ends with. */
+export interface DriveResult {
+  /** Each entry's report, in run-set order. */
+  readonly epics: EpicReport[];
+  /**
+   * The entries whose epic end opened a PR, as indices into
+   * {@link DriveInput.entries}, in publish order: each pushed by its epic
+   * end's `onPublished` (`epic-end.ts`), which owns the ordering.
+   */
+  readonly published: readonly number[];
+  /**
+   * Each entry's landed issues, `issue`, `commit` and `plan`, in landing
+   * order; indexed like `epics`.
+   */
+  readonly landed: readonly (readonly PriorSlice[])[];
 }
 
 /** A settled flight. */
@@ -108,6 +131,8 @@ interface Drive {
   readonly ends: Map<number, EpicReport>;
   /** The run's repo lock, shared by every epic end. */
   readonly repoLock: CommitQueue;
+  /** The entries whose epic end opened a PR, in publish order. */
+  readonly published: number[];
   epicEndEntered: boolean;
 }
 
@@ -115,9 +140,10 @@ interface Drive {
  * Drive every entry until each has ended.
  *
  * @param input - The graph, the entries and the cap.
- * @returns Resolves to each entry's report, in run-set order.
+ * @returns Resolves to each entry's report and landed issues, in run-set
+ *   order, and the entries that opened a PR, in publish order.
  */
-export async function drive(input: DriveInput): Promise<EpicReport[]> {
+export async function drive(input: DriveInput): Promise<DriveResult> {
   const d = newDrive(input);
   apply(d, createScheduler({ ...input.graph, maxSlices: input.maxSlices }));
   while (d.flights.size > 0) {
@@ -125,7 +151,11 @@ export async function drive(input: DriveInput): Promise<EpicReport[]> {
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
-  return input.entries.map((_entry, i) => entryReport(d, i));
+  return {
+    epics: input.entries.map((_entry, i) => entryReport(d, i)),
+    published: d.published,
+    landed: input.entries.map((_entry, i) => landedSlices(d, i)),
+  };
 }
 
 /**
@@ -150,6 +180,7 @@ function newDrive(input: DriveInput): Drive {
     residue: new Map(),
     ends: new Map(),
     repoLock: createCommitQueue(),
+    published: [],
     epicEndEntered: false,
   };
   input.entries.forEach((entry, i) => {
@@ -161,15 +192,26 @@ function newDrive(input: DriveInput): Drive {
       markHalting: () => {
         d.halting.add(i);
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
+      priorSlices: () => landedSlices(d, i),
     });
   });
   return d;
+}
+
+/**
+ * What an entry has landed so far, as a later stage is handed it.
+ *
+ * @param d - The loop state.
+ * @param i - The entry's index.
+ * @returns One `{ issue, commit, plan }` per landed issue, in landing order;
+ *   `plan` is its card's plan file.
+ */
+function landedSlices(d: Drive, i: number): PriorSlice[] {
+  return (d.landed.get(i) ?? []).map((l) => ({
+    issue: l.issue,
+    commit: l.commit,
+    plan: l.card.planPath,
+  }));
 }
 
 /**
@@ -248,7 +290,7 @@ function record(
 ): void {
   const { work, commit } = ending;
   if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit, files: ending.files }]);
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
@@ -395,6 +437,10 @@ function endEpic(d: Drive, i: number): void {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
+    prReview: d.input.prReview,
+    onPublished: () => {
+      d.published.push(i);
+    },
   }).catch(
     (err: unknown): EpicReport => ({
       epic: entry.epic,

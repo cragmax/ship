@@ -3,11 +3,16 @@
  * `agentType`, `model` and `effort` (ADR-0045), plus the run's tunables and
  * each workflow's phase titles. No other workflow source spells a tier:
  * each `agent()` call takes its options from {@link agentOptions} (a
- * `diffReview` or `reviewer` call from {@link reviewOptions}).
+ * `diffReview` or `reviewer` call from {@link reviewOptions}). The PR
+ * review's pins sit beside the table, not in it — its default level, its
+ * nested session's model and its runner timeout — because the PR review is a
+ * tooling command, not an `agent()` call (ADR-0045 decision 11).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
+
+import type { PrReviewLevel } from '../../worktree/types-run.js';
 
 import type { AgentOptions, Effort, JsonSchema, ModelAlias, WorkflowPhase } from './hooks.types.js';
 
@@ -35,7 +40,8 @@ export interface StageRow {
  * end's doc-index conflicts; `testReview` hardens the tests on the slice's
  * final shape; `critic` reviews the epic's landed slices together in a
  * slice of its own and may commit one fix; `retro` reads the entry's
- * reports and names what the run should learn.
+ * reports and names what the run should learn; `curator` turns one reviewed
+ * PR's findings into its one comment.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -51,6 +57,7 @@ export const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  curator: { agentType: 'curator', model: 'opus' },
 } as const satisfies Readonly<Record<string, StageRow>>;
 
 /** A stage's key in {@link STAGES}. */
@@ -81,6 +88,30 @@ export const PLAN_PROBE_CAP_MINUTES = 5;
 /** The most plan-time probes one issue attempt's planner may run, its plan and apply modes together. */
 export const PLAN_PROBES_PER_ISSUE = 2;
 
+/**
+ * The PR review's level when the launch gives no `--pr-review` (#1101
+ * decision 4): `xhigh`, which found the four most severe of `max`'s
+ * findings (PF-57).
+ */
+export const DEFAULT_PR_REVIEW_LEVEL: PrReviewLevel = 'xhigh';
+
+/**
+ * The model the PR review's nested session runs, passed as `pr-review`'s
+ * `--model` (#1101 decision 6): pinned, since an unpinned nested session
+ * takes the CLI's default model (PF-58).
+ */
+export const PR_REVIEW_MODEL: ModelAlias = 'opus';
+
+/**
+ * The Bash `timeout` the runner gives the `pr-review` command, in
+ * milliseconds: the tool's 120-minute maximum (#1106). Without it the
+ * 30-minute default kills the runner's wrapper shell, orphaning the nested
+ * session and writing no exit code (PF-59). The review's own cap,
+ * `PR_REVIEW_CAP_MS` (`tooling/worktree/exec.ts`), must stay below this
+ * value; its TSDoc owns why.
+ */
+export const PR_REVIEW_RUNNER_TIMEOUT_MS = 7_200_000;
+
 /** The paths whose change is not a trivial surface: code, tooling, tests and evals. */
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'evals/'];
 
@@ -110,11 +141,34 @@ export function isTrivialSurface(files: readonly string[]): boolean {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
 
+/** The suffix of a markdown path. */
+const MARKDOWN_SUFFIX = '.md';
+
+/** The directory whose markdown the PR review never skips: agent files, skills, rules. */
+const REVIEWED_DOCS_PREFIX = '.claude/';
+
+/**
+ * Whether an epic's changes are docs only, so the PR review skips its PR
+ * (ADR-0045 decision 11). Narrower than {@link isTrivialSurface}: markdown
+ * under `.claude/` — agent files, skills, rules — is reviewed.
+ *
+ * @param files - Every path the epic changed, repository-relative and `/`-separated.
+ * @returns `true` when there is at least one path, every path ends `.md`
+ *   (case-sensitive) and none starts `.claude/`; `false` for an empty list.
+ */
+export function isDocsOnly(files: readonly string[]): boolean {
+  return (
+    files.length > 0 &&
+    files.every((path) => path.endsWith(MARKDOWN_SUFFIX) && !path.startsWith(REVIEWED_DOCS_PREFIX))
+  );
+}
+
 /** The titles `phase()` is called with. */
 export const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
   epicEnd: 'Epic end',
+  prReview: 'PR review',
 } as const;
 
 /** The workflow's phases, in run order (`meta.phases`). */
@@ -133,6 +187,15 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.epicEnd,
     detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+  },
+  {
+    title: PHASE_TITLES.prReview,
+    detail:
+      'after every epic end, per opened pull request, one at a time in publish order: ' +
+      'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
+      "then its one comment — the curator's, or the plain render when the curator fails " +
+      '(pr-comment); non-fatal; none under --pr-review off; ' +
+      'a PR whose epic changed only markdown outside .claude/ skipped',
   },
 ];
 

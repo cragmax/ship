@@ -54,6 +54,12 @@ export interface RunnerValues {
   readonly envelopeDir: string;
   /** The envelope's file-name stem, `[a-z0-9-]` only: `<name>.json`, `.err` and `.exit`. */
   readonly envelopeName: string;
+  /**
+   * The Bash `timeout` the runner gives the backgrounded command, in
+   * milliseconds; absent, the prompt carries no `Timeout:` line and the
+   * runner passes none (the Bash default).
+   */
+  readonly timeoutMs?: number;
   /** A file the command reads, written before it runs. */
   readonly write?: FileToWrite;
 }
@@ -220,6 +226,20 @@ export interface RetroValues {
   readonly report: unknown;
 }
 
+/** The curator's values: one reviewed PR's findings, and the plans of what it landed. */
+export interface CuratorValues {
+  /** The PR. */
+  readonly pr: number;
+  /** The review's findings file. */
+  readonly findingsPath: string;
+  /** The review skill's full result text. */
+  readonly resultPath: string;
+  /** Each issue the PR landed: its commit and plan file, in landing order. */
+  readonly landed: readonly PriorSlice[];
+  /** Where the comment goes. */
+  readonly commentPath: string;
+}
+
 /** The doc-index resolver's values. */
 export interface ResolverValues {
   /** The batch worktree, its `origin/master` merge in progress. */
@@ -353,6 +373,7 @@ export const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
+      ...(values.timeoutMs === undefined ? [] : [`Timeout: ${String(values.timeoutMs)}`]),
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
   scout: (values: ScoutValues): string =>
@@ -434,6 +455,14 @@ export const PROMPTS = {
       `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  curator: (values: CuratorValues): string =>
+    [
+      `PR: ${issueRef(values.pr)}`,
+      `Findings file: ${values.findingsPath}`,
+      `Result file: ${values.resultPath}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Comment file: ${values.commentPath}`,
     ].join('\n'),
 };
 

@@ -1,8 +1,9 @@
 /**
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
- * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish`. The canonical home
+ * `cut-slice`, `preflight` and `land` — of its epic-end commands:
+ * `sync-master`, `bump`, `check-master` and `publish` — of `pr-review`,
+ * with the findings file it writes, and of `pr-comment`. The canonical home
  * of their shapes; `types-run.ts` exports each as its `z.infer`. The base
  * fields, path spelling and integer rule are `schemas.ts`'s. A field that
  * names something the command creates or measures stays `null` until it
@@ -260,4 +261,112 @@ export const CheckMasterResultSchema = ResultBaseSchema.extend({
   local: MasterMoveSchema.nullable(),
   /** `origin`'s `refs/heads/master`, read with `git ls-remote`; `null` until checked. */
   remote: MasterMoveSchema.nullable(),
+});
+
+/** The `/code-review` effort level `pr-review` runs at. */
+export const PrReviewLevelSchema = z.enum(['xhigh', 'max']);
+
+/**
+ * How `pr-review` ended: `reviewed`, the one `ok` outcome, or the outcome of
+ * the phase that failed (`pr-review.ts` maps each) — `cap` when the session
+ * ran past its cap and its process tree was killed.
+ */
+export const PrReviewOutcomeSchema = z.enum([
+  'reviewed',
+  'setup-failed',
+  'launch-failed',
+  'cap',
+  'exit-nonzero',
+  'unparseable',
+  'write-failed',
+]);
+
+/** One finding of a review, as the findings file carries it. */
+export const ReviewFindingSchema = z.object({
+  /** Repository-relative, as the reviewer named it. */
+  file: z.string(),
+  line: z.int().nonnegative(),
+  summary: z.string(),
+  failure_scenario: z.string(),
+  /** The `ReportFindings` verdict (`CONFIRMED`, `PLAUSIBLE`, …), as given; `null` without a matching entry. */
+  verdict: z.string().nullable(),
+  /** The `ReportFindings` category, as given; `null` without a matching entry. */
+  category: z.string().nullable(),
+});
+
+/** The findings file `pr-review` writes: `<report-dir>/pr-review-<N>-findings.json`. */
+export const ReviewFindingsFileSchema = z.object({
+  pr: z.int(),
+  level: PrReviewLevelSchema,
+  model: z.string(),
+  /** The PR's base commit the review diffed from. */
+  base: z.string(),
+  /** The PR's head commit the review diffed to, and the clone's checkout. */
+  head: z.string(),
+  /** A top-level `ReportFindings` call was read from the stream. */
+  reportFindings: z.boolean(),
+  /** In the order the findings block lists them. */
+  findings: z.array(ReviewFindingSchema),
+});
+
+/**
+ * Envelope of `pr-review <checkout> --pr N --level (xhigh|max) --model M --report-dir DIR`;
+ * `worktree` is the checkout. A failure's reason is `errors[0].message`.
+ */
+export const PrReviewResultSchema = ResultBaseSchema.extend({
+  pr: z.int(),
+  level: PrReviewLevelSchema,
+  model: z.string(),
+  outcome: PrReviewOutcomeSchema,
+  /** The PR's base commit as `gh` named it; `null` before it answered. */
+  base: z.string().nullable(),
+  /** The PR's head commit as `gh` named it; `null` before it answered. */
+  head: z.string().nullable(),
+  /** The throwaway clone, `<temp root>/clone`; `null` before the temp root exists. */
+  clone: z.string().nullable(),
+  /** `false` only when a temp root was made and still exists after cleanup. */
+  cloneRemoved: z.boolean(),
+  /**
+   * The session's exit code; `null` when it never started, ended by a
+   * signal, or was killed at the cap.
+   */
+  exitCode: z.int().nullable(),
+  /** Wallclock from the command's start to after its cleanup. */
+  durationMs: z.int().nonnegative(),
+  /** How many findings the review wrote; `null` unless `reviewed`. */
+  findingCount: z.int().nonnegative().nullable(),
+  /** The findings file; `null` unless `reviewed`. */
+  findingsFile: z.string().nullable(),
+  /** The `/code-review` result text, verbatim; `null` unless `reviewed`. */
+  resultFile: z.string().nullable(),
+  /** `pr-review-<N>-plain.md`, the plain render of the findings; `null` unless `reviewed`. */
+  plainFile: z.string().nullable(),
+});
+
+/**
+ * How `pr-comment` ended: `posted`, the one `ok` outcome, or the step that
+ * stopped it — `unreadable` (read), `too-long` (size), `missing-findings`
+ * (check), `post-failed` (post).
+ */
+export const PrCommentOutcomeSchema = z.enum([
+  'posted',
+  'unreadable',
+  'too-long',
+  'missing-findings',
+  'post-failed',
+]);
+
+/**
+ * Envelope of `pr-comment <checkout> --pr N --body-file F [--findings-file J]`;
+ * `worktree` is the checkout. A failure's reason is `errors[0].message`.
+ */
+export const PrCommentResultSchema = ResultBaseSchema.extend({
+  pr: z.int(),
+  /** The comment file, as given; never removed. */
+  file: z.string(),
+  outcome: PrCommentOutcomeSchema,
+  /** The file's length in UTF-16 code units; `null` when it could not be read. */
+  chars: z.int().nonnegative().nullable(),
+  /** The comment URL `gh` printed; `null` unless posted, or when it printed none. */
+  url: z.string().nullable(),
 });

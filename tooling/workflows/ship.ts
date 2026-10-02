@@ -16,6 +16,10 @@
  * graph and cited `see`), drives the scheduler over the rest
  * (`lib/drive.ts`), and returns the run report.
  *
+ * **PR review**: once `drive` has returned, each PR the drive opened is
+ * reviewed and gets one comment (`lib/pr-review-phase.ts` owns the phase's
+ * contract).
+ *
  * The epic end never tears down its own batch: while its PR is open, that
  * worktree is how `live-runs` — and so the next launch's collision check —
  * sees the run.
@@ -32,7 +36,7 @@
 import type { RunGraph, RunSetEntry } from '../lib/run-set.js';
 
 import { parseShipArgs } from './lib/args.js';
-import { drive, neverStarted, type DriveInput } from './lib/drive.js';
+import { drive, neverStarted, type DriveInput, type DriveResult } from './lib/drive.js';
 import type { EpicReport, IssueReport } from './lib/epic-end.js';
 import type { WorkflowHooks } from './lib/hooks.types.js';
 import {
@@ -44,6 +48,12 @@ import {
 } from './lib/preflight.js';
 import type { EntrySetup } from './lib/slice-chain.js';
 import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
+import {
+  reviewTargets,
+  runPrReviews,
+  type PrReviewReport,
+  type ReviewTarget,
+} from './lib/pr-review-phase.js';
 import { PHASE_TITLES } from './lib/stages.js';
 import { envelopeProblem, PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
 
@@ -69,6 +79,13 @@ export interface ShipReport {
    * `refused` by its `source-shrank` stop.
    */
   readonly cleanup?: CleanupReport;
+  /**
+   * Each opened PR's review — or its docs-only skip — its curator's part and
+   * its one comment (`null` when skipped), in review (publish) order;
+   * present only when `done`, and `[]` under
+   * `--pr-review off` or when no entry opened a PR.
+   */
+  readonly prReviews?: readonly PrReviewReport[];
 }
 
 /** An entry's cut: its setup, or the report of a cut that failed and the issues it loses. */
@@ -103,12 +120,14 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
     };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, graph, {
+  const run = await runEntries(hooks, graph, {
     maxSlices: parsed.args.maxSlices,
     launch: pre.main,
     overlap,
+    prReview: parsed.args.prReview,
   });
-  return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
+  const prReviews = await runPrReviews(hooks, run.targets, parsed.args.prReview);
+  return { status: 'done', dropped: pre.dropped, overlap, epics: run.epics, cleanup, prReviews };
 }
 
 /**
@@ -119,14 +138,16 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
  *
  * @param hooks - The workflow hooks.
  * @param graph - Pre-flight's graph, overlap edges merged.
- * @param opts - The in-flight cap, the launch snapshot and the overlap record.
- * @returns Resolves to every entry's report, in run-set order.
+ * @param opts - The in-flight cap, the launch snapshot, the overlap record
+ *   and the `--pr-review` setting.
+ * @returns Resolves to every entry's report, in run-set order, and the PRs
+ *   the drive opened, in publish order.
  */
 async function runEntries(
   hooks: WorkflowHooks,
   graph: RunGraph,
-  opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap'>,
-): Promise<EpicReport[]> {
+  opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap' | 'prReview'>,
+): Promise<{ readonly epics: EpicReport[]; readonly targets: ReviewTarget[] }> {
   const cuts: EntryCut[] = [];
   for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
@@ -135,17 +156,20 @@ async function runEntries(
     const cut = cuts.find((c) => 'setup' in c && c.setup.epic === entry.epic);
     return cut !== undefined && 'setup' in cut ? [cut.setup] : [];
   });
-  const driven =
-    setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
-  return cuts.map((c, k) => {
+  const driven: DriveResult =
+    setups.length === 0
+      ? { epics: [], published: [], landed: [] }
+      : await drive({ hooks, graph: kept, entries: setups, ...opts });
+  const epics = cuts.map((c, k) => {
     if ('stopped' in c) {
       return {
         ...c.stopped,
         schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
       };
     }
-    return cutReport(c.setup, graph, k, driven, opts.overlap);
+    return cutReport(c.setup, graph, k, driven.epics, opts.overlap);
   });
+  return { epics, targets: reviewTargets(setups, driven) };
 }
 
 /**

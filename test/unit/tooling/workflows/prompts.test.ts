@@ -20,6 +20,7 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
       argv: ['tooling/worktree.ts', 'check', '7'],
       envelopeDir: `${REPORTS}/tool`,
       envelopeName: 'check',
+      timeoutMs: 7200000,
       write: { path: `${REPORTS}/in.json`, content: 'Not a key: inside the file\n' },
     }),
   ],
@@ -129,6 +130,15 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
     }),
   ],
   retro: [PROMPTS.retro({ epic: 1025, reportDir: REPORTS, report: { outcome: 'pr' } })],
+  curator: [
+    PROMPTS.curator({
+      pr: 42,
+      findingsPath: `${REPORTS}/pr-review-42-findings.json`,
+      resultPath: `${REPORTS}/pr-review-42-result.md`,
+      landed: [{ issue: 7, commit: 'c7', plan: `${REPORTS}/plans/7.md` }],
+      commentPath: `${REPORTS}/pr-review-42-curated.md`,
+    }),
+  ],
 };
 
 const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType))];

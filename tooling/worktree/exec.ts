@@ -8,7 +8,10 @@
  * tool steps: the CLI owns them, and the workflow that calls it sets none
  * of its own. Every spawn that can outlast local git plumbing — a network
  * call, an install, a build, a hooked commit — names its constant here; the
- * local `git` plumbing (`git.ts`) runs under the default.
+ * local `git` plumbing (`git.ts`) runs under the default. `pr-review`'s
+ * review session is the one async spawn. Its budget, {@link PR_REVIEW_CAP_MS},
+ * ends in a process-tree kill (`pr-review-session.ts`), not in execa's
+ * `timeout`.
  *
  * A budget kill is `execaSync`'s `timeout`. On Windows (#1048; Windows 11,
  * Node 24, Git for Windows 2.55) it reaches only the direct child, and its
@@ -64,6 +67,16 @@ export const GH_TIMEOUT_MS = 120_000;
 /** Budget for one `git push` whose pre-push hook runs the full gate. */
 export const PUSH_TIMEOUT_MS = 2_700_000;
 
+/**
+ * The wall-clock cap on `pr-review`'s nested review session, timed from its
+ * spawn (`pr-review-session.ts`): 100 minutes. #1106 set the value: 20
+ * minutes below the 120-minute Bash `timeout` the runner gives the command
+ * (`PR_REVIEW_RUNNER_TIMEOUT_MS`, `tooling/workflows/lib/stages.ts`), so the
+ * cap's process-tree kill fires before Bash's kill, which orphans the
+ * session (PF-59). The setup steps before the spawn keep their own budgets.
+ */
+export const PR_REVIEW_CAP_MS = 6_000_000;
+
 /** Budget for any child without an explicit one. */
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -102,8 +115,31 @@ export interface CaptureOptions {
  * @param text - Captured output.
  * @returns The trailing lines, joined with `\n`.
  */
-function lastLines(text: string): string {
+export function lastLines(text: string): string {
   return text.split(/\r?\n/u).slice(-TAIL_LINES).join('\n');
+}
+
+/**
+ * A child's environment: this process's, minus every variable whose name
+ * starts with one of `dropPrefixes` (case-sensitive), with `overlay` laid
+ * over it.
+ *
+ * @param dropPrefixes - Name prefixes to drop, e.g. `GIT_`.
+ * @param overlay - Variables set after the drop; it is not filtered.
+ * @returns The environment, for execa's `env` with `extendEnv: false`.
+ */
+export function childEnv(
+  dropPrefixes: readonly string[],
+  overlay: Readonly<Record<string, string>> = {},
+): Record<string, string | undefined> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => !dropPrefixes.some((prefix) => key.startsWith(prefix)),
+      ),
+    ),
+    ...overlay,
+  };
 }
 
 /**
@@ -131,13 +167,9 @@ export function runCaptured(
   args: readonly string[],
   options: CaptureOptions,
 ): Captured {
-  const env = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-    ...options.env,
-  };
   const r = execaSync(file, args, {
     cwd: options.cwd,
-    env,
+    env: childEnv(['GIT_'], options.env),
     extendEnv: false,
     all: true,
     reject: false,
