@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { createScheduler } from '../../../../tooling/lib/run-scheduler.js';
 import { dropWithDependents } from '../../../../tooling/workflows/lib/preflight.js';
-import { isTrivialSurface, reviewEffort } from '../../../../tooling/workflows/lib/stages.js';
+import {
+  isDocsOnly,
+  isTrivialSurface,
+  reviewEffort,
+} from '../../../../tooling/workflows/lib/stages.js';
 
 describe('reviewEffort', () => {
   it.each([
@@ -35,6 +39,35 @@ describe('isTrivialSurface', () => {
     ['an evals/ file', ['evals/run.ts'], false],
   ])('judges %s', (_name, files, trivial) => {
     expect(isTrivialSurface(files)).toBe(trivial);
+  });
+});
+
+describe('isDocsOnly', () => {
+  it.each([
+    [
+      'markdown under docs/',
+      ['docs/adr/0045-unattended-runs.md', 'docs/platform-facts/claude-code-headless.md'],
+      true,
+    ],
+    ['markdown at the root', ['README.md', 'CONTEXT.md'], true],
+    ['markdown under docs/ and at the root', ['CHANGELOG.md', 'docs/adr/readme.md'], true],
+    ['a path merely starting with .claude', ['.claudex/notes.md'], true],
+    ['a .claude/ directory below the root', ['docs/.claude/notes.md'], true],
+    ['an agent file among docs', ['docs/a.md', '.claude/agents/curator.md'], false],
+    ['a rule', ['.claude/rules/git.md'], false],
+    ['a skill', ['.claude/skills/tdd/SKILL.md'], false],
+    ['a non-markdown file among docs', ['docs/a.md', 'package.json'], false],
+    ['a path merely ending md', ['docs/a.mdx'], false],
+    ['an upper-case extension', ['NOTES.MD'], false],
+    ['no file', [], false],
+  ])('judges %s', (_name, files, docsOnly) => {
+    expect(isDocsOnly(files)).toBe(docsOnly);
+  });
+
+  it('skips less than isTrivialSurface: docs and agent files are trivial, not docs-only', () => {
+    const files = ['docs/adr/0045-x.md', '.claude/agents/planner.md', 'README.md'];
+
+    expect([isTrivialSurface(files), isDocsOnly(files)]).toEqual([true, false]);
   });
 });
 

@@ -141,6 +141,28 @@ export function isTrivialSurface(files: readonly string[]): boolean {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
 
+/** The suffix of a markdown path. */
+const MARKDOWN_SUFFIX = '.md';
+
+/** The directory whose markdown the PR review never skips: agent files, skills, rules. */
+const REVIEWED_DOCS_PREFIX = '.claude/';
+
+/**
+ * Whether an epic's changes are docs only, so the PR review skips its PR
+ * (ADR-0045 decision 11). Narrower than {@link isTrivialSurface}: markdown
+ * under `.claude/` — agent files, skills, rules — is reviewed.
+ *
+ * @param files - Every path the epic changed, repository-relative and `/`-separated.
+ * @returns `true` when there is at least one path, every path ends `.md`
+ *   (case-sensitive) and none starts `.claude/`; `false` for an empty list.
+ */
+export function isDocsOnly(files: readonly string[]): boolean {
+  return (
+    files.length > 0 &&
+    files.every((path) => path.endsWith(MARKDOWN_SUFFIX) && !path.startsWith(REVIEWED_DOCS_PREFIX))
+  );
+}
+
 /** The titles `phase()` is called with. */
 export const PHASE_TITLES = {
   preflight: 'Pre-flight',
@@ -172,7 +194,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
       'after every epic end, per opened pull request, one at a time in publish order: ' +
       'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
       "then its one comment — the curator's, or the plain render when the curator fails " +
-      '(pr-comment); non-fatal; none under --pr-review off',
+      '(pr-comment); non-fatal; none under --pr-review off; ' +
+      'a PR whose epic changed only markdown outside .claude/ skipped',
   },
 ];
 

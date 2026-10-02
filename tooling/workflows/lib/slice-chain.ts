@@ -105,6 +105,11 @@ export interface AttemptEnding {
   readonly work: SliceWork | null;
   /** The batch commit; `null` unless it landed. */
   readonly commit: string | null;
+  /**
+   * The landed commit's changed paths (the `land` envelope's `files`); `null`
+   * unless it landed, or when its landing named none.
+   */
+  readonly files: readonly string[] | null;
   /** The files a conflicting landing named; `[]` unless the landing was a harvest conflict. */
   readonly conflicts: readonly string[];
   /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut answered with one. */
@@ -156,6 +161,7 @@ interface Attempt {
   testReview: TestReviewOutput | null;
   work: SliceWork | null;
   commit: string | null;
+  files: readonly string[] | null;
 }
 
 /** A stage: `null` to go on, or the event that ends the attempt. */
@@ -224,6 +230,7 @@ function newAttempt(
     testReview: null,
     work: null,
     commit: null,
+    files: null,
   };
 }
 
@@ -436,8 +443,8 @@ async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
 /**
  * Land the authored slice on the batch — run inside the commit queue.
  *
- * @param at - The attempt; gains `commit` and `committedAt` when it lands,
- *   `conflicts` when it conflicts.
+ * @param at - The attempt; gains `commit`, `committedAt` and `files` when it
+ *   lands, `conflicts` when it conflicts.
  * @returns Resolves to the landing's event (`commit-queue.ts`), or
  *   `epic-halt` without landing when the entry is halting.
  */
@@ -459,6 +466,7 @@ async function landSlice(at: Attempt): Promise<SchedulerEvent> {
   if (event.kind === 'committed') {
     at.commit = out?.commit ?? null;
     at.committedAt = out?.at ?? null;
+    at.files = out?.files ?? null;
   }
   if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
@@ -498,6 +506,7 @@ async function endAttempt(at: Attempt, primary: SchedulerEvent): Promise<Attempt
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
+    files: at.files,
     conflicts: at.conflicts,
     startedAt: at.startedAt,
     committedAt: at.committedAt,

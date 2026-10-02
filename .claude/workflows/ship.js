@@ -22,7 +22,7 @@ export const meta = {
     {
       title: 'PR review',
       detail:
-        "after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), then its one comment — the curator's, or the plain render when the curator fails (pr-comment); non-fatal; none under --pr-review off",
+        "after every epic end, per opened pull request, one at a time in publish order: the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), then its one comment — the curator's, or the plain render when the curator fails (pr-comment); non-fatal; none under --pr-review off; a PR whose epic changed only markdown outside .claude/ skipped",
     },
   ],
 };
@@ -61,6 +61,14 @@ function reviewEffort(files) {
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
+const MARKDOWN_SUFFIX = '.md';
+const REVIEWED_DOCS_PREFIX = '.claude/';
+function isDocsOnly(files) {
+  return (
+    files.length > 0 &&
+    files.every((path) => path.endsWith(MARKDOWN_SUFFIX) && !path.startsWith(REVIEWED_DOCS_PREFIX))
+  );
+}
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
@@ -89,7 +97,8 @@ const SHIP_PHASES = [
       'after every epic end, per opened pull request, one at a time in publish order: ' +
       'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
       "then its one comment — the curator's, or the plain render when the curator fails " +
-      '(pr-comment); non-fatal; none under --pr-review off',
+      '(pr-comment); non-fatal; none under --pr-review off; ' +
+      'a PR whose epic changed only markdown outside .claude/ skipped',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -2306,7 +2315,7 @@ function renderPrBody(input) {
     '',
     `Unattended run on \`${input.branch}\` — ${container}.`,
     '',
-    prReviewLine(input.prReview),
+    prReviewLine(input.prReview, input.docsOnly),
     '',
     '## Issues',
     '',
@@ -2331,8 +2340,10 @@ function renderPrBody(input) {
   ].join('\n');
   return neutralText(body, closing);
 }
-function prReviewLine(setting) {
-  return setting === 'off' ? 'PR review: off' : `PR review: pending (${setting})`;
+function prReviewLine(setting, docsOnly) {
+  if (setting === 'off') return 'PR review: off';
+  if (docsOnly) return 'PR review: skipped (docs-only)';
+  return `PR review: pending (${setting})`;
 }
 function section(heading, lines) {
   return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
@@ -2467,7 +2478,7 @@ function bumpText(bump) {
 
 const CRITIC_TAG = 'critic';
 async function criticStep(input) {
-  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null };
+  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null, files: [] };
   const { hooks, entry } = input;
   const place = runPlace(entry.reportDir, CRITIC_TAG);
   const cut = await runTool(hooks, 'cut-slice', [entry.batch, '--critic'], place).catch(() => null);
@@ -2494,13 +2505,16 @@ async function criticInSlice(input, slice, base) {
   };
   const out = await AGENT_CALLS.critic(hooks, values, entry.tag);
   if (out === null) return criticNotRun('the critic returned nothing');
-  if (out.outcome === 'clean') return { outcome: 'clean', findings: out.findings, halt: null };
+  if (out.outcome === 'clean') {
+    return { outcome: 'clean', findings: out.findings, halt: null, files: [] };
+  }
   if (out.sha === '') {
     return {
       outcome: 'dropped',
       reason: 'the critic applied no commit',
       findings: out.findings,
       halt: null,
+      files: [],
     };
   }
   return criticLand(input, out, base);
@@ -2523,7 +2537,13 @@ async function criticLand(input, out, base) {
   const land = await runTool(hooks, 'land', argv, place).catch(() => null);
   const kind = classifyLanding(land);
   if (kind === 'committed' && typeof land?.commit === 'string') {
-    return { outcome: 'landed', commit: land.commit, findings: out.findings, halt: null };
+    return {
+      outcome: 'landed',
+      commit: land.commit,
+      findings: out.findings,
+      halt: null,
+      files: land.files ?? null,
+    };
   }
   const reason = envelopeProblem('land', land);
   return {
@@ -2531,6 +2551,7 @@ async function criticLand(input, out, base) {
     reason,
     findings: out.findings,
     halt: kind === 'halt' ? reason : null,
+    files: [],
   };
 }
 async function criticTornDown(input, slice, result) {
@@ -2541,7 +2562,7 @@ async function criticTornDown(input, slice, result) {
   return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
 }
 function criticNotRun(reason) {
-  return { outcome: 'not-run', reason, findings: [], halt: null };
+  return { outcome: 'not-run', reason, findings: [], halt: null, files: [] };
 }
 
 const NO_LAUNCH = 'no launch snapshot of master to check against';
@@ -2664,6 +2685,7 @@ async function epicEnd(input) {
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
+    ...(state.docsOnly === undefined ? {} : { docsOnly: state.docsOnly }),
   };
 }
 async function unshippedEpicEnd(input, outcome) {
@@ -2680,10 +2702,11 @@ async function unshippedEpicEnd(input, outcome) {
 async function shipSteps(input, state) {
   const { hooks, entry } = input;
   const critic = await criticStep(input);
-  const { halt, ...criticReport } = critic;
+  const { halt, files, ...criticReport } = critic;
   state.critic = criticReport;
   state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  state.docsOnly = epicDocsOnly(input.landed, files);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -2727,6 +2750,7 @@ async function openPr(input, found, checked) {
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
     prReview: input.prReview,
+    docsOnly: found.state.docsOnly ?? false,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -2753,6 +2777,11 @@ function leaseTotals(landed) {
       sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
     ),
   );
+}
+function epicDocsOnly(landed, criticFiles) {
+  const lists = [...landed.map((l) => l.files ?? null), criticFiles];
+  const named = lists.filter((list) => list !== null);
+  return named.length === lists.length && isDocsOnly(named.flat());
 }
 async function retroStep(input, report) {
   const { entry } = input;
@@ -2819,6 +2848,7 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     testReview: null,
     work: null,
     commit: null,
+    files: null,
   };
 }
 const AUTHOR_STAGES = [
@@ -2969,6 +2999,7 @@ async function landSlice(at) {
   if (event.kind === 'committed') {
     at.commit = out?.commit ?? null;
     at.committedAt = out?.at ?? null;
+    at.files = out?.files ?? null;
   }
   if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
@@ -2989,6 +3020,7 @@ async function endAttempt(at, primary) {
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
+    files: at.files,
     conflicts: at.conflicts,
     startedAt: at.startedAt,
     committedAt: at.committedAt,
@@ -3155,7 +3187,7 @@ function settle(d, issue, ending) {
 function record(d, i, issue, ending, events) {
   const { work, commit } = ending;
   if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit, files: ending.files }]);
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
@@ -3892,6 +3924,7 @@ function curatorFailed(reason) {
   return { outcome: 'failed', reason, beforeMerge: null };
 }
 
+const DOCS_ONLY_REASON = 'docs-only: every file the epic changed is markdown outside .claude/';
 function reviewTargets(entries, driven) {
   return driven.published.flatMap((i) => {
     const entry = entries[i];
@@ -3904,6 +3937,7 @@ function reviewTargets(entries, driven) {
         reportDir: entry.reportDir,
         tag: entry.tag,
         landed: driven.landed[i] ?? [],
+        docsOnly: report.docsOnly === true,
       },
     ];
   });
@@ -3913,11 +3947,28 @@ async function runPrReviews(hooks, targets, setting) {
   hooks.phase(PHASE_TITLES.prReview);
   const reports = [];
   for (const target of targets) {
+    if (target.docsOnly) {
+      reports.push(skippedReview(target, setting));
+      continue;
+    }
     const { plainFile, resultFile, ...review } = await reviewPr(hooks, target, setting);
     const { curator, comment } = await commentFor(hooks, target, review, plainFile, resultFile);
     reports.push({ ...review, curator, comment });
   }
   return reports;
+}
+function skippedReview(t, level) {
+  return {
+    pr: t.pr,
+    level,
+    outcome: 'skipped',
+    reason: DOCS_ONLY_REASON,
+    durationMs: null,
+    findingCount: null,
+    findingsFile: null,
+    curator: CURATOR_NOT_RUN,
+    comment: null,
+  };
 }
 async function commentFor(hooks, target, review, plainFile, resultFile) {
   const { findingsFile } = review;

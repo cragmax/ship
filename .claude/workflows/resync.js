@@ -96,6 +96,14 @@ function reviewEffort(files) {
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
+const MARKDOWN_SUFFIX = '.md';
+const REVIEWED_DOCS_PREFIX = '.claude/';
+function isDocsOnly(files) {
+  return (
+    files.length > 0 &&
+    files.every((path) => path.endsWith(MARKDOWN_SUFFIX) && !path.startsWith(REVIEWED_DOCS_PREFIX))
+  );
+}
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
   issues: 'Issues',
@@ -124,7 +132,8 @@ const SHIP_PHASES = [
       'after every epic end, per opened pull request, one at a time in publish order: ' +
       'the built-in /code-review in a nested Opus session in a throwaway clone (pr-review), ' +
       "then its one comment — the curator's, or the plain render when the curator fails " +
-      '(pr-comment); non-fatal; none under --pr-review off',
+      '(pr-comment); non-fatal; none under --pr-review off; ' +
+      'a PR whose epic changed only markdown outside .claude/ skipped',
   },
 ];
 const RESYNC_PHASE_TITLES = {

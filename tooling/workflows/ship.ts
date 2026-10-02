@@ -80,8 +80,9 @@ export interface ShipReport {
    */
   readonly cleanup?: CleanupReport;
   /**
-   * Each opened PR's review, its curator's part and its one comment, in
-   * review (publish) order; present only when `done`, and `[]` under
+   * Each opened PR's review — or its docs-only skip — its curator's part and
+   * its one comment (`null` when skipped), in review (publish) order;
+   * present only when `done`, and `[]` under
    * `--pr-review off` or when no entry opened a PR.
    */
   readonly prReviews?: readonly PrReviewReport[];

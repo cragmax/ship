@@ -61,6 +61,7 @@ const work = (fields: {
 const SEVEN: LandedIssue = {
   issue: 7,
   commit: 'c7',
+  files: ['src/a.ts'],
   ...work({
     subject: 'add the x tool',
     closes: 'fixes',
@@ -75,6 +76,7 @@ const SEVEN: LandedIssue = {
 const EIGHT: LandedIssue = {
   issue: 8,
   commit: 'c8',
+  files: ['src/a.ts'],
   ...work({
     subject: 'wire y — fixes #12 in passing',
     closes: 'see',
@@ -94,6 +96,7 @@ const EIGHT: LandedIssue = {
 const ELEVEN: LandedIssue = {
   issue: 11,
   commit: 'c11',
+  files: ['src/a.ts'],
   ...work({
     subject: 'wait on a held lease',
     closes: 'fixes',
@@ -220,6 +223,7 @@ const INPUT: PrBodyInput = {
     },
   ],
   prReview: 'xhigh',
+  docsOnly: false,
 };
 
 /**
@@ -325,19 +329,24 @@ describe('renderPrBody', () => {
   });
 
   it.each([
-    ['max', 'PR review: pending (max)'],
-    ['off', 'PR review: off'],
-  ] as const)('says under --pr-review %s whether a PR review follows', (prReview, line) => {
-    const lines = renderPrBody({ ...INPUT, prReview }).split('\n');
+    ['max', false, 'PR review: pending (max)'],
+    ['off', false, 'PR review: off'],
+    ['xhigh', true, 'PR review: skipped (docs-only)'],
+    ['off', true, 'PR review: off'],
+  ] as const)(
+    'says under --pr-review %s, docs only %s, whether a PR review follows',
+    (prReview, docsOnly, line) => {
+      const lines = renderPrBody({ ...INPUT, prReview, docsOnly }).split('\n');
 
-    expect(lines.slice(lines.indexOf('## Summary') + 1, lines.indexOf('## Issues'))).toEqual([
-      '',
-      'Unattended run on `ship/epic-1025` — see #1025.',
-      '',
-      line,
-      '',
-    ]);
-  });
+      expect(lines.slice(lines.indexOf('## Summary') + 1, lines.indexOf('## Issues'))).toEqual([
+        '',
+        'Unattended run on `ship/epic-1025` — see #1025.',
+        '',
+        line,
+        '',
+      ]);
+    },
+  );
 
   it.each([
     ['touched', false, '- Main checkout: touched since pre-flight (HEAD or dirtiness changed)'],
@@ -481,6 +490,7 @@ describe('renderPrBody', () => {
         {
           issue: 11,
           commit: 'c11',
+          files: ['src/a.ts'],
           ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, testReview }),
         },
       ],
@@ -525,6 +535,7 @@ describe('renderPrBody', () => {
         {
           issue: 11,
           commit: 'c11',
+          files: ['src/a.ts'],
           ...work({
             subject: 'lease x',
             closes: 'fixes',
@@ -577,6 +588,7 @@ describe('renderPrBody', () => {
         {
           issue: 11,
           commit: 'c11',
+          files: ['src/a.ts'],
           ...work({ subject: 'probe x', closes: 'fixes', planProbes, probes }),
         },
       ],
@@ -598,6 +610,7 @@ describe('renderPrBody', () => {
         {
           issue: 11,
           commit: 'c11',
+          files: ['src/a.ts'],
           ...work({
             subject: 'probe x',
             closes: 'fixes',
@@ -622,6 +635,7 @@ describe('renderPrBody', () => {
           {
             issue: 11,
             commit: 'c11',
+            files: ['src/a.ts'],
             ...work({
               subject: 'review x',
               closes: 'fixes',

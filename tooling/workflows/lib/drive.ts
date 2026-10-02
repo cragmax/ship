@@ -290,7 +290,7 @@ function record(
 ): void {
   const { work, commit } = ending;
   if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit, files: ending.files }]);
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
