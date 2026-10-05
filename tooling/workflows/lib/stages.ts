@@ -35,7 +35,8 @@ export interface StageRow {
  * end's doc-index conflicts; `testReview` hardens the tests on the slice's
  * final shape; `critic` reviews the epic's landed slices together in a
  * slice of its own and may commit one fix; `retro` reads the entry's
- * reports and names what the run should learn.
+ * reports and names what the run should learn; `prWriter` reads the epic's
+ * net diff and writes the PR body's Summary and Merge Danger.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -51,6 +52,7 @@ export const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  prWriter: { agentType: 'pr-writer' },
 } as const satisfies Readonly<Record<string, StageRow>>;
 
 /** A stage's key in {@link STAGES}. */
@@ -132,7 +134,9 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    detail:
+      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'master check, pull request',
   },
 ];
 

@@ -80,6 +80,11 @@ describe('workflow agents', () => {
     expect(toolsOf('diff-reviewer')).toEqual(['Read', 'Glob', 'Grep', 'Bash', 'Write']);
   });
 
+  // Hand-written: the PR writer only reads; the workflow renders its answer (#1181).
+  it('pr-writer lists exactly Read, Glob, Grep and Bash in its tools', () => {
+    expect(toolsOf('pr-writer')).toEqual(['Read', 'Glob', 'Grep', 'Bash']);
+  });
+
   describe('the agents that write a file', () => {
     const writers = agentTypes.filter((agentType) => toolsOf(agentType).includes('Write'));
 
@@ -227,12 +232,35 @@ describe('workflow agents', () => {
     expect(section(agentText(agentType), heading)).toContain('`seconds`');
   });
 
+  // Its own bullet, not the section: the verdict bullet also names `PARTIAL` and `BLOCKED`.
+  it('ship-tdd returns its tracer evidence, both kinds, under its ## Report and return', () => {
+    const bullet =
+      section(agentText('ship-tdd'), '## Report and return')
+        .split('\n')
+        .find((l) => l.startsWith('- `evidence`')) ?? '';
+
+    expect(
+      [
+        '`tracer`',
+        '`none`',
+        '`test`',
+        '`pseudocode`',
+        '`red`',
+        '`green`',
+        '`reason`',
+        '`PARTIAL`',
+        '`BLOCKED`',
+      ].filter((token) => !bullet.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
       'diff-reviewer',
       'overlap-estimator',
       'planner',
+      'pr-writer',
       'retro',
       'reviewer',
       'runner',
@@ -280,6 +308,7 @@ describe('workflow agents', () => {
     ['overlap-estimator', '.claude/skills/batch-issues/areas.md'],
     ['reviewer', '.claude/skills/manifest-tsdoc/SKILL.md'],
     ['diff-reviewer', '.claude/skills/diff-review/SKILL.md'],
+    ['pr-writer', '.claude/skills/pr/SKILL.md'],
   ])('%s reads %s by repo path, not through the Skill tool', (agentType, path) => {
     const text = readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8');
 

@@ -77,6 +77,7 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  prWriter: { agentType: 'pr-writer' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -111,7 +112,9 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    detail:
+      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -198,6 +201,9 @@ function issueLines(issue, reportDir) {
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
+function epicLabel(epic) {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
 const PROMPTS = {
   runner: (values) =>
     [
@@ -281,9 +287,17 @@ const PROMPTS = {
     ].join('\n'),
   retro: (values) =>
     [
-      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  prWriter: (values) =>
+    [
+      `Epic: ${epicLabel(values.epic)}`,
+      `Batch worktree: ${values.batch}`,
+      `Diff range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1181,9 +1195,21 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
+      evidence: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['tracer', 'none'] },
+          test: { type: 'string' },
+          pseudocode: { type: 'string' },
+          red: { type: 'string' },
+          green: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
   },
   diffReview: {
     type: 'object',
@@ -1272,6 +1298,17 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
     },
     required: ['findings'],
+  },
+  prWriter: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      door: { type: 'string', enum: ['one-way', 'two-way'] },
+      doorNote: { type: 'string' },
+      blastRadius: { type: 'string' },
+      ramifications: { type: 'string' },
+    },
+    required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
   },
 };
 
@@ -1615,6 +1652,12 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  prWriter: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
+    ),
 };
 
 async function syncMasterStep(hooks, ctx) {

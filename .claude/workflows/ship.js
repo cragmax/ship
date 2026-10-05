@@ -17,7 +17,8 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+      detail:
+        'per epic: critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     },
   ],
 };
@@ -37,6 +38,7 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  prWriter: { agentType: 'pr-writer' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -71,7 +73,9 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    detail:
+      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -605,6 +609,9 @@ function issueLines(issue, reportDir) {
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
+function epicLabel(epic) {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
 const PROMPTS = {
   runner: (values) =>
     [
@@ -688,9 +695,17 @@ const PROMPTS = {
     ].join('\n'),
   retro: (values) =>
     [
-      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  prWriter: (values) =>
+    [
+      `Epic: ${epicLabel(values.epic)}`,
+      `Batch worktree: ${values.batch}`,
+      `Diff range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1588,9 +1603,21 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
+      evidence: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['tracer', 'none'] },
+          test: { type: 'string' },
+          pseudocode: { type: 'string' },
+          red: { type: 'string' },
+          green: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
   },
   diffReview: {
     type: 'object',
@@ -1679,6 +1706,17 @@ const AGENT_OUTPUT_SCHEMAS = {
       },
     },
     required: ['findings'],
+  },
+  prWriter: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      door: { type: 'string', enum: ['one-way', 'two-way'] },
+      doorNote: { type: 'string' },
+      blastRadius: { type: 'string' },
+      ramifications: { type: 'string' },
+    },
+    required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
   },
 };
 
@@ -2054,9 +2092,89 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  prWriter: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
+    ),
 };
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
+
+function evidenceBullet(issue, evidence) {
+  const ref = `#${String(issue)}`;
+  if (evidence.kind === 'none') {
+    const reason = oneLine(evidence.reason);
+    return [`- **${ref}** no red-green — ${reason === '' ? 'no reason given' : reason}`];
+  }
+  return tracerBullet(ref, evidence);
+}
+function tracerBullet(ref, evidence) {
+  const red = oneLine(evidence.red);
+  const green = oneLine(evidence.green);
+  if (evidence.test.trim() === '' || red === '' || green === '') {
+    return [`- **${ref}** evidence incomplete`];
+  }
+  return [
+    `- **${ref}** ${codeSpan(evidence.test)}`,
+    ...codeBlock(evidence.pseudocode),
+    `  **Before:** ${red}`,
+    `  **After:** ${green}`,
+  ];
+}
+function codeBlock(pseudocode) {
+  if (pseudocode.trim() === '') return [];
+  const fence = codeFence(pseudocode);
+  return [
+    `  ${fence}text`,
+    ...pseudocode
+      .trimEnd()
+      .split(/\r?\n/)
+      .map((line) => `  ${line}`),
+    `  ${fence}`,
+  ];
+}
+function codeFence(pseudocode) {
+  return '`'.repeat(Math.max(3, longestBacktickRun(pseudocode) + 1));
+}
+function codeSpan(text) {
+  const longest = longestBacktickRun(text);
+  if (longest === 0) return `\`${text}\``;
+  const delimiter = '`'.repeat(longest + 1);
+  return `${delimiter} ${text} ${delimiter}`;
+}
+function longestBacktickRun(text) {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+}
+function oneLine(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(' ');
+}
+
+function summaryLines(writer) {
+  if (writer === null) return ['Summary unavailable — the PR writer returned nothing'];
+  return textLines(writer.summary);
+}
+function mergeDangerLines(writer) {
+  if (writer === null) return ['Unavailable — the PR writer returned nothing'];
+  const note = textLines(writer.doorNote);
+  const ramifications = textLines(writer.ramifications);
+  return [
+    `**Door:** ${writer.door}`,
+    '',
+    ...(note.length === 0 ? [] : [...note, '']),
+    `**Blast Radius:** ${writer.blastRadius.trim()}`,
+    ...(ramifications.length === 0 ? [] : ['', ...ramifications]),
+  ];
+}
+function textLines(text) {
+  const trimmed = text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();
+  return trimmed === '' ? [] : trimmed.split(/\r?\n/);
+}
 
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
 const CLOSING_REFS = [
@@ -2106,22 +2224,31 @@ function sliceLeaseLines(work) {
   return roles;
 }
 function renderPrBody(input) {
-  const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
   const closing = new Set(
     input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
   );
   const body = [
-    '## Summary',
-    '',
-    `Unattended run on \`${input.branch}\` — ${container}.`,
-    '',
-    '## Issues',
+    ...section('Summary', summaryLines(input.writer)),
+    ...section(
+      'Evidence',
+      input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
+    ),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Issues', issueListLines(input)),
+    ...reportBlock(input),
+  ].join('\n');
+  return neutralText(body, closing);
+}
+function reportBlock(input) {
+  const report = runReportLines(input);
+  if (input.writer === null) return report;
+  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
+}
+function runReportLines(input) {
+  return [
+    '## Landed issues',
     '',
     ...input.landed.flatMap(issueSection),
-    '## Not landed',
-    '',
-    ...(input.unlanded.length === 0 ? ['None.'] : input.unlanded.map(unlandedLine)),
-    '',
     '## Epic end',
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
@@ -2135,8 +2262,24 @@ function renderPrBody(input) {
     ...section('Schedule', input.schedule.map(scheduleLine)),
     ...section('Lease timings', leaseLines(input.leases)),
     ...section('Retro findings', retroLines(input.retro)),
-  ].join('\n');
-  return neutralText(body, closing);
+  ];
+}
+function issueListLines(input) {
+  return [
+    epicLine(input.epic),
+    ...input.landed.map(landedLine),
+    ...input.unlanded.map(unlandedLine),
+  ];
+}
+function epicLine(epic) {
+  return epic === null ? '- An explicit issue list' : `- Epic: see #${String(epic)}`;
+}
+function landedLine(landed) {
+  const ref = `#${String(landed.issue)}`;
+  const subject = landed.card.commit.subject;
+  return landed.card.closes === 'fixes'
+    ? `- fixes ${ref} — ${subject}`
+    : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
 function section(heading, lines) {
   return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
@@ -2192,15 +2335,12 @@ function retroLines(retro) {
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 function issueSection(landed) {
-  const ref = `#${String(landed.issue)}`;
-  const cite =
-    landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
   const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
-    `- Issue: ${cite}, landed as ${landed.commit}`,
+    `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
@@ -2246,7 +2386,7 @@ function leaseText(timings) {
 }
 function unlandedLine(issue) {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
-  return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+  return `- see #${String(issue.issue)} — not landed: ${issue.outcome}${reason}`;
 }
 function masterCheckText(check) {
   return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
@@ -2494,7 +2634,14 @@ async function shipSteps(input, state) {
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+  await hooks.parallel([
+    async () => {
+      state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+    },
+    async () => {
+      state.writer = await prWriterStep(input, sync.upstream);
+    },
+  ]);
   return publishStep(input, { sync, bump, state });
 }
 async function publishStep(input, found) {
@@ -2530,6 +2677,7 @@ async function openPr(input, found, checked) {
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    writer: found.state.writer ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -2561,6 +2709,22 @@ async function retroStep(input, report) {
   const values = { epic: entry.epic, reportDir: entry.reportDir, report };
   const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
   return out?.findings ?? null;
+}
+async function prWriterStep(input, upstream) {
+  const { entry } = input;
+  const values = {
+    epic: entry.epic,
+    batch: entry.batch,
+    range: `${upstream ?? entry.base}...HEAD`,
+    landed: input.landed.map((l) => ({
+      issue: l.issue,
+      commit: l.commit,
+      plan: l.card.planPath,
+      subject: l.card.commit.subject,
+    })),
+    reportDir: entry.reportDir,
+  };
+  return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 function retroReport(input, published) {
   return {

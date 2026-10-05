@@ -57,7 +57,10 @@ export interface WorkflowHooks {
    * (#1035).
    */
   readonly agent: (prompt: string, options: AgentOptions) => Promise<unknown>;
-  /** Run thunks concurrently; a thunk that threw yields `null`. */
+  /**
+   * Run thunks concurrently; a thunk that threw yields `null`. That `null` is
+   * the runtime's documented behaviour; no run has observed it (#1181).
+   */
   readonly parallel: <T>(thunks: readonly (() => Promise<T>)[]) => Promise<(T | null)[]>;
   /** Run `step` over each item; the runtime schedules the calls, so their order is not fixed. */
   readonly pipeline: <T, R>(items: readonly T[], step: (item: T) => Promise<R>) => Promise<R[]>;

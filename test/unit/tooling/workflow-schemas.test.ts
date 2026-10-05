@@ -117,6 +117,7 @@ describe('consumed fields are required', () => {
       resolver: [],
       critic: [],
       retro: [],
+      prWriter: [],
     });
   });
 
@@ -130,6 +131,36 @@ describe('consumed fields are required', () => {
       expect(probe.required).toContain('seconds');
     },
   );
+
+  it('requires the tdd’s evidence: a kind of tracer or none and five strings', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('evidence');
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.properties.evidence).toEqual({
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['tracer', 'none'] },
+        test: { type: 'string' },
+        pseudocode: { type: 'string' },
+        red: { type: 'string' },
+        green: { type: 'string' },
+        reason: { type: 'string' },
+      },
+      required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+    });
+  });
+
+  it('requires the PR writer’s summary, door, door note, blast radius and ramifications', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.prWriter).toEqual({
+      type: 'object',
+      properties: {
+        summary: { type: 'string' },
+        door: { type: 'string', enum: ['one-way', 'two-way'] },
+        doorNote: { type: 'string' },
+        blastRadius: { type: 'string' },
+        ramifications: { type: 'string' },
+      },
+      required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
+    });
+  });
 });
 
 describe('the diff review’s output schema', () => {

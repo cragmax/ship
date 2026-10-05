@@ -286,6 +286,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
+      'prWriter:list',
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
@@ -1307,6 +1308,7 @@ describe('agent-call tiers', () => {
       testReview: { agentType: 'ship-test-review', model: 'opus' },
       critic: { agentType: 'critic' },
       retro: { agentType: 'retro', model: 'sonnet' },
+      prWriter: { agentType: 'pr-writer' },
     });
   });
 

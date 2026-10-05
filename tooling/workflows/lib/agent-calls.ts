@@ -26,12 +26,14 @@ import type {
   OverlapEstimateSchema,
   PlanCardSchema,
   PlanReviewSchema,
+  PrWriterOutputSchema,
   ProbeRecordSchema,
   ResolverOutputSchema,
   RetroFindingSchema,
   RetroOutputSchema,
   ReviewOutputSchema,
   ScoutVerdictSchema,
+  TddEvidenceSchema,
   TddOutputSchema,
   TestReviewOutputSchema,
 } from '../schemas/agent-outputs.js';
@@ -44,6 +46,7 @@ import {
   type OverlapValues,
   type PlannerValues,
   type PlanReviewerValues,
+  type PrWriterValues,
   type ResolverValues,
   type RetroValues,
   type ReviewerValues,
@@ -77,6 +80,9 @@ export type PlanReview = z.infer<typeof PlanReviewSchema>;
 
 /** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
+
+/** The tdd's evidence: its tracer test's red-green, or why it saw none. */
+export type TddEvidence = z.infer<typeof TddEvidenceSchema>;
 
 /** The tdd's answer. */
 export type TddOutput = z.infer<typeof TddOutputSchema>;
@@ -115,6 +121,9 @@ export type RetroFinding = z.infer<typeof RetroFindingSchema>;
 
 /** The retro's answer. */
 export type RetroOutput = z.infer<typeof RetroOutputSchema>;
+
+/** The PR writer's answer. */
+export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
 
 /** The doc-index resolver's answer. */
 export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
@@ -235,5 +244,11 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.retro(values),
       agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
+    ),
+  prWriter: (hooks: WorkflowHooks, values: PrWriterValues, tag: string) =>
+    askAgent<PrWriterOutput>(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };

@@ -1,11 +1,18 @@
 /**
  * The `ship` workflow's texts that land in git and on GitHub: each landed
- * issue's commit message, and each epic's pull request title and body.
+ * issue's commit message, and each epic's pull request title and body — the
+ * PR writer's Summary ({@link summaryLines}), the Evidence
+ * ({@link evidenceBullet}), the PR writer's Merge Danger
+ * ({@link mergeDangerLines}), the visible Issues list, then the run report,
+ * folded in `<details>` unless the PR writer returned nothing (the order:
+ * {@link renderPrBody}).
  *
  * **Closing keywords are the workflow's own.** GitHub closes an issue for a
  * closing keyword (`fixes`, `closes`, `resolves`, …) before its reference
  * anywhere in a merged commit message or PR body. So only this file writes
- * one — `fixes #N`, for a landed issue whose plan card says so. Every other
+ * one — `fixes #N`, for a landed issue whose plan card says so: in its
+ * commit message, and once in a PR body, in the Issues list
+ * ({@link landedLine}), never in the run report. Every other
  * issue is cited `see #N`, the epic container included, and every text
  * carrying agent- or tool-written words passes through {@link neutralText},
  * which turns `fixed #12` into `fixed (see #12)`: a commit's whole subject
@@ -24,12 +31,15 @@ import type {
   CriticFinding,
   OverlapConfidence,
   PlanCard,
+  PrWriterOutput,
   ProbeRecord,
   RetroFinding,
   SliceWork,
 } from './agent-calls.js';
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
+import { evidenceBullet } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
+import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput } from './tool-calls.js';
 
@@ -152,6 +162,8 @@ export interface PrBodyInput {
   readonly leases: LeaseAggregate;
   /** The retro's findings; `null` when it returned none. */
   readonly retro: readonly RetroFinding[] | null;
+  /** The PR writer's answer; `null` when it returned none. */
+  readonly writer: PrWriterOutput | null;
 }
 
 /**
@@ -250,29 +262,59 @@ export function sliceLeaseLines(
  * An epic's pull request body.
  *
  * @param input - The epic's report.
- * @returns Markdown: a summary, one section per landed issue, the unlanded
- *   issues, the epic end (master sync, version bump, master check, main
- *   checkout, report dir), then the critic, the overlap edges, the schedule,
- *   the lease timings and the retro findings (an empty one `None.`) —
- *   neutralised whole but for the landed `fixes` issues.
+ * @returns Markdown, neutralised whole but for the landed `fixes` issues,
+ *   the PR writer's prose included: `## Summary` per {@link summaryLines};
+ *   `## Evidence`, one bullet per landed issue in landing order per
+ *   {@link evidenceBullet}; `## Merge Danger` per {@link mergeDangerLines};
+ *   `## Issues` per {@link issueListLines}; then the run report per
+ *   {@link reportBlock}. Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
-  const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
   const closing = new Set(
     input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
   );
   const body = [
-    '## Summary',
-    '',
-    `Unattended run on \`${input.branch}\` — ${container}.`,
-    '',
-    '## Issues',
+    ...section('Summary', summaryLines(input.writer)),
+    ...section(
+      'Evidence',
+      input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
+    ),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Issues', issueListLines(input)),
+    ...reportBlock(input),
+  ].join('\n');
+  return neutralText(body, closing);
+}
+
+/**
+ * The run report as the body carries it.
+ *
+ * @param input - The epic's report.
+ * @returns The lines of {@link runReportLines}, unfolded when the PR writer
+ *   returned nothing; otherwise between `<details><summary>Run report</summary>`
+ *   and `</details>`, each followed by a blank line.
+ */
+function reportBlock(input: PrBodyInput): string[] {
+  const report = runReportLines(input);
+  if (input.writer === null) return report;
+  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
+}
+
+/**
+ * The run report, folded or not per {@link reportBlock}.
+ *
+ * @param input - The epic's report.
+ * @returns `## Landed issues` and one section per landed issue per
+ *   {@link issueSection}; the epic end (master sync, version bump, master
+ *   check, main checkout, report dir); then the critic, the overlap edges,
+ *   the schedule, the lease timings and the retro findings, an empty one
+ *   `None.` — blank-line terminated.
+ */
+function runReportLines(input: PrBodyInput): string[] {
+  return [
+    '## Landed issues',
     '',
     ...input.landed.flatMap(issueSection),
-    '## Not landed',
-    '',
-    ...(input.unlanded.length === 0 ? ['None.'] : input.unlanded.map(unlandedLine)),
-    '',
     '## Epic end',
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
@@ -286,8 +328,49 @@ export function renderPrBody(input: PrBodyInput): string {
     ...section('Schedule', input.schedule.map(scheduleLine)),
     ...section('Lease timings', leaseLines(input.leases)),
     ...section('Retro findings', retroLines(input.retro)),
-  ].join('\n');
-  return neutralText(body, closing);
+  ];
+}
+
+/**
+ * The Issues list.
+ *
+ * @param input - The epic's report.
+ * @returns The {@link epicLine}, then a {@link landedLine} per landed issue
+ *   in landing order, then an {@link unlandedLine} per unlanded issue in
+ *   input order.
+ */
+function issueListLines(input: Pick<PrBodyInput, 'epic' | 'landed' | 'unlanded'>): string[] {
+  return [
+    epicLine(input.epic),
+    ...input.landed.map(landedLine),
+    ...input.unlanded.map(unlandedLine),
+  ];
+}
+
+/**
+ * The Issues list's container line.
+ *
+ * @param epic - The epic; `null` for an explicit list.
+ * @returns `- Epic: see #E`, or `- An explicit issue list`.
+ */
+function epicLine(epic: number | null): string {
+  return epic === null ? '- An explicit issue list' : `- Epic: see #${String(epic)}`;
+}
+
+/**
+ * One landed issue's Issues-list line.
+ *
+ * @param landed - The issue.
+ * @returns `- fixes #N — <subject>` when its card says `fixes`, else
+ *   `- see #N — <subject> (its acceptance needs a human)`; the subject is
+ *   the card's bare commit subject, not its `type(scope):` line.
+ */
+function landedLine(landed: LandedIssue): string {
+  const ref = `#${String(landed.issue)}`;
+  const subject = landed.card.commit.subject;
+  return landed.card.closes === 'fixes'
+    ? `- fixes ${ref} — ${subject}`
+    : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
 
 /**
@@ -400,21 +483,18 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
  *
  * @param landed - The issue.
  * @returns The section's lines, blank-line terminated: the heading, then the
- *   issue, plan, diff review
- *   (`- Diff review: <rules> rules, <plan> plan findings`), review, test
- *   review, lease and probe lines; its lease line per {@link sliceLeaseText},
- *   its probe lines per {@link probeLines}.
+ *   issue (`- Issue: #N, landed as <sha>`, no closing keyword), plan, diff
+ *   review (`- Diff review: <rules> rules, <plan> plan findings`), review,
+ *   test review, lease and probe lines; its lease line per
+ *   {@link sliceLeaseText}, its probe lines per {@link probeLines}.
  */
 function issueSection(landed: LandedIssue): string[] {
-  const ref = `#${String(landed.issue)}`;
-  const cite =
-    landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
   const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
-    `- Issue: ${cite}, landed as ${landed.commit}`,
+    `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
@@ -505,14 +585,14 @@ function leaseText(timings: readonly LeaseTiming[]): string {
 }
 
 /**
- * One unlanded issue's line.
+ * One unlanded issue's Issues-list line.
  *
  * @param issue - The issue.
- * @returns `- see #N — <outcome>[: <reason>]`.
+ * @returns `- see #N — not landed: <outcome>[: <reason>]`.
  */
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
-  return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+  return `- see #${String(issue.issue)} — not landed: ${issue.outcome}${reason}`;
 }
 
 /**
