@@ -1,9 +1,8 @@
 /**
  * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears
- * down the batch and slice worktrees of an unattended run, lists the live
- * runs, and reviews a PR in a throwaway clone and posts one comment on it
- * (ADR-0045). Each command prints exactly one JSON object on one stdout
- * line — the envelope whose schema is in `worktree/schemas.ts` or
+ * down the batch and slice worktrees of an unattended run, and lists the
+ * live runs (ADR-0045). Each command prints exactly one JSON object on one
+ * stdout line — the envelope whose schema is in `worktree/schemas.ts` or
  * `worktree/schemas-run.ts` — and nothing else.
  *
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
@@ -23,8 +22,6 @@
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
- * npx tsx <main-checkout>/tooling/worktree.ts pr-review MAIN --pr N --level (xhigh|max) --model M --report-dir DIR
- * npx tsx <main-checkout>/tooling/worktree.ts pr-comment MAIN --pr N --body-file F [--findings-file J]
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
@@ -32,8 +29,7 @@
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
  * that order. A resync runs `cut-batch --attach`, `sync-master` and
  * `publish --push-only`.
- * `publish --push-only` reads `PH_WORKTREE_POLL_MS` and `pr-review` reads
- * `PH_PR_REVIEW_CAP_MS`: test-only seams ({@link msFromEnv}).
+ * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
  * the main checkout: every command that mutates a worktree (cut-slice,
@@ -42,14 +38,11 @@
  * `worktree/git.ts`) when the CLI lies inside its target. The one exception
  * is `cut-batch`, whose target is the main checkout the CLI runs from: it
  * writes only `.git` and a sibling directory, never that checkout's working
- * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). `pr-review` and
- * `pr-comment` mutate no worktree — `pr-review`'s fetch writes only
- * remote-tracking refs, like `check-master`'s, and `pr-comment` only reads
- * its body and findings files — so they have no guard either. Target paths
- * and the path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
- * `--body-file`, `--findings-file`) come only from argv, resolved against
- * the starting cwd; every other argument — a sha, repo-relative paths, a
- * number, a title, the `--attach` branch — is kept as given.
+ * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
+ * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
+ * `--body-file`) come only from argv, resolved against the starting cwd;
+ * every other argument — a sha, repo-relative paths, a number, a title, the
+ * `--attach` branch — is kept as given.
  *
  * Every envelope carries `at`, the instant the command finished, and is
  * checked against its command's schema before it is printed: one that
@@ -75,13 +68,10 @@ import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
 import { attachBatch } from './worktree/cut-attach.js';
-import { PR_REVIEW_CAP_MS } from './worktree/exec.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
 import { preflight } from './worktree/preflight.js';
-import { prComment } from './worktree/pr-comment.js';
-import { prReview } from './worktree/pr-review.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
@@ -104,16 +94,12 @@ import {
   CutSliceResultSchema,
   LandResultSchema,
   PreflightResultSchema,
-  PrCommentResultSchema,
-  PrReviewLevelSchema,
-  PrReviewResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
 } from './worktree/schemas-run.js';
 import { stagedGuard } from './worktree/staged-set.js';
 import { syncMaster } from './worktree/sync-master.js';
 import { teardownWorktree } from './worktree/teardown.js';
-import type { PrReviewLevel } from './worktree/types-run.js';
 import { recordFailure, type ResultBase } from './worktree/types.js';
 
 /** A command line that cannot be dispatched — exit 2. */
@@ -292,35 +278,6 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         synced: args.values.get('--synced') ?? null,
       }),
   },
-  'pr-review': {
-    schema: PrReviewResultSchema,
-    valueFlags: ['--pr', '--level', '--model', '--report-dir'],
-    switchFlags: [],
-    rest: NO_REST,
-    run: (args) =>
-      prReview({
-        source: args.target,
-        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
-        level: prReviewLevel(args.values.get('--level') ?? ''),
-        model: args.values.get('--model') ?? '',
-        reportDir: pathFlag(args, '--report-dir'),
-        capMs: msFromEnv('PH_PR_REVIEW_CAP_MS') ?? PR_REVIEW_CAP_MS,
-      }),
-  },
-  'pr-comment': {
-    schema: PrCommentResultSchema,
-    valueFlags: ['--pr', '--body-file'],
-    optionFlags: ['--findings-file'],
-    switchFlags: [],
-    rest: NO_REST,
-    run: (args) =>
-      prComment({
-        checkout: args.target,
-        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
-        bodyFile: pathFlag(args, '--body-file'),
-        findingsFile: args.values.has('--findings-file') ? pathFlag(args, '--findings-file') : null,
-      }),
-  },
   publish: {
     schema: PublishResultSchema,
     valueFlags: ['--log'],
@@ -330,7 +287,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: (args) => {
       const logFile = pathFlag(args, '--log');
       if (publishMode(args) === 'push-only') {
-        const pollMs = msFromEnv('PH_WORKTREE_POLL_MS');
+        const pollMs = pollMsFromEnv();
         return publishPushOnly({
           batch: args.target,
           logFile,
@@ -408,19 +365,6 @@ function positiveInt(text: string, flag: string): number {
 }
 
 /**
- * Read `pr-review`'s `--level`.
- *
- * @param text - The value as given.
- * @returns The level.
- * @throws UsageError unless `text` is `xhigh` or `max`.
- */
-function prReviewLevel(text: string): PrReviewLevel {
-  const level = PrReviewLevelSchema.safeParse(text);
-  if (!level.success) throw new UsageError(`flag --level needs xhigh or max, got '${text}'`);
-  return level.data;
-}
-
-/**
  * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…`
  * and `--attach ship/<slug>` (a branch name, kept as given).
  *
@@ -485,17 +429,15 @@ function publishMode(args: ParsedArgs): 'push-only' | 'create' {
 }
 
 /**
- * A duration from a test-only environment seam, so a fixture run need not
- * wait a production interval: `PH_WORKTREE_POLL_MS`, the wait between
- * `publish --push-only`'s mergeable reads, and `PH_PR_REVIEW_CAP_MS`,
- * `pr-review`'s session cap.
+ * The wait between `publish --push-only`'s mergeable reads, from
+ * `PH_WORKTREE_POLL_MS` — a test-only seam, so a fixture run need not wait
+ * the production interval.
  *
- * @param name - The variable's name.
  * @returns The variable's value when it is a positive integer in decimal;
  *   otherwise `undefined` (the command's default).
  */
-function msFromEnv(name: string): number | undefined {
-  const text = process.env[name] ?? '';
+function pollMsFromEnv(): number | undefined {
+  const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
   return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
 }
 

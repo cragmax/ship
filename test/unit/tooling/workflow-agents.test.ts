@@ -3,7 +3,6 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { COMMENT_MAX_CHARS } from '../../../tooling/lib/pr-review-comment.js';
 import { STAGES } from '../../../tooling/workflows/lib/stages.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../');
@@ -81,58 +80,12 @@ describe('workflow agents', () => {
     expect(toolsOf('diff-reviewer')).toEqual(['Read', 'Glob', 'Grep', 'Bash', 'Write']);
   });
 
-  // Hand-written: the curator reads, and writes only its comment file (#1111).
-  it('curator lists exactly Read, Glob, Grep and Write in its tools', () => {
-    expect(toolsOf('curator')).toEqual(['Read', 'Glob', 'Grep', 'Write']);
-  });
-
-  // Hand-written: the comment's two before-merge headings and its four finding labels (#1111).
-  it('curator spells its two headings under ## Groups and its four labels under ## Labels', () => {
-    const text = agentText('curator');
-    const groups = section(text, '## Groups');
-    const labels = section(text, '## Labels');
-
-    expect(
-      ['`Fix before merge`', '`Check before merge (unverified)`'].filter(
-        (t) => !groups.includes(t),
-      ),
-    ).toEqual([]);
-    expect(
-      ['`verified`', '`unverified`', '`by design`', '`personal rule`'].filter(
-        (t) => !labels.includes(t),
-      ),
-    ).toEqual([]);
-  });
-
-  // Hand-written: the curator's never rules, and the citation `pr-comment --findings-file` counts (#1111).
-  it('curator states its never rules and the citation tooling counts under ## Discipline', () => {
-    const discipline = section(agentText('curator'), '## Discipline');
-
-    expect(
-      [
-        '**Never drop a finding.**',
-        '**Never verify a finding.**',
-        '**Never post.**',
-        '**Never file an issue.**',
-        '`<file>:<line>`',
-      ].filter((t) => !discipline.includes(t)),
-    ).toEqual([]);
-  });
-
-  // The constant is the oracle: its value is still unconfirmed against GitHub (#1110), so the agent file must follow it.
-  it('curator states the comment limit pr-comment enforces under ## Discipline', () => {
-    expect(section(agentText('curator'), '## Discipline')).toContain(
-      `at most ${String(COMMENT_MAX_CHARS)} characters`,
-    );
-  });
-
   describe('the agents that write a file', () => {
     const writers = agentTypes.filter((agentType) => toolsOf(agentType).includes('Write'));
 
-    it('are exactly the nine the workflow hands a file to write', () => {
+    it('are exactly the eight the workflow hands a file to write', () => {
       expect([...writers].sort((a, b) => a.localeCompare(b))).toEqual([
         'critic',
-        'curator',
         'diff-reviewer',
         'planner',
         'reviewer',
@@ -277,7 +230,6 @@ describe('workflow agents', () => {
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
-      'curator',
       'diff-reviewer',
       'overlap-estimator',
       'planner',

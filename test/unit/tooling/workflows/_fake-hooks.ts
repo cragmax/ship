@@ -240,30 +240,6 @@ export const LAND_OK = {
   at: '2026-09-29T10:20:00.000Z',
 };
 
-/** A `pr-review` that reviewed PR 42 and wrote 15 findings. */
-export const PR_REVIEW_OK = {
-  ...OK,
-  outcome: 'reviewed',
-  durationMs: 561000,
-  findingCount: 15,
-  findingsFile: `${REPORT_DIR}/pr-review-42-findings.json`,
-  resultFile: `${REPORT_DIR}/pr-review-42-result.md`,
-  plainFile: `${REPORT_DIR}/pr-review-42-plain.md`,
-};
-
-/** A curator that wrote PR 42's comment, three findings before merge. */
-export const CURATOR_OK = {
-  commentPath: `${REPORT_DIR}/pr-review-42-curated.md`,
-  beforeMerge: 3,
-};
-
-/** A `pr-comment` that posted on PR 42 and printed the comment's URL. */
-export const PR_COMMENT_OK = {
-  ...OK,
-  outcome: 'posted',
-  url: 'https://github.com/fixture/repo/pull/42#issuecomment-1',
-};
-
 /** The all-pass answers of a full run of `issues 7`, by label. */
 const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
@@ -309,9 +285,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     leaseLines: [],
   },
   'runner:land': LAND_OK,
-  'runner:pr-review': PR_REVIEW_OK,
-  curator: CURATOR_OK,
-  'runner:pr-comment': PR_COMMENT_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:sync-master': {
     ...OK,

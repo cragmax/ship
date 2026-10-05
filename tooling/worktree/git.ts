@@ -106,23 +106,6 @@ export function resolveCommit(dir: string, ref: string, step: string): string {
 }
 
 /**
- * Resolve a sha to a commit the checkout holds.
- *
- * @param dir - The checkout.
- * @param sha - The sha; never read as an option.
- * @returns The full sha; `null` when no such commit is in the object store
- *   (the `^{commit}` peel is what makes an absent full sha fail).
- */
-export function knownCommit(dir: string, sha: string): string | null {
-  const r = runCaptured(
-    'git',
-    ['-C', dir, 'rev-parse', '-q', '--verify', '--end-of-options', `${sha}^{commit}`],
-    { cwd: process.cwd() },
-  );
-  return r.exitCode === 0 ? r.stdout.trim() : null;
-}
-
-/**
  * Fetch `origin` into a checkout's remote-tracking refs, under `FETCH_TIMEOUT_MS`.
  *
  * @param dir - The checkout.

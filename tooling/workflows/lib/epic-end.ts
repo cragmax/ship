@@ -16,16 +16,11 @@
  *   So does a failed bump, and so does a step that throws.
  * - **The retro runs exactly once per entry**, whatever path the entry
  *   ends on, before the PR on the shipping path.
- * - **Docs only** — once past the critic, the epic end decides whether the
- *   epic changed only markdown outside `.claude/` ({@link epicDocsOnly}).
- *   The PR body's PR review line and the PR review phase both read that one
- *   decision ({@link EpicReport.docsOnly}).
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
  *   the publish task (the main-checkout look, the master check, the push and
  *   PR) each run as one task of the run's one lock, so no two epic ends talk
  *   to `origin` or read the main checkout at once; the critic, the bump and
- *   the retro run outside it; the publish task also calls
- *   {@link EpicEndInput.onPublished}.
+ *   the retro run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's — read
  *   in the publish task before the push on the shipping path (so the PR body
@@ -46,7 +41,6 @@
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
 
 import { AGENT_CALLS, type RetroFinding } from './agent-calls.js';
-import type { PrReviewSetting } from './args.js';
 import type { CommitQueue } from './commit-queue.js';
 import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -61,7 +55,6 @@ import {
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import type { EntrySetup } from './slice-chain.js';
-import { isDocsOnly } from './stages.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
 import { envelopeProblem, runPlace, runTool, type BumpOutput } from './tool-calls.js';
 
@@ -128,13 +121,6 @@ export interface EpicReport {
   readonly retro?: readonly RetroFinding[] | null;
   /** The entry's lease totals; absent without an epic end. */
   readonly leases?: LeaseAggregate;
-  /**
-   * Whether every file the epic changed is markdown outside `.claude/`
-   * ({@link epicDocsOnly}): its PR body says `PR review: skipped (docs-only)`
-   * and the PR review skips its PR. Absent unless the epic end got past its
-   * critic.
-   */
-  readonly docsOnly?: boolean;
 }
 
 /** An epic end's inputs. */
@@ -157,14 +143,6 @@ export interface EpicEndInput {
   readonly repoLock: CommitQueue;
   /** The overlap edges pre-flight added to this entry. */
   readonly overlap: OverlapRecord;
-  /** The launch's `--pr-review` setting, for the PR body's PR review line. */
-  readonly prReview: PrReviewSetting;
-  /**
-   * Called once, inside the publish task, when `publish` answered `ok` with
-   * a PR. The repo lock serialises the publish tasks, so across the run's
-   * epic ends the calls come in publish order.
-   */
-  readonly onPublished: () => void;
 }
 
 /** What an epic end learnt, step by step. */
@@ -176,8 +154,6 @@ interface EndState {
   mainUntouched?: boolean | null;
   /** The master check, once the publish task took it. */
   masterCheck?: MasterCheck;
-  /** Whether the epic's changes are docs only, once past the critic. */
-  docsOnly?: boolean;
 }
 
 /** The epic end's outcome before the main-checkout look. */
@@ -212,7 +188,6 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
-    ...(state.docsOnly === undefined ? {} : { docsOnly: state.docsOnly }),
   };
 }
 
@@ -250,11 +225,10 @@ export async function unshippedEpicEnd(
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
   const critic = await criticStep(input);
-  const { halt, files, ...criticReport } = critic;
+  const { halt, ...criticReport } = critic;
   state.critic = criticReport;
   state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
-  state.docsOnly = epicDocsOnly(input.landed, files);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -331,8 +305,6 @@ async function openPr(
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
-    prReview: input.prReview,
-    docsOnly: found.state.docsOnly ?? false,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -350,7 +322,6 @@ async function openPr(
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out) };
   }
-  input.onPublished();
   return { outcome: 'pr', pr: pr.number };
 }
 
@@ -368,28 +339,6 @@ function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
       sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
     ),
   );
-}
-
-/**
- * Whether the epic's own changes are docs only ({@link isDocsOnly}). They are
- * the landed slice commits' files and the critic commit's — never the
- * version bump's, which every PR carries, nor the master-sync merge's, which
- * is master's work.
- *
- * @param landed - The landed issues; one whose `files` is absent altogether
- *   (a hand-written continuation's untyped input, ADR-0045 decision 10) is
- *   read as `null`.
- * @param criticFiles - The critic commit's files; `[]` when none landed.
- * @returns `false` when any list is `null` — a landing that named no files is
- *   never a pass; else whether their union is docs only.
- */
-function epicDocsOnly(
-  landed: readonly LandedIssue[],
-  criticFiles: readonly string[] | null,
-): boolean {
-  const lists = [...landed.map((l) => l.files ?? null), criticFiles];
-  const named = lists.filter((list): list is readonly string[] => list !== null);
-  return named.length === lists.length && isDocsOnly(named.flat());
 }
 
 /**

@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_PR_REVIEW_LEVEL,
-  PR_REVIEW_MODEL,
   reviewEffort,
-  SHIP_PHASES,
   STAGES,
   type StageName,
   type StageRow,
@@ -292,14 +289,11 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
-      'runner:pr-review:list',
-      'curator:list',
-      'runner:pr-comment:list',
     ]);
     const at = (entry: string): number => run.timeline.indexOf(entry);
     expect(at('call runner:teardown:7-1')).toBeGreaterThan(-1);
     expect(at('call runner:teardown:7-1')).toBeLessThan(at('log fed committed #7'));
-    expect(run.phases).toEqual(['Pre-flight', 'Issues', 'Epic end', 'PR review']);
+    expect(run.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
     expect(report).toMatchObject({
       status: 'done',
       dropped: [],
@@ -1313,19 +1307,7 @@ describe('agent-call tiers', () => {
       testReview: { agentType: 'ship-test-review', model: 'opus' },
       critic: { agentType: 'critic' },
       retro: { agentType: 'retro', model: 'sonnet' },
-      curator: { agentType: 'curator', model: 'opus' },
     });
-  });
-
-  it('pins the PR review model and default level beside the table, and runs the review as the 4th phase', () => {
-    expect(PR_REVIEW_MODEL).toBe('opus');
-    expect(DEFAULT_PR_REVIEW_LEVEL).toBe('xhigh');
-    expect(SHIP_PHASES.map((p) => p.title)).toEqual([
-      'Pre-flight',
-      'Issues',
-      'Epic end',
-      'PR review',
-    ]);
   });
 
   it.each(SCENARIOS)(

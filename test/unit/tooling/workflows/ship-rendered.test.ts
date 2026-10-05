@@ -97,7 +97,7 @@ describe('ship.js — a fresh render of the current sources', () => {
         },
       ],
     });
-    expect(both.rendered.phases).toEqual(['Pre-flight', 'Issues', 'Epic end', 'PR review']);
+    expect(both.rendered.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
     expectSameRun(both);
   });
 

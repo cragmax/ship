@@ -1,8 +1,5 @@
-import { resolve } from 'node:path';
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PR_REVIEW_CAP_MS } from '../../../tooling/worktree/exec.js';
 import {
   ResultBaseSchema,
   TeardownResultSchema,
@@ -37,8 +34,6 @@ vi.mock('../../../tooling/worktree/harvest.js', () => ({ harvest: commandMock })
 vi.mock('../../../tooling/worktree/land.js', () => ({ land: commandMock }));
 vi.mock('../../../tooling/worktree/live-runs.js', () => ({ liveRuns: commandMock }));
 vi.mock('../../../tooling/worktree/preflight.js', () => ({ preflight: commandMock }));
-vi.mock('../../../tooling/worktree/pr-comment.js', () => ({ prComment: commandMock }));
-vi.mock('../../../tooling/worktree/pr-review.js', () => ({ prReview: commandMock }));
 vi.mock('../../../tooling/worktree/provision.js', () => ({ provision: commandMock }));
 vi.mock('../../../tooling/worktree/provision-batch.js', () => ({ provisionBatch: commandMock }));
 vi.mock('../../../tooling/worktree/publish.js', () => ({ publish: commandMock }));
@@ -130,19 +125,6 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
-      [
-        'pr-review',
-        'C:/main',
-        '--pr',
-        '7',
-        '--level',
-        'xhigh',
-        '--model',
-        'opus',
-        '--report-dir',
-        'C:/r',
-      ],
-      ['pr-comment', 'C:/main', '--pr', '42', '--body-file', 'C:/c.md'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;
@@ -154,142 +136,6 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(result.status).toBe('failed');
     expect(result.errors[0]?.step).toBe('envelope');
     expect(exitCode).toBe(1);
-  });
-
-  it.each(['high', 'ultra', 'off'])(
-    'refuses pr-review --level %s as a usage error, exit 2',
-    async (level) => {
-      const { result, exitCode } = await runWorktreeCli([
-        'pr-review',
-        'C:/main',
-        '--pr',
-        '7',
-        '--level',
-        level,
-        '--model',
-        'opus',
-        '--report-dir',
-        'C:/r',
-      ]);
-
-      expect(result).toEqual({
-        command: 'pr-review',
-        status: 'failed',
-        worktree: null,
-        errors: [{ step: 'usage', message: `flag --level needs xhigh or max, got '${level}'` }],
-        at: expect.any(String),
-      });
-      expect(exitCode).toBe(2);
-      expect(commandMock).not.toHaveBeenCalled();
-    },
-  );
-
-  it('hands pr-review its PR, level and model', async () => {
-    await runWorktreeCli([
-      'pr-review',
-      'C:/main',
-      '--pr',
-      '7',
-      '--level',
-      'max',
-      '--model',
-      'opus',
-      '--report-dir',
-      'C:/r',
-    ]);
-
-    expect(commandMock).toHaveBeenCalledTimes(1);
-    expect(commandMock).toHaveBeenCalledWith(
-      expect.objectContaining({ pr: 7, level: 'max', model: 'opus' }),
-    );
-  });
-
-  it.each([
-    ['unset', undefined, PR_REVIEW_CAP_MS],
-    ['4000', '4000', 4000],
-    ['0', '0', PR_REVIEW_CAP_MS],
-    ['abc', 'abc', PR_REVIEW_CAP_MS],
-    // Starts like a positive integer, but is not one.
-    ['1.5', '1.5', PR_REVIEW_CAP_MS],
-  ])('hands pr-review the cap (PH_PR_REVIEW_CAP_MS %s)', async (_name, value, expected) => {
-    const saved = process.env['PH_PR_REVIEW_CAP_MS'];
-    if (value === undefined) delete process.env['PH_PR_REVIEW_CAP_MS'];
-    else process.env['PH_PR_REVIEW_CAP_MS'] = value;
-    try {
-      await runWorktreeCli([
-        'pr-review',
-        'C:/main',
-        '--pr',
-        '7',
-        '--level',
-        'max',
-        '--model',
-        'opus',
-        '--report-dir',
-        'C:/r',
-      ]);
-    } finally {
-      if (saved === undefined) delete process.env['PH_PR_REVIEW_CAP_MS'];
-      else process.env['PH_PR_REVIEW_CAP_MS'] = saved;
-    }
-
-    expect(commandMock).toHaveBeenCalledTimes(1);
-    expect(commandMock).toHaveBeenCalledWith(expect.objectContaining({ capMs: expected }));
-  });
-
-  it('refuses pr-comment --pr 0 as a usage error, exit 2', async () => {
-    const { result, exitCode } = await runWorktreeCli([
-      'pr-comment',
-      'C:/main',
-      '--pr',
-      '0',
-      '--body-file',
-      'C:/c.md',
-    ]);
-
-    expect(result).toEqual({
-      command: 'pr-comment',
-      status: 'failed',
-      worktree: null,
-      errors: [{ step: 'usage', message: "flag --pr needs a positive integer, got '0'" }],
-      at: expect.any(String),
-    });
-    expect(exitCode).toBe(2);
-    expect(commandMock).not.toHaveBeenCalled();
-  });
-
-  it('hands pr-comment its PR and body file', async () => {
-    await runWorktreeCli(['pr-comment', 'C:/main', '--pr', '42', '--body-file', 'C:/c.md']);
-
-    expect(commandMock).toHaveBeenCalledTimes(1);
-    expect(commandMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pr: 42,
-        bodyFile: expect.stringMatching(/\/c\.md$/u),
-        findingsFile: null,
-      }),
-    );
-  });
-
-  it('hands pr-comment its findings file, resolved', async () => {
-    await runWorktreeCli([
-      'pr-comment',
-      'C:/main',
-      '--pr',
-      '42',
-      '--body-file',
-      'C:/c.md',
-      '--findings-file',
-      'reports/f.json',
-    ]);
-
-    expect(commandMock).toHaveBeenCalledTimes(1);
-    // A relative path: an absolute one reads the same resolved or not.
-    expect(commandMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        findingsFile: resolve('reports/f.json').replaceAll('\\', '/'),
-      }),
-    );
   });
 
   it('keeps an unknown command’s usage envelope and exit 2', async () => {

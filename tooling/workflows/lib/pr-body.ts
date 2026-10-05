@@ -28,7 +28,6 @@ import type {
   RetroFinding,
   SliceWork,
 } from './agent-calls.js';
-import type { PrReviewSetting } from './args.js';
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import type { SyncStepResult } from './sync-master-step.js';
@@ -52,11 +51,6 @@ export interface LandedIssue extends SliceWork {
   readonly issue: number;
   /** Its batch commit. */
   readonly commit: string;
-  /**
-   * Its batch commit's changed paths, a rename as both endpoints (`land`'s
-   * `files`); `null` when the landing named none.
-   */
-  readonly files: readonly string[] | null;
 }
 
 /** A slice's lease lines from one agent role. */
@@ -158,10 +152,6 @@ export interface PrBodyInput {
   readonly leases: LeaseAggregate;
   /** The retro's findings; `null` when it returned none. */
   readonly retro: readonly RetroFinding[] | null;
-  /** The launch's `--pr-review` setting: whether a PR review comment follows the PR. */
-  readonly prReview: PrReviewSetting;
-  /** Whether the epic's changes are docs only: the PR review skips its PR. */
-  readonly docsOnly: boolean;
 }
 
 /**
@@ -260,9 +250,7 @@ export function sliceLeaseLines(
  * An epic's pull request body.
  *
  * @param input - The epic's report.
- * @returns Markdown: a summary — the run line, then the PR review line
- *   ({@link prReviewLine}: off, skipped for a docs-only epic, or pending) —
- *   one section per landed issue, the unlanded
+ * @returns Markdown: a summary, one section per landed issue, the unlanded
  *   issues, the epic end (master sync, version bump, master check, main
  *   checkout, report dir), then the critic, the overlap edges, the schedule,
  *   the lease timings and the retro findings (an empty one `None.`) —
@@ -277,8 +265,6 @@ export function renderPrBody(input: PrBodyInput): string {
     '## Summary',
     '',
     `Unattended run on \`${input.branch}\` — ${container}.`,
-    '',
-    prReviewLine(input.prReview, input.docsOnly),
     '',
     '## Issues',
     '',
@@ -302,21 +288,6 @@ export function renderPrBody(input: PrBodyInput): string {
     ...section('Retro findings', retroLines(input.retro)),
   ].join('\n');
   return neutralText(body, closing);
-}
-
-/**
- * The summary's PR review line: whether a PR review comment follows.
- *
- * @param setting - The launch's `--pr-review` setting.
- * @param docsOnly - Whether the epic's changes are docs only.
- * @returns The first that applies: `PR review: off` under `off`;
- *   `PR review: skipped (docs-only)` for a docs-only epic; else
- *   `PR review: pending (<level>)`.
- */
-function prReviewLine(setting: PrReviewSetting, docsOnly: boolean): string {
-  if (setting === 'off') return 'PR review: off';
-  if (docsOnly) return 'PR review: skipped (docs-only)';
-  return `PR review: pending (${setting})`;
 }
 
 /**

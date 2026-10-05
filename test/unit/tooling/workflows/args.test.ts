@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseShipArgs } from '../../../../tooling/workflows/lib/args.js';
-import { DEFAULT_PR_REVIEW_LEVEL, MAX_SLICES } from '../../../../tooling/workflows/lib/stages.js';
-import { SHIP_META } from '../../../../tooling/workflows/ship.meta.js';
+import { MAX_SLICES } from '../../../../tooling/workflows/lib/stages.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import { fakeHooks } from './_fake-hooks.js';
@@ -18,32 +17,23 @@ describe('parseShipArgs — accepted forms', () => {
         exclude: false,
         preflightOnly: false,
         maxSlices: MAX_SLICES,
-        prReview: DEFAULT_PR_REVIEW_LEVEL,
       },
     ],
     [
       'the string form, every flag, mixed separators and #',
-      '  issues #1045,1046 1047 --exclude --preflight-only --max-slices 2 --pr-review max ',
+      '  issues #1045,1046 1047 --exclude --preflight-only --max-slices 2 ',
       {
         selection: 'issues',
         numbers: [1045, 1046, 1047],
         exclude: true,
         preflightOnly: true,
         maxSlices: 2,
-        prReview: 'max',
       },
     ],
     [
       'the object form, every key',
-      { issues: [1045, 7], exclude: true, preflightOnly: true, maxSlices: 3, prReview: 'off' },
-      {
-        selection: 'issues',
-        numbers: [1045, 7],
-        exclude: true,
-        preflightOnly: true,
-        maxSlices: 3,
-        prReview: 'off',
-      },
+      { issues: [1045, 7], exclude: true, preflightOnly: true, maxSlices: 3 },
+      { selection: 'issues', numbers: [1045, 7], exclude: true, preflightOnly: true, maxSlices: 3 },
     ],
     [
       'the object form, defaults',
@@ -54,7 +44,6 @@ describe('parseShipArgs — accepted forms', () => {
         exclude: false,
         preflightOnly: false,
         maxSlices: MAX_SLICES,
-        prReview: DEFAULT_PR_REVIEW_LEVEL,
       },
     ],
     [
@@ -66,31 +55,6 @@ describe('parseShipArgs — accepted forms', () => {
         exclude: false,
         preflightOnly: true,
         maxSlices: MAX_SLICES,
-        prReview: DEFAULT_PR_REVIEW_LEVEL,
-      },
-    ],
-    [
-      'the string form, --pr-review xhigh',
-      'epics 1 --pr-review xhigh',
-      {
-        selection: 'epics',
-        numbers: [1],
-        exclude: false,
-        preflightOnly: false,
-        maxSlices: MAX_SLICES,
-        prReview: 'xhigh',
-      },
-    ],
-    [
-      'the object form, prReview max',
-      { epics: [1], prReview: 'max' },
-      {
-        selection: 'epics',
-        numbers: [1],
-        exclude: false,
-        preflightOnly: false,
-        maxSlices: MAX_SLICES,
-        prReview: 'max',
       },
     ],
   ])('parses %s', (_name, raw, args) => {
@@ -120,56 +84,12 @@ describe('parseShipArgs — usage refusals', () => {
     ['a fractional number', { issues: [1.5] }, /issues: '1.5' is not a positive integer/],
     ['a bad maxSlices', { epics: [1], maxSlices: -1 }, /maxSlices: '-1'/],
     ['invalid JSON text', '{nope', /not valid JSON/],
-    ['--pr-review low', 'issues 1 --pr-review low', /--pr-review: 'low' is not off, xhigh or max/],
-    [
-      '--pr-review medium',
-      'issues 1 --pr-review medium',
-      /--pr-review: 'medium' is not off, xhigh or max/,
-    ],
-    [
-      '--pr-review high',
-      'issues 1 --pr-review high',
-      /--pr-review: 'high' is not off, xhigh or max/,
-    ],
-    [
-      '--pr-review ultra',
-      'issues 1 --pr-review ultra',
-      /--pr-review: 'ultra' is not off, xhigh or max/,
-    ],
-    [
-      '--pr-review in capitals',
-      'issues 1 --pr-review XHIGH',
-      /--pr-review: 'XHIGH' is not off, xhigh or max/,
-    ],
-    [
-      'a missing --pr-review value',
-      'issues 1 --pr-review',
-      /--pr-review: 'undefined' is not off, xhigh or max/,
-    ],
-    [
-      'a bad prReview',
-      { issues: [1], prReview: 'ultra' },
-      /prReview: 'ultra' is not off, xhigh or max/,
-    ],
-    [
-      'a boolean prReview',
-      { issues: [1], prReview: true },
-      /prReview: 'true' is not off, xhigh or max/,
-    ],
   ])('refuses %s', (_name, raw, message) => {
     const outcome = parseShipArgs(raw);
 
     expect(outcome.args).toBeUndefined();
     expect(outcome.refusal?.kind).toBe('usage');
     expect(outcome.refusal?.message).toMatch(message);
-  });
-
-  it('ends every usage refusal with the accepted shape', () => {
-    expect(
-      parseShipArgs('1045').refusal?.message.endsWith(
-        '; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--pr-review off|xhigh|max]',
-      ),
-    ).toBe(true);
   });
 
   it('ends the run with the usage refusal before any agent call', async () => {
@@ -184,13 +104,5 @@ describe('parseShipArgs — usage refusals', () => {
       epics: [],
     });
     expect(run.calls).toEqual([]);
-  });
-});
-
-describe('the launch help', () => {
-  it('names the --pr-review argument, its default and its object key', () => {
-    expect(SHIP_META.whenToUse).toContain('`--pr-review off|xhigh|max`');
-    expect(SHIP_META.whenToUse).toContain('default xhigh');
-    expect(SHIP_META.whenToUse).toContain('prReview?');
   });
 });

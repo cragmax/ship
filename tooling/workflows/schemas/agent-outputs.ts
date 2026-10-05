@@ -228,14 +228,6 @@ export const RetroOutputSchema = z.object({
   findings: z.array(RetroFindingSchema),
 });
 
-/** The curator's answer. */
-export const CuratorOutputSchema = z.object({
-  /** The comment file written: the prompt's `Comment file:`. The workflow posts that path, never this one. */
-  commentPath: z.string(),
-  /** How many findings its before-merge group holds. */
-  beforeMerge: z.int(),
-});
-
 /** Each judgment stage's output schema, keyed as `schemas.generated.ts` emits it. */
 export const AGENT_OUTPUTS = {
   scout: ScoutVerdictSchema,
@@ -249,5 +241,4 @@ export const AGENT_OUTPUTS = {
   resolver: ResolverOutputSchema,
   critic: CriticOutputSchema,
   retro: RetroOutputSchema,
-  curator: CuratorOutputSchema,
 } as const;
