@@ -32,7 +32,6 @@ describe('isTrivialSurface', () => {
     ['a src/ file', ['docs/a.md', 'src/a.ts'], false],
     ['a tooling/ file', ['tooling/a.ts'], false],
     ['a test/ file', ['test/unit/a.test.ts'], false],
-    ['an evals/ file', ['evals/run.ts'], false],
   ])('judges %s', (_name, files, trivial) => {
     expect(isTrivialSurface(files)).toBe(trivial);
   });

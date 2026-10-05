@@ -81,8 +81,8 @@ export const PLAN_PROBE_CAP_MINUTES = 5;
 /** The most plan-time probes one issue attempt's planner may run, its plan and apply modes together. */
 export const PLAN_PROBES_PER_ISSUE = 2;
 
-/** The paths whose change is not a trivial surface: code, tooling, tests and evals. */
-const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'evals/'];
+/** The paths whose change is not a trivial surface: code, tooling and tests. */
+const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
 
 /** More changed files than this make a review `high` effort. */
 const HIGH_EFFORT_FILE_COUNT = 5;
@@ -103,8 +103,8 @@ export function reviewEffort(files: readonly string[]): Effort {
  * Whether a slice changes no code: test review is skipped for it.
  *
  * @param files - The slice commit's changed paths, repository-relative.
- * @returns `true` when no path is under `src/`, `tooling/`, `test/` or
- *   `evals/` (an empty list included).
+ * @returns `true` when no path is under `src/`, `tooling/` or `test/` (an
+ *   empty list included).
  */
 export function isTrivialSurface(files: readonly string[]): boolean {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));

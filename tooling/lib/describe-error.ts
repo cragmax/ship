@@ -1,7 +1,5 @@
 /**
- * An error formatter shared by the tooling and evals CLIs. Dependency-free, so
- * a module on the evals dry-run path (`evals/cli-support.ts`) uses it without
- * loading rcon-client.
+ * An error formatter shared by the tooling CLIs.
  */
 
 /**

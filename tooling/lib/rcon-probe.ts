@@ -1,6 +1,6 @@
 /**
- * One RCON round trip that never throws — the readiness and stop probe the
- * tooling and evals CLIs share.
+ * One RCON round trip that never throws — the readiness probe the tooling CLIs
+ * share.
  *
  * The rcon-client (4.2) behaviours it is built around, one home for all
  * callers ({@link AUTH_FAILED_MESSAGE} holds the password-rejection one):

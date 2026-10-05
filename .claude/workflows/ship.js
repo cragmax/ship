@@ -43,7 +43,7 @@ const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'evals/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
   const touchesSrc = files.some((path) => path.startsWith('src/'));
