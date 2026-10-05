@@ -12,7 +12,7 @@
  * anywhere in a merged commit message or PR body. So only this file writes
  * one — `fixes #N`, for a landed issue whose plan card says so: in its
  * commit message, and once in a PR body, in the Issues list
- * ({@link landedLine}), never inside the fold. Every other
+ * ({@link landedLine}), never in the run report. Every other
  * issue is cited `see #N`, the epic container included, and every text
  * carrying agent- or tool-written words passes through {@link neutralText},
  * which turns `fixed #12` into `fixed (see #12)`: a commit's whole subject
@@ -301,7 +301,7 @@ function reportBlock(input: PrBodyInput): string[] {
 }
 
 /**
- * The run report the body folds.
+ * The run report, folded or not per {@link reportBlock}.
  *
  * @param input - The epic's report.
  * @returns `## Landed issues` and one section per landed issue per
