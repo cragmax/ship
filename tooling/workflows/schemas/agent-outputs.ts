@@ -124,6 +124,29 @@ export const PlanReviewSchema = z.object({
   findingsPath: z.string(),
 });
 
+/**
+ * The tdd's evidence: its tracer test's red-green, or why it saw none. One
+ * object serves both kinds, every string required, because the emitter
+ * refuses unions: the strings a kind does not use arrive empty.
+ */
+export const TddEvidenceSchema = z.object({
+  /**
+   * `tracer`: the slice's tracer test, seen red then green; `none`: no
+   * red-green — docs or config only, `PARTIAL`, `BLOCKED`.
+   */
+  kind: z.enum(['tracer', 'none']),
+  /** The tracer test, as `<path> › <test name>`; empty for `none`. */
+  test: z.string(),
+  /** At most three lines: what the test drives and asserts; empty for `none`. */
+  pseudocode: z.string(),
+  /** The failure line as printed when the test was seen red; empty for `none`. */
+  red: z.string(),
+  /** The line showing the test passing; empty for `none`. */
+  green: z.string(),
+  /** Why there is no red-green; empty for `tracer`. */
+  reason: z.string(),
+});
+
 /** The tdd's answer. */
 export const TddOutputSchema = z.object({
   /** `GREEN`, `PARTIAL` (some tests authored but unrun), or `BLOCKED`. */
@@ -136,6 +159,8 @@ export const TddOutputSchema = z.object({
   leaseLines: z.array(z.string()),
   /** Every probe it ran. */
   probes: z.array(ProbeRecordSchema),
+  /** Its tracer test's red-green, or why it saw none. */
+  evidence: TddEvidenceSchema,
   /** Why, when `BLOCKED` or `PARTIAL`. */
   reason: z.string().exactOptional(),
 });

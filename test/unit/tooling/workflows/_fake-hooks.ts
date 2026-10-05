@@ -200,13 +200,21 @@ export const BATCH = `${RUN_ROOT}/batch`;
 /** The files the fake tdd's slice commit changes. */
 export const TDD_FILES = ['tooling/x.ts', 'test/unit/tooling/x.test.ts'];
 
-/** A GREEN tdd over {@link TDD_FILES}, with one lease line and no probe. */
+/** A GREEN tdd over {@link TDD_FILES}, with one lease line, no probe and its tracer's red-green. */
 export const TDD_GREEN = {
   verdict: 'GREEN',
   sha: 'slice1',
   files: TDD_FILES,
   leaseLines: ['with-lease: waited 1.5s for paper@localhost:25575, held 42.0s'],
   probes: [],
+  evidence: {
+    kind: 'tracer',
+    test: 'test/unit/tooling/x.test.ts › adds x',
+    pseudocode: 'x()\n  returns 1',
+    red: 'AssertionError: expected undefined to be 1',
+    green: '✓ test/unit/tooling/x.test.ts › adds x',
+    reason: '',
+  },
 };
 
 /** A diff review that found two rules findings and one plan finding. */

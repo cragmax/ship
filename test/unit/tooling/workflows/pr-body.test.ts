@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ProbeRecord, SliceWork } from '../../../../tooling/workflows/lib/agent-calls.js';
+import type {
+  ProbeRecord,
+  SliceWork,
+  TddEvidence,
+} from '../../../../tooling/workflows/lib/agent-calls.js';
 import {
   commitMessage,
   prTitle,
@@ -12,6 +16,24 @@ import {
 
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
 
+const TRACER: TddEvidence = {
+  kind: 'tracer',
+  test: 'test/unit/x.test.ts › rejects a stale lease',
+  pseudocode: 'lease(stale)\n  → rejects',
+  red: 'AssertionError: expected [Function] to throw',
+  green: '✓ test/unit/x.test.ts › rejects a stale lease',
+  reason: '',
+};
+
+const NONE: TddEvidence = {
+  kind: 'none',
+  test: '',
+  pseudocode: '',
+  red: '',
+  green: '',
+  reason: 'docs only',
+};
+
 const work = (fields: {
   subject: string;
   closes: 'fixes' | 'see';
@@ -21,6 +43,7 @@ const work = (fields: {
   diffReview?: SliceWork['diffReview'];
   review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
+  evidence?: TddEvidence;
 }): SliceWork => ({
   card: {
     verdict: 'plan',
@@ -38,6 +61,7 @@ const work = (fields: {
     files: ['src/a.ts'],
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
+    evidence: fields.evidence ?? TRACER,
   },
   diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
   review: fields.review ?? {
@@ -284,14 +308,15 @@ describe('renderPrBody', () => {
 
   it('has every required section', () => {
     for (const line of [
-      '## Summary',
-      'Unattended run on `ship/epic-1025` — see #1025.',
+      '## Evidence',
       '## Issues',
-      '## Not landed',
+      '<details><summary>Run report</summary>',
+      '## Landed issues',
       '## Epic end',
+      '</details>',
       '### feat(tools): add the x tool',
-      '- Issue: fixes #7, landed as c7',
-      '- Issue: see #8 (its acceptance needs a human), landed as c8',
+      '- Issue: #7, landed as c7',
+      '- Issue: #8, landed as c8',
       '- Plan: plan the thing (tier: server)',
       '- Review: fixed — renamed a helper',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
@@ -303,7 +328,9 @@ describe('renderPrBody', () => {
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
-      '- see #10 — skipped',
+      '- see #10 — not landed: skipped',
+      '- Epic: see #1025',
+      '- fixes #7 — add the x tool',
     ]) {
       expect(body.split('\n')).toContain(line);
     }
@@ -415,9 +442,14 @@ describe('renderPrBody', () => {
       retro: [{ title: 'fixes #9 already', evidence: 'e', kind: 'first-time', suggestion: 's' }],
     });
 
+    const fold = text.slice(text.indexOf('<details>'), text.indexOf('</details>'));
+
     expect(text).toContain('fixes (see #9) already');
     expect(text).not.toMatch(closes(9));
     expect(text).toMatch(closes(7));
+    expect(fold).toContain('fixes (see #9) already');
+    expect(text.split('\n')).toContain('- fixes #7 — add the x tool');
+    expect(fold).not.toMatch(closes(7));
   });
 
   it('names the holder a lease waited on in its lease timings', () => {
@@ -651,6 +683,292 @@ describe('renderPrBody', () => {
     expect(tricky.split('\n')).toContain(
       '- Outcome: changes dropped — land failed: fixed (see #24) then broke',
     );
+  });
+});
+
+const landedWith = (evidence: TddEvidence): PrBodyInput => ({
+  ...INPUT,
+  landed: [{ issue: 11, commit: 'c11', ...work({ subject: 'x', closes: 'fixes', evidence }) }],
+});
+
+// From the Evidence heading through the Issues heading after it.
+const evidenceLines = (input: PrBodyInput): string[] => {
+  const lines = renderPrBody(input).split('\n');
+  return lines.slice(lines.indexOf('## Evidence'), lines.indexOf('## Issues') + 1);
+};
+
+describe('renderPrBody — evidence', () => {
+  it('renders a complete tracer as its test, its pseudocode fenced, then Before and After', () => {
+    expect(evidenceLines(landedWith(TRACER))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** `test/unit/x.test.ts › rejects a stale lease`',
+      '  ```text',
+      '  lease(stale)',
+      '    → rejects',
+      '  ```',
+      '  **Before:** AssertionError: expected [Function] to throw',
+      '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('renders one bullet per landed issue, from its own evidence, in landing order', () => {
+    const landed = [SEVEN, { ...EIGHT, tdd: { ...EIGHT.tdd, evidence: NONE } }];
+
+    expect(
+      renderPrBody({ ...INPUT, landed })
+        .split('\n')
+        .filter((l) => l.startsWith('- **#')),
+    ).toEqual([
+      '- **#7** `test/unit/x.test.ts › rejects a stale lease`',
+      '- **#8** no red-green — docs only',
+    ]);
+  });
+
+  it('renders a none as no red-green and its reason', () => {
+    expect(evidenceLines(landedWith(NONE))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** no red-green — docs only',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('ignores a tracer’s reason', () => {
+    expect(evidenceLines(landedWith({ ...TRACER, reason: 'docs only' }))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** `test/unit/x.test.ts › rejects a stale lease`',
+      '  ```text',
+      '  lease(stale)',
+      '    → rejects',
+      '  ```',
+      '  **Before:** AssertionError: expected [Function] to throw',
+      '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('ignores a none’s test, pseudocode, red and green', () => {
+    expect(evidenceLines(landedWith({ ...TRACER, kind: 'none', reason: 'docs only' }))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** no red-green — docs only',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it.each<[string, TddEvidence]>([
+    ['an empty test', { ...TRACER, test: '' }],
+    ['a blank test', { ...TRACER, test: '  ' }],
+    ['an empty red', { ...TRACER, red: '' }],
+    ['a whitespace-only red', { ...TRACER, red: '\n  \n' }],
+    ['an empty green', { ...TRACER, green: '' }],
+    ['a whitespace-only green', { ...TRACER, green: ' \n\t' }],
+  ])('renders a tracer with %s as evidence incomplete', (_name, evidence) => {
+    expect(evidenceLines(landedWith(evidence))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** evidence incomplete',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it.each<[string, TddEvidence]>([
+    ['an empty reason', { ...NONE, reason: '' }],
+    ['a blank reason', { ...NONE, reason: ' \n ' }],
+  ])('renders a none with %s as no reason given', (_name, evidence) => {
+    expect(evidenceLines(landedWith(evidence))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** no red-green — no reason given',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', ' \n'],
+  ])('renders a tracer with %s pseudocode without a fence', (_name, pseudocode) => {
+    expect(evidenceLines(landedWith({ ...TRACER, pseudocode }))).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** `test/unit/x.test.ts › rejects a stale lease`',
+      '  **Before:** AssertionError: expected [Function] to throw',
+      '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('drops the pseudocode’s trailing blank lines from its fence', () => {
+    expect(
+      evidenceLines(landedWith({ ...TRACER, pseudocode: 'lease(stale)\n  → rejects\n\n  \n' })),
+    ).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** `test/unit/x.test.ts › rejects a stale lease`',
+      '  ```text',
+      '  lease(stale)',
+      '    → rejects',
+      '  ```',
+      '  **Before:** AssertionError: expected [Function] to throw',
+      '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('splits a CRLF pseudocode into its lines, leaving no carriage return', () => {
+    expect(
+      evidenceLines(landedWith({ ...TRACER, pseudocode: 'lease(stale)\r\n  → rejects\r\n' })),
+    ).toEqual([
+      '## Evidence',
+      '',
+      '- **#11** `test/unit/x.test.ts › rejects a stale lease`',
+      '  ```text',
+      '  lease(stale)',
+      '    → rejects',
+      '  ```',
+      '  **Before:** AssertionError: expected [Function] to throw',
+      '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it.each<[string, number]>([
+    ['f(x)', 3],
+    ['f(`x`)', 3],
+    ['a `` b', 3],
+    ['print ```js', 4],
+    ['x\n`````\ny', 6],
+  ])('fences the pseudocode %j in %i backticks', (pseudocode, length) => {
+    const fence = '`'.repeat(length);
+    const lines = renderPrBody(landedWith({ ...TRACER, pseudocode })).split('\n');
+    const bullet = lines.findIndex((l) => l.startsWith('- **#11** '));
+    const before = lines.findIndex((l) => l.startsWith('  **Before:** '));
+
+    expect(lines[bullet + 1]).toBe(`  ${fence}text`);
+    expect(lines[before - 1]).toBe(`  ${fence}`);
+  });
+
+  // A single-backtick span closes at the name's first backtick; this repo's test names often carry one.
+  it.each<[string, string]>([
+    ['x › shadows `bot`', '- **#11** `` x › shadows `bot` ``'],
+    ['x › a `` b', '- **#11** ``` x › a `` b ```'],
+    ['`bot` first', '- **#11** `` `bot` first ``'],
+  ])('spans the test %j in a backtick run its own cannot close', (test, line) => {
+    expect(renderPrBody(landedWith({ ...TRACER, test })).split('\n')).toContain(line);
+  });
+
+  it.each<[string, TddEvidence, string]>([
+    [
+      'red',
+      { ...TRACER, red: 'AssertionError: expected 1\r\n    to be 2\n' },
+      '  **Before:** AssertionError: expected 1 to be 2',
+    ],
+    ['green', { ...TRACER, green: '\n ✓ adds x\n\n  (1 test)' }, '  **After:** ✓ adds x (1 test)'],
+    [
+      'none reason',
+      { ...NONE, reason: 'docs only\n  no code' },
+      '- **#11** no red-green — docs only no code',
+    ],
+  ])('collapses a multi-line %s to one line', (_name, evidence, line) => {
+    expect(renderPrBody(landedWith(evidence)).split('\n')).toContain(line);
+  });
+
+  it('defuses a closing keyword the tdd’s evidence carries', () => {
+    const body = renderPrBody(
+      landedWith({ ...TRACER, red: 'AssertionError: fixes #9 not applied' }),
+    );
+
+    expect(body.split('\n')).toContain('  **Before:** AssertionError: fixes (see #9) not applied');
+    expect(body).not.toMatch(closes(9));
+  });
+});
+
+describe('renderPrBody — issues list', () => {
+  it('cites the epic, then each landed issue by its subject, then each unlanded one', () => {
+    const lines = renderPrBody(INPUT).split('\n');
+    const at = lines.indexOf('## Issues');
+
+    expect(lines.slice(at, at + 8)).toEqual([
+      '## Issues',
+      '',
+      '- Epic: see #1025',
+      '- fixes #7 — add the x tool',
+      '- see #8 — wire y — fixes (see #12) in passing (its acceptance needs a human)',
+      '- see #9 — not landed: blocked: planner stale: resolved (see #9) by abc123',
+      '- see #10 — not landed: skipped',
+      '',
+    ]);
+  });
+
+  it('names an explicit list instead of an epic', () => {
+    const body = renderPrBody({ ...INPUT, epic: null });
+    const lines = body.split('\n');
+
+    expect(lines[lines.indexOf('## Issues') + 2]).toBe('- An explicit issue list');
+    expect(body).not.toContain('#1025');
+  });
+});
+
+// A closing keyword before any #N, as GitHub reads one.
+const ANY_CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#\d+/i;
+
+const OPENER = '<details><summary>Run report</summary>';
+
+describe('renderPrBody — the fold', () => {
+  const body = renderPrBody(INPUT);
+  const lines = body.split('\n');
+
+  it('leads with the Evidence and the Issues list, folding the run report after them', () => {
+    const at = [
+      '## Evidence',
+      '## Issues',
+      OPENER,
+      '## Landed issues',
+      '## Epic end',
+      '## Critic',
+      '## Overlap edges',
+      '## Schedule',
+      '## Lease timings',
+      '## Retro findings',
+      '</details>',
+    ].map((line) => lines.indexOf(line));
+    const open = lines.indexOf(OPENER);
+    const close = lines.indexOf('</details>');
+    const sections = lines.flatMap((l, i) =>
+      l.startsWith('### ') || l.startsWith('- Issue: ') ? [i] : [],
+    );
+
+    expect(lines[0]).toBe('## Evidence');
+    expect(at.every((i) => i > -1)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(lines[open - 1]).toBe('');
+    expect(lines.slice(open + 1, open + 3)).toEqual(['', '## Landed issues']);
+    expect(body.endsWith('\n\n</details>\n')).toBe(true);
+    expect(sections).toHaveLength(4);
+    expect(sections.every((i) => i > open && i < close)).toBe(true);
+    expect(lines).not.toContain('## Summary');
+    expect(lines).not.toContain('## Not landed');
+    expect(lines.filter((l) => l.startsWith('Unattended run on'))).toEqual([]);
+  });
+
+  it('writes no closing keyword inside the fold', () => {
+    const fold = body.slice(body.indexOf('<details>'), body.indexOf('</details>'));
+
+    expect(fold).not.toMatch(ANY_CLOSING);
+    expect(fold.split('\n')).toContain('- Issue: #7, landed as c7');
+    expect(fold.split('\n')).toContain('- Issue: #8, landed as c8');
   });
 });
 

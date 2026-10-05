@@ -227,6 +227,28 @@ describe('workflow agents', () => {
     expect(section(agentText(agentType), heading)).toContain('`seconds`');
   });
 
+  // Its own bullet, not the section: the verdict bullet also names `PARTIAL` and `BLOCKED`.
+  it('ship-tdd returns its tracer evidence, both kinds, under its ## Report and return', () => {
+    const bullet =
+      section(agentText('ship-tdd'), '## Report and return')
+        .split('\n')
+        .find((l) => l.startsWith('- `evidence`')) ?? '';
+
+    expect(
+      [
+        '`tracer`',
+        '`none`',
+        '`test`',
+        '`pseudocode`',
+        '`red`',
+        '`green`',
+        '`reason`',
+        '`PARTIAL`',
+        '`BLOCKED`',
+      ].filter((token) => !bullet.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',

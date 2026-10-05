@@ -473,6 +473,28 @@ describe('runShip — the lease totals', () => {
   });
 });
 
+describe('runShip — the tdd’s evidence', () => {
+  it('renders the landed slice’s tracer red-green as the PR body’s Evidence bullet', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const lines = promptOf(run, 'runner:publish:list').split('\n');
+    const at = lines.indexOf('## Evidence');
+    expect(lines.slice(at, at + 9)).toEqual([
+      '## Evidence',
+      '',
+      '- **#7** `test/unit/tooling/x.test.ts › adds x`',
+      '  ```text',
+      '  x()',
+      '    returns 1',
+      '  ```',
+      '  **Before:** AssertionError: expected undefined to be 1',
+      '  **After:** ✓ test/unit/tooling/x.test.ts › adds x',
+    ]);
+  });
+});
+
 describe('runShip — the diff review counts', () => {
   it('carries each landed issue’s own diff review counts into its PR-body section', async () => {
     const run = fakeHooks({

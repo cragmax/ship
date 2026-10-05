@@ -1181,9 +1181,21 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
+      evidence: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['tracer', 'none'] },
+          test: { type: 'string' },
+          pseudocode: { type: 'string' },
+          red: { type: 'string' },
+          green: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
   },
   diffReview: {
     type: 'object',

@@ -32,6 +32,7 @@ import type {
   RetroOutputSchema,
   ReviewOutputSchema,
   ScoutVerdictSchema,
+  TddEvidenceSchema,
   TddOutputSchema,
   TestReviewOutputSchema,
 } from '../schemas/agent-outputs.js';
@@ -77,6 +78,9 @@ export type PlanReview = z.infer<typeof PlanReviewSchema>;
 
 /** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
+
+/** The tdd's evidence: its tracer test's red-green, or why it saw none. */
+export type TddEvidence = z.infer<typeof TddEvidenceSchema>;
 
 /** The tdd's answer. */
 export type TddOutput = z.infer<typeof TddOutputSchema>;

@@ -1588,9 +1588,21 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['claim', 'verdict', 'followUp', 'seconds'],
         },
       },
+      evidence: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['tracer', 'none'] },
+          test: { type: 'string' },
+          pseudocode: { type: 'string' },
+          red: { type: 'string' },
+          green: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
   },
   diffReview: {
     type: 'object',
@@ -2058,6 +2070,59 @@ const AGENT_CALLS = {
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
+function evidenceBullet(issue, evidence) {
+  const ref = `#${String(issue)}`;
+  if (evidence.kind === 'none') {
+    const reason = oneLine(evidence.reason);
+    return [`- **${ref}** no red-green — ${reason === '' ? 'no reason given' : reason}`];
+  }
+  return tracerBullet(ref, evidence);
+}
+function tracerBullet(ref, evidence) {
+  const red = oneLine(evidence.red);
+  const green = oneLine(evidence.green);
+  if (evidence.test.trim() === '' || red === '' || green === '') {
+    return [`- **${ref}** evidence incomplete`];
+  }
+  return [
+    `- **${ref}** ${codeSpan(evidence.test)}`,
+    ...codeBlock(evidence.pseudocode),
+    `  **Before:** ${red}`,
+    `  **After:** ${green}`,
+  ];
+}
+function codeBlock(pseudocode) {
+  if (pseudocode.trim() === '') return [];
+  const fence = codeFence(pseudocode);
+  return [
+    `  ${fence}text`,
+    ...pseudocode
+      .trimEnd()
+      .split(/\r?\n/)
+      .map((line) => `  ${line}`),
+    `  ${fence}`,
+  ];
+}
+function codeFence(pseudocode) {
+  return '`'.repeat(Math.max(3, longestBacktickRun(pseudocode) + 1));
+}
+function codeSpan(text) {
+  const longest = longestBacktickRun(text);
+  if (longest === 0) return `\`${text}\``;
+  const delimiter = '`'.repeat(longest + 1);
+  return `${delimiter} ${text} ${delimiter}`;
+}
+function longestBacktickRun(text) {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+}
+function oneLine(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(' ');
+}
+
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
 const CLOSING_REFS = [
   new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),
@@ -2106,22 +2171,28 @@ function sliceLeaseLines(work) {
   return roles;
 }
 function renderPrBody(input) {
-  const container = input.epic === null ? 'an explicit issue list' : `see #${String(input.epic)}`;
   const closing = new Set(
     input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
   );
   const body = [
-    '## Summary',
+    ...section(
+      'Evidence',
+      input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
+    ),
+    ...section('Issues', issueListLines(input)),
+    '<details><summary>Run report</summary>',
     '',
-    `Unattended run on \`${input.branch}\` — ${container}.`,
+    ...runReportLines(input),
+    '</details>',
     '',
-    '## Issues',
+  ].join('\n');
+  return neutralText(body, closing);
+}
+function runReportLines(input) {
+  return [
+    '## Landed issues',
     '',
     ...input.landed.flatMap(issueSection),
-    '## Not landed',
-    '',
-    ...(input.unlanded.length === 0 ? ['None.'] : input.unlanded.map(unlandedLine)),
-    '',
     '## Epic end',
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
@@ -2135,8 +2206,24 @@ function renderPrBody(input) {
     ...section('Schedule', input.schedule.map(scheduleLine)),
     ...section('Lease timings', leaseLines(input.leases)),
     ...section('Retro findings', retroLines(input.retro)),
-  ].join('\n');
-  return neutralText(body, closing);
+  ];
+}
+function issueListLines(input) {
+  return [
+    epicLine(input.epic),
+    ...input.landed.map(landedLine),
+    ...input.unlanded.map(unlandedLine),
+  ];
+}
+function epicLine(epic) {
+  return epic === null ? '- An explicit issue list' : `- Epic: see #${String(epic)}`;
+}
+function landedLine(landed) {
+  const ref = `#${String(landed.issue)}`;
+  const subject = landed.card.commit.subject;
+  return landed.card.closes === 'fixes'
+    ? `- fixes ${ref} — ${subject}`
+    : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
 function section(heading, lines) {
   return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
@@ -2192,15 +2279,12 @@ function retroLines(retro) {
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 function issueSection(landed) {
-  const ref = `#${String(landed.issue)}`;
-  const cite =
-    landed.card.closes === 'fixes' ? `fixes ${ref}` : `see ${ref} (its acceptance needs a human)`;
   const diff = landed.diffReview;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.card.commit)}`,
     '',
-    `- Issue: ${cite}, landed as ${landed.commit}`,
+    `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
@@ -2246,7 +2330,7 @@ function leaseText(timings) {
 }
 function unlandedLine(issue) {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
-  return `- see #${String(issue.issue)} — ${issue.outcome}${reason}`;
+  return `- see #${String(issue.issue)} — not landed: ${issue.outcome}${reason}`;
 }
 function masterCheckText(check) {
   return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;

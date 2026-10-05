@@ -130,6 +130,22 @@ describe('consumed fields are required', () => {
       expect(probe.required).toContain('seconds');
     },
   );
+
+  it('requires the tdd’s evidence: a kind of tracer or none and five strings', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('evidence');
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.properties.evidence).toEqual({
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['tracer', 'none'] },
+        test: { type: 'string' },
+        pseudocode: { type: 'string' },
+        red: { type: 'string' },
+        green: { type: 'string' },
+        reason: { type: 'string' },
+      },
+      required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+    });
+  });
 });
 
 describe('the diff review’s output schema', () => {
