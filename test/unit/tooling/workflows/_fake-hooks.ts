@@ -1,7 +1,8 @@
 /**
  * Fake workflow hooks for driving `runShip` in vitest: `agent()` answers from
- * a label-keyed response table and records every call; `parallel` and
- * `pipeline` run their work in order, so a recorded call sequence is
+ * a label-keyed response table and records every call; `pipeline` runs its
+ * work in order; `parallel` starts every thunk at once, in array order, and
+ * settles as `Promise.all` does, so a recorded call sequence stays
  * deterministic. Each answer passes through the call's schema as an agent's
  * would: cut to the schema's properties, a missing required key, an
  * off-enum value or a value of none of its `type`s recorded in
@@ -248,6 +249,15 @@ export const LAND_OK = {
   at: '2026-09-29T10:20:00.000Z',
 };
 
+/** A PR writer's answer: a one-line summary, a two-way door, no note and no ramifications. */
+export const PR_WRITER_OK = {
+  summary: 'Adds the x tool.',
+  door: 'two-way',
+  doorNote: '',
+  blastRadius: 'tooling',
+  ramifications: '',
+};
+
 /** The all-pass answers of a full run of `issues 7`, by label. */
 const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
@@ -324,6 +334,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     checks: 'nothing to verify',
   },
   retro: { findings: [] },
+  prWriter: PR_WRITER_OK,
 };
 
 /**
@@ -373,11 +384,7 @@ export function fakeHooks(
   };
   const hooks: WorkflowHooks = {
     agent,
-    parallel: async (thunks) => {
-      const out = [];
-      for (const thunk of thunks) out.push(await thunk());
-      return out;
-    },
+    parallel: (thunks) => Promise.all(thunks.map((thunk) => thunk())),
     pipeline: async (items, step) => {
       const out = [];
       for (const item of items) out.push(await step(item));

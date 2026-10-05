@@ -129,6 +129,15 @@ const PROMPTS_OF: { readonly [K in keyof typeof PROMPTS]: readonly string[] } = 
     }),
   ],
   retro: [PROMPTS.retro({ epic: 1025, reportDir: REPORTS, report: { outcome: 'pr' } })],
+  prWriter: [
+    PROMPTS.prWriter({
+      epic: 1025,
+      batch: 'C:/r/batch',
+      range: 'o0...HEAD',
+      landed: [{ issue: 7, commit: 'c7', plan: `${REPORTS}/plans/7.md`, subject: 'add x' }],
+      reportDir: REPORTS,
+    }),
+  ],
 };
 
 const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType))];
@@ -165,6 +174,23 @@ const listedKeys = (agentType: string): string[] => {
 
 const sortedSet = (keys: readonly string[]): string[] =>
   [...new Set(keys)].sort((a, b) => a.localeCompare(b));
+
+describe('the PR writer’s Epic line', () => {
+  it.each<[number | null, string]>([
+    [1025, 'Epic: #1025'],
+    [null, 'Epic: an explicit issue list'],
+  ])('spells epic %s as %s', (epic, line) => {
+    const prompt = PROMPTS.prWriter({
+      epic,
+      batch: 'C:/r/batch',
+      range: 'o0...HEAD',
+      landed: [],
+      reportDir: REPORTS,
+    });
+
+    expect(prompt.split('\n')[0]).toBe(line);
+  });
+});
 
 describe('stage prompts', () => {
   it.each(agentTypes)('%s: its agent file lists exactly the keys its prompts emit', (agentType) => {

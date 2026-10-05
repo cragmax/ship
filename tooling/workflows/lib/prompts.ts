@@ -220,6 +220,26 @@ export interface RetroValues {
   readonly report: unknown;
 }
 
+/** One issue the epic landed, as the PR writer is handed it. */
+export interface PrWriterLanded extends PriorSlice {
+  /** Its commit subject: the planner's bare subject, not its `type(scope):` line. */
+  readonly subject: string;
+}
+
+/** The PR writer's values. */
+export interface PrWriterValues {
+  /** The entry's epic; `null` for an explicit list. */
+  readonly epic: number | null;
+  /** The batch worktree, at the head the PR pushes. */
+  readonly batch: string;
+  /** The PR's net diff, `<base>...HEAD`. */
+  readonly range: string;
+  /** Each landed issue, in landing order. */
+  readonly landed: readonly PrWriterLanded[];
+  /** The run's report directory. */
+  readonly reportDir: string;
+}
+
 /** The doc-index resolver's values. */
 export interface ResolverValues {
   /** The batch worktree, its `origin/master` merge in progress. */
@@ -346,6 +366,16 @@ function issueRef(issue: number): string {
   return `#${String(issue)}`;
 }
 
+/**
+ * An entry's epic as the epic-end prompts spell it.
+ *
+ * @param epic - The epic; `null` for an explicit list.
+ * @returns `an explicit issue list` for `null`, else `#<epic>`.
+ */
+function epicLabel(epic: number | null): string {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
+
 /** Every stage's prompt builder. */
 export const PROMPTS = {
   runner: (values: RunnerValues): string =>
@@ -431,9 +461,17 @@ export const PROMPTS = {
     ].join('\n'),
   retro: (values: RetroValues): string =>
     [
-      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  prWriter: (values: PrWriterValues): string =>
+    [
+      `Epic: ${epicLabel(values.epic)}`,
+      `Batch worktree: ${values.batch}`,
+      `Diff range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
 

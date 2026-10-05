@@ -990,4 +990,15 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['findings'],
   },
+  prWriter: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      door: { type: 'string', enum: ['one-way', 'two-way'] },
+      doorNote: { type: 'string' },
+      blastRadius: { type: 'string' },
+      ramifications: { type: 'string' },
+    },
+    required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
+  },
 } as const;

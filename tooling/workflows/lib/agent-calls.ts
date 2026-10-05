@@ -26,6 +26,7 @@ import type {
   OverlapEstimateSchema,
   PlanCardSchema,
   PlanReviewSchema,
+  PrWriterOutputSchema,
   ProbeRecordSchema,
   ResolverOutputSchema,
   RetroFindingSchema,
@@ -45,6 +46,7 @@ import {
   type OverlapValues,
   type PlannerValues,
   type PlanReviewerValues,
+  type PrWriterValues,
   type ResolverValues,
   type RetroValues,
   type ReviewerValues,
@@ -119,6 +121,9 @@ export type RetroFinding = z.infer<typeof RetroFindingSchema>;
 
 /** The retro's answer. */
 export type RetroOutput = z.infer<typeof RetroOutputSchema>;
+
+/** The PR writer's answer. */
+export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
 
 /** The doc-index resolver's answer. */
 export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
@@ -239,5 +244,11 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.retro(values),
       agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
+    ),
+  prWriter: (hooks: WorkflowHooks, values: PrWriterValues, tag: string) =>
+    askAgent<PrWriterOutput>(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };

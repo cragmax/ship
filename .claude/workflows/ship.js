@@ -17,7 +17,8 @@ export const meta = {
     },
     {
       title: 'Epic end',
-      detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+      detail:
+        'per epic: critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     },
   ],
 };
@@ -37,6 +38,7 @@ const STAGES = {
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
+  prWriter: { agentType: 'pr-writer' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -71,7 +73,9 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.epicEnd,
-    detail: 'per epic: critic, master sync, version bump, retro, master check, pull request',
+    detail:
+      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'master check, pull request',
   },
 ];
 const RESYNC_PHASE_TITLES = {
@@ -605,6 +609,9 @@ function issueLines(issue, reportDir) {
 function issueRef(issue) {
   return `#${String(issue)}`;
 }
+function epicLabel(epic) {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
 const PROMPTS = {
   runner: (values) =>
     [
@@ -688,9 +695,17 @@ const PROMPTS = {
     ].join('\n'),
   retro: (values) =>
     [
-      `Epic: ${values.epic === null ? 'an explicit issue list' : issueRef(values.epic)}`,
+      `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+    ].join('\n'),
+  prWriter: (values) =>
+    [
+      `Epic: ${epicLabel(values.epic)}`,
+      `Batch worktree: ${values.batch}`,
+      `Diff range: ${values.range}`,
+      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
 function sliceCommitLines(values) {
@@ -1692,6 +1707,17 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['findings'],
   },
+  prWriter: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      door: { type: 'string', enum: ['one-way', 'two-way'] },
+      doorNote: { type: 'string' },
+      blastRadius: { type: 'string' },
+      ramifications: { type: 'string' },
+    },
+    required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
+  },
 };
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
@@ -2066,6 +2092,12 @@ const AGENT_CALLS = {
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
+  prWriter: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
+    ),
 };
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
@@ -2123,6 +2155,27 @@ function oneLine(text) {
     .join(' ');
 }
 
+function summaryLines(writer) {
+  if (writer === null) return ['Summary unavailable — the PR writer returned nothing'];
+  return textLines(writer.summary);
+}
+function mergeDangerLines(writer) {
+  if (writer === null) return ['Unavailable — the PR writer returned nothing'];
+  const note = textLines(writer.doorNote);
+  const ramifications = textLines(writer.ramifications);
+  return [
+    `**Door:** ${writer.door}`,
+    '',
+    ...(note.length === 0 ? [] : [...note, '']),
+    `**Blast Radius:** ${writer.blastRadius.trim()}`,
+    ...(ramifications.length === 0 ? [] : ['', ...ramifications]),
+  ];
+}
+function textLines(text) {
+  const trimmed = text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();
+  return trimmed === '' ? [] : trimmed.split(/\r?\n/);
+}
+
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
 const CLOSING_REFS = [
   new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),
@@ -2175,18 +2228,21 @@ function renderPrBody(input) {
     input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
   );
   const body = [
+    ...section('Summary', summaryLines(input.writer)),
     ...section(
       'Evidence',
       input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
     ),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    '<details><summary>Run report</summary>',
-    '',
-    ...runReportLines(input),
-    '</details>',
-    '',
+    ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closing);
+}
+function reportBlock(input) {
+  const report = runReportLines(input);
+  if (input.writer === null) return report;
+  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
 }
 function runReportLines(input) {
   return [
@@ -2578,7 +2634,14 @@ async function shipSteps(input, state) {
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+  await hooks.parallel([
+    async () => {
+      state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+    },
+    async () => {
+      state.writer = await prWriterStep(input, sync.upstream);
+    },
+  ]);
   return publishStep(input, { sync, bump, state });
 }
 async function publishStep(input, found) {
@@ -2614,6 +2677,7 @@ async function openPr(input, found, checked) {
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    writer: found.state.writer ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -2645,6 +2709,22 @@ async function retroStep(input, report) {
   const values = { epic: entry.epic, reportDir: entry.reportDir, report };
   const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
   return out?.findings ?? null;
+}
+async function prWriterStep(input, upstream) {
+  const { entry } = input;
+  const values = {
+    epic: entry.epic,
+    batch: entry.batch,
+    range: `${upstream ?? entry.base}...HEAD`,
+    landed: input.landed.map((l) => ({
+      issue: l.issue,
+      commit: l.commit,
+      plan: l.card.planPath,
+      subject: l.card.commit.subject,
+    })),
+    reportDir: entry.reportDir,
+  };
+  return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 function retroReport(input, published) {
   return {

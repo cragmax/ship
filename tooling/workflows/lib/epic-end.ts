@@ -1,9 +1,10 @@
 /**
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose
  * issues have all settled with at least one landed ({@link epicEnd}): the
- * critic (`critic-step.ts`), the master sync, the version bump, the retro,
- * then one repo-lock task: the main-checkout look, the master check and the
- * pull request. An entry that halted or landed nothing gets the retro alone
+ * critic (`critic-step.ts`), the master sync, the version bump, then the
+ * retro and the PR writer concurrently (the hooks' `parallel`), then one
+ * repo-lock task: the main-checkout look, the master check and the pull
+ * request. An entry that halted or landed nothing gets the retro alone
  * ({@link unshippedEpicEnd}).
  *
  * - **No server tier here** — PR CI's `Server integration` workflow
@@ -16,11 +17,14 @@
  *   So does a failed bump, and so does a step that throws.
  * - **The retro runs exactly once per entry**, whatever path the entry
  *   ends on, before the PR on the shipping path.
+ * - **The PR writer runs on the shipping path only**, after the bump. One
+ *   that returns nothing or rejects never blocks the PR; the body falls back
+ *   ({@link renderPrBody}).
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
  *   the publish task (the main-checkout look, the master check, the push and
  *   PR) each run as one task of the run's one lock, so no two epic ends talk
- *   to `origin` or read the main checkout at once; the critic, the bump and
- *   the retro run outside it.
+ *   to `origin` or read the main checkout at once; the critic, the bump,
+ *   the retro and the PR writer run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's — read
  *   in the publish task before the push on the shipping path (so the PR body
@@ -40,7 +44,7 @@
 
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
 
-import { AGENT_CALLS, type RetroFinding } from './agent-calls.js';
+import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from './agent-calls.js';
 import type { CommitQueue } from './commit-queue.js';
 import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -150,6 +154,8 @@ interface EndState {
   critic?: CriticReport;
   leases?: LeaseAggregate;
   retro?: readonly RetroFinding[] | null;
+  /** The PR writer's answer, once it ran; `null` when it returned none or threw. */
+  writer?: PrWriterOutput | null;
   /** The main-checkout comparison, once the publish task read it. */
   mainUntouched?: boolean | null;
   /** The master check, once the publish task took it. */
@@ -214,8 +220,8 @@ export async function unshippedEpicEnd(
 }
 
 /**
- * The shipping path, up to the pull request: critic, sync, bump, retro,
- * then the publish task.
+ * The shipping path, up to the pull request: critic, sync, bump, the retro
+ * and the PR writer concurrently, then the publish task.
  *
  * @param input - The epic end's inputs.
  * @param state - Filled in as each step reports.
@@ -235,7 +241,16 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+  // Neither thunk rejects (both steps catch), so the runtime's unobserved
+  // `null`-for-a-throw is never read.
+  await hooks.parallel([
+    async () => {
+      state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+    },
+    async () => {
+      state.writer = await prWriterStep(input, sync.upstream);
+    },
+  ]);
   return publishStep(input, { sync, bump, state });
 }
 
@@ -305,6 +320,7 @@ async function openPr(
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed),
     retro: found.state.retro ?? null,
+    writer: found.state.writer ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
   const argv = [
@@ -356,6 +372,36 @@ async function retroStep(
   const values = { epic: entry.epic, reportDir: entry.reportDir, report };
   const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
   return out?.findings ?? null;
+}
+
+/**
+ * Run the PR writer over the PR's net diff.
+ *
+ * @param input - The entry, its landed issues and the hooks.
+ * @param upstream - The `origin/master` sha the master sync left the batch
+ *   holding; `null` when it named none. The writer reads `<upstream>...HEAD`,
+ *   or `<batch base>...HEAD` when `upstream` is `null`.
+ * @returns Resolves to its answer; `null` when it returned none or threw —
+ *   never rejects.
+ */
+async function prWriterStep(
+  input: Pick<EpicEndInput, 'hooks' | 'entry' | 'landed'>,
+  upstream: string | null,
+): Promise<PrWriterOutput | null> {
+  const { entry } = input;
+  const values = {
+    epic: entry.epic,
+    batch: entry.batch,
+    range: `${upstream ?? entry.base}...HEAD`,
+    landed: input.landed.map((l) => ({
+      issue: l.issue,
+      commit: l.commit,
+      plan: l.card.planPath,
+      subject: l.card.commit.subject,
+    })),
+    reportDir: entry.reportDir,
+  };
+  return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 
 /**

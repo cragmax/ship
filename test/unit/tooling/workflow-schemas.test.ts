@@ -117,6 +117,7 @@ describe('consumed fields are required', () => {
       resolver: [],
       critic: [],
       retro: [],
+      prWriter: [],
     });
   });
 
@@ -144,6 +145,20 @@ describe('consumed fields are required', () => {
         reason: { type: 'string' },
       },
       required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
+    });
+  });
+
+  it('requires the PR writer’s summary, door, door note, blast radius and ramifications', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.prWriter).toEqual({
+      type: 'object',
+      properties: {
+        summary: { type: 'string' },
+        door: { type: 'string', enum: ['one-way', 'two-way'] },
+        doorNote: { type: 'string' },
+        blastRadius: { type: 'string' },
+        ramifications: { type: 'string' },
+      },
+      required: ['summary', 'door', 'doorNote', 'blastRadius', 'ramifications'],
     });
   });
 });

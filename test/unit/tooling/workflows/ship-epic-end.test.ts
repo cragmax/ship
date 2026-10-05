@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { PHASE_TITLES, SHIP_PHASES } from '../../../../tooling/workflows/lib/stages.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
@@ -11,6 +12,7 @@ import {
   REPORT_DIR,
   type FakeRun,
 } from './_fake-hooks.js';
+import { epicRun, holdable, idle } from './_fake-parallel.js';
 
 /** The gate and scout answers of the explicit list 7 → 8. */
 const SEVEN_THEN_EIGHT = {
@@ -69,6 +71,20 @@ const LAND_BATCH_DIRTY = {
   errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
+// Up to date, but naming no origin/master sha: the master check stops the epic after the PR writer ran.
+const SYNC_NO_UPSTREAM = {
+  exitCode: 0,
+  envelopePath: 'e.json',
+  status: 'ok',
+  errors: [],
+  outcome: 'up-to-date',
+  commit: null,
+  upstream: null,
+  conflicts: [],
+  version: null,
+  pending: [],
+};
+
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 /**
@@ -102,6 +118,7 @@ describe('runShip — the critic', () => {
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
+      'prWriter:list',
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
@@ -351,6 +368,199 @@ describe('runShip — the retro', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', retro: null });
+  });
+});
+
+/**
+ * The PR body the publish call writes, line for line.
+ *
+ * @param run - The fake run.
+ * @returns The lines after the publish prompt's begin marker.
+ */
+const bodyOf = (run: FakeRun): string[] => {
+  const lines = promptOf(run, 'runner:publish:list').split('\n');
+  return lines.slice(lines.indexOf('----- BEGIN FILE -----') + 1);
+};
+
+describe('runShip — the PR writer', () => {
+  it('writes the PR writer’s summary first and its merge danger after the Evidence', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const body = bodyOf(run);
+    expect(body.slice(0, 5)).toEqual(['## Summary', '', 'Adds the x tool.', '', '## Evidence']);
+    const d = body.indexOf('## Merge Danger');
+    expect(body.slice(d, d + 7)).toEqual([
+      '## Merge Danger',
+      '',
+      '**Door:** two-way',
+      '',
+      '**Blast Radius:** tooling',
+      '',
+      '## Issues',
+    ]);
+    expect(d).toBeGreaterThan(body.indexOf('## Evidence'));
+  });
+
+  it('hands the PR writer the epic, the batch worktree, the PR’s net diff range, the landed issues and the report dir', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'prWriter:list').split('\n')).toEqual([
+      'Epic: an explicit issue list',
+      `Batch worktree: ${BATCH}`,
+      'Diff range: origin0...HEAD',
+      `Landed (JSON): ${JSON.stringify([
+        {
+          issue: 7,
+          commit: LAND_OK.commit,
+          plan: PLAN_CARD.planPath,
+          subject: PLAN_CARD.commit.subject,
+        },
+      ])}`,
+      `Report dir: ${REPORT_DIR}`,
+    ]);
+  });
+
+  it('falls back to the batch base for the diff range when the sync named no origin/master sha', async () => {
+    const run = fakeHooks({ 'runner:sync-master': SYNC_NO_UPSTREAM });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'prWriter:list').split('\n')).toContain('Diff range: master0...HEAD');
+  });
+
+  it('hands the PR writer every landed issue, in landing order', async () => {
+    const run = fakeHooks(SEVEN_THEN_EIGHT);
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const line = promptOf(run, 'prWriter:list')
+      .split('\n')
+      .find((l) => l.startsWith('Landed (JSON): '));
+    const landed = JSON.parse(line?.slice('Landed (JSON): '.length) ?? '[]') as {
+      issue: number;
+    }[];
+    expect(landed.map((l) => l.issue)).toEqual([7, 8]);
+  });
+
+  it('names each epic, its batch worktree and its report dir to that epic’s PR writer', async () => {
+    const run = fakeHooks(
+      epicRun([
+        { epic: 1, issues: [1] },
+        { epic: 2, issues: [3] },
+      ]),
+    );
+
+    await runShip(run.hooks, 'epics 1 2');
+
+    for (const epic of [1, 2]) {
+      const lines = promptOf(run, `prWriter:epic-${String(epic)}`).split('\n');
+      const root = `C:/src/ph-runs/epic-${String(epic)}`;
+      expect([lines[0], lines[1], lines.at(-1)]).toEqual([
+        `Epic: #${String(epic)}`,
+        `Batch worktree: ${root}/batch`,
+        `Report dir: ${root}/reports`,
+      ]);
+    }
+  });
+
+  it.each<[string, unknown]>([
+    ['returns nothing', null],
+    [
+      'throws',
+      () => {
+        throw new Error('the PR writer died');
+      },
+    ],
+  ])(
+    'still opens the PR when the PR writer %s, its body carrying the fallback lines',
+    async (_name, answer) => {
+      const run = fakeHooks({ prWriter: answer });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+      const body = bodyOf(run);
+      expect(body).toContain('Summary unavailable — the PR writer returned nothing');
+      expect(body).toContain('Unavailable — the PR writer returned nothing');
+      expect(body).not.toContain('<details><summary>Run report</summary>');
+    },
+  );
+
+  it('runs the PR writer while the retro is still in flight, and publishes after both', async () => {
+    const hold = holdable(/^retro:/);
+    const run = fakeHooks({}, { gate: hold.gate });
+
+    const done = runShip(run.hooks, 'issues 7');
+    await idle();
+
+    expect(hold.held()).toEqual(['retro:list']);
+    expect(labels(run)).toContain('prWriter:list');
+    expect(labels(run)).not.toContain('runner:preflight:list');
+    hold.releaseAll();
+    await expect(done).resolves.toMatchObject({ status: 'done' });
+  });
+
+  it('publishes the PR writer’s sections when the retro beside it throws', async () => {
+    const run = fakeHooks({
+      retro: () => {
+        throw new Error('the retro died');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42, retro: null });
+    expect(bodyOf(run).slice(0, 3)).toEqual(['## Summary', '', 'Adds the x tool.']);
+  });
+
+  it.each([
+    ['halted', { 'runner:land': LAND_BATCH_DIRTY }],
+    [
+      'stopped at its bump',
+      {
+        'runner:bump': () => {
+          throw new Error('runner crashed');
+        },
+      },
+    ],
+  ])('runs no PR writer for an entry %s', async (_name, responses) => {
+    const run = fakeHooks(responses);
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run)).toContain('retro:list');
+    expect(labels(run).filter((l) => l.startsWith('prWriter'))).toEqual([]);
+  });
+
+  it('runs the PR writer outside the repo lock: another epic publishes while it is held', async () => {
+    const hold = holdable(/^prWriter:epic-1$/);
+    const run = fakeHooks(
+      epicRun([
+        { epic: 1, issues: [1] },
+        { epic: 2, issues: [3] },
+      ]),
+      { gate: hold.gate },
+    );
+
+    const done = runShip(run.hooks, 'epics 1 2');
+    await idle();
+
+    expect(hold.held()).toEqual(['prWriter:epic-1']);
+    expect(labels(run)).toContain('runner:publish:epic-2');
+    hold.releaseAll();
+    await done;
+  });
+});
+
+describe('the epic-end phase', () => {
+  it('names the PR writer beside the retro in its detail', () => {
+    expect(SHIP_PHASES.find((p) => p.title === PHASE_TITLES.epicEnd)?.detail).toBe(
+      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+    );
   });
 });
 

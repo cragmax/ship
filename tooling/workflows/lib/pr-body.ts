@@ -1,8 +1,10 @@
 /**
  * The `ship` workflow's texts that land in git and on GitHub: each landed
  * issue's commit message, and each epic's pull request title and body — the
- * body leading with the Evidence ({@link evidenceBullet}), then the visible
- * Issues list, then the run report folded in `<details>` (the order:
+ * PR writer's Summary ({@link summaryLines}), the Evidence
+ * ({@link evidenceBullet}), the PR writer's Merge Danger
+ * ({@link mergeDangerLines}), the visible Issues list, then the run report,
+ * folded in `<details>` unless the PR writer returned nothing (the order:
  * {@link renderPrBody}).
  *
  * **Closing keywords are the workflow's own.** GitHub closes an issue for a
@@ -29,6 +31,7 @@ import type {
   CriticFinding,
   OverlapConfidence,
   PlanCard,
+  PrWriterOutput,
   ProbeRecord,
   RetroFinding,
   SliceWork,
@@ -36,6 +39,7 @@ import type {
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
 import { evidenceBullet } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
+import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from './sync-master-step.js';
 import type { BumpOutput } from './tool-calls.js';
 
@@ -158,6 +162,8 @@ export interface PrBodyInput {
   readonly leases: LeaseAggregate;
   /** The retro's findings; `null` when it returned none. */
   readonly retro: readonly RetroFinding[] | null;
+  /** The PR writer's answer; `null` when it returned none. */
+  readonly writer: PrWriterOutput | null;
 }
 
 /**
@@ -256,31 +262,42 @@ export function sliceLeaseLines(
  * An epic's pull request body.
  *
  * @param input - The epic's report.
- * @returns Markdown, neutralised whole but for the landed `fixes` issues:
+ * @returns Markdown, neutralised whole but for the landed `fixes` issues,
+ *   the PR writer's prose included: `## Summary` per {@link summaryLines};
  *   `## Evidence`, one bullet per landed issue in landing order per
- *   {@link evidenceBullet}; `## Issues` per {@link issueListLines}; then the
- *   run report per {@link runReportLines}, folded between
- *   `<details><summary>Run report</summary>` and `</details>`, each followed
- *   by a blank line — so the body ends in a blank line, `</details>` and a
- *   newline.
+ *   {@link evidenceBullet}; `## Merge Danger` per {@link mergeDangerLines};
+ *   `## Issues` per {@link issueListLines}; then the run report per
+ *   {@link reportBlock}. Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
   const closing = new Set(
     input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
   );
   const body = [
+    ...section('Summary', summaryLines(input.writer)),
     ...section(
       'Evidence',
       input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
     ),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    '<details><summary>Run report</summary>',
-    '',
-    ...runReportLines(input),
-    '</details>',
-    '',
+    ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closing);
+}
+
+/**
+ * The run report as the body carries it.
+ *
+ * @param input - The epic's report.
+ * @returns The lines of {@link runReportLines}, unfolded when the PR writer
+ *   returned nothing; otherwise between `<details><summary>Run report</summary>`
+ *   and `</details>`, each followed by a blank line.
+ */
+function reportBlock(input: PrBodyInput): string[] {
+  const report = runReportLines(input);
+  if (input.writer === null) return report;
+  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
 }
 
 /**

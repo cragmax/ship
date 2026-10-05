@@ -253,6 +253,20 @@ export const RetroOutputSchema = z.object({
   findings: z.array(RetroFindingSchema),
 });
 
+/** The PR writer's answer: the PR body's Summary and Merge Danger. */
+export const PrWriterOutputSchema = z.object({
+  /** The Summary: markdown with no heading, one view of the whole epic. */
+  summary: z.string(),
+  /** `one-way`: the merge cannot be walked back; `two-way`: it can. */
+  door: z.enum(['one-way', 'two-way']),
+  /** What makes the door what it is; empty when none. */
+  doorNote: z.string(),
+  /** The merge's blast radius, one word. */
+  blastRadius: z.string(),
+  /** The merge's potential ramifications; empty when none. */
+  ramifications: z.string(),
+});
+
 /** Each judgment stage's output schema, keyed as `schemas.generated.ts` emits it. */
 export const AGENT_OUTPUTS = {
   scout: ScoutVerdictSchema,
@@ -266,4 +280,5 @@ export const AGENT_OUTPUTS = {
   resolver: ResolverOutputSchema,
   critic: CriticOutputSchema,
   retro: RetroOutputSchema,
+  prWriter: PrWriterOutputSchema,
 } as const;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   ProbeRecord,
+  PrWriterOutput,
   SliceWork,
   TddEvidence,
 } from '../../../../tooling/workflows/lib/agent-calls.js';
@@ -171,6 +172,14 @@ const TDD_CONFIRMED: ProbeRecord = {
   seconds: 42,
 };
 
+const WRITER: PrWriterOutput = {
+  summary: 'Adds the x tool, then wires y through it.',
+  door: 'two-way',
+  doorNote: '',
+  blastRadius: 'tooling',
+  ramifications: '',
+};
+
 const INPUT: PrBodyInput = {
   epic: 1025,
   branch: 'ship/epic-1025',
@@ -243,6 +252,7 @@ const INPUT: PrBodyInput = {
       suggestion: 'warm a second paper',
     },
   ],
+  writer: WRITER,
 };
 
 /**
@@ -308,7 +318,11 @@ describe('renderPrBody', () => {
 
   it('has every required section', () => {
     for (const line of [
+      '## Summary',
       '## Evidence',
+      '## Merge Danger',
+      '**Door:** two-way',
+      '**Blast Radius:** tooling',
       '## Issues',
       '<details><summary>Run report</summary>',
       '## Landed issues',
@@ -691,10 +705,10 @@ const landedWith = (evidence: TddEvidence): PrBodyInput => ({
   landed: [{ issue: 11, commit: 'c11', ...work({ subject: 'x', closes: 'fixes', evidence }) }],
 });
 
-// From the Evidence heading through the Issues heading after it.
+// From the Evidence heading through the Merge Danger heading after it.
 const evidenceLines = (input: PrBodyInput): string[] => {
   const lines = renderPrBody(input).split('\n');
-  return lines.slice(lines.indexOf('## Evidence'), lines.indexOf('## Issues') + 1);
+  return lines.slice(lines.indexOf('## Evidence'), lines.indexOf('## Merge Danger') + 1);
 };
 
 describe('renderPrBody — evidence', () => {
@@ -710,7 +724,7 @@ describe('renderPrBody — evidence', () => {
       '  **Before:** AssertionError: expected [Function] to throw',
       '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -733,7 +747,7 @@ describe('renderPrBody — evidence', () => {
       '',
       '- **#11** no red-green — docs only',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -749,7 +763,7 @@ describe('renderPrBody — evidence', () => {
       '  **Before:** AssertionError: expected [Function] to throw',
       '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -759,7 +773,7 @@ describe('renderPrBody — evidence', () => {
       '',
       '- **#11** no red-green — docs only',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -776,7 +790,7 @@ describe('renderPrBody — evidence', () => {
       '',
       '- **#11** evidence incomplete',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -789,7 +803,7 @@ describe('renderPrBody — evidence', () => {
       '',
       '- **#11** no red-green — no reason given',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -804,7 +818,7 @@ describe('renderPrBody — evidence', () => {
       '  **Before:** AssertionError: expected [Function] to throw',
       '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -822,7 +836,7 @@ describe('renderPrBody — evidence', () => {
       '  **Before:** AssertionError: expected [Function] to throw',
       '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -840,7 +854,7 @@ describe('renderPrBody — evidence', () => {
       '  **Before:** AssertionError: expected [Function] to throw',
       '  **After:** ✓ test/unit/x.test.ts › rejects a stale lease',
       '',
-      '## Issues',
+      '## Merge Danger',
     ]);
   });
 
@@ -930,9 +944,11 @@ describe('renderPrBody — the fold', () => {
   const body = renderPrBody(INPUT);
   const lines = body.split('\n');
 
-  it('leads with the Evidence and the Issues list, folding the run report after them', () => {
+  it('leads with the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
     const at = [
+      '## Summary',
       '## Evidence',
+      '## Merge Danger',
       '## Issues',
       OPENER,
       '## Landed issues',
@@ -950,7 +966,7 @@ describe('renderPrBody — the fold', () => {
       l.startsWith('### ') || l.startsWith('- Issue: ') ? [i] : [],
     );
 
-    expect(lines[0]).toBe('## Evidence');
+    expect(lines[0]).toBe('## Summary');
     expect(at.every((i) => i > -1)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(lines[open - 1]).toBe('');
@@ -958,7 +974,6 @@ describe('renderPrBody — the fold', () => {
     expect(body.endsWith('\n\n</details>\n')).toBe(true);
     expect(sections).toHaveLength(4);
     expect(sections.every((i) => i > open && i < close)).toBe(true);
-    expect(lines).not.toContain('## Summary');
     expect(lines).not.toContain('## Not landed');
     expect(lines.filter((l) => l.startsWith('Unattended run on'))).toEqual([]);
   });
@@ -970,6 +985,206 @@ describe('renderPrBody — the fold', () => {
     expect(fold.split('\n')).toContain('- Issue: #7, landed as c7');
     expect(fold.split('\n')).toContain('- Issue: #8, landed as c8');
   });
+});
+
+// From the first line through the Evidence heading.
+const summaryOf = (writer: PrWriterOutput | null): string[] => {
+  const lines = renderPrBody({ ...INPUT, writer }).split('\n');
+  return lines.slice(0, lines.indexOf('## Evidence') + 1);
+};
+
+// From the Merge Danger heading through the Issues heading after it.
+const dangerOf = (writer: PrWriterOutput | null): string[] => {
+  const lines = renderPrBody({ ...INPUT, writer }).split('\n');
+  return lines.slice(lines.indexOf('## Merge Danger'), lines.indexOf('## Issues') + 1);
+};
+
+describe('renderPrBody — the PR writer’s sections', () => {
+  it('leads with the PR writer’s summary', () => {
+    expect(summaryOf(WRITER)).toEqual([
+      '## Summary',
+      '',
+      'Adds the x tool, then wires y through it.',
+      '',
+      '## Evidence',
+    ]);
+  });
+
+  it('renders a multi-line summary line for line, dropping its blank lines at either end', () => {
+    expect(
+      summaryOf({ ...WRITER, summary: '\n  \nAdds x.\r\n\r\n```text\n  x()\n```\n \n' }),
+    ).toEqual(['## Summary', '', 'Adds x.', '', '```text', '  x()', '```', '', '## Evidence']);
+  });
+
+  it('keeps the indentation of the summary’s first non-blank line', () => {
+    expect(summaryOf({ ...WRITER, summary: '\n    npx x\nRuns x.\n' })).toEqual([
+      '## Summary',
+      '',
+      '    npx x',
+      'Runs x.',
+      '',
+      '## Evidence',
+    ]);
+  });
+
+  it('drops CRLF blank lines at the start of the summary', () => {
+    expect(summaryOf({ ...WRITER, summary: '\r\n \r\nAdds x.' })).toEqual([
+      '## Summary',
+      '',
+      'Adds x.',
+      '',
+      '## Evidence',
+    ]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', ' \n\t'],
+  ])('renders a %s summary as None.', (_name, summary) => {
+    expect(summaryOf({ ...WRITER, summary })).toEqual([
+      '## Summary',
+      '',
+      'None.',
+      '',
+      '## Evidence',
+    ]);
+  });
+
+  const NEITHER = [
+    '## Merge Danger',
+    '',
+    '**Door:** two-way',
+    '',
+    '**Blast Radius:** tooling',
+    '',
+    '## Issues',
+  ];
+
+  it.each<[string, PrWriterOutput, string[]]>([
+    [
+      'a door note and ramifications',
+      {
+        ...WRITER,
+        door: 'one-way',
+        doorNote: 'Drops the v1 envelope.',
+        ramifications: 'Old run reports stop parsing.',
+      },
+      [
+        '## Merge Danger',
+        '',
+        '**Door:** one-way',
+        '',
+        'Drops the v1 envelope.',
+        '',
+        '**Blast Radius:** tooling',
+        '',
+        'Old run reports stop parsing.',
+        '',
+        '## Issues',
+      ],
+    ],
+    [
+      'a door note alone',
+      { ...WRITER, doorNote: 'Drops the v1 envelope.' },
+      [
+        '## Merge Danger',
+        '',
+        '**Door:** two-way',
+        '',
+        'Drops the v1 envelope.',
+        '',
+        '**Blast Radius:** tooling',
+        '',
+        '## Issues',
+      ],
+    ],
+    [
+      'ramifications alone',
+      { ...WRITER, ramifications: 'Old run reports stop parsing.' },
+      [
+        '## Merge Danger',
+        '',
+        '**Door:** two-way',
+        '',
+        '**Blast Radius:** tooling',
+        '',
+        'Old run reports stop parsing.',
+        '',
+        '## Issues',
+      ],
+    ],
+    ['neither', WRITER, NEITHER],
+    [
+      'blank ones and a padded blast radius',
+      { ...WRITER, doorNote: ' \n', ramifications: '\n\t', blastRadius: ' tooling\n' },
+      NEITHER,
+    ],
+    [
+      'a multi-line door note',
+      { ...WRITER, doorNote: 'Drops the v1 envelope.\r\nNo reader is left.\n' },
+      [
+        '## Merge Danger',
+        '',
+        '**Door:** two-way',
+        '',
+        'Drops the v1 envelope.',
+        'No reader is left.',
+        '',
+        '**Blast Radius:** tooling',
+        '',
+        '## Issues',
+      ],
+    ],
+  ])('renders the merge danger of %s', (_name, writer, expected) => {
+    expect(dangerOf(writer)).toEqual(expected);
+  });
+
+  it('falls back in both sections when the PR writer returned nothing', () => {
+    expect(summaryOf(null)).toEqual([
+      '## Summary',
+      '',
+      'Summary unavailable — the PR writer returned nothing',
+      '',
+      '## Evidence',
+    ]);
+    expect(dangerOf(null)).toEqual([
+      '## Merge Danger',
+      '',
+      'Unavailable — the PR writer returned nothing',
+      '',
+      '## Issues',
+    ]);
+  });
+
+  it('leaves the run report unfolded when the PR writer returned nothing', () => {
+    const w = renderPrBody({ ...INPUT, writer: null });
+    const lines = w.split('\n');
+    const at = lines.indexOf('## Landed issues');
+
+    expect(lines.filter((l) => l.includes('details'))).toEqual([]);
+    expect(lines.slice(at - 2, at + 1)).toEqual([
+      '- see #10 — not landed: skipped',
+      '',
+      '## Landed issues',
+    ]);
+    expect(
+      w.endsWith('\n- slow paper lease (genuine): reports/tdd-7.md — warm a second paper\n'),
+    ).toBe(true);
+  });
+
+  it.each<'summary' | 'doorNote' | 'ramifications'>(['summary', 'doorNote', 'ramifications'])(
+    'defuses a closing keyword in the PR writer’s %s',
+    (field) => {
+      const body = renderPrBody({
+        ...INPUT,
+        writer: { ...WRITER, [field]: 'Also fixes #9 in passing.' },
+      });
+
+      expect(body.split('\n')).toContain('Also fixes (see #9) in passing.');
+      expect(body).not.toMatch(closes(9));
+      expect(body).toMatch(closes(7));
+    },
+  );
 });
 
 describe('prTitle and commitMessage scrub the whole subject line', () => {
