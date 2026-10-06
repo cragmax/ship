@@ -4,6 +4,7 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
   BATCH,
+  BUMP_NO_OP,
   fakeHooks,
   GATE_OK,
   PREFLIGHT_OK,
@@ -463,6 +464,28 @@ describe('runShip --attach — the PR body section', () => {
         '<details><summary>Run report — attached run 2</summary>',
         '----- END FILE -----',
       ]),
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
+    expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+  });
+
+  // An attached run's usual bump: the PR is already bumped, so a fix adds no commit.
+  it('pushes and appends a section naming the bump a no-op when the version is already at its target', async () => {
+    const run = fakeHooks({ ...ATTACHED, 'runner:bump': BUMP_NO_OP });
+
+    const report = await runShip(run.hooks, ARGS);
+
+    const all = labels(run);
+    expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
+      'runner:bump:list',
+      'retro:list',
+      'runner:preflight:list',
+      'runner:check-master:list',
+      'runner:publish:list',
+      'runner:append-pr-body:list',
+    ]);
+    expect(promptLines(run, 'runner:append-pr-body:list')).toContain(
+      '- Version bump: patch, already at 1.0.1 — no commit',
     );
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
     expect(report.epics[0]).not.toHaveProperty('prBodyEdit');

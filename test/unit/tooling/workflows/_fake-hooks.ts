@@ -249,6 +249,9 @@ export const LAND_OK = {
   at: '2026-09-29T10:20:00.000Z',
 };
 
+/** A bump that found the version already at its target: `ok`, no commit. */
+export const BUMP_NO_OP = { ...OK, kind: 'patch', from: '1.0.1', to: '1.0.1', commit: null };
+
 /** A PR writer's answer: a one-line summary, a two-way door, no note and no ramifications. */
 export const PR_WRITER_OK = {
   summary: 'Adds the x tool.',
