@@ -1,12 +1,15 @@
 /**
- * `preflight <main>` — the checks an unattended run needs to hold before it
- * cuts anything (ADR-0045): local `master` level with `origin/master` after
- * a fetch, `gh` logged in, and every warm-set server answering RCON. It
- * also snapshots the main checkout's `HEAD`, whether it is dirty, and the
- * launch shas of local `master` and of `origin`'s (`git ls-remote`, not the
- * tracking ref), the baseline of the epic end's master check; a remote
- * without `master` fails step `snapshot`. A dirty main checkout is
- * recorded, never a problem.
+ * `preflight <main> [--attach ship/<slug>]` — the checks an unattended run
+ * needs to hold before it cuts anything (ADR-0045): local `master` level
+ * with `origin/master` after a fetch, `gh` logged in, and every warm-set
+ * server answering RCON; with `--attach`, an attached run's target branch
+ * too — its PR open (a `gh` that cannot report it is a `no-open-pr`
+ * problem, never a pass), no slice linked into its batch, and no commits of
+ * its own `origin` lacks. It also snapshots the main checkout's `HEAD`,
+ * whether it is dirty, and the launch shas of local `master` and of
+ * `origin`'s (`git ls-remote`, not the tracking ref), the baseline of the
+ * epic end's master check; a remote without `master` fails step
+ * `snapshot`. A dirty main checkout is recorded, never a problem.
  *
  * Read-only toward every worktree, so there is no self-hosted guard (like
  * `live-runs`): the fetch writes only `.git`'s remote-tracking refs. It
@@ -20,6 +23,7 @@
 import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js';
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from '../lib/rcon-probe.js';
 
+import { assertPublished, attachSlug, openPr } from './cut-attach.js';
 import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import {
   assertMainWorktree,
@@ -30,8 +34,9 @@ import {
   statusEntries,
 } from './git.js';
 import { isMember, memberLabel, WARM_SET } from './pool-registry-trim.js';
-import { RUN_BASE_BRANCH } from './run-layout.js';
-import type { PreflightProblem, PreflightResult } from './types-run.js';
+import { RUN_BASE_BRANCH, runLayout } from './run-layout.js';
+import { assertNoLiveSlices } from './sync-master.js';
+import type { PreflightCheck, PreflightProblem, PreflightResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure, type WarmMember } from './types.js';
 
 /** One RCON round trip to a warm member; the production probe is {@link probeRcon}. */
@@ -41,6 +46,8 @@ export type WarmProbe = (target: RconProbeTarget) => Promise<RconProbeResult>;
 export interface PreflightInput {
   /** The main checkout, absolute with forward slashes. */
   readonly main: string;
+  /** An attached run's target branch (`ship/<slug>`, short form); absent for an unattached run. */
+  readonly attach?: string;
   /** The warm-set probe (production: `probeRcon` with `list`). */
   readonly probe?: WarmProbe;
 }
@@ -53,12 +60,14 @@ const REGISTRY_PATH = 'src/server-pool/registry/pool-registry.json';
  *
  * @param input - The main checkout and the probe seam.
  * @returns The envelope: `ok` with the counts and snapshot; `refused`
- *   `preflight-failed` with every problem; `refused` `not-main-worktree`;
- *   or `failed` with the step (`preconditions`, `fetch`, `master`,
- *   `snapshot`, `registry`).
+ *   `preflight-failed` with every problem — with `attach`, the target's
+ *   `no-open-pr`, `slices-live` and `unpublished-commits` among them;
+ *   `refused` `not-main-worktree`, or `not-run-batch` for an `attach` outside
+ *   `ship/`; or `failed` with the step (`preconditions`, `fetch`, `master`,
+ *   `snapshot`, `registry`, `unpublished`).
  */
 export async function preflight(input: PreflightInput): Promise<PreflightResult> {
-  const { main, probe = (target) => probeRcon(target, 'list') } = input;
+  const { main, attach, probe = (target) => probeRcon(target, 'list') } = input;
   const result: PreflightResult = {
     command: 'preflight',
     status: 'ok',
@@ -82,6 +91,7 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
       },
     };
     result.problems.push(...checkGhAuth(main), ...(await checkWarmSet(main, probe)));
+    if (attach !== undefined) result.problems.push(...checkAttachTarget(main, attach));
     assertNoProblems(result.problems);
   } catch (err) {
     recordFailure(result, err);
@@ -191,6 +201,53 @@ async function probeMember(
   const r = await probe({ host: entry.host, port: entry.rconPort, password: entry.rconPassword });
   if (r.ok) return null;
   return `RCON ${r.stage} failed: ${r.error instanceof Error ? r.error.message : String(r.error)}`;
+}
+
+/**
+ * Check an attached run's target branch: its PR is open, no slice links
+ * into its batch, and it has no commits of its own `origin` lacks.
+ *
+ * @param main - The main checkout, freshly fetched.
+ * @param branch - The target branch, short form.
+ * @returns One problem per failed check, in that order: `no-open-pr` (a
+ *   `gh` that cannot report the PR included), `slices-live`,
+ *   `unpublished-commits`.
+ * @throws Refusal `not-run-batch` unless the branch is a `ship/` run
+ *   branch; StepFailure when git fails.
+ */
+function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
+  const { batch } = runLayout(main, attachSlug(branch));
+  return [
+    problemOf('no-open-pr', () => openPr(main, branch)),
+    problemOf('slices-live', () => {
+      assertNoLiveSlices(main, batch);
+    }),
+    problemOf('unpublished-commits', () => {
+      assertPublished(main, branch);
+    }),
+  ].flatMap((p) => (p === null ? [] : [p]));
+}
+
+/**
+ * Run one attach guard and read its refusal as a problem.
+ *
+ * @param check - The check the guard backs.
+ * @param guard - The guard; throws to fail.
+ * @returns `null` when it passed; the problem, carrying the guard's message,
+ *   when it threw a Refusal or a StepFailure at step `pr-state` — "could not
+ *   ask" refuses, never passes.
+ * @throws Whatever else the guard threw.
+ */
+function problemOf(check: PreflightCheck, guard: () => unknown): PreflightProblem | null {
+  try {
+    guard();
+    return null;
+  } catch (err) {
+    if (err instanceof Refusal || (err instanceof StepFailure && err.step === 'pr-state')) {
+      return { check, message: err.message };
+    }
+    throw err;
+  }
 }
 
 /**

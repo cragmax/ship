@@ -126,7 +126,7 @@ export const SCOUT_FRESH = {
 const RUN_ROOT = 'C:/src/ph-runs/7';
 
 /** Fields every `ok` worktree-CLI output carries. */
-const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
+export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
 /**
  * A `live-runs` answer holding `runs`.
@@ -249,6 +249,9 @@ export const LAND_OK = {
   at: '2026-09-29T10:20:00.000Z',
 };
 
+/** A bump that found the version already at its target: `ok`, no commit. */
+export const BUMP_NO_OP = { ...OK, kind: 'patch', from: '1.0.1', to: '1.0.1', commit: null };
+
 /** A PR writer's answer: a one-line summary, a two-way door, no note and no ramifications. */
 export const PR_WRITER_OK = {
   summary: 'Adds the x tool.',
@@ -325,6 +328,8 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     pr: { number: 42, url: 'https://x/pull/42' },
     mergeable: null,
   },
+  'runner:append-pr-body': OK,
+  'runner:post-pr-comment': { ...OK, url: 'https://x/pull/9#issuecomment-1' },
   critic: {
     outcome: 'clean',
     sha: '',

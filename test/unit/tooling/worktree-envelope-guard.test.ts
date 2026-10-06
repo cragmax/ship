@@ -23,6 +23,7 @@ const REMOVED_PREFIX = /^envelope fails its schema: removed: /;
 
 // One mock stands in for every command module, so any command's result is the test's to choose.
 const { commandMock } = vi.hoisted(() => ({ commandMock: vi.fn() }));
+vi.mock('../../../tooling/worktree/append-pr-body.js', () => ({ appendPrBody: commandMock }));
 vi.mock('../../../tooling/worktree/bump.js', () => ({ bump: commandMock }));
 vi.mock('../../../tooling/worktree/check-master.js', () => ({ checkMaster: commandMock }));
 vi.mock('../../../tooling/worktree/cut.js', () => ({
@@ -33,6 +34,7 @@ vi.mock('../../../tooling/worktree/cut-attach.js', () => ({ attachBatch: command
 vi.mock('../../../tooling/worktree/harvest.js', () => ({ harvest: commandMock }));
 vi.mock('../../../tooling/worktree/land.js', () => ({ land: commandMock }));
 vi.mock('../../../tooling/worktree/live-runs.js', () => ({ liveRuns: commandMock }));
+vi.mock('../../../tooling/worktree/post-pr-comment.js', () => ({ postPrComment: commandMock }));
 vi.mock('../../../tooling/worktree/preflight.js', () => ({ preflight: commandMock }));
 vi.mock('../../../tooling/worktree/provision.js', () => ({ provision: commandMock }));
 vi.mock('../../../tooling/worktree/provision-batch.js', () => ({ provisionBatch: commandMock }));
@@ -125,6 +127,8 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
+      ['append-pr-body', 'C:/b', '--pr', '9', '--section-file', 'C:/s.md'],
+      ['post-pr-comment', 'C:/b', '--pr', '9', '--comment-file', 'C:/c.md'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;

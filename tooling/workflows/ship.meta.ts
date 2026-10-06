@@ -19,9 +19,11 @@ export const SHIP_META: WorkflowMeta = {
   whenToUse:
     'Launch with `epics N...` or `issues N...` (numbers space- or comma-separated, optional #), ' +
     'plus optional `--exclude` (drop failing or stale issues with their dependents instead of ' +
-    'refusing), `--preflight-only` (stop after pre-flight) and `--max-slices K` (most issues ' +
-    `in flight, start until settled, default ${String(MAX_SLICES)}); or the object ` +
-    '{ epics | issues, exclude?, preflightOnly?, maxSlices? }. Bare numbers are refused: ' +
+    'refusing), `--preflight-only` (stop after pre-flight), `--max-slices K` (most issues ' +
+    `in flight, start until settled, default ${String(MAX_SLICES)}) and ` +
+    '`--attach ship/<slug>` (with `issues` only: an attached run — land them on that open ' +
+    "PR's branch and push onto the PR, ADR-0045 decision 12); or the object " +
+    '{ epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }. Bare numbers are refused: ' +
     'when the user gives bare numbers, ask whether they are epics or issues — never choose. ' +
     'Resume (`resumeFromRunId`) only a run of one epic or one issue list launched with ' +
     '`--max-slices 1`, its script unchanged or changed only in code after its last finished ' +

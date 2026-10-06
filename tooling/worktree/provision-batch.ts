@@ -21,6 +21,7 @@ import {
 } from './git.js';
 import { linkTarget } from './links.js';
 import { trimRegistry } from './pool-registry-trim.js';
+import { BATCH_REGISTRY_FILE } from './run-layout.js';
 import { Refusal, recordFailure, StepFailure, type ProvisionBatchResult } from './types.js';
 
 /** Inputs of {@link provisionBatch}; paths absolute with forward slashes. */
@@ -32,9 +33,6 @@ export interface ProvisionBatchOptions {
   /** The running CLI's file, for the self-hosted guard (default: this module). */
   readonly selfPath?: string;
 }
-
-/** File name of the trimmed registry inside the report dir. */
-const REGISTRY_FILE = 'pool-registry.batch.json';
 
 /**
  * Provision a batch worktree.
@@ -68,7 +66,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
     result.dist = `${batch}/dist`;
     result.workspace = createWorkspace(batch);
-    const registry = `${reportDir}/${REGISTRY_FILE}`;
+    const registry = `${reportDir}/${BATCH_REGISTRY_FILE}`;
     result.warm = trimRegistry(`${batch}/src/server-pool/registry/pool-registry.json`, registry);
     result.registry = registry;
     assertStatusUnchanged(batch, before);

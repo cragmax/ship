@@ -64,6 +64,8 @@ export interface ScoutValues {
   readonly issues: readonly number[];
   /** The unspent live runs — those whose files the run could still collide with. */
   readonly liveRuns: readonly LiveRunFiles[];
+  /** An attached run's open PR head (`origin/ship/<slug>`), the tree the scout judges; absent otherwise. */
+  readonly prHead?: string;
 }
 
 /** The overlap estimator's values: the run set and its declared edges. */
@@ -388,6 +390,7 @@ export const PROMPTS = {
   scout: (values: ScoutValues): string =>
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
+      ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
       `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
   overlapEstimator: (values: OverlapValues): string =>

@@ -1,18 +1,23 @@
 /**
- * `cut-batch <main> --attach ship/<slug>` — give an open run branch its
- * batch worktree at the place `run-layout.ts` names, for a `/resync`: reuse
- * the batch already registered there, or check the branch out anew when
- * the batch was torn down while its PR is still open.
+ * `cut-batch <main> --attach ship/<slug> [--attached-run]` — give an open
+ * run branch its batch worktree at the place `run-layout.ts` names, for a
+ * `/resync` or an attached run: reuse the batch already registered there,
+ * or check the branch out anew when the batch was torn down while its PR is
+ * still open. With `--attached-run` it also allocates the attached run's
+ * number and its own report folder.
  *
- * Invariant: every refusal comes before the first mutation of a branch or
- * the worktree list — the `update-ref` fast-forward or the `worktree add` —
- * and only the fetch (remote-tracking refs alone) precedes the checks that
- * need it: whether the branch exists locally or on `origin`, and how the
- * two relate. Like `cut-batch`, it runs from the main checkout it targets
- * and never touches that checkout's working tree (`cut.ts`).
+ * Invariant: every refusal comes before the first mutation of a branch, the
+ * worktree list or the report dir — the `update-ref` fast-forward, the
+ * `worktree add`, the run folder — and only the fetch (remote-tracking refs
+ * alone) precedes the checks that need it: whether the branch exists
+ * locally or on `origin`, and how the two relate. The branch's own
+ * unpublished commits ({@link assertPublished}) refuse on both the reused
+ * and the checked-out-anew path. Like `cut-batch`, it runs from the main
+ * checkout it targets and never touches that checkout's working tree
+ * (`cut.ts`).
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 
 import { runCaptured } from './exec.js';
 import {
@@ -25,7 +30,16 @@ import {
   samePath,
 } from './git.js';
 import { lookupPr } from './live-runs.js';
-import { runLayout, runSlugOf, type RunLayout } from './run-layout.js';
+import {
+  attachedRunReports,
+  BATCH_REGISTRY_FILE,
+  isAttachedRunReports,
+  nextAttachedRun,
+  runLayout,
+  runSlugOf,
+  sliceBranchPrefix,
+  type RunLayout,
+} from './run-layout.js';
 import type { CutBatchResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure } from './types.js';
 
@@ -35,6 +49,8 @@ export interface AttachInput {
   readonly main: string;
   /** The run branch, short form (`ship/<slug>`). */
   readonly branch: string;
+  /** Allocate an attached run's number and report folder (`--attached-run`). */
+  readonly attachedRun?: boolean;
 }
 
 /**
@@ -43,10 +59,15 @@ export interface AttachInput {
  *
  * @param input - The main checkout and the branch.
  * @returns The envelope: `ok` with the branch, its tip as `base`, the run
- *   root, batch and report dir, and `attach`; `refused` before any branch
- *   or worktree mutation (`not-main-worktree`, `not-run-batch`,
- *   `no-open-pr`, `branch-checked-out`, `path-exists`, `branch-missing`,
- *   `branch-diverged`); or `failed` with the step (`pr-state`, `fetch`, …).
+ *   root, batch and report dir — with `attachedRun`, the run's own
+ *   `reports/attach-<R>` — and `attach`, whose `run` is R (`null` without
+ *   `attachedRun`) and whose `registry` is the batch's trimmed pool registry
+ *   from its last provisioning ({@link lastRegistry}; `null` when none);
+ *   `refused` before any branch, worktree or report-dir mutation
+ *   (`not-main-worktree`, `not-run-batch`, `no-open-pr`,
+ *   `branch-checked-out`, `unpublished-commits`, `path-exists`,
+ *   `branch-missing`, `branch-diverged`); or `failed` with the step
+ *   (`pr-state`, `unpublished`, `fetch`, `attach`, …).
  */
 export function attachBatch(input: AttachInput): CutBatchResult {
   const { main, branch } = input;
@@ -64,23 +85,96 @@ export function attachBatch(input: AttachInput): CutBatchResult {
   };
   try {
     assertMainWorktree(main, 'preconditions');
-    const layout = runLayout(main, runSlug(branch));
+    const slug = attachSlug(branch);
+    const layout = runLayout(main, slug);
     const pr = openPr(main, branch);
     const created = !reusesBatch(main, layout);
+    assertPublished(main, branch);
     const fastForwarded = created ? checkOut(main, layout) : false;
     mkdirSync(layout.reports, { recursive: true });
+    const { run, reportDir } =
+      input.attachedRun === true
+        ? allocateRun(main, slug, layout)
+        : { run: null, reportDir: layout.reports };
+    const registry = lastRegistry(layout);
     Object.assign(result, {
       branch: layout.branch,
       base: resolveCommit(main, `refs/heads/${branch}`, 'attach'),
       runRoot: layout.root,
       batch: layout.batch,
-      reportDir: layout.reports,
-      attach: { created, fastForwarded, pr },
+      reportDir,
+      attach: {
+        created,
+        fastForwarded,
+        pr,
+        run,
+        registry,
+      },
     });
   } catch (err) {
     recordFailure(result, err);
   }
   return result;
+}
+
+/**
+ * The batch's trimmed pool registry from its last provisioning: the newest
+ * {@link BATCH_REGISTRY_FILE} by modification time among the run's report
+ * dir — where `/ship` and `/resync` provision — and its attached runs'
+ * folders — where an attached run that checked the batch out anew
+ * provisions.
+ *
+ * @param layout - The run's layout.
+ * @returns The file's path; `null` when no provisioning left one.
+ * @throws A filesystem error when the report dir cannot be read.
+ */
+function lastRegistry(layout: RunLayout): string | null {
+  const dirs = [
+    layout.reports,
+    ...readdirSync(layout.reports)
+      .filter(isAttachedRunReports)
+      .map((name) => `${layout.reports}/${name}`),
+  ];
+  let newest: { readonly path: string; readonly mtimeMs: number } | null = null;
+  for (const dir of dirs) {
+    const path = `${dir}/${BATCH_REGISTRY_FILE}`;
+    if (!existsSync(path)) continue;
+    const { mtimeMs } = statSync(path);
+    if (newest === null || mtimeMs > newest.mtimeMs) newest = { path, mtimeMs };
+  }
+  return newest?.path ?? null;
+}
+
+/**
+ * Allocate an attached run: the lowest number no earlier run's report
+ * folder or slice branch holds, and its own report folder.
+ *
+ * @param main - The main checkout.
+ * @param slug - The run's slug.
+ * @param layout - The run's layout; its report dir exists.
+ * @returns The run's number and its report folder, `<reports>/attach-<run>`,
+ *   created now.
+ * @throws StepFailure `attach` when git cannot list the slice branches; a
+ *   filesystem error when the report dir cannot be read or the folder cannot
+ *   be made.
+ */
+function allocateRun(
+  main: string,
+  slug: string,
+  layout: RunLayout,
+): { readonly run: number; readonly reportDir: string } {
+  const reports = readdirSync(layout.reports);
+  const prefix = `refs/heads/${sliceBranchPrefix(slug)}`;
+  const branches = git(main, ['for-each-ref', '--format=%(refname)', prefix], 'attach')
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith(prefix))
+    .map((line) => line.slice(prefix.length));
+  const run = nextAttachedRun({ reports, branches });
+  const reportDir = attachedRunReports(layout, run);
+  // Not recursive: a concurrent attach that took the same number first makes
+  // this throw, so two runs never share a folder.
+  mkdirSync(reportDir);
+  return { run, reportDir };
 }
 
 /**
@@ -90,7 +184,7 @@ export function attachBatch(input: AttachInput): CutBatchResult {
  * @returns The slug.
  * @throws Refusal `not-run-batch` unless it is a `ship/` run branch.
  */
-function runSlug(branch: string): string {
+export function attachSlug(branch: string): string {
   const slug = runSlugOf(`refs/heads/${branch}`);
   if (slug === null) {
     throw new Refusal('not-run-batch', 'preconditions', `${branch} is not a ship/ run branch`);
@@ -107,7 +201,7 @@ function runSlug(branch: string): string {
  * @throws StepFailure `pr-state` when `gh` fails or answers unreadably;
  *   Refusal `no-open-pr` naming the state and number otherwise.
  */
-function openPr(main: string, branch: string): number {
+export function openPr(main: string, branch: string): number {
   const { info, error } = lookupPr(main, branch);
   if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
   if (info.state !== 'open' || info.number === null) {
@@ -115,6 +209,51 @@ function openPr(main: string, branch: string): number {
     throw new Refusal('no-open-pr', 'pr-state', `${branch} has no open PR: ${info.state}${pr}`);
   }
   return info.number;
+}
+
+/**
+ * The branch's own commits `origin` lacks: its first-parent, non-merge
+ * commits that no `origin` remote-tracking ref holds. A merge — and the
+ * `master` commits it brings in on its second parent — never counts.
+ *
+ * @param main - The main checkout.
+ * @param branch - Short branch name.
+ * @returns The count; `0` when the local branch does not exist.
+ * @throws StepFailure `unpublished` when git fails.
+ */
+function unpublishedCommits(main: string, branch: string): number {
+  const ref = `refs/heads/${branch}`;
+  if (!refExists(main, ref)) return 0;
+  const args = [
+    'rev-list',
+    '--count',
+    '--first-parent',
+    '--no-merges',
+    ref,
+    '--not',
+    '--remotes=origin',
+  ];
+  return Number(git(main, args, 'unpublished'));
+}
+
+/**
+ * Refuse a branch holding commits of its own `origin` lacks — a stopped
+ * attached run's fixes, which ADR-0045 decision 10 recovers first. An
+ * unpushed merge alone passes.
+ *
+ * @param main - The main checkout.
+ * @param branch - Short branch name.
+ * @throws Refusal `unpublished-commits` naming the count; StepFailure
+ *   `unpublished` when git fails.
+ */
+export function assertPublished(main: string, branch: string): void {
+  const n = unpublishedCommits(main, branch);
+  if (n === 0) return;
+  throw new Refusal(
+    'unpublished-commits',
+    'preconditions',
+    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (ADR-0045 decision 10)`,
+  );
 }
 
 /**

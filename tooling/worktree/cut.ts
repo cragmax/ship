@@ -1,9 +1,10 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> (--issue N --attempt K | --critic)` — cut an
- * unattended run's feature branch and batch worktree, and one slice
- * worktree (an issue attempt's, or the epic end's critic's), at the places
- * `run-layout.ts` names (ADR-0045).
+ * `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]`
+ * — cut an unattended run's feature branch and batch worktree, and one
+ * slice worktree (an issue attempt's, or the epic end's critic's, named for
+ * its attached run when given), at the places `run-layout.ts` names
+ * (ADR-0045).
  *
  * Invariant, both commands: every guard runs before the first mutation — a
  * `git worktree add -b` — so a refusal leaves the repository's branches,
@@ -47,6 +48,8 @@ export interface CutSliceInput {
   readonly batch: string;
   /** Which slice: an issue attempt (attempt 1 for the first), or the epic end's critic. */
   readonly slice: { readonly issue: number; readonly attempt: number } | { readonly critic: true };
+  /** The attached run whose slice this is, naming it `a<R>-…`; absent for an unattached run. */
+  readonly attachedRun?: number;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
 }
@@ -100,9 +103,11 @@ export function cutBatch(input: {
 
 /**
  * Cut a slice branch — an issue attempt's, or the epic end's critic's — at
- * the batch `HEAD` and check it out beside the batch.
+ * the batch `HEAD` and check it out beside the batch. An attached run's
+ * slice is named `a<R>-…` (`run-layout.ts`), so it never collides with an
+ * earlier run's leftover branch of the same issue attempt or critic.
  *
- * @param input - Batch, which slice, and the self-hosted seam.
+ * @param input - Batch, which slice, the attached run, and the self-hosted seam.
  * @returns The envelope: `ok` with the branch, base and slice path;
  *   `refused` (harvest's linked-worktree reasons, `not-run-batch`,
  *   `branch-exists`, `path-exists`) before any mutation; or `failed`.
@@ -122,10 +127,11 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
     assertLinkedWorktree(batch, selfPath);
     const root = posix.dirname(batch);
     const slug = assertRunBatch(batch);
+    const run = input.attachedRun ?? null;
     const slice =
       'critic' in input.slice
-        ? criticSliceLayout(root, slug)
-        : sliceLayout(root, slug, input.slice.issue, input.slice.attempt);
+        ? criticSliceLayout(root, slug, run)
+        : sliceLayout(root, slug, input.slice.issue, input.slice.attempt, run);
     assertBranchFree(batch, slice.branch);
     assertPathFree(slice.path);
     const base = resolveCommit(batch, 'HEAD', 'preconditions');

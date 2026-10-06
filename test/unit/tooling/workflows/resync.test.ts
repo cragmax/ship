@@ -167,6 +167,33 @@ describe('runResync — merge and push', () => {
     expect(report.sync?.conflicts).toEqual(c.conflicts);
   });
 
+  it('refuses a branch with commits of its own origin lacks, merging and pushing nothing', async () => {
+    const message =
+      'ship/epic-9 has 1 commit(s) of its own origin lacks; recover them first (ADR-0045 decision 10)';
+    const run = resyncHooks({
+      'runner:cut-batch': {
+        ...attachOk(false),
+        exitCode: 1,
+        status: 'refused',
+        reason: 'unpublished-commits',
+        batch: null,
+        reportDir: null,
+        attach: null,
+        errors: [{ step: 'preconditions', message }],
+      },
+    });
+
+    const report = await runResync(run.hooks, BRANCH);
+
+    expect(labels(run)).toEqual(['runner:live-runs:resync', 'runner:cut-batch:resync']);
+    expect(report).toMatchObject({
+      status: 'stopped',
+      pushed: false,
+      sync: null,
+      message: `cut-batch refused (unpublished-commits): ${message}`,
+    });
+  });
+
   it('stops on a failed push, naming it', async () => {
     const failed = {
       ...OK,

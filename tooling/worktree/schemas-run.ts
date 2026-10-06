@@ -2,11 +2,12 @@
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish`. The canonical home
- * of their shapes; `types-run.ts` exports each as its `z.infer`. The base
- * fields, path spelling and integer rule are `schemas.ts`'s. A field that
- * names something the command creates or measures stays `null` until it
- * exists.
+ * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
+ * `post-pr-comment`.
+ * The canonical home of their shapes; `types-run.ts` exports each as its
+ * `z.infer`. The base fields, path spelling and integer rule are
+ * `schemas.ts`'s. A field that names something the command creates or
+ * measures stays `null` until it exists.
  */
 
 import { z } from 'zod';
@@ -21,10 +22,21 @@ export const AttachInfoSchema = z.object({
   fastForwarded: z.boolean(),
   /** The branch's open PR. */
   pr: z.int(),
+  /**
+   * The attached run's number from `--attached-run` (`nextAttachedRun`);
+   * `null` without it, as for a resync.
+   */
+  run: z.int().nullable(),
+  /**
+   * The batch's trimmed pool registry from its last provisioning: the newest
+   * `pool-registry.batch.json` in `<reports>/` or an attached run's
+   * `<reports>/attach-<R>/`; `null` when there is none.
+   */
+  registry: z.string().nullable(),
 });
 
 /**
- * Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug>)`;
+ * Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug> [--attached-run])`;
  * `worktree` is the main checkout.
  */
 export const CutBatchResultSchema = ResultBaseSchema.extend({
@@ -36,15 +48,25 @@ export const CutBatchResultSchema = ResultBaseSchema.extend({
   runRoot: z.string().nullable(),
   /** The batch worktree. */
   batch: z.string().nullable(),
-  /** The run's report directory. */
+  /**
+   * The run's report directory; with `--attached-run`, the attached run's
+   * own folder `reports/attach-<run>`.
+   */
   reportDir: z.string().nullable(),
   /** How `--attach` found the batch; `null` for `--epic` / `--issues`, or before it is known. */
   attach: AttachInfoSchema.nullable(),
 });
 
-/** Envelope of `cut-slice <batch> --issue N --attempt K`; `worktree` is the batch. */
+/**
+ * Envelope of `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]`;
+ * `worktree` is the batch.
+ */
 export const CutSliceResultSchema = ResultBaseSchema.extend({
-  /** The slice branch created (`slice/<slug>/<N>-<K>`), short form. */
+  /**
+   * The slice branch created, short form: `slice/<slug>/<N>-<K>` or
+   * `slice/<slug>/critic`; with `--attached-run R`, `slice/<slug>/a<R>-<N>-<K>`
+   * or `slice/<slug>/a<R>-critic`.
+   */
   branch: z.string().nullable(),
   /** The batch `HEAD` the slice was cut at. */
   base: z.string().nullable(),
@@ -52,12 +74,19 @@ export const CutSliceResultSchema = ResultBaseSchema.extend({
   slice: z.string().nullable(),
 });
 
-/** A pre-flight check that can fail. */
+/**
+ * A pre-flight check that can fail. The last three are `--attach`'s, on the
+ * target branch: its PR is not open (or `gh` could not say), a slice still
+ * links into its batch, or it has commits of its own `origin` lacks.
+ */
 export const PreflightCheckSchema = z.enum([
   'master-ahead',
   'master-behind',
   'gh-auth',
   'warm-unreachable',
+  'no-open-pr',
+  'slices-live',
+  'unpublished-commits',
 ]);
 
 /** One failed pre-flight check. */
@@ -68,7 +97,7 @@ export const PreflightProblemSchema = z.object({
   message: z.string(),
 });
 
-/** Envelope of `preflight <main>`; `worktree` is the main checkout. */
+/** Envelope of `preflight <main> [--attach ship/<slug>]`; `worktree` is the main checkout. */
 export const PreflightResultSchema = ResultBaseSchema.extend({
   /** Local `master` commits not on `origin/master`, after the fetch. */
   ahead: z.int().nullable(),
@@ -193,15 +222,15 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
 
 /** Envelope of `bump <batch>`; `worktree` is the batch. */
 export const BumpResultSchema = ResultBaseSchema.extend({
-  /** `minor` when any subject is a `feat`, else `patch`. */
+  /** The bump's kind, as `bump.ts`'s header derives it. */
   kind: z.enum(['minor', 'patch']).nullable(),
-  /** The version before the bump. */
+  /** The batch's version before the bump. */
   from: z.string().nullable(),
-  /** The version after it. */
+  /** The target version, as `bump.ts`'s header derives it; equal to `from` on a no-op. */
   to: z.string().nullable(),
-  /** The bump commit; `null` unless it landed. */
+  /** The bump commit; `null` unless it landed, a no-op included. */
   commit: z.string().nullable(),
-  /** The file the commit's output (its hooks' included) went to. */
+  /** The file the commit's output (its hooks' included) went to; `null` on a no-op. */
   log: z.string().nullable(),
 });
 
@@ -226,6 +255,25 @@ export const PublishResultSchema = ResultBaseSchema.extend({
    * mode or before it was read.
    */
   mergeable: z.string().nullable(),
+});
+
+/** Envelope of `append-pr-body <batch> --pr N --section-file F`; `worktree` is the batch. */
+export const AppendPrBodyResultSchema = ResultBaseSchema.extend({
+  /** The PR whose body was read and edited, as given. */
+  pr: z.int(),
+  /**
+   * The body the edit set — the PR's body as `gh` read it, then the section —
+   * in a fresh OS temp directory; `null` until it is written.
+   */
+  bodyFile: z.string().nullable(),
+});
+
+/** Envelope of `post-pr-comment <batch> --pr N --comment-file F`; `worktree` is the batch. */
+export const PostPrCommentResultSchema = ResultBaseSchema.extend({
+  /** The PR the comment was posted to, as given. */
+  pr: z.int(),
+  /** The posted comment's URL, as `gh` printed it; `null` unless the command is `ok`. */
+  url: z.string().nullable(),
 });
 
 /** One `master` ref at the launch and now. */

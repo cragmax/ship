@@ -1,0 +1,15 @@
+/**
+ * The shape of a run branch, shared by the launch arguments that name one:
+ * `/resync`'s branch and `/ship`'s `--attach` target.
+ *
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
+ * no top-level side effect.
+ */
+
+/**
+ * A run branch: `ship/` — the namespace `RUN_BRANCH_PREFIX` names
+ * (`tooling/worktree/run-layout.ts`, which cannot enter the render closure)
+ * — then a slug in `runSlug`'s domain (`epic-<E>`, or issue numbers joined
+ * with `-`).
+ */
+export const RUN_BRANCH_SHAPE = /^ship\/[a-z0-9][a-z0-9-]*$/;

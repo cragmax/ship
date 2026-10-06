@@ -6,19 +6,24 @@
  * its numbers space- or comma-separated, each with an optional leading `#`:
  *
  * ```
- * { epics | issues, exclude?, preflightOnly?, maxSlices? }
- * epics|issues N... [--exclude] [--preflight-only] [--max-slices K]
+ * { epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }
+ * epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--attach ship/<slug>]
  * ```
  *
  * Bare numbers are refused — epic or issue would be a guess — and so is
  * any unknown key or flag: a typo must never launch a full run. A usage
  * error is returned as a refusal, never thrown.
  *
+ * `--attach` (`attach`) names an attached run's target: an open PR's run
+ * branch, of the `/resync` shape ({@link RUN_BRANCH_SHAPE}). It takes
+ * `issues` only — `epics` with it is refused.
+ *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 
 import type { ShipRefusal } from './preflight.js';
+import { RUN_BRANCH_SHAPE } from './run-branch.js';
 import { MAX_SLICES } from './stages.js';
 
 /** What a run ships: whole epics, or an explicit issue list. */
@@ -36,6 +41,8 @@ export interface ShipArgs {
   readonly preflightOnly: boolean;
   /** The most issues in flight at once, from start until settled; default `MAX_SLICES`. */
   readonly maxSlices: number;
+  /** The open PR's run branch an attached run lands on; `null` for an unattached run. */
+  readonly attach: string | null;
 }
 
 /** The parse's outcome: the arguments, or the usage refusal. */
@@ -44,7 +51,7 @@ export type ArgsOutcome =
   | { readonly refusal: ShipRefusal; readonly args?: never };
 
 /** The keys the object shape accepts. */
-const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices'];
+const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'attach'];
 
 /** A usage error while parsing; caught by {@link parseShipArgs}. */
 class ArgsError extends Error {}
@@ -63,7 +70,7 @@ export function parseShipArgs(raw: unknown): ArgsOutcome {
     return {
       refusal: {
         kind: 'usage',
-        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K]`,
+        message: `${err.message}; expected epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--attach ship/<slug>]`,
       },
     };
   }
@@ -108,7 +115,13 @@ function selectionWord(word: string | undefined): Selection {
  */
 function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
   const numbers: number[] = [];
-  const args = { numbers, exclude: false, preflightOnly: false, maxSlices: MAX_SLICES };
+  const args: { -readonly [K in keyof Omit<ShipArgs, 'selection'>]: ShipArgs[K] } = {
+    numbers,
+    exclude: false,
+    preflightOnly: false,
+    maxSlices: MAX_SLICES,
+    attach: null,
+  };
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] ?? '';
     switch (token) {
@@ -120,6 +133,9 @@ function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
         break;
       case '--max-slices':
         args.maxSlices = positiveInteger(tokens[++i], '--max-slices');
+        break;
+      case '--attach':
+        args.attach = attachTarget(tokens[++i], '--attach');
         break;
       default:
         numbers.push(...numberList(token));
@@ -154,11 +170,28 @@ function parseObject(raw: unknown): ShipArgs {
     numbers: list.map((n: unknown) => positiveInteger(n, selection)),
     exclude: flag(record, 'exclude'),
     preflightOnly: flag(record, 'preflightOnly'),
-    maxSlices:
-      record['maxSlices'] === undefined
-        ? MAX_SLICES
-        : positiveInteger(record['maxSlices'], 'maxSlices'),
+    maxSlices: optionalKey(record, 'maxSlices', positiveInteger, MAX_SLICES),
+    attach: optionalKey<string | null>(record, 'attach', attachTarget, null),
   });
+}
+
+/**
+ * An optional key, read when present.
+ *
+ * @param record - The object.
+ * @param key - The key, also the name `read` reports.
+ * @param read - Reads a present value; throws on a bad one.
+ * @param absent - The value when the key is absent.
+ * @returns `read`'s value, or `absent`.
+ */
+function optionalKey<T>(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  read: (value: unknown, what: string) => T,
+  absent: T,
+): T {
+  const value = record[key];
+  return value === undefined ? absent : read(value, key);
 }
 
 /**
@@ -209,6 +242,21 @@ function positiveInteger(value: unknown, what: string): number {
 }
 
 /**
+ * An attached run's target branch.
+ *
+ * @param value - The value given.
+ * @param what - The flag or key, for the message.
+ * @returns The branch.
+ * @throws {@link ArgsError}when it is not a `ship/` run branch.
+ */
+function attachTarget(value: unknown, what: string): string {
+  if (typeof value !== 'string' || !RUN_BRANCH_SHAPE.test(value)) {
+    throw new ArgsError(`${what}: '${String(value)}' is not a ship/ run branch`);
+  }
+  return value;
+}
+
+/**
  * An optional boolean key.
  *
  * @param record - The object.
@@ -224,7 +272,8 @@ function flag(record: Readonly<Record<string, unknown>>, key: string): boolean {
 }
 
 /**
- * Check the run-wide rules: at least one number, none twice.
+ * Check the run-wide rules: at least one number, none twice, and an
+ * attached run ships issues, never epics.
  *
  * @param args - The parsed arguments.
  * @returns `args`.
@@ -234,5 +283,8 @@ function validated(args: ShipArgs): ShipArgs {
   if (args.numbers.length === 0) throw new ArgsError(`no ${args.selection} numbers`);
   const twice = args.numbers.find((n, i) => args.numbers.indexOf(n) !== i);
   if (twice !== undefined) throw new ArgsError(`#${String(twice)} is given twice`);
+  if (args.attach !== null && args.selection === 'epics') {
+    throw new ArgsError('--attach takes issues, not epics');
+  }
   return args;
 }

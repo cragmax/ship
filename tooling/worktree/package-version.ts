@@ -6,7 +6,8 @@
  * (`.claude/rules/git.md` § Unattended workflow runs; ADR-0045 decision 7).
  * The rule intervenes only when both sides moved ({@link bothMoved}):
  * without it an identical bump — both sides at the same number — merges
- * clean in git, and the PR's net bump is zero.
+ * clean in git, and the PR's net bump is zero. {@link bumpVersion} also
+ * gives `bump`'s target: `origin/master`'s version bumped by the PR's kind.
  *
  * Only plain `x.y.z` versions take part in arithmetic; anything else (a
  * prerelease, a non-number) throws `StepFailure` step `version`.

@@ -5,6 +5,7 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
   BATCH,
+  BUMP_NO_OP,
   fakeHooks,
   GATE_OK,
   LAND_OK,
@@ -368,6 +369,28 @@ describe('runShip — the retro', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', retro: null });
+  });
+});
+
+describe('runShip — the bump', () => {
+  it('goes on to the retro, the PR writer and the PR when the bump finds the version already at its target', async () => {
+    const run = fakeHooks({ 'runner:bump': BUMP_NO_OP });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const all = labels(run);
+    expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
+      'runner:bump:list',
+      'retro:list',
+      'prWriter:list',
+      'runner:preflight:list',
+      'runner:check-master:list',
+      'runner:publish:list',
+    ]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Version bump: patch, already at 1.0.1 — no commit',
+    );
   });
 });
 

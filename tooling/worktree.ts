@@ -8,9 +8,9 @@
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
  *
  * ```
- * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN
- * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG)
- * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic)
+ * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN [--attach ship/SLUG]
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG [--attached-run])
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic) [--attached-run R]
  * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
  * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
  * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
@@ -22,13 +22,17 @@
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
+ * npx tsx <main-checkout>/tooling/worktree.ts append-pr-body BATCH --pr N --section-file F
+ * npx tsx <main-checkout>/tooling/worktree.ts post-pr-comment BATCH --pr N --comment-file F
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
  * staged set as `staged-guard` does, builds when needed, then commits. The
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
  * that order. A resync runs `cut-batch --attach`, `sync-master` and
- * `publish --push-only`.
+ * `publish --push-only`. An attached run runs `preflight --attach`,
+ * `cut-batch --attach --attached-run`, `cut-slice --attached-run`,
+ * `publish --push-only`, `post-pr-comment` and `append-pr-body`.
  * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
@@ -40,9 +44,10 @@
  * writes only `.git` and a sibling directory, never that checkout's working
  * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
  * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
- * `--body-file`) come only from argv, resolved against the starting cwd;
- * every other argument — a sha, repo-relative paths, a number, a title, the
- * `--attach` branch — is kept as given.
+ * `--body-file`, `--section-file`, `--comment-file`) come only from argv,
+ * resolved against the starting cwd; every other argument — a sha,
+ * repo-relative paths, a number, a title, the `--attach` branch — is kept
+ * as given.
  *
  * Every envelope carries `at`, the instant the command finished, and is
  * checked against its command's schema before it is printed: one that
@@ -64,6 +69,7 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 
 import { toPosix } from './shared.js';
+import { appendPrBody } from './worktree/append-pr-body.js';
 import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
@@ -71,6 +77,7 @@ import { attachBatch } from './worktree/cut-attach.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
+import { postPrComment } from './worktree/post-pr-comment.js';
 import { preflight } from './worktree/preflight.js';
 import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
@@ -88,11 +95,13 @@ import {
   TeardownResultSchema,
 } from './worktree/schemas.js';
 import {
+  AppendPrBodyResultSchema,
   BumpResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
+  PostPrCommentResultSchema,
   PreflightResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
@@ -225,30 +234,45 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   preflight: {
     schema: PreflightResultSchema,
     valueFlags: [],
+    optionFlags: ['--attach'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => preflight({ main: args.target }),
+    run: (args) => {
+      const attach = args.values.get('--attach');
+      return preflight({ main: args.target, ...(attach === undefined ? {} : { attach }) });
+    },
   },
   'cut-batch': {
     schema: CutBatchResultSchema,
     valueFlags: [],
     optionFlags: ['--epic', '--issues', '--attach'],
-    switchFlags: [],
+    switchFlags: ['--attached-run'],
     rest: NO_REST,
     run: (args) => {
       const selection = batchSelection(args);
       return 'attach' in selection
-        ? attachBatch({ main: args.target, branch: selection.attach })
+        ? attachBatch({
+            main: args.target,
+            branch: selection.attach,
+            attachedRun: selection.attachedRun,
+          })
         : cutBatch({ main: args.target, selection });
     },
   },
   'cut-slice': {
     schema: CutSliceResultSchema,
     valueFlags: [],
-    optionFlags: ['--issue', '--attempt'],
+    optionFlags: ['--issue', '--attempt', '--attached-run'],
     switchFlags: ['--critic'],
     rest: NO_REST,
-    run: (args) => cutSlice({ batch: args.target, slice: sliceFlag(args) }),
+    run: (args) => {
+      const run = args.values.get('--attached-run');
+      return cutSlice({
+        batch: args.target,
+        slice: sliceFlag(args),
+        ...(run === undefined ? {} : { attachedRun: positiveInt(run, '--attached-run') }),
+      });
+    },
   },
   'sync-master': {
     schema: SyncMasterResultSchema,
@@ -301,6 +325,30 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         logFile,
       });
     },
+  },
+  'append-pr-body': {
+    schema: AppendPrBodyResultSchema,
+    valueFlags: ['--pr', '--section-file'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      appendPrBody({
+        batch: args.target,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        sectionFile: pathFlag(args, '--section-file'),
+      }),
+  },
+  'post-pr-comment': {
+    schema: PostPrCommentResultSchema,
+    valueFlags: ['--pr', '--comment-file'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      postPrComment({
+        batch: args.target,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        commentFile: pathFlag(args, '--comment-file'),
+      }),
   },
 };
 
@@ -366,13 +414,18 @@ function positiveInt(text: string, flag: string): number {
 
 /**
  * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…`
- * and `--attach ship/<slug>` (a branch name, kept as given).
+ * and `--attach ship/<slug>` (a branch name, kept as given), the last
+ * optionally with `--attached-run`.
  *
  * @param args - Parsed argv.
- * @returns The run selection, or the branch to attach.
- * @throws UsageError when more or fewer than one is given, or a number is bad.
+ * @returns The run selection, or the branch to attach and whether the
+ *   attach is an attached run's.
+ * @throws UsageError when more or fewer than one is given, a number is bad,
+ *   or `--attached-run` comes without `--attach`.
  */
-function batchSelection(args: ParsedArgs): RunSelection | { readonly attach: string } {
+function batchSelection(
+  args: ParsedArgs,
+): RunSelection | { readonly attach: string; readonly attachedRun: boolean } {
   const given = ['--epic', '--issues', '--attach'].filter((flag) => args.values.has(flag));
   if (given.length !== 1) {
     throw new UsageError('cut-batch takes exactly one of --epic, --issues and --attach');
@@ -380,7 +433,9 @@ function batchSelection(args: ParsedArgs): RunSelection | { readonly attach: str
   const epic = args.values.get('--epic');
   const issues = args.values.get('--issues');
   const attach = args.values.get('--attach');
-  if (attach !== undefined) return { attach };
+  const attachedRun = args.switches.has('--attached-run');
+  if (attach !== undefined) return { attach, attachedRun };
+  if (attachedRun) throw new UsageError('cut-batch --attached-run goes with --attach');
   if (epic !== undefined) return { epic: positiveInt(epic, '--epic') };
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
 }

@@ -2,7 +2,8 @@
  * npm fixture repos (per-test `mkdtemp` roots, one shared offline template)
  * with a bare `origin` and a batch worktree on `ship/r`: `bump` versions
  * the batch from its own commits, and `publish` pushes it there and opens
- * its PR through a fake `gh`.
+ * its PR through a fake `gh`; `append-pr-body` appends a section to a fake
+ * PR body; `post-pr-comment` posts a comment to a fake PR.
  *
  * @integrationTier standalone
  */
@@ -23,10 +24,16 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { compareStrings, toPosix } from '../../tooling/shared.js';
 import type * as ExecModule from '../../tooling/worktree/exec.js';
+import { appendPrBody as appendPrBodyInProcess } from '../../tooling/worktree/append-pr-body.js';
 import { PUSH_TIMEOUT_MS, runCaptured } from '../../tooling/worktree/exec.js';
 import { MERGEABLE_READS } from '../../tooling/worktree/publish-push.js';
 import { publish as publishInProcess, pushBranch } from '../../tooling/worktree/publish.js';
-import type { BumpResult, PublishResult } from '../../tooling/worktree/types-run.js';
+import type {
+  AppendPrBodyResult,
+  BumpResult,
+  PostPrCommentResult,
+  PublishResult,
+} from '../../tooling/worktree/types-run.js';
 import { StepFailure } from '../../tooling/worktree/types.js';
 import {
   advanceOrigin,
@@ -34,11 +41,18 @@ import {
   headSha,
   makeBareOrigin,
   prependPath,
+  readFakePrCommented,
   readFakePrCreated,
+  readFakePrEdited,
   readFakePrViewCount,
+  setFakePrBodies,
+  setFakePrComment,
+  setFakePrEditExit,
   setFakePrViews,
   writeFakeGh,
+  type Changes,
   type FakeGhResponse,
+  type FakePrComment,
   type FakePrCreate,
 } from '../helpers/worktree-fixture-git.js';
 import {
@@ -189,12 +203,113 @@ describe('bump', () => {
   });
 
   it.each([
-    { reason: 'nothing-to-bump', branch: 'ship/r', subjects: [] },
     {
-      reason: 'already-bumped',
-      branch: 'ship/r',
-      subjects: ['feat(a): one', 'chore(build): bump version — r'],
+      name: 'a patch-bumped branch and a fix as a no-op',
+      first: 'fix(a): one',
+      next: 'fix(b): two',
+      kind: 'patch',
+      from: '1.0.1',
+      to: '1.0.1',
+      bumps: 1,
     },
+    {
+      name: 'a patch-bumped branch and a feat with a second bump commit at master’s minor',
+      first: 'fix(a): one',
+      next: 'feat(b): two',
+      kind: 'minor',
+      from: '1.0.1',
+      to: '1.1.0',
+      bumps: 2,
+    },
+    {
+      name: 'a minor-bumped branch and a fix as a no-op',
+      first: 'feat(a): one',
+      next: 'fix(b): two',
+      kind: 'minor',
+      from: '1.1.0',
+      to: '1.1.0',
+      bumps: 1,
+    },
+  ])('reconciles $name', TIMEOUT, ({ first, next, kind, from, to, bumps }) => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, first);
+    expect(runBump(run.batch).json.status).toBe('ok');
+    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, next);
+    const head = headSha(run.batch);
+
+    const r = runBump(run.batch);
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', kind, from, to });
+    if (bumps === 1) {
+      expect(r.json.commit).toBeNull();
+      expect(r.json.log).toBeNull();
+      expect(headSha(run.batch)).toBe(head);
+    } else {
+      const bumped = headSha(run.batch);
+      expect(bumped).not.toBe(head);
+      expect(r.json.commit).toBe(bumped);
+      expect(mustRun('git', ['log', '-1', '--format=%s', bumped], run.batch).trim()).toBe(
+        'chore(build): bump version — r',
+      );
+      expect(commitPaths(run.batch, bumped)).toEqual(['package-lock.json', 'package.json']);
+    }
+    expect(versions(run.batch)).toEqual({ pkg: to, lock: to, lockRoot: to });
+    expect(porcelain(run.batch)).toBe('');
+    const subjects = mustRun('git', ['log', '--format=%s', 'origin/master..HEAD'], run.batch)
+      .split(/\r?\n/u)
+      .filter((s) => s.startsWith('chore(build): bump version'));
+    expect(subjects).toHaveLength(bumps);
+  });
+
+  it('targets origin/master’s version bumped by the kind once master moved', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'fix(a): one');
+    const pkg = JSON.parse(readFileSync(join(run.batch, 'package.json'), 'utf8')) as object;
+    const moved = `${JSON.stringify({ ...pkg, version: '1.4.0' }, null, 2)}\n`;
+    advanceOrigin(
+      root,
+      run.bare,
+      { write: { 'package.json': moved } },
+      'chore(build): bump version — elsewhere',
+    );
+    mustRun('git', ['fetch', '-q', 'origin'], run.batch);
+
+    const r = runBump(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', kind: 'patch', from: '1.0.0', to: '1.4.1' });
+    expect(r.json.commit).toBe(headSha(run.batch));
+    expect(versions(run.batch)).toEqual({ pkg: '1.4.1', lock: '1.4.1', lockRoot: '1.4.1' });
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it.each<{ name: string; changes: Changes }>([
+    // A rename, not `remove`: the clone checks out under the global autocrlf and
+    // the fixture config then turns it off, so `git rm` sees package.json as modified.
+    { name: 'has no package.json', changes: { rename: [['package.json', 'package.old.json']] } },
+    { name: 'has a package.json that is not JSON', changes: { write: { 'package.json': 'x\n' } } },
+  ])(
+    'fails at step version, touching nothing, when origin/master $name',
+    TIMEOUT,
+    ({ changes }) => {
+      const run = makeRun();
+      commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'fix(a): one');
+      advanceOrigin(root, run.bare, changes, 'chore: break package.json');
+      mustRun('git', ['fetch', '-q', 'origin'], run.batch);
+      const head = headSha(run.batch);
+
+      const r = runBump(run.batch);
+
+      expect(r.json).toMatchObject({ status: 'failed', commit: null });
+      expect(r.json.errors.map((e) => e.step)).toEqual(['version']);
+      expect(headSha(run.batch)).toBe(head);
+      expect(porcelain(run.batch)).toBe('');
+      expect(versions(run.batch)).toEqual({ pkg: '1.0.0', lock: '1.0.0', lockRoot: '1.0.0' });
+    },
+  );
+
+  it.each([
+    { reason: 'nothing-to-bump', branch: 'ship/r', subjects: [] },
     { reason: 'not-run-batch', branch: 'feature/x', subjects: ['feat(a): one'] },
   ])('refuses $reason and touches nothing', TIMEOUT, ({ reason, branch, subjects }) => {
     const run = makeRun(branch);
@@ -467,6 +582,226 @@ describe('publish --push-only', () => {
   });
 });
 
+describe('append-pr-body', () => {
+  // CRLF, non-ASCII, trailing spaces and a closing keyword: all must survive the round trip.
+  const BODY = '## Summary\r\n\r\nAdds x — fixes #3.  \r\n';
+  const SECTION = '## Attached run 1\n\n### Issues\n\n- fixes #8 — y\n';
+
+  /** Run `append-pr-body` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  function appendRun({
+    bodies = { 9: BODY },
+    editExit,
+    section = SECTION,
+  }: { bodies?: Record<number, string>; editExit?: number; section?: string | null } = {}): {
+    r: ReturnType<typeof runCli<AppendPrBodyResult>>;
+    bin: string;
+  } {
+    const bin = writeFakeGh(root, {});
+    setFakePrBodies(bin, bodies);
+    if (editExit !== undefined) setFakePrEditExit(bin, editExit);
+    if (section !== null) writeFileSync(`${root}/pr-section.md`, section);
+    const r = runCli<AppendPrBodyResult>(
+      ['append-pr-body', root, '--pr', '9', '--section-file', `${root}/pr-section.md`],
+      { env: prependPath(bin) },
+    );
+    if (typeof r.json.bodyFile === 'string') logDirs.add(dirname(r.json.bodyFile));
+    return { r, bin };
+  }
+
+  it('appends the section to the PR’s body as gh read it, byte for byte', TIMEOUT, () => {
+    const { r, bin } = appendRun();
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', pr: 9 });
+    expect(r.json.bodyFile).toMatch(/ph-worktree-append-pr-body-[^/]+\/pr-body\.md$/);
+    expect(readFakePrEdited(bin)).toEqual({
+      argv: ['pr', 'edit', '9', '--body-file', r.json.bodyFile],
+      body: `${BODY}\n${SECTION}`,
+    });
+    expect(readFileSync(r.json.bodyFile ?? '', 'utf8')).toBe(`${BODY}\n${SECTION}`);
+  });
+
+  it('fails pr-body and edits nothing when gh cannot read the body', TIMEOUT, () => {
+    const { r, bin } = appendRun({ bodies: {} });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', pr: 9, bodyFile: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-body']);
+    expect(r.json.errors[0]?.message).toContain('gh pr view 9 exited 3');
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+
+  it('fails pr-edit, naming the body it wrote, when gh pr edit fails', TIMEOUT, () => {
+    const { r } = appendRun({ editExit: 1 });
+
+    expect(r.code).toBe(1);
+    expect(r.json.status).toBe('failed');
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-edit']);
+    expect(typeof r.json.bodyFile).toBe('string');
+    expect(r.json.errors[0]?.message).toContain('gh pr edit 9 exited 1');
+    expect(r.json.errors[0]?.message).toContain(r.json.bodyFile);
+  });
+
+  it.each([
+    { name: 'missing', section: null },
+    { name: 'blank', section: ' \n' },
+  ])('fails section and calls no gh when the section file is $name', TIMEOUT, ({ section }) => {
+    // No body configured: a body read would fail `pr-body`, so `section` alone proves none ran.
+    const { r, bin } = appendRun({ bodies: {}, section });
+
+    expect(r.code).toBe(1);
+    expect(r.json.errors.map((e) => e.step)).toEqual(['section']);
+    expect(r.json.bodyFile).toBeNull();
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+
+  // 65,001 characters read; the new body adds one '\n', then the section.
+  const LONG_BODY = `${'b'.repeat(65_000)}\n`;
+
+  it('refuses a new body of 65,537 characters at body-too-long, editing nothing', TIMEOUT, () => {
+    const { r, bin } = appendRun({ bodies: { 9: LONG_BODY }, section: `${'s'.repeat(534)}\n` });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', pr: 9 });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['body-too-long']);
+    const bodyFile = r.json.bodyFile ?? '';
+    expect(bodyFile).not.toBe('');
+    expect(r.json.errors[0]?.message).toContain('65537');
+    expect(r.json.errors[0]?.message).toContain('65536');
+    expect(r.json.errors[0]?.message).toContain(bodyFile);
+    const written = readFileSync(bodyFile, 'utf8');
+    expect(written).toHaveLength(65_537);
+    expect(written.startsWith(LONG_BODY)).toBe(true);
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+
+  // '—' is 1 UTF-16 unit but 3 UTF-8 bytes: the limit counts the string's length, not bytes.
+  it('edits a new body of exactly 65,536 characters, non-ASCII ones included', TIMEOUT, () => {
+    const section = `${'—'.repeat(10)}${'s'.repeat(523)}\n`;
+    const { r, bin } = appendRun({ bodies: { 9: LONG_BODY }, section });
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', errors: [] });
+    expect(readFakePrEdited(bin)?.argv).toEqual([
+      'pr',
+      'edit',
+      '9',
+      '--body-file',
+      r.json.bodyFile,
+    ]);
+    expect(readFakePrEdited(bin)?.body).toHaveLength(65_536);
+    expect(readFakePrEdited(bin)?.body?.endsWith(section)).toBe(true);
+  });
+});
+
+describe('post-pr-comment', () => {
+  // CRLF and non-ASCII: both must reach gh unchanged.
+  const COMMENT = '<details><summary>Run report — attached run 2</summary>\r\n\r\n## Landed\r\n';
+
+  /** Run `post-pr-comment` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  function commentRun({
+    comment = COMMENT,
+    gh,
+  }: { comment?: string | null; gh?: FakePrComment } = {}): {
+    r: ReturnType<typeof runCli<PostPrCommentResult>>;
+    bin: string;
+    file: string;
+  } {
+    const bin = writeFakeGh(root, {});
+    if (gh !== undefined) setFakePrComment(bin, gh);
+    const file = `${root}/pr-report-comment.md`;
+    if (comment !== null) writeFileSync(file, comment);
+    const r = runCli<PostPrCommentResult>(
+      ['post-pr-comment', root, '--pr', '9', '--comment-file', file],
+      { env: prependPath(bin) },
+    );
+    return { r, bin, file };
+  }
+
+  it('posts the comment file to the PR and returns the comment’s URL', TIMEOUT, () => {
+    const { r, bin, file } = commentRun();
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      pr: 9,
+      url: 'https://github.com/fixture/repo/pull/9#issuecomment-1',
+    });
+    expect(readFakePrCommented(bin)).toEqual({
+      argv: ['pr', 'comment', '9', '--body-file', file],
+      body: COMMENT,
+    });
+  });
+
+  it('fails pr-comment when gh pr comment exits non-zero', TIMEOUT, () => {
+    const { r } = commentRun({ gh: { exit: 1 } });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-comment']);
+    expect(r.json.errors[0]?.message).toContain('gh pr comment 9 exited 1');
+  });
+
+  // A warning line before the URL, whitespace around it and trailing blank lines.
+  it('returns the last non-empty line gh printed, trimmed, as the URL', TIMEOUT, () => {
+    const stdout =
+      'Warning: 1 uncommitted change\n  https://github.com/fixture/repo/pull/9#issuecomment-7 \r\n\r\n';
+    const { r } = commentRun({ gh: { stdout } });
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      url: 'https://github.com/fixture/repo/pull/9#issuecomment-7',
+    });
+  });
+
+  it.each([
+    { name: 'nothing', gh: { printUrl: false } },
+    { name: 'a last line that is no https URL', gh: { stdout: 'https://x/1\nComment posted\n' } },
+  ])('fails comment-url when gh pr comment exits 0 printing $name', TIMEOUT, ({ gh }) => {
+    const { r } = commentRun({ gh });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['comment-url']);
+    expect(r.json.errors[0]?.message).toBe(
+      'gh pr comment 9 printed no comment URL; the comment may have been posted',
+    );
+  });
+
+  it.each([
+    { name: 'missing', comment: null },
+    { name: 'blank', comment: ' \n' },
+  ])('fails comment and calls no gh when the comment file is $name', TIMEOUT, ({ comment }) => {
+    const { r, bin } = commentRun({ comment });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['comment']);
+    expect(readFakePrCommented(bin)).toBeNull();
+  });
+
+  it('refuses a comment of 65,537 characters at body-too-long, calling no gh', TIMEOUT, () => {
+    const { r, bin } = commentRun({ comment: 'c'.repeat(65_537) });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['body-too-long']);
+    expect(r.json.errors[0]?.message).toContain('65537');
+    expect(r.json.errors[0]?.message).toContain('65536');
+    expect(readFakePrCommented(bin)).toBeNull();
+  });
+
+  // '—' is 1 UTF-16 unit but 3 UTF-8 bytes: the limit counts the string's length, not bytes.
+  it('posts a comment of exactly 65,536 characters, non-ASCII ones included', TIMEOUT, () => {
+    const comment = `${'—'.repeat(10)}${'c'.repeat(65_526)}`;
+    const { r, bin } = commentRun({ comment });
+
+    expect(r.json.status).toBe('ok');
+    expect(readFakePrCommented(bin)?.body).toBe(comment);
+  });
+});
+
 describe('usage errors', () => {
   // #1059: the epic end's local server tier moved to PR CI
   it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
@@ -491,6 +826,22 @@ describe('usage errors', () => {
       args: ['publish', 'b', '--push-only', '--body-file', 'f', '--log', 'l'],
     },
     { name: 'publish --push-only without --log', args: ['publish', 'b', '--push-only'] },
+    {
+      name: 'append-pr-body without --section-file',
+      args: ['append-pr-body', 'b', '--pr', '9'],
+    },
+    {
+      name: 'append-pr-body with pr 0',
+      args: ['append-pr-body', 'b', '--pr', '0', '--section-file', 'f'],
+    },
+    {
+      name: 'post-pr-comment without --comment-file',
+      args: ['post-pr-comment', 'b', '--pr', '9'],
+    },
+    {
+      name: 'post-pr-comment with pr 0',
+      args: ['post-pr-comment', 'b', '--pr', '0', '--comment-file', 'f'],
+    },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
@@ -549,4 +900,29 @@ describe('publish (in-process)', () => {
     expect((thrown as StepFailure).step).toBe('push');
     expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
   });
+});
+
+describe('append-pr-body (in-process)', () => {
+  // The fake gh only prints well-formed body JSON, so the read is stubbed here.
+  it(
+    'fails pr-body without echoing gh’s output, editing nothing, when gh prints no body JSON',
+    TIMEOUT,
+    () => {
+      writeFileSync(`${root}/pr-section.md`, '## Attached run 1\n');
+      vi.mocked(runCaptured).mockClear();
+      vi.mocked(runCaptured).mockReturnValueOnce({
+        exitCode: 0,
+        stdout: 'gh-printed <html>',
+        tail: '',
+      });
+
+      const r = appendPrBodyInProcess({ batch: root, pr: 9, sectionFile: `${root}/pr-section.md` });
+
+      expect(r).toMatchObject({ status: 'failed', pr: 9, bodyFile: null });
+      expect(r.errors).toEqual([
+        { step: 'pr-body', message: 'gh pr view 9 printed no readable body JSON' },
+      ]);
+      expect(vi.mocked(runCaptured)).toHaveBeenCalledTimes(1);
+    },
+  );
 });
