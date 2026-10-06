@@ -129,7 +129,6 @@ export function attachBatch(input: AttachInput): CutBatchResult {
  * @throws A filesystem error when the report dir cannot be read.
  */
 function lastRegistry(layout: RunLayout): string | null {
-  if (!existsSync(layout.reports)) return null;
   const dirs = [
     layout.reports,
     ...readdirSync(layout.reports)
@@ -152,18 +151,19 @@ function lastRegistry(layout: RunLayout): string | null {
  *
  * @param main - The main checkout.
  * @param slug - The run's slug.
- * @param layout - The run's layout.
+ * @param layout - The run's layout; its report dir exists.
  * @returns The run's number and its report folder, `<reports>/attach-<run>`,
  *   created now.
  * @throws StepFailure `attach` when git cannot list the slice branches; a
- *   filesystem error when the folder cannot be made.
+ *   filesystem error when the report dir cannot be read or the folder cannot
+ *   be made.
  */
 function allocateRun(
   main: string,
   slug: string,
   layout: RunLayout,
 ): { readonly run: number; readonly reportDir: string } {
-  const reports = existsSync(layout.reports) ? readdirSync(layout.reports) : [];
+  const reports = readdirSync(layout.reports);
   const prefix = `refs/heads/${sliceBranchPrefix(slug)}`;
   const branches = git(main, ['for-each-ref', '--format=%(refname)', prefix], 'attach')
     .split(/\r?\n/u)
@@ -171,7 +171,6 @@ function allocateRun(
     .map((line) => line.slice(prefix.length));
   const run = nextAttachedRun({ reports, branches });
   const reportDir = attachedRunReports(layout, run);
-  mkdirSync(layout.reports, { recursive: true });
   // Not recursive: a concurrent attach that took the same number first makes
   // this throw, so two runs never share a folder.
   mkdirSync(reportDir);
@@ -222,7 +221,7 @@ export function openPr(main: string, branch: string): number {
  * @returns The count; `0` when the local branch does not exist.
  * @throws StepFailure `unpublished` when git fails.
  */
-export function unpublishedCommits(main: string, branch: string): number {
+function unpublishedCommits(main: string, branch: string): number {
   const ref = `refs/heads/${branch}`;
   if (!refExists(main, ref)) return 0;
   const args = [

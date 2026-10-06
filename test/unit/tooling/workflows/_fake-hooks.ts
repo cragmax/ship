@@ -126,7 +126,7 @@ export const SCOUT_FRESH = {
 const RUN_ROOT = 'C:/src/ph-runs/7';
 
 /** Fields every `ok` worktree-CLI output carries. */
-const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
+export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
 /**
  * A `live-runs` answer holding `runs`.

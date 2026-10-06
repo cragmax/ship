@@ -271,13 +271,9 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
     },
-    ...(entry.attachedRun === null
-      ? [
-          async () => {
-            state.writer = await prWriterStep(input, sync.upstream);
-          },
-        ]
-      : []),
+    async () => {
+      if (entry.attachedRun === null) state.writer = await prWriterStep(input, sync.upstream);
+    },
   ]);
   return publishStep(input, { sync, bump, state });
 }

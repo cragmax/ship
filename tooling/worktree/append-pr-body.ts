@@ -21,6 +21,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { z } from 'zod';
 
+import { describeError } from '../lib/describe-error.js';
+
 import { freshLogDir, GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import type { AppendPrBodyResult } from './types-run.js';
 import { recordFailure, StepFailure } from './types.js';
@@ -98,8 +100,7 @@ function readSection(file: string): string {
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new StepFailure('section', `section file ${file} unreadable: ${message}`);
+    throw new StepFailure('section', `section file ${file} unreadable: ${describeError(err)}`);
   }
   if (text.trim() === '') throw new StepFailure('section', `section file ${file} is empty`);
   return text;

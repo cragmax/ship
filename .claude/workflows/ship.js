@@ -3022,13 +3022,9 @@ async function shipSteps(input, state) {
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
     },
-    ...(entry.attachedRun === null
-      ? [
-          async () => {
-            state.writer = await prWriterStep(input, sync.upstream);
-          },
-        ]
-      : []),
+    async () => {
+      if (entry.attachedRun === null) state.writer = await prWriterStep(input, sync.upstream);
+    },
   ]);
   return publishStep(input, { sync, bump, state });
 }
@@ -3876,8 +3872,8 @@ async function cutEntry(hooks, entry, attach) {
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
-  const attachedRun = attach === null ? null : (cut.attach?.run ?? undefined);
-  if (attachedRun === undefined) {
+  const attachedRun = cut.attach?.run ?? null;
+  if (attach !== null && attachedRun === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
   const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });

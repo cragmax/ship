@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { CO_AUTHOR_TRAILER } from '../lib/commit-trailer.js';
+import { describeError } from '../lib/describe-error.js';
 
 import { assertRunBatch } from './cut.js';
 import { freshLogDir, NPM_TIMEOUT_MS, runStep } from './exec.js';
@@ -158,7 +159,7 @@ function packageVersion(batch: string): string {
   try {
     text = readFileSync(path, 'utf8');
   } catch (err) {
-    throw new StepFailure('version', `cannot read ${path}: ${errorText(err)}`);
+    throw new StepFailure('version', `cannot read ${path}: ${describeError(err)}`);
   }
   return versionOf(text, path);
 }
@@ -191,20 +192,10 @@ function versionOf(text: string, source: string): string {
   try {
     version = (JSON.parse(text) as { version?: unknown }).version;
   } catch (err) {
-    throw new StepFailure('version', `cannot read ${source}: ${errorText(err)}`);
+    throw new StepFailure('version', `cannot read ${source}: ${describeError(err)}`);
   }
   if (typeof version !== 'string') throw new StepFailure('version', `${source} has no version`);
   return version;
-}
-
-/**
- * An error's message.
- *
- * @param err - Anything thrown.
- * @returns Its `message` when it is an `Error`, else its string form.
- */
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**

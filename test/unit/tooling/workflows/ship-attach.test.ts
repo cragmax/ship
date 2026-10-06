@@ -7,6 +7,8 @@ import {
   BUMP_NO_OP,
   fakeHooks,
   GATE_OK,
+  liveRuns,
+  OK,
   PREFLIGHT_OK,
   REPORT_DIR,
   SCOUT_FRESH,
@@ -18,10 +20,7 @@ const ATTACH_REPORTS = `${REPORT_DIR}/attach-2`;
 const REGISTRY = `${REPORT_DIR}/pool-registry.batch.json`;
 
 const ATTACHED_CUT = {
-  exitCode: 0,
-  envelopePath: 'e.json',
-  status: 'ok',
-  errors: [],
+  ...OK,
   worktree: 'C:/src/main',
   branch: TARGET,
   base: 'tip9',
@@ -31,10 +30,7 @@ const ATTACHED_CUT = {
 };
 
 const PUSHED = {
-  exitCode: 0,
-  envelopePath: 'e.json',
-  status: 'ok',
-  errors: [],
+  ...OK,
   pushed: true,
   pr: { number: 9, url: 'https://x/pull/9' },
   mergeable: 'MERGEABLE',
@@ -214,10 +210,7 @@ describe('runShip --attach — setup', () => {
         attach: { ...ATTACHED_CUT.attach, created: true, registry: null },
       },
       'runner:provision-batch': {
-        exitCode: 0,
-        envelopePath: 'e.json',
-        status: 'ok',
-        errors: [],
+        ...OK,
         registry: provisioned,
         env: { PH_PROJECT_DIR: BATCH, PH_POOL_REGISTRY: provisioned },
       },
@@ -348,10 +341,7 @@ const TARGET_RUN = {
   landed: ['tooling/x.ts'],
   pr: { state: 'open', number: 9 },
   spent: false,
-  spentUnverified: false,
   path: BATCH,
-  dirty: false,
-  nested: [],
 };
 
 const OTHER_RUN = {
@@ -362,25 +352,13 @@ const OTHER_RUN = {
   path: 'C:/src/ph-runs/epic-8/batch',
 };
 
-const liveRunsOf = (...runs: readonly (typeof TARGET_RUN)[]) => ({
-  'runner:live-runs': {
-    exitCode: 0,
-    envelopePath: 'e.json',
-    status: 'ok',
-    errors: [],
-    runs,
-  },
-});
-
-const scoutLines = (run: FakeRun): string[] => callOf(run, 'scout')?.prompt.split('\n') ?? [];
-
 describe('runShip --attach — the scout', () => {
   it('shows the scout every live run but the target, and names the PR head', async () => {
-    const run = fakeHooks({ ...ATTACHED, ...liveRunsOf(TARGET_RUN, OTHER_RUN) });
+    const run = fakeHooks({ ...ATTACHED, ...liveRuns(TARGET_RUN, OTHER_RUN) });
 
     const report = await runShip(run.hooks, `${ARGS} --preflight-only`);
 
-    expect(scoutLines(run)).toEqual(
+    expect(promptLines(run, 'scout')).toEqual(
       expect.arrayContaining([
         'Live runs (JSON): [{"branch":"ship/epic-8","landed":["src/o.ts"]}]',
         'PR head: origin/ship/epic-9',
@@ -392,7 +370,7 @@ describe('runShip --attach — the scout', () => {
   it('still refuses an overlap with another live run', async () => {
     const run = fakeHooks({
       ...ATTACHED,
-      ...liveRunsOf(TARGET_RUN, OTHER_RUN),
+      ...liveRuns(TARGET_RUN, OTHER_RUN),
       scout: {
         ...SCOUT_FRESH,
         overlaps: [
@@ -409,20 +387,20 @@ describe('runShip --attach — the scout', () => {
   });
 
   it('shows the scout no live run when the target is the only one', async () => {
-    const run = fakeHooks({ ...ATTACHED, ...liveRunsOf(TARGET_RUN) });
+    const run = fakeHooks({ ...ATTACHED, ...liveRuns(TARGET_RUN) });
 
     const report = await runShip(run.hooks, `${ARGS} --preflight-only`);
 
-    expect(scoutLines(run)).toEqual(expect.arrayContaining(['Live runs (JSON): []']));
+    expect(promptLines(run, 'scout')).toEqual(expect.arrayContaining(['Live runs (JSON): []']));
     expect(report.status).toBe('preflight-ok');
   });
 
   it('names no PR head to an unattached run’s scout', async () => {
-    const run = fakeHooks(liveRunsOf(TARGET_RUN, OTHER_RUN));
+    const run = fakeHooks(liveRuns(TARGET_RUN, OTHER_RUN));
 
     await runShip(run.hooks, 'issues 7 --preflight-only');
 
-    expect(scoutLines(run).filter((l) => l.startsWith('PR head:'))).toEqual([]);
+    expect(promptLines(run, 'scout').filter((l) => l.startsWith('PR head:'))).toEqual([]);
   });
 });
 

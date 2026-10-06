@@ -196,8 +196,8 @@ async function cutEntry(
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
-  const attachedRun = attach === null ? null : (cut.attach?.run ?? undefined);
-  if (attachedRun === undefined) {
+  const attachedRun = cut.attach?.run ?? null;
+  if (attach !== null && attachedRun === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
   const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
