@@ -8,7 +8,16 @@
  * @integrationTier standalone
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -74,13 +83,19 @@ function repoState(dir: string): Record<string, string> {
 async function preflightWith(options: {
   readonly authExit?: number;
   readonly probe?: WarmProbe;
+  readonly attach?: string;
+  readonly responses?: Record<string, FakeGhResponse>;
 }): Promise<PreflightResult> {
-  const overlay = prependPath(writeFakeGh(root, {}, options.authExit ?? 0));
+  const overlay = prependPath(writeFakeGh(root, options.responses ?? {}, options.authExit ?? 0));
   const [key = 'PATH', value = ''] = Object.entries(overlay)[0] ?? [];
   const saved = process.env[key];
   process.env[key] = value;
   try {
-    return await preflight({ main, probe: options.probe ?? (() => Promise.resolve({ ok: true })) });
+    return await preflight({
+      main,
+      ...(options.attach === undefined ? {} : { attach: options.attach }),
+      probe: options.probe ?? (() => Promise.resolve({ ok: true })),
+    });
   } finally {
     process.env[key] = saved;
   }
@@ -89,6 +104,41 @@ async function preflightWith(options: {
 /** The short branch a worktree has checked out. */
 function branchOf(dir: string): string {
   return mustRun('git', ['rev-parse', '--abbrev-ref', 'HEAD'], dir).trim();
+}
+
+/** Run `work` in a throwaway worktree on an existing branch, which is removed again. */
+function inThrowawayWorktree(branch: string, work: (dir: string) => string): string {
+  const tmp = mkdtempSync(join(root, 'wt-'));
+  rmSync(tmp, { recursive: true });
+  mustRun('git', ['worktree', 'add', '-q', tmp, branch], main);
+  const sha = work(tmp);
+  mustRun('git', ['worktree', 'remove', tmp], main);
+  return sha;
+}
+
+/** Commit `changes` on an existing branch through a throwaway worktree. */
+function commitOn(branch: string, changes: Changes, message: string): string {
+  return inThrowawayWorktree(branch, (dir) => commitChanges(dir, changes, message));
+}
+
+/** Check an existing branch out at `path`. */
+function addWorktreeAt(path: string, branch: string): void {
+  mustRun('git', ['worktree', 'add', '-q', path, branch], main);
+}
+
+/**
+ * Advance `bare`'s master, then merge it into `branch` with `--no-ff`,
+ * unpushed — a resync's merge. The merge runs in `checkout` when given (a
+ * worktree already on `branch`), else in a throwaway worktree.
+ */
+function mergeOn(bare: string, branch: string, checkout?: string): string {
+  advanceOrigin(root, bare, { write: { 'm.txt': 'm\n' } }, 'm');
+  mustRun('git', ['fetch', '-q', 'origin'], main);
+  const merge = (dir: string): string => {
+    mustRun('git', ['merge', '--no-ff', '-q', '-m', 'Merge origin/master', 'origin/master'], dir);
+    return headSha(dir);
+  };
+  return checkout === undefined ? inThrowawayWorktree(branch, merge) : merge(checkout);
 }
 
 describe('cut-batch', () => {
@@ -163,20 +213,15 @@ describe('cut-batch --attach', () => {
     bare = makeBareOrigin(root, main);
   });
 
-  /** Commit `changes` on an existing branch through a throwaway worktree, which is removed again. */
-  function commitOn(branch: string, changes: Changes, message: string): string {
-    const tmp = mkdtempSync(join(root, 'wt-'));
-    rmSync(tmp, { recursive: true });
-    mustRun('git', ['worktree', 'add', '-q', tmp, branch], main);
-    const sha = commitChanges(tmp, changes, message);
-    mustRun('git', ['worktree', 'remove', tmp], main);
-    return sha;
-  }
-
-  /** Create local `ship/s` from master with one commit of its own; no worktree left on it. */
+  /**
+   * Create `ship/s` from master with one commit of its own, pushed as an open
+   * PR's branch is; no worktree left on it.
+   */
   function localBranch(): string {
     mustRun('git', ['branch', 'ship/s'], main);
-    return commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+    const tip = commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+    return tip;
   }
 
   /** Run `cut-batch --attach` with a fake `gh` answering `responses`. */
@@ -318,9 +363,9 @@ describe('cut-batch --attach', () => {
 
   it('refuses a local branch diverged from origin, its ref unchanged', TIMEOUT, () => {
     localBranch();
-    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
     advanceOrigin(root, bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/s');
-    const local = commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+    // A merge, not a commit of its own: that would refuse unpublished-commits first.
+    const local = mergeOn(bare, 'ship/s');
 
     const r = attach(OPEN_9);
 
@@ -329,21 +374,199 @@ describe('cut-batch --attach', () => {
     expect(existsSync(BATCH())).toBe(false);
   });
 
-  it('checks out a local branch ahead of origin as it is, never rewinding it', TIMEOUT, () => {
+  it.each([
+    { name: 'checked out anew', reuse: false },
+    { name: 'reused', reuse: true },
+  ])('attaches a branch ahead of origin only by an unpushed merge, $name', TIMEOUT, ({ reuse }) => {
     localBranch();
-    mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
-    // An unpushed resync merge: local has a commit origin lacks, and nothing the other way.
-    const local = commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+    if (reuse) addWorktreeAt(BATCH(), 'ship/s');
+    const local = reuse ? mergeOn(bare, 'ship/s', BATCH()) : mergeOn(bare, 'ship/s');
 
     const r = attach(OPEN_9);
 
     expect(r.json).toMatchObject({
       status: 'ok',
       base: local,
-      attach: { created: true, fastForwarded: false },
+      attach: { created: !reuse, fastForwarded: false },
     });
     expect(headSha(main, 'refs/heads/ship/s')).toBe(local);
     expect(headSha(BATCH())).toBe(local);
+  });
+
+  it.each([
+    { name: 'checked out anew', reuse: false },
+    { name: 'reused', reuse: true },
+  ])(
+    'refuses a branch with a commit of its own origin lacks as unpublished-commits, $name, mutating nothing',
+    TIMEOUT,
+    ({ reuse }) => {
+      localBranch();
+      if (reuse) {
+        addWorktreeAt(BATCH(), 'ship/s');
+        commitChanges(BATCH(), { write: { 'l.txt': 'l\n' } }, 'l');
+      } else {
+        commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+      }
+      const before = repoState(main);
+
+      const r = attach(OPEN_9);
+
+      expect(r.json).toMatchObject({
+        status: 'refused',
+        reason: 'unpublished-commits',
+        batch: null,
+      });
+      expect(r.json.errors[0]?.message).toContain('1 commit');
+      expect(repoState(main)).toEqual(before);
+      if (!reuse) expect(existsSync(BATCH())).toBe(false);
+    },
+  );
+
+  /** Run `cut-batch --attach ship/s --attached-run` with a fake `gh` answering `responses`. */
+  function attachRun(
+    responses: Record<string, FakeGhResponse>,
+  ): ReturnType<typeof runCli<CutBatchResult>> {
+    const bin = writeFakeGh(root, responses);
+    return runCli<CutBatchResult>(['cut-batch', main, '--attach', 'ship/s', '--attached-run'], {
+      env: prependPath(bin),
+    });
+  }
+
+  /** The unattached run's leftovers: report files and its slice branches. */
+  function unattachedLeftovers(): void {
+    mkdirSync(`${root}/ph-ship/s/reports/plans`, { recursive: true });
+    writeFileSync(`${root}/ph-ship/s/reports/pr-body.md`, 'body\n');
+    mustRun('git', ['branch', 'slice/s/7-1'], main);
+    mustRun('git', ['branch', 'slice/s/critic'], main);
+  }
+
+  it(
+    'gives the first attached run attach-1 beside the unattached run’s reports and branches',
+    TIMEOUT,
+    () => {
+      localBranch();
+      unattachedLeftovers();
+
+      const r = attachRun(OPEN_9);
+
+      expect(r.code).toBe(0);
+      expect(r.json).toMatchObject({
+        status: 'ok',
+        reportDir: `${root}/ph-ship/s/reports/attach-1`,
+        attach: { created: true, run: 1 },
+      });
+      expect(existsSync(`${root}/ph-ship/s/reports/attach-1`)).toBe(true);
+    },
+  );
+
+  it(
+    'gives a second attached run attach-2 when the first left its folder and branches',
+    TIMEOUT,
+    () => {
+      localBranch();
+      unattachedLeftovers();
+      mkdirSync(`${root}/ph-ship/s/reports/attach-1`);
+      mustRun('git', ['branch', 'slice/s/a1-7-1'], main);
+      mustRun('git', ['branch', 'slice/s/a1-critic'], main);
+
+      const r = attachRun(OPEN_9);
+
+      expect(r.json).toMatchObject({
+        status: 'ok',
+        reportDir: `${root}/ph-ship/s/reports/attach-2`,
+        attach: { run: 2 },
+      });
+      expect(existsSync(`${root}/ph-ship/s/reports/attach-2`)).toBe(true);
+    },
+  );
+
+  it('counts an earlier attached run’s slice branch whose report folder is gone', TIMEOUT, () => {
+    localBranch();
+    mustRun('git', ['branch', 'slice/s/a1-7-1'], main);
+
+    const r = attachRun(OPEN_9);
+
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      reportDir: `${root}/ph-ship/s/reports/attach-2`,
+      attach: { run: 2 },
+    });
+  });
+
+  it(
+    'counts an earlier attached run’s report folder whose slice branches are gone',
+    TIMEOUT,
+    () => {
+      localBranch();
+      mkdirSync(`${root}/ph-ship/s/reports/attach-1`, { recursive: true });
+
+      const r = attachRun(OPEN_9);
+
+      expect(r.json).toMatchObject({
+        status: 'ok',
+        reportDir: `${root}/ph-ship/s/reports/attach-2`,
+        attach: { run: 2 },
+      });
+    },
+  );
+
+  it.each([{ written: true }, { written: false }])(
+    'names the batch’s trimmed registry when written is $written, with no run number',
+    TIMEOUT,
+    ({ written }) => {
+      const registry = `${root}/ph-ship/s/reports/pool-registry.batch.json`;
+      mustRun('git', ['branch', 'ship/s'], main);
+      addWorktreeAt(BATCH(), 'ship/s');
+      if (written) {
+        mkdirSync(`${root}/ph-ship/s/reports`, { recursive: true });
+        writeFileSync(registry, '[]\n');
+      }
+
+      const r = attach(OPEN_9);
+
+      expect(r.json.attach).toEqual({
+        created: false,
+        fastForwarded: false,
+        pr: 9,
+        run: null,
+        registry: written ? registry : null,
+      });
+      expect(r.json.reportDir).toBe(`${root}/ph-ship/s/reports`);
+    },
+  );
+
+  // An attached run that checks the batch out anew provisions into its own
+  // attach-<R>/, a /ship or /resync into reports/; mtimes (seconds) order them.
+  it.each([
+    { name: 'only an attached run provisioned', rootAt: null, attachedAt: 1_000, want: 'attach' },
+    { name: 'an attached run provisioned last', rootAt: 1_000, attachedAt: 2_000, want: 'attach' },
+    { name: 'a resync provisioned last', rootAt: 2_000, attachedAt: 1_000, want: 'root' },
+  ])('names the newest trimmed registry when $name', TIMEOUT, ({ rootAt, attachedAt, want }) => {
+    const reports = `${root}/ph-ship/s/reports`;
+    const rootRegistry = `${reports}/pool-registry.batch.json`;
+    const attachedRegistry = `${reports}/attach-1/pool-registry.batch.json`;
+    mustRun('git', ['branch', 'ship/s'], main);
+    addWorktreeAt(BATCH(), 'ship/s');
+    mkdirSync(`${reports}/attach-1`, { recursive: true });
+    writeFileSync(attachedRegistry, '[]\n');
+    utimesSync(attachedRegistry, attachedAt, attachedAt);
+    if (rootAt !== null) {
+      writeFileSync(rootRegistry, '[]\n');
+      utimesSync(rootRegistry, rootAt, rootAt);
+    }
+
+    const r = attach(OPEN_9);
+
+    expect(r.json.attach?.registry).toBe(want === 'root' ? rootRegistry : attachedRegistry);
+  });
+
+  it('creates no run folder when the attach refuses', TIMEOUT, () => {
+    localBranch();
+
+    const r = attachRun({ 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } });
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'no-open-pr' });
+    expect(existsSync(`${root}/ph-ship/s/reports/attach-1`)).toBe(false);
   });
 
   it('refuses a batch entry whose directory is gone as branch-checked-out', TIMEOUT, () => {
@@ -359,11 +582,6 @@ describe('cut-batch --attach', () => {
     expect(repoState(main)).toEqual(before);
     expect(existsSync(`${root}/ph-ship/s/reports`)).toBe(false);
   });
-
-  /** Check an existing branch out at `path`. */
-  function addWorktreeAt(path: string, branch: string): void {
-    mustRun('git', ['worktree', 'add', '-q', path, branch], main);
-  }
 });
 
 describe('cut-slice', () => {
@@ -441,6 +659,50 @@ describe('cut-slice', () => {
       });
       expect(branchOf(slice)).toBe('slice/epic-900/critic');
       expect(headSha(slice)).toBe(head);
+    },
+  );
+
+  it(
+    'cuts an attached run’s attempt and critic slices beside the earlier run’s, on a<R>- branches',
+    TIMEOUT,
+    () => {
+      const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+      const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
+      mustRun('git', ['branch', 'slice/epic-900/41-1'], main);
+      mustRun('git', ['branch', 'slice/epic-900/critic'], main);
+
+      const attempt = runCli<CutSliceResult>([
+        'cut-slice',
+        batch,
+        '--issue',
+        '41',
+        '--attempt',
+        '1',
+        '--attached-run',
+        '2',
+      ]);
+      const critic = runCli<CutSliceResult>([
+        'cut-slice',
+        batch,
+        '--critic',
+        '--attached-run',
+        '2',
+      ]);
+
+      expect(attempt.code).toBe(0);
+      const slice = `${root}/ph-ship/epic-900/slice-a2-41-1`;
+      expect(attempt.json).toMatchObject({
+        status: 'ok',
+        branch: 'slice/epic-900/a2-41-1',
+        base: head,
+        slice,
+      });
+      expect(branchOf(slice)).toBe('slice/epic-900/a2-41-1');
+      expect(critic.json).toMatchObject({
+        status: 'ok',
+        branch: 'slice/epic-900/a2-critic',
+        slice: `${root}/ph-ship/epic-900/slice-a2-critic`,
+      });
     },
   );
 
@@ -607,6 +869,111 @@ describe('preflight (in-process)', () => {
       ],
     });
   });
+
+  describe('preflight --attach (in-process)', () => {
+    const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
+    const CLOSED_9 = { 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } };
+
+    beforeEach(() => {
+      mustRun('git', ['branch', 'ship/s'], main);
+      commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+      mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+    });
+
+    /** Check `ship/s` out as its batch and link a slice's `node_modules` into the batch's. */
+    function liveSlice(): void {
+      const batch = `${root}/ph-ship/s/ship-s`;
+      const slice = `${root}/ph-ship/s/slice-a1-7-1`;
+      addWorktreeAt(batch, 'ship/s');
+      mkdirSync(`${batch}/node_modules/dep`, { recursive: true });
+      addWorktree(main, slice, 'slice/s/a1-7-1');
+      symlinkSync(`${batch}/node_modules`, `${slice}/node_modules`, 'junction');
+    }
+
+    /** Commit one change of its own on `ship/s`, unpushed. */
+    function unpublished(): void {
+      commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+    }
+
+    it('passes an open PR with no live slice and nothing unpublished', TIMEOUT, async () => {
+      const r = await preflightWith({ attach: 'ship/s', responses: OPEN_9 });
+
+      expect(r).toMatchObject({ status: 'ok', problems: [] });
+    });
+
+    it.each([
+      {
+        name: 'a closed PR',
+        responses: CLOSED_9,
+        setup: () => undefined,
+        problem: { check: 'no-open-pr', message: 'ship/s has no open PR: closed (#9)' },
+      },
+      {
+        name: 'a gh that cannot report the PR',
+        responses: { 'ship/s': { exit: 1 } },
+        setup: () => undefined,
+        problem: {
+          check: 'no-open-pr',
+          message: expect.stringContaining('ship/s: gh pr list exited 1') as string,
+        },
+      },
+      {
+        name: 'a live slice',
+        responses: OPEN_9,
+        setup: liveSlice,
+        problem: {
+          check: 'slices-live',
+          message: expect.stringContaining('slice-a1-7-1') as string,
+        },
+      },
+      {
+        name: 'an unpublished commit',
+        responses: OPEN_9,
+        setup: unpublished,
+        problem: {
+          check: 'unpublished-commits',
+          message: expect.stringContaining('1 commit') as string,
+        },
+      },
+    ])('refuses $name', TIMEOUT, async ({ responses, setup, problem }) => {
+      setup();
+
+      const r = await preflightWith({ attach: 'ship/s', responses });
+
+      expect(r).toMatchObject({ status: 'refused', reason: 'preflight-failed' });
+      expect(r.problems).toEqual([problem]);
+    });
+
+    it('names every attach problem in one envelope, in check order', TIMEOUT, async () => {
+      // git refuses the throwaway worktree on ship/s once the batch has it checked out.
+      unpublished();
+      liveSlice();
+
+      const r = await preflightWith({ attach: 'ship/s', responses: CLOSED_9 });
+
+      expect(r.problems.map((p) => p.check)).toEqual([
+        'no-open-pr',
+        'slices-live',
+        'unpublished-commits',
+      ]);
+    });
+
+    it('passes a branch ahead of origin only by an unpushed merge', TIMEOUT, async () => {
+      mergeOn(`${root}/origin.git`, 'ship/s');
+      // Level local master with the origin/master the merge advanced: only the attach checks are under test.
+      mustRun('git', ['merge', '--ff-only', '-q', 'origin/master'], main);
+
+      const r = await preflightWith({ attach: 'ship/s', responses: OPEN_9 });
+
+      expect(r).toMatchObject({ status: 'ok', problems: [] });
+    });
+
+    it('refuses a branch outside ship/ as not-run-batch', TIMEOUT, async () => {
+      const r = await preflightWith({ attach: 'feature/s', responses: OPEN_9 });
+
+      expect(r).toMatchObject({ status: 'refused', reason: 'not-run-batch' });
+    });
+  });
 });
 
 describe('preflight', () => {
@@ -617,6 +984,23 @@ describe('preflight', () => {
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'refused', reason: 'not-main-worktree', ahead: null });
+  });
+
+  it('hands --attach’s branch to the attach checks', TIMEOUT, () => {
+    // An empty registry names no warm member, so no RCON probe leaves the process.
+    mkdirSync(join(main, 'src/server-pool/registry'), { recursive: true });
+    writeFileSync(join(main, REGISTRY), '[]\n');
+    makeBareOrigin(root, main);
+    const bin = writeFakeGh(root, { 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } });
+
+    const r = runCli<PreflightResult>(['preflight', main, '--attach', 'ship/s'], {
+      env: prependPath(bin),
+    });
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'preflight-failed' });
+    expect(r.json.problems.filter((p) => p.check !== 'warm-unreachable')).toEqual([
+      { check: 'no-open-pr', message: 'ship/s has no open PR: closed (#9)' },
+    ]);
   });
 });
 
@@ -635,6 +1019,10 @@ describe('usage errors', () => {
       args: ['cut-slice', 'b', '--issue', '4', '--attempt', '0'],
     },
     {
+      name: 'cut-slice with attached run 0',
+      args: ['cut-slice', 'b', '--issue', '4', '--attempt', '1', '--attached-run', '0'],
+    },
+    {
       name: 'cut-slice with --critic and an issue attempt',
       args: ['cut-slice', 'b', '--critic', '--issue', '4', '--attempt', '1'],
     },
@@ -643,6 +1031,11 @@ describe('usage errors', () => {
       name: 'cut-batch with --attach and --epic',
       args: ['cut-batch', 'm', '--attach', 'ship/s', '--epic', '9'],
     },
+    {
+      name: 'cut-batch --attached-run without --attach',
+      args: ['cut-batch', 'm', '--epic', '9', '--attached-run'],
+    },
+    { name: 'preflight --attach without a branch', args: ['preflight', 'm', '--attach'] },
   ])('exits 2 with a stamped usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);

@@ -12,7 +12,10 @@
  * 2. Pre-flight: `live-runs`, then the spent-run cleanup
  *    (`lib/spent-cleanup.ts`); then `cut-batch --attach`, which reuses the
  *    branch's batch or checks it out anew, and `provision-batch` when it
- *    was checked out anew;
+ *    was checked out anew. The attach refuses a branch holding commits of
+ *    its own `origin` lacks (`unpublished-commits` — a stopped attached
+ *    run's fixes, recovered first), so nothing merges or pushes; an
+ *    unpushed merge of its own still goes through;
  * 3. Merge: `lib/sync-master-step.ts`'s step, the one home of the merge; a
  *    code conflict or a failure stops the run before the push;
  * 4. Push: `publish --push-only`, which pushes only when the batch is

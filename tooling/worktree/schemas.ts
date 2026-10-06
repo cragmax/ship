@@ -58,6 +58,8 @@ export const RefusalReasonSchema = z.enum([
   'branch-checked-out',
   // Cut-batch `--attach`: the local branch and `origin`'s each have commits the other lacks.
   'branch-diverged',
+  // Cut-batch --attach: the local branch has first-parent non-merge commits origin lacks; the message names the count.
+  'unpublished-commits',
   // Preflight: a check failed; the envelope's `problems` names each.
   'preflight-failed',
   // Sync-master: another worktree's `node_modules` links into the batch's; the message names each.

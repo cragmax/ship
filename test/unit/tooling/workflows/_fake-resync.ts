@@ -26,7 +26,7 @@ export const attachOk = (created: boolean) => ({
   base: 'tip1',
   batch: BATCH,
   reportDir: REPORT_DIR,
-  attach: { created, fastForwarded: false, pr: 9 },
+  attach: { created, fastForwarded: false, pr: 9, run: null, registry: null },
 });
 
 /**

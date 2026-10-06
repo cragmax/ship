@@ -22,6 +22,11 @@
  * overlap with a live run always refuses, and so does any overlap the
  * estimator names between two epics of the run, `unsure` included.
  *
+ * **An attached run** (`args.attach`) runs `preflight --attach <branch>`,
+ * whose `no-open-pr`, `slices-live` and `unpublished-commits` problems on
+ * the target refuse like any failed check; the scout treats the target as
+ * {@link runScout} states.
+ *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
@@ -168,7 +173,11 @@ export async function runPreflight(
   hooks: WorkflowHooks,
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
-  const checks = await runTool(hooks, 'preflight', ['.']);
+  const checks = await runTool(
+    hooks,
+    'preflight',
+    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
+  );
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
@@ -181,7 +190,7 @@ export async function runPreflight(
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const scout = await runScout(hooks, graph, live);
+  const scout = await runScout(hooks, graph, live, args.attach);
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
 }
@@ -411,22 +420,31 @@ function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
 }
 
 /**
- * Run the scout over the gate's run set and the unspent live runs' files.
+ * Run the scout over the gate's run set and the unspent live runs' files —
+ * for an attached run, every such run but its target, judged against the
+ * target's PR head.
  *
  * @param hooks - The workflow hooks.
  * @param graph - The gate's graph.
  * @param live - `live-runs`' output.
+ * @param attach - An attached run's target branch; `null` for an unattached run.
  * @returns Resolves to the scout's verdict; `null` when it returned none.
  */
 async function runScout(
   hooks: WorkflowHooks,
   graph: RunGraph,
   live: LiveRunsOutput | null,
+  attach: string | null,
 ): Promise<ScoutVerdict | null> {
   const liveRuns: LiveRunFiles[] = (live?.runs ?? [])
-    .filter((r) => !r.spent)
+    .filter((r) => !r.spent && r.branch !== attach)
     .map((r) => ({ branch: r.branch, landed: r.landed }));
-  return AGENT_CALLS.scout(hooks, { issues: runSetIssues(graph.runSet), liveRuns });
+  const issues = runSetIssues(graph.runSet);
+  return AGENT_CALLS.scout(hooks, {
+    issues,
+    liveRuns,
+    ...(attach === null ? {} : { prHead: `origin/${attach}` }),
+  });
 }
 
 /**

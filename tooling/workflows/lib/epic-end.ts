@@ -22,6 +22,11 @@
  * - **The PR writer runs on the shipping path only**, after the bump. One
  *   that returns nothing or rejects never blocks the PR; the body falls back
  *   ({@link renderPrBody}).
+ * - **An attached run** (the entry's `attachedRun` set) has no PR writer and
+ *   opens no PR: its publish is `publish --push-only` onto the open PR
+ *   ({@link pushOntoPr}), the PR body untouched. A PR no longer open stops
+ *   the epic (`publish refused (no-open-pr): …`); its landed issues stay
+ *   landed on the branch.
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
  *   the publish task (the main-checkout look, the master check, the push and
  *   PR) each run as one task of the run's one lock, so no two epic ends talk
@@ -62,7 +67,13 @@ import {
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import type { EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
-import { envelopeProblem, runPlace, runTool, type BumpOutput } from './tool-calls.js';
+import {
+  envelopeProblem,
+  runPlace,
+  runTool,
+  type BumpOutput,
+  type PublishOutput,
+} from './tool-calls.js';
 
 /** How an issue ended. */
 export type IssueOutcome =
@@ -223,7 +234,8 @@ export async function unshippedEpicEnd(
 
 /**
  * The shipping path, up to the pull request: critic, sync, bump, the retro
- * and the PR writer concurrently, then the publish task.
+ * and (unattached runs only) the PR writer concurrently, then the publish
+ * task.
  *
  * @param input - The epic end's inputs.
  * @param state - Filled in as each step reports.
@@ -243,15 +255,19 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  // Neither thunk rejects (both steps catch), so the runtime's unobserved
-  // `null`-for-a-throw is never read.
+  // No thunk rejects (each step catches), so the runtime's unobserved
+  // `null`-for-a-throw is never read. An attached run writes no PR body.
   await hooks.parallel([
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
     },
-    async () => {
-      state.writer = await prWriterStep(input, sync.upstream);
-    },
+    ...(entry.attachedRun === null
+      ? [
+          async () => {
+            state.writer = await prWriterStep(input, sync.upstream);
+          },
+        ]
+      : []),
   ]);
   return publishStep(input, { sync, bump, state });
 }
@@ -265,7 +281,8 @@ interface EndFindings {
 
 /**
  * The publish task — one repo-lock task: read the main checkout, check
- * `master`, then push and open the PR only when the check passed.
+ * `master`, then, only when the check passed, push and open the PR — or,
+ * for an attached run, push onto its open PR.
  *
  * @param input - The epic end's inputs.
  * @param found - The steps' results; its state gains the main-checkout
@@ -286,8 +303,40 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     found.state.masterCheck = check;
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
+    if (input.entry.attachedRun !== null) return pushOntoPr(input);
     return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
   });
+}
+
+/**
+ * Push an attached run's branch onto its open PR (`publish --push-only`),
+ * the PR body untouched. Runs inside the publish task, as {@link openPr}
+ * does.
+ *
+ * @param input - The epic end's inputs.
+ * @returns Resolves to `pr` with the open PR's number, or `stopped` naming
+ *   the publish — a PR no longer open included.
+ */
+async function pushOntoPr(input: EpicEndInput): Promise<Published> {
+  const { hooks, entry } = input;
+  const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
+  const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
+  return publishedPr(out);
+}
+
+/**
+ * How a publish ended.
+ *
+ * @param out - `publish`'s output.
+ * @returns `pr` with its number for an `ok` naming the PR; otherwise
+ *   `stopped` naming the publish.
+ */
+function publishedPr(out: PublishOutput | null): Published {
+  const pr = out?.status === 'ok' ? out.pr : null;
+  if (pr === undefined || pr === null) {
+    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
+  }
+  return { outcome: 'pr', pr: pr.number };
 }
 
 /**
@@ -336,11 +385,7 @@ async function openPr(
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
   const out = await runTool(hooks, 'publish', argv, place);
-  const pr = out?.status === 'ok' ? out.pr : null;
-  if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
-  }
-  return { outcome: 'pr', pr: pr.number };
+  return publishedPr(out);
 }
 
 /**

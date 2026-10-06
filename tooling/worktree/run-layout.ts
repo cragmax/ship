@@ -12,7 +12,11 @@
  *   {@link runHead}), `slice-<N>-<K>/` (one per issue attempt),
  *   `slice-critic/` (the epic end's critic) and `reports/`;
  * - the slice branch `slice/<slug>/<N>-<K>`, and the critic's
- *   `slice/<slug>/critic` — never under `ship/`.
+ *   `slice/<slug>/critic` — never under `ship/`;
+ * - an attached run R's own names beside those: its report folder
+ *   `reports/attach-<R>/`, its slices `slice-a<R>-<N>-<K>/` and
+ *   `slice-a<R>-critic/`, on `slice/<slug>/a<R>-<N>-<K>` and
+ *   `slice/<slug>/a<R>-critic` ({@link nextAttachedRun} picks R).
  *
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
@@ -125,22 +129,54 @@ export function runLayout(main: string, slug: string): RunLayout {
 }
 
 /**
+ * The file name of a batch's trimmed pool registry inside a report dir.
+ */
+export const BATCH_REGISTRY_FILE = 'pool-registry.batch.json';
+
+/**
+ * The namespace of a run's slice branches.
+ *
+ * @param slug - The run's slug.
+ * @returns `slice/<slug>/`.
+ */
+export function sliceBranchPrefix(slug: string): string {
+  return `slice/${slug}/`;
+}
+
+/**
+ * A slice's layout from its id.
+ *
+ * @param root - The run root.
+ * @param slug - The run's slug.
+ * @param id - The slice id, prefixed `a<run>-` for an attached run's.
+ * @param run - The attached run's number; `null` for an unattached run.
+ * @returns `<root>/slice-<id>` on `slice/<slug>/<id>`.
+ */
+function sliceAt(root: string, slug: string, id: string, run: number | null): SliceLayout {
+  const named = run === null ? id : `a${String(run)}-${id}`;
+  return { path: `${root}/slice-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
+}
+
+/**
  * The layout of attempt `attempt` of `issue`'s slice.
  *
  * @param root - The run root ({@link RunLayout.root}).
  * @param slug - The run's slug.
  * @param issue - The issue number.
  * @param attempt - The attempt number, 1 for the first.
- * @returns The slice worktree path and branch.
+ * @param run - The attached run's number; `null` (the default) for an
+ *   unattached run.
+ * @returns The slice worktree path and branch: id `<N>-<K>`, or
+ *   `a<run>-<N>-<K>` for an attached run.
  */
 export function sliceLayout(
   root: string,
   slug: string,
   issue: number,
   attempt: number,
+  run: number | null = null,
 ): SliceLayout {
-  const id = `${String(issue)}-${String(attempt)}`;
-  return { path: `${root}/slice-${id}`, branch: `slice/${slug}/${id}` };
+  return sliceAt(root, slug, `${String(issue)}-${String(attempt)}`, run);
 }
 
 /**
@@ -148,10 +184,60 @@ export function sliceLayout(
  *
  * @param root - The run root ({@link RunLayout.root}).
  * @param slug - The run's slug.
- * @returns `<root>/slice-critic` on `slice/<slug>/critic`.
+ * @param run - The attached run's number; `null` (the default) for an
+ *   unattached run.
+ * @returns `<root>/slice-critic` on `slice/<slug>/critic`, or
+ *   `slice-a<run>-critic` on `slice/<slug>/a<run>-critic` for an attached run.
  */
-export function criticSliceLayout(root: string, slug: string): SliceLayout {
-  return { path: `${root}/slice-critic`, branch: `slice/${slug}/critic` };
+export function criticSliceLayout(
+  root: string,
+  slug: string,
+  run: number | null = null,
+): SliceLayout {
+  return sliceAt(root, slug, 'critic', run);
+}
+
+/**
+ * An attached run's own report folder.
+ *
+ * @param layout - The run's layout.
+ * @param run - The attached run's number.
+ * @returns `<reports>/attach-<run>`.
+ */
+export function attachedRunReports(layout: RunLayout, run: number): string {
+  return `${layout.reports}/attach-${String(run)}`;
+}
+
+/**
+ * Whether a report-dir entry is an attached run's own folder.
+ *
+ * @param name - An entry name directly under the run's report dir.
+ * @returns `true` for `attach-<R>` ({@link attachedRunReports}), R from 1 up.
+ */
+export function isAttachedRunReports(name: string): boolean {
+  return /^attach-[1-9]\d*$/u.test(name);
+}
+
+/**
+ * The number of the next attached run: the lowest one whose report folder
+ * and slice branches no earlier run left behind.
+ *
+ * @param left - `reports`: the entry names directly under the run's report
+ *   dir; `branches`: its slice branches, each without
+ *   {@link sliceBranchPrefix}.
+ * @returns The lowest `run` from 1 up with no `attach-<run>` among `reports`
+ *   and no `branches` entry starting `a<run>-`.
+ */
+export function nextAttachedRun(left: {
+  readonly reports: readonly string[];
+  readonly branches: readonly string[];
+}): number {
+  let run = 1;
+  const taken = (n: number): boolean =>
+    left.reports.includes(`attach-${String(n)}`) ||
+    left.branches.some((b) => b.startsWith(`a${String(n)}-`));
+  while (taken(run)) run++;
+  return run;
 }
 
 /**

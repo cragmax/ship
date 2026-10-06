@@ -20,6 +20,15 @@
  * worktree is how `live-runs` — and so the next launch's collision check —
  * sees the run.
  *
+ * **An attached run** (`--attach ship/<slug>`, issues only, so one entry)
+ * lands on an open PR's existing branch instead of cutting one:
+ * `cut-batch --attach --attached-run` reuses the branch's batch, or checks
+ * it out anew and provisions it; the entry's `base` is the attached tip, its
+ * report dir the run's own `reports/attach-<R>/`, and its slices are named
+ * by the run number R. A reused batch whose trimmed pool registry is gone
+ * stops the entry. The epic end pushes onto the open PR
+ * (`lib/epic-end.ts`).
+ *
  * **Resume** (`resumeFromRunId`) is safe only for a single-entry run at
  * `maxSlices: 1` (why: `lib/drive.ts` § Concurrency). Any other run is
  * recovered by hand once cut. ADR-0045 decision 10 holds the boundary and
@@ -45,7 +54,13 @@ import {
 import type { EntrySetup } from './lib/slice-chain.js';
 import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
 import { PHASE_TITLES } from './lib/stages.js';
-import { envelopeProblem, PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
+import {
+  envelopeProblem,
+  PRE_CUT,
+  runPlace,
+  runTool,
+  type CutBatchOutput,
+} from './lib/tool-calls.js';
 
 /** What the workflow returns. */
 export interface ShipReport {
@@ -103,11 +118,12 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
     };
   }
   hooks.phase(PHASE_TITLES.issues);
-  const epics = await runEntries(hooks, graph, {
-    maxSlices: parsed.args.maxSlices,
-    launch: pre.main,
-    overlap,
-  });
+  const epics = await runEntries(
+    hooks,
+    graph,
+    { maxSlices: parsed.args.maxSlices, launch: pre.main, overlap },
+    parsed.args.attach,
+  );
   return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
 
@@ -120,15 +136,17 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
  * @param hooks - The workflow hooks.
  * @param graph - Pre-flight's graph, overlap edges merged.
  * @param opts - The in-flight cap, the launch snapshot and the overlap record.
+ * @param attach - An attached run's target branch; `null` for an unattached run.
  * @returns Resolves to every entry's report, in run-set order.
  */
 async function runEntries(
   hooks: WorkflowHooks,
   graph: RunGraph,
   opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap'>,
+  attach: string | null,
 ): Promise<EpicReport[]> {
   const cuts: EntryCut[] = [];
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry));
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -149,18 +167,24 @@ async function runEntries(
 }
 
 /**
- * Cut and provision one entry's batch worktree.
+ * Cut and provision one entry's batch worktree — or, for an attached run,
+ * attach the open PR's branch's batch, provisioning it only when it was
+ * checked out anew.
  *
  * @param hooks - The workflow hooks.
  * @param entry - The run-set entry.
+ * @param attach - An attached run's target branch; `null` for an unattached run.
  * @returns Resolves to the entry's setup, or a `stopped` report naming the
  *   failed command.
  */
-async function cutEntry(hooks: WorkflowHooks, entry: RunSetEntry): Promise<EntryCut> {
+async function cutEntry(
+  hooks: WorkflowHooks,
+  entry: RunSetEntry,
+  attach: string | null,
+): Promise<EntryCut> {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
-  const selection =
-    entry.epic === null ? ['--issues', entry.issues.join(',')] : ['--epic', String(entry.epic)];
-  const cut = await runTool(hooks, 'cut-batch', ['.', ...selection], { ...PRE_CUT, tag });
+  const argv = ['.', ...cutSelection(entry, attach)];
+  const cut = await runTool(hooks, 'cut-batch', argv, { ...PRE_CUT, tag });
   const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
@@ -172,15 +196,70 @@ async function cutEntry(hooks: WorkflowHooks, entry: RunSetEntry): Promise<Entry
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
-  const argv = [batch, '--report-dir', reportDir];
-  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(reportDir, tag));
-  if (prov?.status !== 'ok' || !isText(prov.registry)) {
-    return stoppedEntry(entry, branch, envelopeProblem('provision-batch', prov));
+  const attachedRun = attach === null ? null : (cut.attach?.run ?? undefined);
+  if (attachedRun === undefined) {
+    return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
-  const registry = prov.registry;
+  const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
+  if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
+  const { registry } = found;
   return {
-    setup: { epic: entry.epic, tag, branch, main: worktree, batch, base, reportDir, registry },
+    setup: {
+      epic: entry.epic,
+      tag,
+      branch,
+      main: worktree,
+      batch,
+      base,
+      reportDir,
+      registry,
+      attachedRun,
+    },
   };
+}
+
+/**
+ * `cut-batch`'s selection words.
+ *
+ * @param entry - The run-set entry.
+ * @param attach - An attached run's target branch; `null` for an unattached run.
+ * @returns `--attach <branch> --attached-run` for an attached run; otherwise
+ *   `--issues N,…` or `--epic E`.
+ */
+function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
+  if (attach !== null) return ['--attach', attach, '--attached-run'];
+  return entry.epic === null
+    ? ['--issues', entry.issues.join(',')]
+    : ['--epic', String(entry.epic)];
+}
+
+/**
+ * The batch's trimmed pool registry: a reused attached batch's, as
+ * `cut-batch --attach` found it; otherwise `provision-batch`'s, provisioning
+ * the batch cut or checked out anew.
+ *
+ * @param hooks - The workflow hooks.
+ * @param attached - `cut-batch`'s `attach`; `null` for a cut.
+ * @param at - The batch, the report dir and the entry's tag.
+ * @returns Resolves to the registry, or what stopped the setup: a reused
+ *   batch with no registry, or a failed provision.
+ */
+async function batchRegistry(
+  hooks: WorkflowHooks,
+  attached: NonNullable<CutBatchOutput['attach']> | null,
+  at: { readonly batch: string; readonly reportDir: string; readonly tag: string },
+): Promise<{ readonly registry: string } | { readonly stop: string }> {
+  if (attached !== null && !attached.created) {
+    return attached.registry === null
+      ? { stop: 'cut-batch --attach found no trimmed pool registry for the reused batch' }
+      : { registry: attached.registry };
+  }
+  const argv = [at.batch, '--report-dir', at.reportDir];
+  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at.reportDir, at.tag));
+  if (prov?.status !== 'ok' || !isText(prov.registry)) {
+    return { stop: envelopeProblem('provision-batch', prov) };
+  }
+  return { registry: prov.registry };
 }
 
 /**

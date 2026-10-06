@@ -154,7 +154,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
 function start(run: Run): void {
   const { batch, result } = run;
   assertBatchClean(batch);
-  assertNoLiveSlices(batch);
+  assertNoLiveSlices(batch, batch);
   fetchOrigin(batch);
   const upstream = git(batch, ['rev-parse', '--verify', `${RUN_UPSTREAM}^{commit}`], 'upstream');
   if (isMerged(batch)) {
@@ -248,14 +248,17 @@ function finish(run: Run): void {
 /**
  * Refuse while any other registered worktree's `node_modules` links into
  * the batch's: the refresh's `npm ci` empties the link target, a live
- * slice's dependencies with it.
+ * slice's dependencies with it. `preflight --attach` runs the same check
+ * on an attached run's target batch, through the main checkout.
  *
- * @param batch - The batch worktree.
- * @throws Refusal `slices-live` naming each such worktree.
+ * @param dir - Any checkout of the repository, to list the worktrees through.
+ * @param batch - The batch worktree; it need not exist.
+ * @throws Refusal `slices-live` naming each such worktree; StepFailure
+ *   `preconditions` when git cannot list the worktrees.
  */
-function assertNoLiveSlices(batch: string): void {
+export function assertNoLiveSlices(dir: string, batch: string): void {
   const modules = `${batch}/node_modules`;
-  const live = listWorktrees(batch, 'preconditions')
+  const live = listWorktrees(dir, 'preconditions')
     .filter((w) => !samePath(w.path, batch))
     .filter((w) => {
       const target = linkTarget(`${w.path}/node_modules`);

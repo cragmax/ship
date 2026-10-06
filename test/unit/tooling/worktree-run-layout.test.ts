@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  attachedRunReports,
   criticSliceLayout,
+  nextAttachedRun,
   RUN_BRANCH_PREFIX,
   runLayout,
   runSlug,
   runSlugOf,
+  sliceBranchPrefix,
   sliceLayout,
 } from '../../../tooling/worktree/run-layout.js';
 
@@ -67,6 +70,90 @@ describe('criticSliceLayout', () => {
       path: 'C:/src/ph-ship/epic-9/slice-critic',
       branch: 'slice/epic-9/critic',
     });
+  });
+});
+
+describe('attached runs', () => {
+  const root = 'C:/src/ph-ship/epic-1182';
+  const slug = 'epic-1182';
+
+  it('names an attached run’s attempt slice-a<R>-<N>-<K> on slice/<slug>/a<R>-<N>-<K>', () => {
+    expect(sliceLayout(root, slug, 1190, 1, 2)).toEqual({
+      path: 'C:/src/ph-ship/epic-1182/slice-a2-1190-1',
+      branch: 'slice/epic-1182/a2-1190-1',
+    });
+  });
+
+  it('names an attached run’s critic slice-a<R>-critic on slice/<slug>/a<R>-critic', () => {
+    expect(criticSliceLayout(root, slug, 2)).toEqual({
+      path: 'C:/src/ph-ship/epic-1182/slice-a2-critic',
+      branch: 'slice/epic-1182/a2-critic',
+    });
+  });
+
+  it('puts an attached run’s reports in reports/attach-<R>', () => {
+    expect(attachedRunReports(runLayout('C:/src/paper-harness', slug), 2)).toBe(
+      'C:/src/ph-ship/epic-1182/reports/attach-2',
+    );
+  });
+
+  it('names the slice branch prefix slice/<slug>/', () => {
+    expect(sliceBranchPrefix(slug)).toBe('slice/epic-1182/');
+  });
+
+  it.each([
+    { name: 'nothing left', reports: [], branches: [], run: 1 },
+    {
+      name: 'only the unattached run’s leftovers',
+      reports: [
+        'tool',
+        'plans',
+        'issues',
+        'pr-body.md',
+        'critic.md',
+        'publish.log',
+        'pool-registry.batch.json',
+      ],
+      branches: ['1183-1', '1184-1', '1184-2', 'critic'],
+      run: 1,
+    },
+    {
+      name: 'attached run 1’s folder and branches',
+      reports: ['tool', 'attach-1'],
+      branches: ['1183-1', 'critic', 'a1-1190-1', 'a1-critic'],
+      run: 2,
+    },
+    { name: 'run 1’s branches without its folder', reports: [], branches: ['a1-1190-1'], run: 2 },
+    { name: 'run 1’s folder without branches', reports: ['attach-1'], branches: [], run: 2 },
+    {
+      name: 'run 1’s branch and run 2’s folder',
+      reports: ['attach-2'],
+      branches: ['a1-1190-1'],
+      run: 3,
+    },
+    { name: 'a10 is not a1', reports: [], branches: ['a10-1190-1'], run: 1 },
+  ])('gives the next attached run $run with $name', ({ reports, branches, run }) => {
+    expect(nextAttachedRun({ reports, branches })).toBe(run);
+  });
+
+  it('gives a second attached run names none of an earlier run’s leftovers collide with', () => {
+    const left = {
+      reports: ['tool', 'plans', 'attach-1'],
+      branches: ['1190-1', 'critic', 'a1-1190-1', 'a1-1190-2', 'a1-critic'],
+    };
+
+    const n = nextAttachedRun(left);
+
+    expect(n).toBe(2);
+    const taken = left.branches.map((b) => `slice/epic-1182/${b}`);
+    for (const branch of [
+      sliceLayout(root, slug, 1190, 1, n).branch,
+      sliceLayout(root, slug, 1190, 2, n).branch,
+      criticSliceLayout(root, slug, n).branch,
+    ]) {
+      expect(taken).not.toContain(branch);
+    }
+    expect(left.reports).not.toContain(`attach-${String(n)}`);
   });
 });
 

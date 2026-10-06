@@ -8,13 +8,7 @@
  * no top-level side effect.
  */
 
-/**
- * A run branch: `ship/` — the namespace `RUN_BRANCH_PREFIX` names
- * (`tooling/worktree/run-layout.ts`, which cannot enter the render closure)
- * — then a slug in `runSlug`'s domain (`epic-<E>`, or issue numbers joined
- * with `-`).
- */
-const RESYNC_BRANCH = /^ship\/[a-z0-9][a-z0-9-]*$/;
+import { RUN_BRANCH_SHAPE } from './run-branch.js';
 
 /** The parse's outcome: the branch, or why the arguments are refused. */
 export type ResyncArgsOutcome =
@@ -33,7 +27,7 @@ const RESYNC_USAGE = 'expected the open run branch ship/<slug>, or { branch }';
 export function parseResyncArgs(raw: unknown): ResyncArgsOutcome {
   const branch = resyncBranchOf(raw);
   if (typeof branch !== 'string') return { refusal: `${branch.problem}; ${RESYNC_USAGE}` };
-  if (!RESYNC_BRANCH.test(branch)) {
+  if (!RUN_BRANCH_SHAPE.test(branch)) {
     return { refusal: `'${branch}' is not a ship/ run branch; ${RESYNC_USAGE}` };
   }
   return { branch };

@@ -21,10 +21,21 @@ export const AttachInfoSchema = z.object({
   fastForwarded: z.boolean(),
   /** The branch's open PR. */
   pr: z.int(),
+  /**
+   * The attached run's number from `--attached-run` (`nextAttachedRun`);
+   * `null` without it, as for a resync.
+   */
+  run: z.int().nullable(),
+  /**
+   * The batch's trimmed pool registry from its last provisioning: the newest
+   * `pool-registry.batch.json` in `<reports>/` or an attached run's
+   * `<reports>/attach-<R>/`; `null` when there is none.
+   */
+  registry: z.string().nullable(),
 });
 
 /**
- * Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug>)`;
+ * Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug> [--attached-run])`;
  * `worktree` is the main checkout.
  */
 export const CutBatchResultSchema = ResultBaseSchema.extend({
@@ -36,15 +47,25 @@ export const CutBatchResultSchema = ResultBaseSchema.extend({
   runRoot: z.string().nullable(),
   /** The batch worktree. */
   batch: z.string().nullable(),
-  /** The run's report directory. */
+  /**
+   * The run's report directory; with `--attached-run`, the attached run's
+   * own folder `reports/attach-<run>`.
+   */
   reportDir: z.string().nullable(),
   /** How `--attach` found the batch; `null` for `--epic` / `--issues`, or before it is known. */
   attach: AttachInfoSchema.nullable(),
 });
 
-/** Envelope of `cut-slice <batch> --issue N --attempt K`; `worktree` is the batch. */
+/**
+ * Envelope of `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]`;
+ * `worktree` is the batch.
+ */
 export const CutSliceResultSchema = ResultBaseSchema.extend({
-  /** The slice branch created (`slice/<slug>/<N>-<K>`), short form. */
+  /**
+   * The slice branch created, short form: `slice/<slug>/<N>-<K>` or
+   * `slice/<slug>/critic`; with `--attached-run R`, `slice/<slug>/a<R>-<N>-<K>`
+   * or `slice/<slug>/a<R>-critic`.
+   */
   branch: z.string().nullable(),
   /** The batch `HEAD` the slice was cut at. */
   base: z.string().nullable(),
@@ -52,12 +73,19 @@ export const CutSliceResultSchema = ResultBaseSchema.extend({
   slice: z.string().nullable(),
 });
 
-/** A pre-flight check that can fail. */
+/**
+ * A pre-flight check that can fail. The last three are `--attach`'s, on the
+ * target branch: its PR is not open (or `gh` could not say), a slice still
+ * links into its batch, or it has commits of its own `origin` lacks.
+ */
 export const PreflightCheckSchema = z.enum([
   'master-ahead',
   'master-behind',
   'gh-auth',
   'warm-unreachable',
+  'no-open-pr',
+  'slices-live',
+  'unpublished-commits',
 ]);
 
 /** One failed pre-flight check. */
@@ -68,7 +96,7 @@ export const PreflightProblemSchema = z.object({
   message: z.string(),
 });
 
-/** Envelope of `preflight <main>`; `worktree` is the main checkout. */
+/** Envelope of `preflight <main> [--attach ship/<slug>]`; `worktree` is the main checkout. */
 export const PreflightResultSchema = ResultBaseSchema.extend({
   /** Local `master` commits not on `origin/master`, after the fetch. */
   ahead: z.int().nullable(),

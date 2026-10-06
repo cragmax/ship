@@ -8,9 +8,9 @@
  * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
  *
  * ```
- * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN
- * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG)
- * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic)
+ * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN [--attach ship/SLUG]
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG [--attached-run])
+ * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic) [--attached-run R]
  * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
  * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
  * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
@@ -28,6 +28,8 @@
  * staged set as `staged-guard` does, builds when needed, then commits. The
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
  * that order. A resync runs `cut-batch --attach`, `sync-master` and
+ * `publish --push-only`. An attached run runs `preflight --attach`,
+ * `cut-batch --attach --attached-run`, `cut-slice --attached-run` and
  * `publish --push-only`.
  * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
@@ -225,30 +227,45 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   preflight: {
     schema: PreflightResultSchema,
     valueFlags: [],
+    optionFlags: ['--attach'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => preflight({ main: args.target }),
+    run: (args) => {
+      const attach = args.values.get('--attach');
+      return preflight({ main: args.target, ...(attach === undefined ? {} : { attach }) });
+    },
   },
   'cut-batch': {
     schema: CutBatchResultSchema,
     valueFlags: [],
     optionFlags: ['--epic', '--issues', '--attach'],
-    switchFlags: [],
+    switchFlags: ['--attached-run'],
     rest: NO_REST,
     run: (args) => {
       const selection = batchSelection(args);
       return 'attach' in selection
-        ? attachBatch({ main: args.target, branch: selection.attach })
+        ? attachBatch({
+            main: args.target,
+            branch: selection.attach,
+            attachedRun: selection.attachedRun,
+          })
         : cutBatch({ main: args.target, selection });
     },
   },
   'cut-slice': {
     schema: CutSliceResultSchema,
     valueFlags: [],
-    optionFlags: ['--issue', '--attempt'],
+    optionFlags: ['--issue', '--attempt', '--attached-run'],
     switchFlags: ['--critic'],
     rest: NO_REST,
-    run: (args) => cutSlice({ batch: args.target, slice: sliceFlag(args) }),
+    run: (args) => {
+      const run = args.values.get('--attached-run');
+      return cutSlice({
+        batch: args.target,
+        slice: sliceFlag(args),
+        ...(run === undefined ? {} : { attachedRun: positiveInt(run, '--attached-run') }),
+      });
+    },
   },
   'sync-master': {
     schema: SyncMasterResultSchema,
@@ -366,13 +383,18 @@ function positiveInt(text: string, flag: string): number {
 
 /**
  * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…`
- * and `--attach ship/<slug>` (a branch name, kept as given).
+ * and `--attach ship/<slug>` (a branch name, kept as given), the last
+ * optionally with `--attached-run`.
  *
  * @param args - Parsed argv.
- * @returns The run selection, or the branch to attach.
- * @throws UsageError when more or fewer than one is given, or a number is bad.
+ * @returns The run selection, or the branch to attach and whether the
+ *   attach is an attached run's.
+ * @throws UsageError when more or fewer than one is given, a number is bad,
+ *   or `--attached-run` comes without `--attach`.
  */
-function batchSelection(args: ParsedArgs): RunSelection | { readonly attach: string } {
+function batchSelection(
+  args: ParsedArgs,
+): RunSelection | { readonly attach: string; readonly attachedRun: boolean } {
   const given = ['--epic', '--issues', '--attach'].filter((flag) => args.values.has(flag));
   if (given.length !== 1) {
     throw new UsageError('cut-batch takes exactly one of --epic, --issues and --attach');
@@ -380,7 +402,9 @@ function batchSelection(args: ParsedArgs): RunSelection | { readonly attach: str
   const epic = args.values.get('--epic');
   const issues = args.values.get('--issues');
   const attach = args.values.get('--attach');
-  if (attach !== undefined) return { attach };
+  const attachedRun = args.switches.has('--attached-run');
+  if (attach !== undefined) return { attach, attachedRun };
+  if (attachedRun) throw new UsageError('cut-batch --attached-run goes with --attach');
   if (epic !== undefined) return { epic: positiveInt(epic, '--epic') };
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
 }

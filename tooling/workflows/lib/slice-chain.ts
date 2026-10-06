@@ -77,6 +77,11 @@ export interface EntrySetup {
   readonly reportDir: string;
   /** The trimmed pool registry. */
   readonly registry: string;
+  /**
+   * An attached run's number (`cut-batch --attach --attached-run`'s
+   * `attach.run`), which names its slices; `null` for an unattached run.
+   */
+  readonly attachedRun: number | null;
 }
 
 /** What an attempt runs against: its entry, its epic's queue and the drive's view of the entry. */
@@ -281,7 +286,14 @@ async function recheckStage(at: Attempt): Promise<SchedulerEvent | null> {
  * @returns Resolves to `null` once cut.
  */
 async function cutStage(at: Attempt): Promise<SchedulerEvent | null> {
-  const argv = [at.ctx.batch, '--issue', String(at.issue), '--attempt', String(at.attempt)];
+  const argv = [
+    at.ctx.batch,
+    '--issue',
+    String(at.issue),
+    '--attempt',
+    String(at.attempt),
+    ...attachedRunArgs(at.ctx),
+  ];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
   if (typeof out?.slice === 'string') at.slice = out.slice;
   if (typeof out?.at === 'string') at.startedAt = out.at;
@@ -291,6 +303,16 @@ async function cutStage(at: Attempt): Promise<SchedulerEvent | null> {
   }
   at.base = out.base;
   return null;
+}
+
+/**
+ * The `cut-slice` words that name an attached run's slices.
+ *
+ * @param entry - The entry.
+ * @returns `--attached-run <R>` for an attached run; `[]` otherwise.
+ */
+export function attachedRunArgs(entry: Pick<EntrySetup, 'attachedRun'>): string[] {
+  return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
 }
 
 /**
