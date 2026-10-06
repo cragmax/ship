@@ -23,6 +23,7 @@ const REMOVED_PREFIX = /^envelope fails its schema: removed: /;
 
 // One mock stands in for every command module, so any command's result is the test's to choose.
 const { commandMock } = vi.hoisted(() => ({ commandMock: vi.fn() }));
+vi.mock('../../../tooling/worktree/append-pr-body.js', () => ({ appendPrBody: commandMock }));
 vi.mock('../../../tooling/worktree/bump.js', () => ({ bump: commandMock }));
 vi.mock('../../../tooling/worktree/check-master.js', () => ({ checkMaster: commandMock }));
 vi.mock('../../../tooling/worktree/cut.js', () => ({
@@ -125,6 +126,7 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
+      ['append-pr-body', 'C:/b', '--pr', '9', '--section-file', 'C:/s.md'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;

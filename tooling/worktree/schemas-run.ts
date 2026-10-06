@@ -2,11 +2,11 @@
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `check-master` and `publish`. The canonical home
- * of their shapes; `types-run.ts` exports each as its `z.infer`. The base
- * fields, path spelling and integer rule are `schemas.ts`'s. A field that
- * names something the command creates or measures stays `null` until it
- * exists.
+ * `sync-master`, `bump`, `check-master`, `publish` and `append-pr-body`.
+ * The canonical home of their shapes; `types-run.ts` exports each as its
+ * `z.infer`. The base fields, path spelling and integer rule are
+ * `schemas.ts`'s. A field that names something the command creates or
+ * measures stays `null` until it exists.
  */
 
 import { z } from 'zod';
@@ -254,6 +254,17 @@ export const PublishResultSchema = ResultBaseSchema.extend({
    * mode or before it was read.
    */
   mergeable: z.string().nullable(),
+});
+
+/** Envelope of `append-pr-body <batch> --pr N --section-file F`; `worktree` is the batch. */
+export const AppendPrBodyResultSchema = ResultBaseSchema.extend({
+  /** The PR whose body was read and edited, as given. */
+  pr: z.int(),
+  /**
+   * The body the edit set — the PR's body as `gh` read it, then the section —
+   * in a fresh OS temp directory; `null` until it is written.
+   */
+  bodyFile: z.string().nullable(),
 });
 
 /** One `master` ref at the launch and now. */

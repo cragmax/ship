@@ -77,6 +77,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:append-pr-body:list',
     ]);
     expect(callOf(run, 'runner:preflight')?.argv).toEqual([
       'tooling/worktree.ts',
@@ -304,6 +305,7 @@ describe('runShip --attach — the epic end', () => {
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:append-pr-body:list',
     ]);
     expect(all.filter((l) => l.startsWith('prWriter'))).toEqual([]);
     expect(report.epics[0]).toMatchObject({
@@ -420,5 +422,133 @@ describe('runShip --attach — the scout', () => {
     await runShip(run.hooks, 'issues 7 --preflight-only');
 
     expect(scoutLines(run).filter((l) => l.startsWith('PR head:'))).toEqual([]);
+  });
+});
+
+describe('runShip --attach — the PR body section', () => {
+  const SECTION_FILE = `${ATTACH_REPORTS}/pr-section.md`;
+
+  it('appends the run’s section to the open PR’s body once the push succeeded', async () => {
+    const run = fakeHooks(ATTACHED);
+
+    const report = await runShip(run.hooks, ARGS);
+
+    const all = labels(run);
+    expect(all.slice(all.indexOf('runner:publish:list'))).toEqual([
+      'runner:publish:list',
+      'runner:append-pr-body:list',
+    ]);
+    expect(callOf(run, 'runner:append-pr-body:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'append-pr-body',
+      BATCH,
+      '--pr',
+      '9',
+      '--section-file',
+      SECTION_FILE,
+    ]);
+    const lines = promptLines(run, 'runner:append-pr-body:list');
+    const at = lines.indexOf(`Write first: ${SECTION_FILE}`);
+    expect(lines.slice(at, at + 4)).toEqual([
+      `Write first: ${SECTION_FILE}`,
+      '----- BEGIN FILE -----',
+      '## Attached run 2',
+      '',
+    ]);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '### Evidence',
+        '### Issues',
+        '- fixes #7 — add the x tool',
+        '<details><summary>Run report — attached run 2</summary>',
+        '----- END FILE -----',
+      ]),
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
+    expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+  });
+
+  it.each([
+    {
+      name: 'refused',
+      publish: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'no-open-pr',
+        errors: [{ step: 'pr-state', message: 'ship/epic-9 has no open PR: closed (#9)' }],
+        pushed: false,
+        pr: null,
+        mergeable: null,
+      },
+    },
+    {
+      name: 'failed at the push',
+      publish: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [
+          {
+            step: 'push',
+            message:
+              'git push -u origin refs/heads/ship/epic-9:refs/heads/ship/epic-9 exited 1; output in x.log',
+          },
+        ],
+        pushed: false,
+        pr: null,
+        mergeable: null,
+      },
+    },
+    { name: 'returned nothing', publish: null },
+  ])('edits no PR body when the publish $name', async ({ publish }) => {
+    const run = fakeHooks({ ...ATTACHED, 'runner:publish': publish });
+
+    const report = await runShip(run.hooks, ARGS);
+
+    expect(labels(run).filter((l) => l.startsWith('runner:append-pr-body'))).toEqual([]);
+    expect(report.epics[0]?.outcome).toBe('stopped');
+    expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+  });
+
+  it.each([
+    {
+      name: 'failed',
+      edit: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [
+          { step: 'pr-edit', message: 'gh pr edit 9 exited 1; the body is in C:/tmp/b/pr-body.md' },
+        ],
+      },
+      prBodyEdit:
+        'append-pr-body failed: gh pr edit 9 exited 1; the body is in C:/tmp/b/pr-body.md',
+    },
+    {
+      name: 'returned nothing',
+      edit: null,
+      prBodyEdit: 'the runner returned nothing for append-pr-body',
+    },
+    {
+      name: 'threw',
+      edit: () => {
+        throw new Error('agent died');
+      },
+      prBodyEdit: 'append-pr-body threw: agent died',
+    },
+  ])('reports an edit that $name, the push standing', async ({ edit, prBodyEdit }) => {
+    const run = fakeHooks({ ...ATTACHED, 'runner:append-pr-body': edit });
+
+    const report = await runShip(run.hooks, ARGS);
+
+    expect(report.status).toBe('done');
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      pr: 9,
+      prBodyEdit,
+      issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
+    });
+    expect(report.epics[0]?.message).toBeUndefined();
   });
 });

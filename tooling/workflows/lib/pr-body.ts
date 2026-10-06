@@ -5,18 +5,22 @@
  * ({@link evidenceBullet}), the PR writer's Merge Danger
  * ({@link mergeDangerLines}), the visible Issues list, then the run report,
  * folded in `<details>` unless the PR writer returned nothing (the order:
- * {@link renderPrBody}).
+ * {@link renderPrBody}) — and each attached run's section, appended to the
+ * open PR's body after the run's push ({@link renderAttachedSection}).
  *
  * **Closing keywords are the workflow's own.** GitHub closes an issue for a
  * closing keyword (`fixes`, `closes`, `resolves`, …) before its reference
  * anywhere in a merged commit message or PR body. So only this file writes
  * one — `fixes #N`, for a landed issue whose plan card says so: in its
- * commit message, and once in a PR body, in the Issues list
- * ({@link landedLine}), never in the run report. Every other
- * issue is cited `see #N`, the epic container included, and every text
- * carrying agent- or tool-written words passes through {@link neutralText},
- * which turns `fixed #12` into `fixed (see #12)`: a commit's whole subject
- * line, and a PR body as a whole, sparing only its landed `fixes` issues.
+ * commit message, and once in a PR body — in the Issues list
+ * ({@link landedLine}), or in the Issues list of the attached run's section
+ * that landed the issue — never in a run report. Every other issue is cited
+ * `see #N`, the epic container included, and every text carrying agent- or
+ * tool-written words passes through {@link neutralText}, which turns
+ * `fixed #12` into `fixed (see #12)`: a commit's whole subject line, a PR
+ * body as a whole, sparing only its landed `fixes` issues, and an attached
+ * run's section as a whole, sparing only that run's landed `fixes` issues.
+ * The body a section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect. Lease lines are parsed by
@@ -167,6 +171,15 @@ export interface PrBodyInput {
 }
 
 /**
+ * Everything an attached run's section of the open PR's body reports: the
+ * PR body's inputs but the PR writer's, which an attached run never runs.
+ */
+export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
+  /** The attached run's number R (`cut-batch --attached-run`'s). */
+  readonly run: number;
+}
+
+/**
  * A text with every closing keyword defused, but for the issues it may close.
  *
  * @param text - The text.
@@ -264,26 +277,65 @@ export function sliceLeaseLines(
  * @param input - The epic's report.
  * @returns Markdown, neutralised whole but for the landed `fixes` issues,
  *   the PR writer's prose included: `## Summary` per {@link summaryLines};
- *   `## Evidence`, one bullet per landed issue in landing order per
- *   {@link evidenceBullet}; `## Merge Danger` per {@link mergeDangerLines};
+ *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
  *   `## Issues` per {@link issueListLines}; then the run report per
  *   {@link reportBlock}. Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
-  const closing = new Set(
-    input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
-  );
   const body = [
     ...section('Summary', summaryLines(input.writer)),
-    ...section(
-      'Evidence',
-      input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
-    ),
+    ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
     ...reportBlock(input),
   ].join('\n');
-  return neutralText(body, closing);
+  return neutralText(body, closingIssues(input.landed));
+}
+
+/**
+ * An attached run's section of the open PR's body, appended after the body
+ * already there.
+ *
+ * @param input - The attached run's report.
+ * @returns Markdown, neutralised whole but for this run's landed `fixes`
+ *   issues: `## Attached run <R>`, a blank line; `### Evidence`, one bullet
+ *   per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
+ *   container line; then the run
+ *   report per {@link runReportLines}, always folded
+ *   ({@link foldedReport}, summary `Run report — attached run <R>`). No
+ *   Summary and no Merge Danger: an attached run has no PR writer.
+ */
+export function renderAttachedSection(input: AttachedSectionInput): string {
+  const run = String(input.run);
+  const body = [
+    `## Attached run ${run}`,
+    '',
+    ...section('Evidence', evidenceList(input.landed), 3),
+    ...section('Issues', issueRefLines(input), 3),
+    ...foldedReport(`Run report — attached run ${run}`, runReportLines(input)),
+  ].join('\n');
+  return neutralText(body, closingIssues(input.landed));
+}
+
+/**
+ * The Evidence section's lines.
+ *
+ * @param landed - The landed issues.
+ * @returns One bullet per landed issue in landing order, per
+ *   {@link evidenceBullet}.
+ */
+function evidenceList(landed: readonly LandedIssue[]): string[] {
+  return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+
+/**
+ * The issues a text may close.
+ *
+ * @param landed - The landed issues.
+ * @returns Each landed issue whose plan card says `fixes`.
+ */
+function closingIssues(landed: readonly LandedIssue[]): ReadonlySet<number> {
+  return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
 
 /**
@@ -291,26 +343,39 @@ export function renderPrBody(input: PrBodyInput): string {
  *
  * @param input - The epic's report.
  * @returns The lines of {@link runReportLines}, unfolded when the PR writer
- *   returned nothing; otherwise between `<details><summary>Run report</summary>`
- *   and `</details>`, each followed by a blank line.
+ *   returned nothing; otherwise folded per {@link foldedReport}, summary
+ *   `Run report`.
  */
 function reportBlock(input: PrBodyInput): string[] {
   const report = runReportLines(input);
   if (input.writer === null) return report;
-  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
+  return foldedReport('Run report', report);
 }
 
 /**
- * The run report, folded or not per {@link reportBlock}.
+ * A run report folded in `<details>`.
  *
- * @param input - The epic's report.
+ * @param summary - The fold's summary text.
+ * @param lines - The report's lines.
+ * @returns The opening `<details>` line, `summary` in its `<summary>`
+ *   element; a blank line; the lines; `</details>` and a blank line.
+ */
+function foldedReport(summary: string, lines: readonly string[]): string[] {
+  return [`<details><summary>${summary}</summary>`, '', ...lines, '</details>', ''];
+}
+
+/**
+ * The run report, folded or not per {@link reportBlock}; always folded in an
+ * attached run's section ({@link renderAttachedSection}).
+ *
+ * @param input - The epic's report; the PR writer's answer is not read.
  * @returns `## Landed issues` and one section per landed issue per
  *   {@link issueSection}; the epic end (master sync, version bump, master
  *   check, main checkout, report dir); then the critic, the overlap edges,
  *   the schedule, the lease timings and the retro findings, an empty one
  *   `None.` — blank-line terminated.
  */
-function runReportLines(input: PrBodyInput): string[] {
+function runReportLines(input: Omit<PrBodyInput, 'writer'>): string[] {
   return [
     '## Landed issues',
     '',
@@ -335,16 +400,21 @@ function runReportLines(input: PrBodyInput): string[] {
  * The Issues list.
  *
  * @param input - The epic's report.
- * @returns The {@link epicLine}, then a {@link landedLine} per landed issue
- *   in landing order, then an {@link unlandedLine} per unlanded issue in
- *   input order.
+ * @returns The {@link epicLine}, then the {@link issueRefLines}.
  */
 function issueListLines(input: Pick<PrBodyInput, 'epic' | 'landed' | 'unlanded'>): string[] {
-  return [
-    epicLine(input.epic),
-    ...input.landed.map(landedLine),
-    ...input.unlanded.map(unlandedLine),
-  ];
+  return [epicLine(input.epic), ...issueRefLines(input)];
+}
+
+/**
+ * The Issues list's issue lines.
+ *
+ * @param input - The landed and unlanded issues.
+ * @returns A {@link landedLine} per landed issue in landing order, then an
+ *   {@link unlandedLine} per unlanded issue in input order.
+ */
+function issueRefLines(input: Pick<PrBodyInput, 'landed' | 'unlanded'>): string[] {
+  return [...input.landed.map(landedLine), ...input.unlanded.map(unlandedLine)];
 }
 
 /**
@@ -376,12 +446,14 @@ function landedLine(landed: LandedIssue): string {
 /**
  * One body section.
  *
- * @param heading - Its `##` heading.
+ * @param heading - Its heading text.
  * @param lines - Its lines; none renders `None.`.
+ * @param depth - The heading's level: `##` (2, the default) or `###` (3, an
+ *   attached run's section).
  * @returns The heading, a blank line, the lines and a blank line.
  */
-function section(heading: string, lines: readonly string[]): string[] {
-  return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
+function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): string[] {
+  return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 
 /**

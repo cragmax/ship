@@ -325,6 +325,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     pr: { number: 42, url: 'https://x/pull/42' },
     mergeable: null,
   },
+  'runner:append-pr-body': OK,
   critic: {
     outcome: 'clean',
     sha: '',

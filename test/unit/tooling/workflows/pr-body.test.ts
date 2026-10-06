@@ -9,7 +9,9 @@ import type {
 import {
   commitMessage,
   prTitle,
+  renderAttachedSection,
   renderPrBody,
+  type AttachedSectionInput,
   type LandedIssue,
   type PrBodyInput,
   type ScheduleBlocker,
@@ -1205,5 +1207,79 @@ describe('prTitle and commitMessage scrub the whole subject line', () => {
       prTitle({ branch: 'ship/7', landed: [{ ...SEVEN, card: { ...SEVEN.card, commit } }] }),
     ).toBe('fix(closes (see #5)): y');
     expect(commitMessage(7, { commit, closes: 'fixes' })).not.toMatch(closes(5));
+  });
+});
+
+describe('renderAttachedSection', () => {
+  // INPUT's writer is spread in and ignored: an attached run has none.
+  const SECTION_INPUT: AttachedSectionInput = { ...INPUT, epic: null, run: 2 };
+  const SECTION_OPENER = '<details><summary>Run report — attached run 2</summary>';
+
+  it('heads the section with the run, then its Evidence, its Issues and its run report folded', () => {
+    const text = renderAttachedSection(SECTION_INPUT);
+    const lines = text.split('\n');
+    const open = lines.indexOf(SECTION_OPENER);
+    const close = lines.indexOf('</details>');
+    const main = renderPrBody(INPUT).split('\n');
+    const unfolded = renderPrBody({ ...INPUT, writer: null }).split('\n');
+
+    expect(lines.slice(0, 4)).toEqual(['## Attached run 2', '', '### Evidence', '']);
+    expect(lines[4]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
+    expect(lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Issues') - 1)).toEqual(
+      main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1),
+    );
+    expect(lines.slice(lines.indexOf('### Issues'), open + 3)).toEqual([
+      '### Issues',
+      '',
+      '- fixes #7 — add the x tool',
+      '- see #8 — wire y — fixes (see #12) in passing (its acceptance needs a human)',
+      '- see #9 — not landed: blocked: planner stale: resolved (see #9) by abc123',
+      '- see #10 — not landed: skipped',
+      '',
+      SECTION_OPENER,
+      '',
+      '## Landed issues',
+    ]);
+    expect(lines.slice(open + 2, close)).toEqual(
+      unfolded.slice(unfolded.indexOf('## Landed issues')),
+    );
+    expect(text.endsWith('\n\n</details>\n')).toBe(true);
+    expect(lines.filter((l) => l.includes('details'))).toHaveLength(2);
+    expect(lines).not.toContain('## Summary');
+    expect(lines).not.toContain('## Merge Danger');
+    expect(lines).not.toContain('- An explicit issue list');
+  });
+
+  it('closes only this run’s landed fixes issues, defusing every other keyword in the section', () => {
+    const text = renderAttachedSection({
+      ...SECTION_INPUT,
+      landed: [
+        SEVEN,
+        {
+          ...EIGHT,
+          tdd: {
+            ...EIGHT.tdd,
+            evidence: { ...TRACER, red: 'AssertionError: fixes #3 not applied' },
+          },
+        },
+      ],
+      retro: [
+        {
+          title: 'fixes #9 already',
+          evidence: 'closes #8',
+          kind: 'first-time',
+          suggestion: 'fixes #3 too',
+        },
+      ],
+    });
+
+    expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([
+      '- fixes #7 — add the x tool',
+    ]);
+    // #3 stands for an earlier run's landed issue, #8 for this run's `see` issue.
+    expect(text).toContain('fixes (see #3) too');
+    expect(text).toContain('closes (see #8)');
+    expect(text).toContain('fixes (see #9) already');
+    expect(text).toContain('  **Before:** AssertionError: fixes (see #3) not applied');
   });
 });

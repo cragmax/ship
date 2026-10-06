@@ -2,7 +2,8 @@
  * npm fixture repos (per-test `mkdtemp` roots, one shared offline template)
  * with a bare `origin` and a batch worktree on `ship/r`: `bump` versions
  * the batch from its own commits, and `publish` pushes it there and opens
- * its PR through a fake `gh`.
+ * its PR through a fake `gh`; `append-pr-body` appends a section to a fake
+ * PR body.
  *
  * @integrationTier standalone
  */
@@ -23,10 +24,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { compareStrings, toPosix } from '../../tooling/shared.js';
 import type * as ExecModule from '../../tooling/worktree/exec.js';
+import { appendPrBody as appendPrBodyInProcess } from '../../tooling/worktree/append-pr-body.js';
 import { PUSH_TIMEOUT_MS, runCaptured } from '../../tooling/worktree/exec.js';
 import { MERGEABLE_READS } from '../../tooling/worktree/publish-push.js';
 import { publish as publishInProcess, pushBranch } from '../../tooling/worktree/publish.js';
-import type { BumpResult, PublishResult } from '../../tooling/worktree/types-run.js';
+import type {
+  AppendPrBodyResult,
+  BumpResult,
+  PublishResult,
+} from '../../tooling/worktree/types-run.js';
 import { StepFailure } from '../../tooling/worktree/types.js';
 import {
   advanceOrigin,
@@ -35,7 +41,10 @@ import {
   makeBareOrigin,
   prependPath,
   readFakePrCreated,
+  readFakePrEdited,
   readFakePrViewCount,
+  setFakePrBodies,
+  setFakePrEditExit,
   setFakePrViews,
   writeFakeGh,
   type Changes,
@@ -569,6 +578,80 @@ describe('publish --push-only', () => {
   });
 });
 
+describe('append-pr-body', () => {
+  // CRLF, non-ASCII, trailing spaces and a closing keyword: all must survive the round trip.
+  const BODY = '## Summary\r\n\r\nAdds x — fixes #3.  \r\n';
+  const SECTION = '## Attached run 1\n\n### Issues\n\n- fixes #8 — y\n';
+
+  /** Run `append-pr-body` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  function appendRun({
+    bodies = { 9: BODY },
+    editExit,
+    section = SECTION,
+  }: { bodies?: Record<number, string>; editExit?: number; section?: string | null } = {}): {
+    r: ReturnType<typeof runCli<AppendPrBodyResult>>;
+    bin: string;
+  } {
+    const bin = writeFakeGh(root, {});
+    setFakePrBodies(bin, bodies);
+    if (editExit !== undefined) setFakePrEditExit(bin, editExit);
+    if (section !== null) writeFileSync(`${root}/pr-section.md`, section);
+    const r = runCli<AppendPrBodyResult>(
+      ['append-pr-body', root, '--pr', '9', '--section-file', `${root}/pr-section.md`],
+      { env: prependPath(bin) },
+    );
+    if (typeof r.json.bodyFile === 'string') logDirs.add(dirname(r.json.bodyFile));
+    return { r, bin };
+  }
+
+  it('appends the section to the PR’s body as gh read it, byte for byte', TIMEOUT, () => {
+    const { r, bin } = appendRun();
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', pr: 9 });
+    expect(r.json.bodyFile).toMatch(/ph-worktree-append-pr-body-[^/]+\/pr-body\.md$/);
+    expect(readFakePrEdited(bin)).toEqual({
+      argv: ['pr', 'edit', '9', '--body-file', r.json.bodyFile],
+      body: `${BODY}\n${SECTION}`,
+    });
+    expect(readFileSync(r.json.bodyFile ?? '', 'utf8')).toBe(`${BODY}\n${SECTION}`);
+  });
+
+  it('fails pr-body and edits nothing when gh cannot read the body', TIMEOUT, () => {
+    const { r, bin } = appendRun({ bodies: {} });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', pr: 9, bodyFile: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-body']);
+    expect(r.json.errors[0]?.message).toContain('gh pr view 9 exited 3');
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+
+  it('fails pr-edit, naming the body it wrote, when gh pr edit fails', TIMEOUT, () => {
+    const { r } = appendRun({ editExit: 1 });
+
+    expect(r.code).toBe(1);
+    expect(r.json.status).toBe('failed');
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-edit']);
+    expect(typeof r.json.bodyFile).toBe('string');
+    expect(r.json.errors[0]?.message).toContain('gh pr edit 9 exited 1');
+    expect(r.json.errors[0]?.message).toContain(r.json.bodyFile);
+  });
+
+  it.each([
+    { name: 'missing', section: null },
+    { name: 'blank', section: ' \n' },
+  ])('fails section and calls no gh when the section file is $name', TIMEOUT, ({ section }) => {
+    // No body configured: a body read would fail `pr-body`, so `section` alone proves none ran.
+    const { r, bin } = appendRun({ bodies: {}, section });
+
+    expect(r.code).toBe(1);
+    expect(r.json.errors.map((e) => e.step)).toEqual(['section']);
+    expect(r.json.bodyFile).toBeNull();
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+});
+
 describe('usage errors', () => {
   // #1059: the epic end's local server tier moved to PR CI
   it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
@@ -593,6 +676,14 @@ describe('usage errors', () => {
       args: ['publish', 'b', '--push-only', '--body-file', 'f', '--log', 'l'],
     },
     { name: 'publish --push-only without --log', args: ['publish', 'b', '--push-only'] },
+    {
+      name: 'append-pr-body without --section-file',
+      args: ['append-pr-body', 'b', '--pr', '9'],
+    },
+    {
+      name: 'append-pr-body with pr 0',
+      args: ['append-pr-body', 'b', '--pr', '0', '--section-file', 'f'],
+    },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
@@ -651,4 +742,29 @@ describe('publish (in-process)', () => {
     expect((thrown as StepFailure).step).toBe('push');
     expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
   });
+});
+
+describe('append-pr-body (in-process)', () => {
+  // The fake gh only prints well-formed body JSON, so the read is stubbed here.
+  it(
+    'fails pr-body without echoing gh’s output, editing nothing, when gh prints no body JSON',
+    TIMEOUT,
+    () => {
+      writeFileSync(`${root}/pr-section.md`, '## Attached run 1\n');
+      vi.mocked(runCaptured).mockClear();
+      vi.mocked(runCaptured).mockReturnValueOnce({
+        exitCode: 0,
+        stdout: 'gh-printed <html>',
+        tail: '',
+      });
+
+      const r = appendPrBodyInProcess({ batch: root, pr: 9, sectionFile: `${root}/pr-section.md` });
+
+      expect(r).toMatchObject({ status: 'failed', pr: 9, bodyFile: null });
+      expect(r.errors).toEqual([
+        { step: 'pr-body', message: 'gh pr view 9 printed no readable body JSON' },
+      ]);
+      expect(vi.mocked(runCaptured)).toHaveBeenCalledTimes(1);
+    },
+  );
 });

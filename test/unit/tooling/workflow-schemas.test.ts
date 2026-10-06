@@ -101,6 +101,7 @@ describe('consumed fields are required', () => {
       bump: WORKTREE_OPTIONAL,
       publish: WORKTREE_OPTIONAL,
       'check-master': WORKTREE_OPTIONAL,
+      'append-pr-body': WORKTREE_OPTIONAL,
     });
   });
 

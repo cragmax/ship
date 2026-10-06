@@ -56,7 +56,8 @@ export type ToolName =
   | 'sync-master'
   | 'bump'
   | 'check-master'
-  | 'publish';
+  | 'publish'
+  | 'append-pr-body';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's. */
 export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check'>;
@@ -152,6 +153,9 @@ export type CheckMasterOutput = EnvelopeOutput<'check-master'>;
 /** `publish`'s consumed fields. */
 export type PublishOutput = EnvelopeOutput<'publish'>;
 
+/** `append-pr-body`'s consumed fields. */
+export type AppendPrBodyOutput = EnvelopeOutput<'append-pr-body'>;
+
 /** Each tool's output type. */
 interface ToolOutputs {
   preflight: PreflightOutput;
@@ -168,6 +172,7 @@ interface ToolOutputs {
   bump: BumpOutput;
   'check-master': CheckMasterOutput;
   publish: PublishOutput;
+  'append-pr-body': AppendPrBodyOutput;
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
@@ -192,6 +197,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
 };
 
 /** A string property's schema. */
@@ -309,6 +315,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'append-pr-body': envelopeSchema('append-pr-body'),
 };
 
 /**

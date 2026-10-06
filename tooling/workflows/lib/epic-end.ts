@@ -23,15 +23,16 @@
  *   that returns nothing or rejects never blocks the PR; the body falls back
  *   ({@link renderPrBody}).
  * - **An attached run** (the entry's `attachedRun` set) has no PR writer and
- *   opens no PR: its publish is `publish --push-only` onto the open PR
- *   ({@link pushOntoPr}), the PR body untouched. A PR no longer open stops
- *   the epic (`publish refused (no-open-pr): …`); its landed issues stay
- *   landed on the branch.
+ *   opens no PR: its publish is `publish --push-only` onto the open PR, then
+ *   a section appended to the PR's body ({@link pushOntoPr}). A PR no longer
+ *   open stops the epic (`publish refused (no-open-pr): …`); its landed
+ *   issues stay landed on the branch.
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
  *   the publish task (the main-checkout look, the master check, the push and
- *   PR) each run as one task of the run's one lock, so no two epic ends talk
- *   to `origin` or read the main checkout at once; the critic, the bump,
- *   the retro and the PR writer run outside it.
+ *   PR, and an attached run's body edit) each run as one task of the run's
+ *   one lock, so no two epic ends talk to `origin` or read the main checkout
+ *   at once; the critic, the bump, the retro and the PR writer run outside
+ *   it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's — read
  *   in the publish task before the push on the shipping path (so the PR body
@@ -58,10 +59,12 @@ import type { WorkflowHooks } from './hooks.types.js';
 import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
   prTitle,
+  renderAttachedSection,
   renderPrBody,
   sliceLeaseLines,
   type CriticReport,
   type LandedIssue,
+  type PrBodyInput,
   type ScheduleEntry,
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
@@ -120,6 +123,12 @@ export interface EpicReport {
   /** What stopped or halted the entry, when its epic end says. */
   readonly message?: string;
   /**
+   * Why an attached run's section was not appended to its PR's body — the
+   * `append-pr-body` problem, or the call's throw — while the push stood;
+   * absent when it was appended or no edit was due.
+   */
+  readonly prBodyEdit?: string;
+  /**
    * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
    * read before the push on the shipping path, after the epic end
    * otherwise; `null` when either read failed. Absent without an epic end.
@@ -176,7 +185,7 @@ interface EndState {
 }
 
 /** The epic end's outcome before the main-checkout look. */
-type Published = Pick<EpicReport, 'outcome' | 'pr' | 'message'>;
+type Published = Pick<EpicReport, 'outcome' | 'pr' | 'message' | 'prBodyEdit'>;
 
 /**
  * Run the epic end.
@@ -256,7 +265,8 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   // No thunk rejects (each step catches), so the runtime's unobserved
-  // `null`-for-a-throw is never read. An attached run writes no PR body.
+  // `null`-for-a-throw is never read. An attached run runs no PR writer: its
+  // section is appended after the push (`pushOntoPr`).
   await hooks.parallel([
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
@@ -282,13 +292,14 @@ interface EndFindings {
 /**
  * The publish task — one repo-lock task: read the main checkout, check
  * `master`, then, only when the check passed, push and open the PR — or,
- * for an attached run, push onto its open PR.
+ * for an attached run, push onto its open PR and then append its section to
+ * the PR's body ({@link pushOntoPr}).
  *
  * @param input - The epic end's inputs.
  * @param found - The steps' results; its state gains the main-checkout
  *   comparison and the master check.
  * @returns Resolves to `pr` with its number, or `stopped` naming the master
- *   check or the publish.
+ *   check or the publish — an attached run's per {@link pushOntoPr}.
  */
 async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
   return input.repoLock.enqueue(async (): Promise<Published> => {
@@ -303,25 +314,78 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     found.state.masterCheck = check;
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
-    if (input.entry.attachedRun !== null) return pushOntoPr(input);
-    return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
+    const checked = { masterCheck: check, mainUntouched: untouched };
+    if (input.entry.attachedRun !== null) {
+      return pushOntoPr(input, found, checked, input.entry.attachedRun);
+    }
+    return openPr(input, found, checked);
   });
+}
+
+/** The passed master check and the main-checkout comparison, both for a body. */
+interface Checked {
+  readonly masterCheck: PassedMasterCheck;
+  readonly mainUntouched: boolean | null;
 }
 
 /**
  * Push an attached run's branch onto its open PR (`publish --push-only`),
- * the PR body untouched. Runs inside the publish task, as {@link openPr}
- * does.
+ * then, only when the push ended `pr`, append the run's section to the PR's
+ * body ({@link appendSectionStep}). Runs inside the publish task, as
+ * {@link openPr} does.
  *
  * @param input - The epic end's inputs.
- * @returns Resolves to `pr` with the open PR's number, or `stopped` naming
- *   the publish — a PR no longer open included.
+ * @param found - The steps' results, for the section.
+ * @param checked - The passed master check and the main-checkout
+ *   comparison, for the section.
+ * @param run - The attached run's number R.
+ * @returns Resolves to `pr` with the open PR's number — with `prBodyEdit`
+ *   naming a failed section edit, the outcome still `pr` — or `stopped`
+ *   naming the publish, a PR no longer open included, with no edit made.
  */
-async function pushOntoPr(input: EpicEndInput): Promise<Published> {
+async function pushOntoPr(
+  input: EpicEndInput,
+  found: EndFindings,
+  checked: Checked,
+  run: number,
+): Promise<Published> {
   const { hooks, entry } = input;
   const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
   const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
-  return publishedPr(out);
+  const published = publishedPr(out);
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const section = renderAttachedSection({ ...bodyInput(input, found, checked), run });
+  const failure = await appendSectionStep(input, published.pr, section);
+  return failure === null ? published : { ...published, prBodyEdit: failure };
+}
+
+/**
+ * Append an attached run's section to its open PR's body
+ * (`append-pr-body`), the section written first to
+ * `<reportDir>/pr-section.md`.
+ *
+ * @param input - The epic end's inputs.
+ * @param pr - The open PR's number.
+ * @param section - The section, per {@link renderAttachedSection}.
+ * @returns Resolves to `null` when the edit came back `ok`; otherwise to the
+ *   problem — the envelope's per `envelopeProblem`, or
+ *   `append-pr-body threw: …` — and never rejects, so a failed edit never
+ *   fails the run.
+ */
+async function appendSectionStep(
+  input: EpicEndInput,
+  pr: number,
+  section: string,
+): Promise<string | null> {
+  const { hooks, entry } = input;
+  const sectionPath = `${entry.reportDir}/pr-section.md`;
+  const argv = [entry.batch, '--pr', String(pr), '--section-file', sectionPath];
+  const place = runPlace(entry.reportDir, entry.tag, { path: sectionPath, content: section });
+  return runTool(hooks, 'append-pr-body', argv, place)
+    .then((out) => (out?.status === 'ok' ? null : envelopeProblem('append-pr-body', out)))
+    .catch(
+      (err: unknown) => `append-pr-body threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
 }
 
 /**
@@ -353,24 +417,11 @@ function publishedPr(out: PublishOutput | null): Published {
 async function openPr(
   input: EpicEndInput,
   found: EndFindings,
-  checked: { readonly masterCheck: PassedMasterCheck; readonly mainUntouched: boolean | null },
+  checked: Checked,
 ): Promise<Published> {
   const { hooks, entry } = input;
   const body = renderPrBody({
-    epic: entry.epic,
-    branch: entry.branch,
-    reportDir: entry.reportDir,
-    landed: input.landed,
-    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    sync: found.sync,
-    bump: found.bump,
-    masterCheck: checked.masterCheck,
-    mainUntouched: checked.mainUntouched,
-    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
-    overlap: input.overlap,
-    schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
-    retro: found.state.retro ?? null,
+    ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
@@ -386,6 +437,41 @@ async function openPr(
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
   const out = await runTool(hooks, 'publish', argv, place);
   return publishedPr(out);
+}
+
+/**
+ * What a PR body and an attached run's section report, but the PR writer's
+ * answer.
+ *
+ * @param input - The epic end's inputs.
+ * @param found - The steps' results.
+ * @param checked - The passed master check and the main-checkout comparison.
+ * @returns The entry's report: every issue not `landed` as unlanded; a
+ *   missing critic as `not-run`, missing lease totals recomputed, a missing
+ *   retro as `null`.
+ */
+function bodyInput(
+  input: EpicEndInput,
+  found: EndFindings,
+  checked: Checked,
+): Omit<PrBodyInput, 'writer'> {
+  const { entry } = input;
+  return {
+    epic: entry.epic,
+    branch: entry.branch,
+    reportDir: entry.reportDir,
+    landed: input.landed,
+    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
+    sync: found.sync,
+    bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
+    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    overlap: input.overlap,
+    schedule: input.schedule,
+    leases: found.state.leases ?? leaseTotals(input.landed),
+    retro: found.state.retro ?? null,
+  };
 }
 
 /**

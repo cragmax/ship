@@ -22,6 +22,7 @@
  * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
  * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
+ * npx tsx <main-checkout>/tooling/worktree.ts append-pr-body BATCH --pr N --section-file F
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
@@ -29,8 +30,8 @@
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
  * that order. A resync runs `cut-batch --attach`, `sync-master` and
  * `publish --push-only`. An attached run runs `preflight --attach`,
- * `cut-batch --attach --attached-run`, `cut-slice --attached-run` and
- * `publish --push-only`.
+ * `cut-batch --attach --attached-run`, `cut-slice --attached-run`,
+ * `publish --push-only` and `append-pr-body`.
  * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
  *
  * Always run it from a checkout other than the one it mutates — normally
@@ -42,9 +43,9 @@
  * writes only `.git` and a sibling directory, never that checkout's working
  * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
  * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
- * `--body-file`) come only from argv, resolved against the starting cwd;
- * every other argument — a sha, repo-relative paths, a number, a title, the
- * `--attach` branch — is kept as given.
+ * `--body-file`, `--section-file`) come only from argv, resolved against
+ * the starting cwd; every other argument — a sha, repo-relative paths, a
+ * number, a title, the `--attach` branch — is kept as given.
  *
  * Every envelope carries `at`, the instant the command finished, and is
  * checked against its command's schema before it is printed: one that
@@ -66,6 +67,7 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 
 import { toPosix } from './shared.js';
+import { appendPrBody } from './worktree/append-pr-body.js';
 import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
@@ -90,6 +92,7 @@ import {
   TeardownResultSchema,
 } from './worktree/schemas.js';
 import {
+  AppendPrBodyResultSchema,
   BumpResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
@@ -318,6 +321,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         logFile,
       });
     },
+  },
+  'append-pr-body': {
+    schema: AppendPrBodyResultSchema,
+    valueFlags: ['--pr', '--section-file'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      appendPrBody({
+        batch: args.target,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        sectionFile: pathFlag(args, '--section-file'),
+      }),
   },
 };
 

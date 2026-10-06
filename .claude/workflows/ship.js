@@ -1501,6 +1501,53 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'local', 'remote'],
   },
+  'append-pr-body': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+    },
+    required: ['status', 'errors'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1775,6 +1822,7 @@ const TOOL_COMMANDS = {
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
+  'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1863,6 +1911,7 @@ const TOOL_SCHEMAS = {
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
+  'append-pr-body': envelopeSchema('append-pr-body'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -2257,25 +2306,39 @@ function sliceLeaseLines(work) {
   return roles;
 }
 function renderPrBody(input) {
-  const closing = new Set(
-    input.landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue),
-  );
   const body = [
     ...section('Summary', summaryLines(input.writer)),
-    ...section(
-      'Evidence',
-      input.landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence)),
-    ),
+    ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
     ...reportBlock(input),
   ].join('\n');
-  return neutralText(body, closing);
+  return neutralText(body, closingIssues(input.landed));
+}
+function renderAttachedSection(input) {
+  const run = String(input.run);
+  const body = [
+    `## Attached run ${run}`,
+    '',
+    ...section('Evidence', evidenceList(input.landed), 3),
+    ...section('Issues', issueRefLines(input), 3),
+    ...foldedReport(`Run report — attached run ${run}`, runReportLines(input)),
+  ].join('\n');
+  return neutralText(body, closingIssues(input.landed));
+}
+function evidenceList(landed) {
+  return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+function closingIssues(landed) {
+  return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
 function reportBlock(input) {
   const report = runReportLines(input);
   if (input.writer === null) return report;
-  return ['<details><summary>Run report</summary>', '', ...report, '</details>', ''];
+  return foldedReport('Run report', report);
+}
+function foldedReport(summary, lines) {
+  return [`<details><summary>${summary}</summary>`, '', ...lines, '</details>', ''];
 }
 function runReportLines(input) {
   return [
@@ -2298,11 +2361,10 @@ function runReportLines(input) {
   ];
 }
 function issueListLines(input) {
-  return [
-    epicLine(input.epic),
-    ...input.landed.map(landedLine),
-    ...input.unlanded.map(unlandedLine),
-  ];
+  return [epicLine(input.epic), ...issueRefLines(input)];
+}
+function issueRefLines(input) {
+  return [...input.landed.map(landedLine), ...input.unlanded.map(unlandedLine)];
 }
 function epicLine(epic) {
   return epic === null ? '- An explicit issue list' : `- Epic: see #${String(epic)}`;
@@ -2314,8 +2376,8 @@ function landedLine(landed) {
     ? `- fixes ${ref} — ${subject}`
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
-function section(heading, lines) {
-  return [`## ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
+function section(heading, lines, depth = 2) {
+  return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 function criticLines(critic) {
   const outcome = {
@@ -2983,15 +3045,31 @@ async function publishStep(input, found) {
     found.state.masterCheck = check;
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
-    if (input.entry.attachedRun !== null) return pushOntoPr(input);
-    return openPr(input, found, { masterCheck: check, mainUntouched: untouched });
+    const checked = { masterCheck: check, mainUntouched: untouched };
+    if (input.entry.attachedRun !== null) {
+      return pushOntoPr(input, found, checked, input.entry.attachedRun);
+    }
+    return openPr(input, found, checked);
   });
 }
-async function pushOntoPr(input) {
+async function pushOntoPr(input, found, checked, run) {
   const { hooks, entry } = input;
   const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
   const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
-  return publishedPr(out);
+  const published = publishedPr(out);
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const section = renderAttachedSection({ ...bodyInput(input, found, checked), run });
+  const failure = await appendSectionStep(input, published.pr, section);
+  return failure === null ? published : { ...published, prBodyEdit: failure };
+}
+async function appendSectionStep(input, pr, section) {
+  const { hooks, entry } = input;
+  const sectionPath = `${entry.reportDir}/pr-section.md`;
+  const argv = [entry.batch, '--pr', String(pr), '--section-file', sectionPath];
+  const place = runPlace(entry.reportDir, entry.tag, { path: sectionPath, content: section });
+  return runTool(hooks, 'append-pr-body', argv, place)
+    .then((out) => (out?.status === 'ok' ? null : envelopeProblem('append-pr-body', out)))
+    .catch((err) => `append-pr-body threw: ${err instanceof Error ? err.message : String(err)}`);
 }
 function publishedPr(out) {
   const pr = out?.status === 'ok' ? out.pr : null;
@@ -3003,20 +3081,7 @@ function publishedPr(out) {
 async function openPr(input, found, checked) {
   const { hooks, entry } = input;
   const body = renderPrBody({
-    epic: entry.epic,
-    branch: entry.branch,
-    reportDir: entry.reportDir,
-    landed: input.landed,
-    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    sync: found.sync,
-    bump: found.bump,
-    masterCheck: checked.masterCheck,
-    mainUntouched: checked.mainUntouched,
-    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
-    overlap: input.overlap,
-    schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
-    retro: found.state.retro ?? null,
+    ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
   const bodyPath = `${entry.reportDir}/pr-body.md`;
@@ -3032,6 +3097,25 @@ async function openPr(input, found, checked) {
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
   const out = await runTool(hooks, 'publish', argv, place);
   return publishedPr(out);
+}
+function bodyInput(input, found, checked) {
+  const { entry } = input;
+  return {
+    epic: entry.epic,
+    branch: entry.branch,
+    reportDir: entry.reportDir,
+    landed: input.landed,
+    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
+    sync: found.sync,
+    bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
+    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    overlap: input.overlap,
+    schedule: input.schedule,
+    leases: found.state.leases ?? leaseTotals(input.landed),
+    retro: found.state.retro ?? null,
+  };
 }
 function leaseTotals(landed) {
   return aggregateLeaseTimings(

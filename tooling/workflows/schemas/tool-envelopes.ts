@@ -29,6 +29,7 @@ import {
   TeardownResultSchema,
 } from '../../worktree/schemas.js';
 import {
+  AppendPrBodyResultSchema,
   BumpResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
@@ -126,4 +127,5 @@ export const TOOL_ENVELOPES = {
   'check-master': CheckMasterResultSchema.pick({ ...STATUS, local: true, remote: true }).extend({
     errors: ERRORS,
   }),
+  'append-pr-body': AppendPrBodyResultSchema.pick({ ...STATUS }).extend({ errors: ERRORS }),
 } satisfies Record<WorktreeToolName, z.ZodObject>;
