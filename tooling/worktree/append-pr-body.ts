@@ -5,9 +5,9 @@
  * the command reads the body and sets it back with the section after it.
  *
  * Order: read the section file, read the PR's body
- * (`gh pr view --json body`), write the new body to a body file, then
- * `gh pr edit`; the first failed step ends the command `failed`
- * ({@link appendPrBody}).
+ * (`gh pr view --json body`), write the new body to a body file, refuse it
+ * when it is over {@link GH_BODY_LIMIT}, then `gh pr edit`; the first failed
+ * step ends the command `failed` ({@link appendPrBody}).
  *
  * The body as `gh` read it is the new body's prefix byte for byte
  * ({@link appendSection}), so a body neutralised when it was written is
@@ -23,7 +23,7 @@ import { z } from 'zod';
 
 import { describeError } from '../lib/describe-error.js';
 
-import { freshLogDir, GH_TIMEOUT_MS, runCaptured } from './exec.js';
+import { freshLogDir, GH_BODY_LIMIT, GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import type { AppendPrBodyResult } from './types-run.js';
 import { recordFailure, StepFailure } from './types.js';
 
@@ -47,8 +47,10 @@ export interface AppendPrBodyInput {
  * @returns The envelope: `ok` with `bodyFile`; or `failed` with the step —
  *   `section` or `pr-body` (`bodyFile` null, no edit made, the PR
  *   untouched), `internal` when the body file cannot be written (no edit
- *   made), or `pr-edit` (`bodyFile` set and named in the error, so the
- *   caller can set the body by hand).
+ *   made), `body-too-long` when the new body is over {@link GH_BODY_LIMIT}
+ *   characters — exactly the limit is allowed (`bodyFile` set and named in
+ *   the error, no edit made, the PR untouched) — or `pr-edit` (`bodyFile`
+ *   set and named in the error, so the caller can set the body by hand).
  */
 export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
   const { batch, pr } = input;
@@ -64,8 +66,15 @@ export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
     const section = readSection(input.sectionFile);
     const body = readPrBody(batch, pr);
     const file = `${freshLogDir('append-pr-body')}/pr-body.md`;
-    writeFileSync(file, appendSection(body, section));
+    const newBody = appendSection(body, section);
+    writeFileSync(file, newBody);
     result.bodyFile = file;
+    if (newBody.length > GH_BODY_LIMIT) {
+      throw new StepFailure(
+        'body-too-long',
+        `new body is ${String(newBody.length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit; the body is in ${file}`,
+      );
+    }
     editPrBody(batch, pr, file);
   } catch (err) {
     recordFailure(result, err);

@@ -6,7 +6,8 @@
  * ({@link mergeDangerLines}), the visible Issues list, then the run report,
  * folded in `<details>` unless the PR writer returned nothing (the order:
  * {@link renderPrBody}) — and each attached run's section, appended to the
- * open PR's body after the run's push ({@link renderAttachedSection}).
+ * open PR's body after the run's push ({@link renderAttachedSection}), and
+ * its run report, posted as a PR comment ({@link renderAttachedReport}).
  *
  * **Closing keywords are the workflow's own.** GitHub closes an issue for a
  * closing keyword (`fixes`, `closes`, `resolves`, …) before its reference
@@ -177,6 +178,11 @@ export interface PrBodyInput {
 export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
   /** The attached run's number R (`cut-batch --attached-run`'s). */
   readonly run: number;
+  /**
+   * The URL of the PR comment carrying the run's report
+   * ({@link renderAttachedReport}); `null` when it was not posted.
+   */
+  readonly reportComment: string | null;
 }
 
 /**
@@ -300,21 +306,45 @@ export function renderPrBody(input: PrBodyInput): string {
  * @returns Markdown, neutralised whole but for this run's landed `fixes`
  *   issues: `## Attached run <R>`, a blank line; `### Evidence`, one bullet
  *   per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- *   container line; then the run
- *   report per {@link runReportLines}, always folded
- *   ({@link foldedReport}, summary `Run report — attached run <R>`). No
- *   Summary and no Merge Danger: an attached run has no PR writer.
+ *   container line; then one run-report line and a blank line —
+ *   `Run report: [PR comment](<url>)` with a `reportComment`, else
+ *   `Run report: not posted to this PR; it is in <reportDir>.`, the report
+ *   dir in a code span. No run
+ *   report, no Summary and no Merge Danger: the report is posted as its own
+ *   PR comment ({@link renderAttachedReport}), and an attached run has no PR
+ *   writer.
  */
 export function renderAttachedSection(input: AttachedSectionInput): string {
-  const run = String(input.run);
+  const report =
+    input.reportComment === null
+      ? `Run report: not posted to this PR; it is in \`${input.reportDir}\`.`
+      : `Run report: [PR comment](${input.reportComment})`;
   const body = [
-    `## Attached run ${run}`,
+    `## Attached run ${String(input.run)}`,
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...foldedReport(`Run report — attached run ${run}`, runReportLines(input)),
+    report,
+    '',
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
+}
+
+/**
+ * An attached run's report, posted as one comment on the open PR.
+ *
+ * @param input - The attached run's report.
+ * @returns The run report per {@link runReportLines}, folded
+ *   ({@link foldedReport}, summary `Run report — attached run <R>`), every
+ *   closing keyword neutralised — this run's landed `fixes` issues included:
+ *   a run report never closes an issue.
+ */
+export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportComment'>): string {
+  const text = foldedReport(
+    `Run report — attached run ${String(input.run)}`,
+    runReportLines(input),
+  ).join('\n');
+  return neutralText(text);
 }
 
 /**
@@ -366,7 +396,7 @@ function foldedReport(summary: string, lines: readonly string[]): string[] {
 
 /**
  * The run report, folded or not per {@link reportBlock}; always folded in an
- * attached run's section ({@link renderAttachedSection}).
+ * attached run's report comment ({@link renderAttachedReport}).
  *
  * @param input - The epic's report; the PR writer's answer is not read.
  * @returns `## Landed issues` and one section per landed issue per

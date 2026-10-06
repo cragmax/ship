@@ -1119,6 +1119,54 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors'],
   },
+  'post-pr-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'url'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1394,6 +1442,7 @@ const TOOL_COMMANDS = {
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
+  'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1483,6 +1532,7 @@ const TOOL_SCHEMAS = {
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'append-pr-body': envelopeSchema('append-pr-body'),
+  'post-pr-comment': envelopeSchema('post-pr-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({

@@ -3,7 +3,7 @@
  * with a bare `origin` and a batch worktree on `ship/r`: `bump` versions
  * the batch from its own commits, and `publish` pushes it there and opens
  * its PR through a fake `gh`; `append-pr-body` appends a section to a fake
- * PR body.
+ * PR body; `post-pr-comment` posts a comment to a fake PR.
  *
  * @integrationTier standalone
  */
@@ -31,6 +31,7 @@ import { publish as publishInProcess, pushBranch } from '../../tooling/worktree/
 import type {
   AppendPrBodyResult,
   BumpResult,
+  PostPrCommentResult,
   PublishResult,
 } from '../../tooling/worktree/types-run.js';
 import { StepFailure } from '../../tooling/worktree/types.js';
@@ -40,15 +41,18 @@ import {
   headSha,
   makeBareOrigin,
   prependPath,
+  readFakePrCommented,
   readFakePrCreated,
   readFakePrEdited,
   readFakePrViewCount,
   setFakePrBodies,
+  setFakePrComment,
   setFakePrEditExit,
   setFakePrViews,
   writeFakeGh,
   type Changes,
   type FakeGhResponse,
+  type FakePrComment,
   type FakePrCreate,
 } from '../helpers/worktree-fixture-git.js';
 import {
@@ -650,6 +654,152 @@ describe('append-pr-body', () => {
     expect(r.json.bodyFile).toBeNull();
     expect(readFakePrEdited(bin)).toBeNull();
   });
+
+  // 65,001 characters read; the new body adds one '\n', then the section.
+  const LONG_BODY = `${'b'.repeat(65_000)}\n`;
+
+  it('refuses a new body of 65,537 characters at body-too-long, editing nothing', TIMEOUT, () => {
+    const { r, bin } = appendRun({ bodies: { 9: LONG_BODY }, section: `${'s'.repeat(534)}\n` });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', pr: 9 });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['body-too-long']);
+    const bodyFile = r.json.bodyFile ?? '';
+    expect(bodyFile).not.toBe('');
+    expect(r.json.errors[0]?.message).toContain('65537');
+    expect(r.json.errors[0]?.message).toContain('65536');
+    expect(r.json.errors[0]?.message).toContain(bodyFile);
+    const written = readFileSync(bodyFile, 'utf8');
+    expect(written).toHaveLength(65_537);
+    expect(written.startsWith(LONG_BODY)).toBe(true);
+    expect(readFakePrEdited(bin)).toBeNull();
+  });
+
+  // '—' is 1 UTF-16 unit but 3 UTF-8 bytes: the limit counts the string's length, not bytes.
+  it('edits a new body of exactly 65,536 characters, non-ASCII ones included', TIMEOUT, () => {
+    const section = `${'—'.repeat(10)}${'s'.repeat(523)}\n`;
+    const { r, bin } = appendRun({ bodies: { 9: LONG_BODY }, section });
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', errors: [] });
+    expect(readFakePrEdited(bin)?.argv).toEqual([
+      'pr',
+      'edit',
+      '9',
+      '--body-file',
+      r.json.bodyFile,
+    ]);
+    expect(readFakePrEdited(bin)?.body).toHaveLength(65_536);
+    expect(readFakePrEdited(bin)?.body?.endsWith(section)).toBe(true);
+  });
+});
+
+describe('post-pr-comment', () => {
+  // CRLF and non-ASCII: both must reach gh unchanged.
+  const COMMENT = '<details><summary>Run report — attached run 2</summary>\r\n\r\n## Landed\r\n';
+
+  /** Run `post-pr-comment` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  function commentRun({
+    comment = COMMENT,
+    gh,
+  }: { comment?: string | null; gh?: FakePrComment } = {}): {
+    r: ReturnType<typeof runCli<PostPrCommentResult>>;
+    bin: string;
+    file: string;
+  } {
+    const bin = writeFakeGh(root, {});
+    if (gh !== undefined) setFakePrComment(bin, gh);
+    const file = `${root}/pr-report-comment.md`;
+    if (comment !== null) writeFileSync(file, comment);
+    const r = runCli<PostPrCommentResult>(
+      ['post-pr-comment', root, '--pr', '9', '--comment-file', file],
+      { env: prependPath(bin) },
+    );
+    return { r, bin, file };
+  }
+
+  it('posts the comment file to the PR and returns the comment’s URL', TIMEOUT, () => {
+    const { r, bin, file } = commentRun();
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      pr: 9,
+      url: 'https://github.com/fixture/repo/pull/9#issuecomment-1',
+    });
+    expect(readFakePrCommented(bin)).toEqual({
+      argv: ['pr', 'comment', '9', '--body-file', file],
+      body: COMMENT,
+    });
+  });
+
+  it('fails pr-comment when gh pr comment exits non-zero', TIMEOUT, () => {
+    const { r } = commentRun({ gh: { exit: 1 } });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['pr-comment']);
+    expect(r.json.errors[0]?.message).toContain('gh pr comment 9 exited 1');
+  });
+
+  // A warning line before the URL, whitespace around it and trailing blank lines.
+  it('returns the last non-empty line gh printed, trimmed, as the URL', TIMEOUT, () => {
+    const stdout =
+      'Warning: 1 uncommitted change\n  https://github.com/fixture/repo/pull/9#issuecomment-7 \r\n\r\n';
+    const { r } = commentRun({ gh: { stdout } });
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      url: 'https://github.com/fixture/repo/pull/9#issuecomment-7',
+    });
+  });
+
+  it.each([
+    { name: 'nothing', gh: { printUrl: false } },
+    { name: 'a last line that is no https URL', gh: { stdout: 'https://x/1\nComment posted\n' } },
+  ])('fails comment-url when gh pr comment exits 0 printing $name', TIMEOUT, ({ gh }) => {
+    const { r } = commentRun({ gh });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['comment-url']);
+    expect(r.json.errors[0]?.message).toBe(
+      'gh pr comment 9 printed no comment URL; the comment may have been posted',
+    );
+  });
+
+  it.each([
+    { name: 'missing', comment: null },
+    { name: 'blank', comment: ' \n' },
+  ])('fails comment and calls no gh when the comment file is $name', TIMEOUT, ({ comment }) => {
+    const { r, bin } = commentRun({ comment });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['comment']);
+    expect(readFakePrCommented(bin)).toBeNull();
+  });
+
+  it('refuses a comment of 65,537 characters at body-too-long, calling no gh', TIMEOUT, () => {
+    const { r, bin } = commentRun({ comment: 'c'.repeat(65_537) });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['body-too-long']);
+    expect(r.json.errors[0]?.message).toContain('65537');
+    expect(r.json.errors[0]?.message).toContain('65536');
+    expect(readFakePrCommented(bin)).toBeNull();
+  });
+
+  // '—' is 1 UTF-16 unit but 3 UTF-8 bytes: the limit counts the string's length, not bytes.
+  it('posts a comment of exactly 65,536 characters, non-ASCII ones included', TIMEOUT, () => {
+    const comment = `${'—'.repeat(10)}${'c'.repeat(65_526)}`;
+    const { r, bin } = commentRun({ comment });
+
+    expect(r.json.status).toBe('ok');
+    expect(readFakePrCommented(bin)?.body).toBe(comment);
+  });
 });
 
 describe('usage errors', () => {
@@ -683,6 +833,14 @@ describe('usage errors', () => {
     {
       name: 'append-pr-body with pr 0',
       args: ['append-pr-body', 'b', '--pr', '0', '--section-file', 'f'],
+    },
+    {
+      name: 'post-pr-comment without --comment-file',
+      args: ['post-pr-comment', 'b', '--pr', '9'],
+    },
+    {
+      name: 'post-pr-comment with pr 0',
+      args: ['post-pr-comment', 'b', '--pr', '0', '--comment-file', 'f'],
     },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });

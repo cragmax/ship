@@ -9,6 +9,7 @@ import type {
 import {
   commitMessage,
   prTitle,
+  renderAttachedReport,
   renderAttachedSection,
   renderPrBody,
   type AttachedSectionInput,
@@ -1212,23 +1213,24 @@ describe('prTitle and commitMessage scrub the whole subject line', () => {
 
 describe('renderAttachedSection', () => {
   // INPUT's writer is spread in and ignored: an attached run has none.
-  const SECTION_INPUT: AttachedSectionInput = { ...INPUT, epic: null, run: 2 };
-  const SECTION_OPENER = '<details><summary>Run report — attached run 2</summary>';
+  const SECTION_INPUT: AttachedSectionInput = {
+    ...INPUT,
+    epic: null,
+    run: 2,
+    reportComment: 'https://github.com/o/r/pull/9#issuecomment-1',
+  };
 
-  it('heads the section with the run, then its Evidence, its Issues and its run report folded', () => {
+  it('heads the section with the run, then its Evidence, its Issues and a link to its run report', () => {
     const text = renderAttachedSection(SECTION_INPUT);
     const lines = text.split('\n');
-    const open = lines.indexOf(SECTION_OPENER);
-    const close = lines.indexOf('</details>');
     const main = renderPrBody(INPUT).split('\n');
-    const unfolded = renderPrBody({ ...INPUT, writer: null }).split('\n');
 
     expect(lines.slice(0, 4)).toEqual(['## Attached run 2', '', '### Evidence', '']);
     expect(lines[4]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
     expect(lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Issues') - 1)).toEqual(
       main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1),
     );
-    expect(lines.slice(lines.indexOf('### Issues'), open + 3)).toEqual([
+    expect(lines.slice(lines.indexOf('### Issues'))).toEqual([
       '### Issues',
       '',
       '- fixes #7 — add the x tool',
@@ -1236,23 +1238,29 @@ describe('renderAttachedSection', () => {
       '- see #9 — not landed: blocked: planner stale: resolved (see #9) by abc123',
       '- see #10 — not landed: skipped',
       '',
-      SECTION_OPENER,
+      'Run report: [PR comment](https://github.com/o/r/pull/9#issuecomment-1)',
       '',
-      '## Landed issues',
     ]);
-    expect(lines.slice(open + 2, close)).toEqual(
-      unfolded.slice(unfolded.indexOf('## Landed issues')),
-    );
-    expect(text.endsWith('\n\n</details>\n')).toBe(true);
-    expect(lines.filter((l) => l.includes('details'))).toHaveLength(2);
+    expect(lines.filter((l) => l.includes('details'))).toEqual([]);
+    expect(lines).not.toContain('## Landed issues');
     expect(lines).not.toContain('## Summary');
     expect(lines).not.toContain('## Merge Danger');
     expect(lines).not.toContain('- An explicit issue list');
   });
 
+  it('names the report dir when the run report was not posted', () => {
+    const text = renderAttachedSection({ ...SECTION_INPUT, reportComment: null });
+
+    expect(
+      text.endsWith('\nRun report: not posted to this PR; it is in `C:/runs/epic-1025/reports`.\n'),
+    ).toBe(true);
+    expect(text).not.toContain('details');
+  });
+
   it('closes only this run’s landed fixes issues, defusing every other keyword in the section', () => {
     const text = renderAttachedSection({
       ...SECTION_INPUT,
+      reportComment: null,
       landed: [
         SEVEN,
         {
@@ -1263,9 +1271,39 @@ describe('renderAttachedSection', () => {
           },
         },
       ],
+    });
+
+    expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([
+      '- fixes #7 — add the x tool',
+    ]);
+    // #3 stands for an earlier run's landed issue.
+    expect(text).toContain('  **Before:** AssertionError: fixes (see #3) not applied');
+  });
+});
+
+describe('renderAttachedReport', () => {
+  const REPORT_INPUT = { ...INPUT, epic: null, run: 2 };
+
+  it('is the run report folded under the attached run’s summary', () => {
+    const text = renderAttachedReport(REPORT_INPUT);
+    const lines = text.split('\n');
+    const unfolded = renderPrBody({ ...INPUT, writer: null }).split('\n');
+
+    expect(lines[0]).toBe('<details><summary>Run report — attached run 2</summary>');
+    expect(lines[1]).toBe('');
+    expect(lines.slice(2, lines.indexOf('</details>'))).toEqual(
+      unfolded.slice(unfolded.indexOf('## Landed issues')),
+    );
+    expect(text.endsWith('\n\n</details>\n')).toBe(true);
+    expect(lines.filter((l) => l.includes('details'))).toHaveLength(2);
+  });
+
+  it('defuses every closing keyword, this run’s landed fixes issue included', () => {
+    const text = renderAttachedReport({
+      ...REPORT_INPUT,
       retro: [
         {
-          title: 'fixes #9 already',
+          title: 'fixes #7 already',
           evidence: 'closes #8',
           kind: 'first-time',
           suggestion: 'fixes #3 too',
@@ -1273,13 +1311,9 @@ describe('renderAttachedSection', () => {
       ],
     });
 
-    expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([
-      '- fixes #7 — add the x tool',
-    ]);
-    // #3 stands for an earlier run's landed issue, #8 for this run's `see` issue.
-    expect(text).toContain('fixes (see #3) too');
+    expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([]);
+    expect(text).toContain('fixes (see #7) already');
     expect(text).toContain('closes (see #8)');
-    expect(text).toContain('fixes (see #9) already');
-    expect(text).toContain('  **Before:** AssertionError: fixes (see #3) not applied');
+    expect(text).toContain('fixes (see #3) too');
   });
 });

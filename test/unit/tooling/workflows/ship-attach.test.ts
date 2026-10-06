@@ -74,6 +74,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:post-pr-comment:list',
       'runner:append-pr-body:list',
     ]);
     expect(callOf(run, 'runner:preflight')?.argv).toEqual([
@@ -299,6 +300,7 @@ describe('runShip --attach — the epic end', () => {
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:post-pr-comment:list',
       'runner:append-pr-body:list',
     ]);
     expect(all.filter((l) => l.startsWith('prWriter'))).toEqual([]);
@@ -406,6 +408,7 @@ describe('runShip --attach — the scout', () => {
 
 describe('runShip --attach — the PR body section', () => {
   const SECTION_FILE = `${ATTACH_REPORTS}/pr-section.md`;
+  const COMMENT_FILE = `${ATTACH_REPORTS}/pr-report-comment.md`;
 
   it('appends the run’s section to the open PR’s body once the push succeeded', async () => {
     const run = fakeHooks(ATTACHED);
@@ -415,6 +418,7 @@ describe('runShip --attach — the PR body section', () => {
     const all = labels(run);
     expect(all.slice(all.indexOf('runner:publish:list'))).toEqual([
       'runner:publish:list',
+      'runner:post-pr-comment:list',
       'runner:append-pr-body:list',
     ]);
     expect(callOf(run, 'runner:append-pr-body:list')?.argv).toEqual([
@@ -439,12 +443,33 @@ describe('runShip --attach — the PR body section', () => {
         '### Evidence',
         '### Issues',
         '- fixes #7 — add the x tool',
-        '<details><summary>Run report — attached run 2</summary>',
+        'Run report: [PR comment](https://x/pull/9#issuecomment-1)',
         '----- END FILE -----',
       ]),
     );
+    expect(lines).not.toContain('<details><summary>Run report — attached run 2</summary>');
+    expect(lines).not.toContain('## Landed issues');
+    expect(callOf(run, 'runner:post-pr-comment:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'post-pr-comment',
+      BATCH,
+      '--pr',
+      '9',
+      '--comment-file',
+      COMMENT_FILE,
+    ]);
+    const posted = promptLines(run, 'runner:post-pr-comment:list');
+    const from = posted.indexOf(`Write first: ${COMMENT_FILE}`);
+    expect(posted.slice(from, from + 5)).toEqual([
+      `Write first: ${COMMENT_FILE}`,
+      '----- BEGIN FILE -----',
+      '<details><summary>Run report — attached run 2</summary>',
+      '',
+      '## Landed issues',
+    ]);
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
     expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
   });
 
   // An attached run's usual bump: the PR is already bumped, so a fix adds no commit.
@@ -460,9 +485,10 @@ describe('runShip --attach — the PR body section', () => {
       'runner:preflight:list',
       'runner:check-master:list',
       'runner:publish:list',
+      'runner:post-pr-comment:list',
       'runner:append-pr-body:list',
     ]);
-    expect(promptLines(run, 'runner:append-pr-body:list')).toContain(
+    expect(promptLines(run, 'runner:post-pr-comment:list')).toContain(
       '- Version bump: patch, already at 1.0.1 — no commit',
     );
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
@@ -508,9 +534,65 @@ describe('runShip --attach — the PR body section', () => {
     const report = await runShip(run.hooks, ARGS);
 
     expect(labels(run).filter((l) => l.startsWith('runner:append-pr-body'))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
     expect(report.epics[0]?.outcome).toBe('stopped');
     expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
   });
+
+  it.each([
+    {
+      name: 'failed',
+      post: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [
+          {
+            step: 'body-too-long',
+            message:
+              "comment file C:/r/pr-report-comment.md is 70000 characters, over GitHub's 65536-character limit",
+          },
+        ],
+        url: null,
+      },
+      prReportComment:
+        "post-pr-comment failed: comment file C:/r/pr-report-comment.md is 70000 characters, over GitHub's 65536-character limit",
+    },
+    {
+      name: 'returned nothing',
+      post: null,
+      prReportComment: 'the runner returned nothing for post-pr-comment',
+    },
+    {
+      name: 'threw',
+      post: () => {
+        throw new Error('agent died');
+      },
+      prReportComment: 'post-pr-comment threw: agent died',
+    },
+    {
+      name: 'ok without a url',
+      post: { ...OK, url: null },
+      prReportComment: 'post-pr-comment ok without a url',
+    },
+  ])(
+    'reports a report comment that $name, appending the section without its link',
+    async ({ post, prReportComment }) => {
+      const run = fakeHooks({ ...ATTACHED, 'runner:post-pr-comment': post });
+
+      const report = await runShip(run.hooks, ARGS);
+
+      expect(report.status).toBe('done');
+      expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9, prReportComment });
+      expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
+      expect(report.epics[0]?.message).toBeUndefined();
+      expect(labels(run)).toContain('runner:append-pr-body:list');
+      expect(promptLines(run, 'runner:append-pr-body:list')).toContain(
+        `Run report: not posted to this PR; it is in \`${ATTACH_REPORTS}\`.`,
+      );
+    },
+  );
 
   it.each([
     {

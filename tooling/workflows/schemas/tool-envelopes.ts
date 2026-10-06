@@ -35,6 +35,7 @@ import {
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
+  PostPrCommentResultSchema,
   PreflightResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
@@ -128,4 +129,7 @@ export const TOOL_ENVELOPES = {
     errors: ERRORS,
   }),
   'append-pr-body': AppendPrBodyResultSchema.pick({ ...STATUS }).extend({ errors: ERRORS }),
+  'post-pr-comment': PostPrCommentResultSchema.pick({ ...STATUS, url: true }).extend({
+    errors: ERRORS,
+  }),
 } satisfies Record<WorktreeToolName, z.ZodObject>;

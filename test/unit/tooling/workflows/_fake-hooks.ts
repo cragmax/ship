@@ -329,6 +329,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     mergeable: null,
   },
   'runner:append-pr-body': OK,
+  'runner:post-pr-comment': { ...OK, url: 'https://x/pull/9#issuecomment-1' },
   critic: {
     outcome: 'clean',
     sha: '',

@@ -26,8 +26,9 @@
  * it out anew and provisions it; the entry's `base` is the attached tip, its
  * report dir the run's own `reports/attach-<R>/`, and its slices are named
  * by the run number R. A reused batch whose trimmed pool registry is gone
- * stops the entry. The epic end pushes onto the open PR, then appends its
- * section to the PR's body (`lib/epic-end.ts`).
+ * stops the entry. The epic end pushes onto the open PR, posts its run
+ * report as a PR comment, then appends its section to the PR's body
+ * (`lib/epic-end.ts`).
  *
  * **Resume** (`resumeFromRunId`) is safe only for a single-entry run at
  * `maxSlices: 1` (why: `lib/drive.ts` § Concurrency). Any other run is

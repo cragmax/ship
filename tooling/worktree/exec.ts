@@ -61,6 +61,14 @@ export const FETCH_TIMEOUT_MS = 120_000;
 /** Budget for one `gh` call. */
 export const GH_TIMEOUT_MS = 120_000;
 
+/**
+ * GitHub's limit on a PR body and on a comment body. Counted as the JS
+ * string's `length` (UTF-16 code units — never fewer than the text's
+ * characters); the API refuses a longer body as
+ * `body is too long (maximum is 65536 characters)`.
+ */
+export const GH_BODY_LIMIT = 65_536;
+
 /** Budget for one `git push` whose pre-push hook runs the full gate. */
 export const PUSH_TIMEOUT_MS = 2_700_000;
 

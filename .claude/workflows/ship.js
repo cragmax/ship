@@ -1548,6 +1548,54 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors'],
   },
+  'post-pr-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'url'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1823,6 +1871,7 @@ const TOOL_COMMANDS = {
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
+  'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1912,6 +1961,7 @@ const TOOL_SCHEMAS = {
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'append-pr-body': envelopeSchema('append-pr-body'),
+  'post-pr-comment': envelopeSchema('post-pr-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -2316,15 +2366,26 @@ function renderPrBody(input) {
   return neutralText(body, closingIssues(input.landed));
 }
 function renderAttachedSection(input) {
-  const run = String(input.run);
+  const report =
+    input.reportComment === null
+      ? `Run report: not posted to this PR; it is in \`${input.reportDir}\`.`
+      : `Run report: [PR comment](${input.reportComment})`;
   const body = [
-    `## Attached run ${run}`,
+    `## Attached run ${String(input.run)}`,
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...foldedReport(`Run report — attached run ${run}`, runReportLines(input)),
+    report,
+    '',
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
+}
+function renderAttachedReport(input) {
+  const text = foldedReport(
+    `Run report — attached run ${String(input.run)}`,
+    runReportLines(input),
+  ).join('\n');
+  return neutralText(text);
 }
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
@@ -3054,18 +3115,41 @@ async function pushOntoPr(input, found, checked, run) {
   const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
   const published = publishedPr(out);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
-  const section = renderAttachedSection({ ...bodyInput(input, found, checked), run });
+  const base = { ...bodyInput(input, found, checked), run };
+  const posted = await postReportStep(input, published.pr, renderAttachedReport(base));
+  const reportComment = 'url' in posted ? posted.url : null;
+  const section = renderAttachedSection({ ...base, reportComment });
   const failure = await appendSectionStep(input, published.pr, section);
-  return failure === null ? published : { ...published, prBodyEdit: failure };
+  return {
+    ...published,
+    ...('failure' in posted ? { prReportComment: posted.failure } : {}),
+    ...(failure === null ? {} : { prBodyEdit: failure }),
+  };
+}
+async function postReportStep(input, pr, report) {
+  const file = { name: 'pr-report-comment.md', flag: '--comment-file', content: report };
+  const posted = await prFileStep(input, 'post-pr-comment', pr, file);
+  if ('failure' in posted) return posted;
+  return typeof posted.ok.url === 'string'
+    ? { url: posted.ok.url }
+    : { failure: 'post-pr-comment ok without a url' };
 }
 async function appendSectionStep(input, pr, section) {
+  const file = { name: 'pr-section.md', flag: '--section-file', content: section };
+  const edited = await prFileStep(input, 'append-pr-body', pr, file);
+  return 'failure' in edited ? edited.failure : null;
+}
+async function prFileStep(input, tool, pr, file) {
   const { hooks, entry } = input;
-  const sectionPath = `${entry.reportDir}/pr-section.md`;
-  const argv = [entry.batch, '--pr', String(pr), '--section-file', sectionPath];
-  const place = runPlace(entry.reportDir, entry.tag, { path: sectionPath, content: section });
-  return runTool(hooks, 'append-pr-body', argv, place)
-    .then((out) => (out?.status === 'ok' ? null : envelopeProblem('append-pr-body', out)))
-    .catch((err) => `append-pr-body threw: ${err instanceof Error ? err.message : String(err)}`);
+  const path = `${entry.reportDir}/${file.name}`;
+  const argv = [entry.batch, '--pr', String(pr), file.flag, path];
+  const place = runPlace(entry.reportDir, entry.tag, { path, content: file.content });
+  try {
+    const out = await runTool(hooks, tool, argv, place);
+    return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
+  } catch (err) {
+    return { failure: `${tool} threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
 }
 function publishedPr(out) {
   const pr = out?.status === 'ok' ? out.pr : null;

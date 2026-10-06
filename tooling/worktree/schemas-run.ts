@@ -2,7 +2,8 @@
  * Envelope schemas of the worktree CLI's run-branch commands — the commands
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
- * `sync-master`, `bump`, `check-master`, `publish` and `append-pr-body`.
+ * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
+ * `post-pr-comment`.
  * The canonical home of their shapes; `types-run.ts` exports each as its
  * `z.infer`. The base fields, path spelling and integer rule are
  * `schemas.ts`'s. A field that names something the command creates or
@@ -265,6 +266,14 @@ export const AppendPrBodyResultSchema = ResultBaseSchema.extend({
    * in a fresh OS temp directory; `null` until it is written.
    */
   bodyFile: z.string().nullable(),
+});
+
+/** Envelope of `post-pr-comment <batch> --pr N --comment-file F`; `worktree` is the batch. */
+export const PostPrCommentResultSchema = ResultBaseSchema.extend({
+  /** The PR the comment was posted to, as given. */
+  pr: z.int(),
+  /** The posted comment's URL, as `gh` printed it; `null` unless the command is `ok`. */
+  url: z.string().nullable(),
 });
 
 /** One `master` ref at the launch and now. */
