@@ -70,8 +70,6 @@ export const RefusalReasonSchema = z.enum([
   'unresolved',
   // Bump: the batch has no commits of its own since `origin/master`.
   'nothing-to-bump',
-  // Bump: the batch's commits already include a bump commit.
-  'already-bumped',
   // Publish: the run branch already has an open PR; the message names it.
   'pr-exists',
   // Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;

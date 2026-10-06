@@ -1,9 +1,15 @@
 /**
- * `bump <batch>` — the run's one version bump (`.claude/rules/git.md`
- * § Unattended workflow runs): read the batch's own commits since it left
- * `origin/master`, bump `minor` for any `feat`, else `patch`, and commit
- * `package.json` and the lockfile through § Direct commits steps 1–4,
- * the message carrying the run's {@link CO_AUTHOR_TRAILER}.
+ * `bump <batch>` — reconcile the run branch's version to its one net bump
+ * over `master` (`.claude/rules/git.md` § Unattended workflow runs;
+ * ADR-0045 decision 7). The kind is `minor` when any of the batch's own
+ * non-merge commits since it left `origin/master` is a `feat`, else
+ * `patch`; the target is `origin/master`'s version bumped by that kind. A
+ * batch already at the target gets no commit. Otherwise one commit of
+ * `package.json` and the lockfile sets the version to the target, through
+ * § Direct commits steps 1–4, the message carrying the run's
+ * {@link CO_AUTHOR_TRAILER}. So the net one bump may be carried by more
+ * than one bump commit: a `feat` landing on a patch-bumped branch adds a
+ * second, at `master`'s minor.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -14,6 +20,7 @@ import { assertRunBatch } from './cut.js';
 import { freshLogDir, NPM_TIMEOUT_MS, runStep } from './exec.js';
 import { commitWithHooks, git } from './git.js';
 import { assertBatchClean, assertLinkedWorktree } from './harvest.js';
+import { bumpVersion } from './package-version.js';
 import { RUN_UPSTREAM } from './run-layout.js';
 import { compareSets, formatDifference, stagedPaths } from './staged-set.js';
 import type { BumpResult } from './types-run.js';
@@ -37,16 +44,19 @@ export interface BumpInput {
 }
 
 /**
- * Bump the batch's version in one commit.
+ * Set the batch's version to its target, in at most one commit.
  *
  * @param input - The batch and the self-hosted seam.
- * @returns The envelope: `ok` with `kind`, `from`, `to`, `commit` and
- *   `log`; `refused` before any mutation (harvest's linked-worktree
- *   reasons, `not-run-batch`, `batch-dirty`, `nothing-to-bump`,
- *   `already-bumped`) or after staging (`staged-mismatch`); or `failed`
- *   with the step (`version`, `stage`, `commit`, …). Once `npm version`
- *   has started, every outcome but `ok` restores both files to `HEAD`,
- *   leaving the batch clean; a failed restore adds a `restore` error.
+ * @returns The envelope: `ok` with `kind`, `from`, `to` (the target) and,
+ *   when a commit landed, `commit` and `log` — an `ok` no-op has `from`
+ *   equal to `to`, `commit` and `log` `null`, and touches nothing;
+ *   `refused` before any mutation (harvest's linked-worktree reasons,
+ *   `not-run-batch`, `batch-dirty`, `nothing-to-bump`) or after staging
+ *   (`staged-mismatch`); or `failed` with the step (`version` —
+ *   `origin/master`'s `package.json` unreadable, or a version not plain
+ *   `x.y.z` — `stage`, `commit`, …). Once `npm version` has started, every
+ *   outcome but `ok` restores both files to `HEAD`, leaving the batch
+ *   clean; a failed restore adds a `restore` error.
  */
 export function bump(input: BumpInput): BumpResult {
   const { batch, selfPath = import.meta.filename } = input;
@@ -68,14 +78,17 @@ export function bump(input: BumpInput): BumpResult {
     assertBatchClean(batch);
     const subjects = ownSubjects(batch);
     assertBumpable(subjects);
-    result.kind = subjects.some((s) => FEAT_SUBJECT.test(s)) ? 'minor' : 'patch';
+    const kind = subjects.some((s) => FEAT_SUBJECT.test(s)) ? 'minor' : 'patch';
+    result.kind = kind;
     result.from = packageVersion(batch);
+    const target = bumpVersion(upstreamVersion(batch), kind);
+    result.to = target;
+    if (result.from === target) return result;
     versioned = true;
-    runStep('version', 'npm', ['version', result.kind, '--no-git-tag-version'], {
+    runStep('version', 'npm', ['version', target, '--no-git-tag-version'], {
       cwd: batch,
       timeoutMs: NPM_TIMEOUT_MS,
     });
-    result.to = packageVersion(batch);
     stageBump(batch);
     const dir = freshLogDir('bump');
     result.log = `${dir}/commit.log`;
@@ -90,19 +103,14 @@ export function bump(input: BumpInput): BumpResult {
 }
 
 /**
- * Refuse a batch with nothing to bump, or one bumped already.
+ * Refuse a batch with nothing to bump.
  *
  * @param subjects - The batch's own non-merge subjects.
- * @throws Refusal `nothing-to-bump` when there are none; Refusal
- *   `already-bumped` when one starts with {@link BUMP_SUBJECT}.
+ * @throws Refusal `nothing-to-bump` when there are none.
  */
 function assertBumpable(subjects: readonly string[]): void {
   if (subjects.length === 0) {
     throw new Refusal('nothing-to-bump', 'subjects', `no commits of its own since ${RUN_UPSTREAM}`);
-  }
-  const bumped = subjects.find((s) => s.startsWith(BUMP_SUBJECT));
-  if (bumped !== undefined) {
-    throw new Refusal('already-bumped', 'subjects', `already bumped: '${bumped}'`);
   }
 }
 
@@ -146,17 +154,57 @@ function ownSubjects(batch: string): string[] {
  */
 function packageVersion(batch: string): string {
   const path = `${batch}/package.json`;
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (err) {
+    throw new StepFailure('version', `cannot read ${path}: ${errorText(err)}`);
+  }
+  return versionOf(text, path);
+}
+
+/**
+ * `origin/master`'s `package.json` version, read from the batch's
+ * remote-tracking ref.
+ *
+ * @param batch - The batch worktree.
+ * @returns The `version` field.
+ * @throws StepFailure `version` when git cannot show the file, or it is
+ *   not JSON with a string `version`.
+ */
+function upstreamVersion(batch: string): string {
+  const source = `${RUN_UPSTREAM}:package.json`;
+  return versionOf(git(batch, ['show', source], 'version'), source);
+}
+
+/**
+ * The `version` field of a `package.json` text.
+ *
+ * @param text - The file's text.
+ * @param source - Where the text came from, for the failure message.
+ * @returns The `version` field.
+ * @throws StepFailure `version` when the text is not JSON or has no string
+ *   `version`.
+ */
+function versionOf(text: string, source: string): string {
   let version: unknown;
   try {
-    version = (JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown }).version;
+    version = (JSON.parse(text) as { version?: unknown }).version;
   } catch (err) {
-    throw new StepFailure(
-      'version',
-      `cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new StepFailure('version', `cannot read ${source}: ${errorText(err)}`);
   }
-  if (typeof version !== 'string') throw new StepFailure('version', `${path} has no version`);
+  if (typeof version !== 'string') throw new StepFailure('version', `${source} has no version`);
   return version;
+}
+
+/**
+ * An error's message.
+ *
+ * @param err - Anything thrown.
+ * @returns Its `message` when it is an `Error`, else its string form.
+ */
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**

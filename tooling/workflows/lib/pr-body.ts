@@ -639,9 +639,12 @@ function mainCheckoutText(untouched: boolean | null): string {
  * The bump as one phrase.
  *
  * @param bump - `bump`'s output.
- * @returns `<kind>, <from> → <to>`; the outcome when it did not land.
+ * @returns `<kind>, <from> → <to>`; `<kind>, already at <to> — no commit`
+ *   when it found the version already at its target (`ok`, `commit`
+ *   `null`); the outcome when it did not land.
  */
 function bumpText(bump: BumpOutput | null): string {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
+  if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }

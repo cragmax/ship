@@ -193,15 +193,15 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
 
 /** Envelope of `bump <batch>`; `worktree` is the batch. */
 export const BumpResultSchema = ResultBaseSchema.extend({
-  /** `minor` when any subject is a `feat`, else `patch`. */
+  /** The bump's kind, as `bump.ts`'s header derives it. */
   kind: z.enum(['minor', 'patch']).nullable(),
-  /** The version before the bump. */
+  /** The batch's version before the bump. */
   from: z.string().nullable(),
-  /** The version after it. */
+  /** The target version, as `bump.ts`'s header derives it; equal to `from` on a no-op. */
   to: z.string().nullable(),
-  /** The bump commit; `null` unless it landed. */
+  /** The bump commit; `null` unless it landed, a no-op included. */
   commit: z.string().nullable(),
-  /** The file the commit's output (its hooks' included) went to. */
+  /** The file the commit's output (its hooks' included) went to; `null` on a no-op. */
   log: z.string().nullable(),
 });
 

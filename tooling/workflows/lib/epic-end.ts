@@ -14,7 +14,9 @@
  * - **A critic landing that leaves the batch unverified halts the epic**:
  *   no master sync, no push.
  * - **A code conflict or a failed sync stops the epic**: no bump, no push.
- *   So does a failed bump, and so does a step that throws.
+ *   So does a failed bump, and so does a step that throws. A bump finding
+ *   the version already at its target commits nothing (status `ok`, `commit`
+ *   `null`), and the epic end goes on to the retro and the publish.
  * - **The retro runs exactly once per entry**, whatever path the entry
  *   ends on, before the PR on the shipping path.
  * - **The PR writer runs on the shipping path only**, after the bump. One

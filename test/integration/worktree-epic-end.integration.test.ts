@@ -38,6 +38,7 @@ import {
   readFakePrViewCount,
   setFakePrViews,
   writeFakeGh,
+  type Changes,
   type FakeGhResponse,
   type FakePrCreate,
 } from '../helpers/worktree-fixture-git.js';
@@ -189,12 +190,113 @@ describe('bump', () => {
   });
 
   it.each([
-    { reason: 'nothing-to-bump', branch: 'ship/r', subjects: [] },
     {
-      reason: 'already-bumped',
-      branch: 'ship/r',
-      subjects: ['feat(a): one', 'chore(build): bump version — r'],
+      name: 'a patch-bumped branch and a fix as a no-op',
+      first: 'fix(a): one',
+      next: 'fix(b): two',
+      kind: 'patch',
+      from: '1.0.1',
+      to: '1.0.1',
+      bumps: 1,
     },
+    {
+      name: 'a patch-bumped branch and a feat with a second bump commit at master’s minor',
+      first: 'fix(a): one',
+      next: 'feat(b): two',
+      kind: 'minor',
+      from: '1.0.1',
+      to: '1.1.0',
+      bumps: 2,
+    },
+    {
+      name: 'a minor-bumped branch and a fix as a no-op',
+      first: 'feat(a): one',
+      next: 'fix(b): two',
+      kind: 'minor',
+      from: '1.1.0',
+      to: '1.1.0',
+      bumps: 1,
+    },
+  ])('reconciles $name', TIMEOUT, ({ first, next, kind, from, to, bumps }) => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, first);
+    expect(runBump(run.batch).json.status).toBe('ok');
+    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, next);
+    const head = headSha(run.batch);
+
+    const r = runBump(run.batch);
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', kind, from, to });
+    if (bumps === 1) {
+      expect(r.json.commit).toBeNull();
+      expect(r.json.log).toBeNull();
+      expect(headSha(run.batch)).toBe(head);
+    } else {
+      const bumped = headSha(run.batch);
+      expect(bumped).not.toBe(head);
+      expect(r.json.commit).toBe(bumped);
+      expect(mustRun('git', ['log', '-1', '--format=%s', bumped], run.batch).trim()).toBe(
+        'chore(build): bump version — r',
+      );
+      expect(commitPaths(run.batch, bumped)).toEqual(['package-lock.json', 'package.json']);
+    }
+    expect(versions(run.batch)).toEqual({ pkg: to, lock: to, lockRoot: to });
+    expect(porcelain(run.batch)).toBe('');
+    const subjects = mustRun('git', ['log', '--format=%s', 'origin/master..HEAD'], run.batch)
+      .split(/\r?\n/u)
+      .filter((s) => s.startsWith('chore(build): bump version'));
+    expect(subjects).toHaveLength(bumps);
+  });
+
+  it('targets origin/master’s version bumped by the kind once master moved', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'fix(a): one');
+    const pkg = JSON.parse(readFileSync(join(run.batch, 'package.json'), 'utf8')) as object;
+    const moved = `${JSON.stringify({ ...pkg, version: '1.4.0' }, null, 2)}\n`;
+    advanceOrigin(
+      root,
+      run.bare,
+      { write: { 'package.json': moved } },
+      'chore(build): bump version — elsewhere',
+    );
+    mustRun('git', ['fetch', '-q', 'origin'], run.batch);
+
+    const r = runBump(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', kind: 'patch', from: '1.0.0', to: '1.4.1' });
+    expect(r.json.commit).toBe(headSha(run.batch));
+    expect(versions(run.batch)).toEqual({ pkg: '1.4.1', lock: '1.4.1', lockRoot: '1.4.1' });
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it.each<{ name: string; changes: Changes }>([
+    // A rename, not `remove`: the clone checks out under the global autocrlf and
+    // the fixture config then turns it off, so `git rm` sees package.json as modified.
+    { name: 'has no package.json', changes: { rename: [['package.json', 'package.old.json']] } },
+    { name: 'has a package.json that is not JSON', changes: { write: { 'package.json': 'x\n' } } },
+  ])(
+    'fails at step version, touching nothing, when origin/master $name',
+    TIMEOUT,
+    ({ changes }) => {
+      const run = makeRun();
+      commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'fix(a): one');
+      advanceOrigin(root, run.bare, changes, 'chore: break package.json');
+      mustRun('git', ['fetch', '-q', 'origin'], run.batch);
+      const head = headSha(run.batch);
+
+      const r = runBump(run.batch);
+
+      expect(r.json).toMatchObject({ status: 'failed', commit: null });
+      expect(r.json.errors.map((e) => e.step)).toEqual(['version']);
+      expect(headSha(run.batch)).toBe(head);
+      expect(porcelain(run.batch)).toBe('');
+      expect(versions(run.batch)).toEqual({ pkg: '1.0.0', lock: '1.0.0', lockRoot: '1.0.0' });
+    },
+  );
+
+  it.each([
+    { reason: 'nothing-to-bump', branch: 'ship/r', subjects: [] },
     { reason: 'not-run-batch', branch: 'feature/x', subjects: ['feat(a): one'] },
   ])('refuses $reason and touches nothing', TIMEOUT, ({ reason, branch, subjects }) => {
     const run = makeRun(branch);

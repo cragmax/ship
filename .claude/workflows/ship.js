@@ -758,7 +758,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -833,7 +832,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -913,7 +911,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -974,7 +971,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1027,7 +1023,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1078,7 +1073,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1130,7 +1124,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1192,7 +1185,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1241,7 +1233,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1326,7 +1317,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1377,7 +1367,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -1431,7 +1420,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'no-merge-in-progress',
           'unresolved',
           'nothing-to-bump',
-          'already-bumped',
           'pr-exists',
           'no-open-pr',
           'master-not-forward',
@@ -2406,6 +2394,7 @@ function mainCheckoutText(untouched) {
 }
 function bumpText(bump) {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
+  if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }
 
