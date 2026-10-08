@@ -53,6 +53,7 @@ const work = (fields: {
   testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
   salvage?: SliceWork['tdd']['salvage'];
+  recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
   card: {
     verdict: 'plan',
@@ -72,6 +73,7 @@ const work = (fields: {
     probes: fields.probes ?? [],
     evidence: fields.evidence ?? TRACER,
     salvage: fields.salvage ?? [],
+    recorded: fields.recorded ?? [],
   },
   diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
   review: fields.review ?? {
@@ -1305,6 +1307,82 @@ describe('renderPrBody — salvage', () => {
   });
 });
 
+describe('renderPrBody — recorded', () => {
+  it('lists each recorded value under its issue, leaving an issue that recorded none out', () => {
+    const body = renderPrBody({
+      ...INPUT,
+      landed: [
+        { ...SEVEN, tdd: { ...SEVEN.tdd, recorded: ['a', 'b'] } },
+        { ...EIGHT, tdd: { ...EIGHT.tdd, recorded: [] } },
+      ],
+    });
+
+    expect(sectionOf(body, '## Recorded')).toEqual([
+      '## Recorded',
+      '',
+      '- #7',
+      '  - `a`',
+      '  - `b`',
+    ]);
+  });
+
+  it('puts the Recorded section after the Salvage section, in the PR body and an attached section', () => {
+    const landed = [{ ...SEVEN, tdd: { ...SEVEN.tdd, salvage: [SALVAGE_A], recorded: ['a'] } }];
+    const main = renderPrBody({ ...INPUT, landed }).split('\n');
+    const attached = renderAttachedSection({
+      ...INPUT,
+      landed,
+      run: 2,
+      reportComment: null,
+    }).split('\n');
+
+    expect(main.indexOf('## Salvage')).toBeGreaterThan(-1);
+    expect(main.indexOf('## Recorded')).toBeGreaterThan(main.indexOf('## Salvage'));
+    expect(attached.indexOf('### Salvage')).toBeGreaterThan(-1);
+    expect(attached.indexOf('### Recorded')).toBeGreaterThan(attached.indexOf('### Salvage'));
+  });
+
+  it('renders no Recorded section when no landed issue recorded anything', () => {
+    expect(renderPrBody(INPUT).split('\n')).not.toContain('## Recorded');
+  });
+
+  it('drops blank entries, and an issue whose entries are all blank', () => {
+    const body = renderPrBody({
+      ...INPUT,
+      landed: [
+        { ...SEVEN, tdd: { ...SEVEN.tdd, recorded: ['', '  \n  '] } },
+        { ...EIGHT, tdd: { ...EIGHT.tdd, recorded: [] } },
+      ],
+    });
+
+    expect(sectionOf(body, '## Recorded')).toEqual([]);
+  });
+
+  it('renders an entry on one line in a code span, its closing keyword defused', () => {
+    const body = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          ...SEVEN,
+          tdd: {
+            ...SEVEN.tdd,
+            recorded: ['**42** files in `src/` @cragmax; fixes #12\nper top-level dir'],
+          },
+        },
+        EIGHT,
+      ],
+    });
+
+    expect(sectionOf(body, '## Recorded')).toEqual([
+      '## Recorded',
+      '',
+      '- #7',
+      '  - `` **42** files in `src/` @cragmax; fixes (see #12) per top-level dir ``',
+    ]);
+    expect(body).not.toMatch(closes(12));
+  });
+});
+
 describe('prTitle and commitMessage scrub the whole subject line', () => {
   it('defuses a closing reference the planner put in the scope', () => {
     const commit = { type: 'fix', scope: 'closes #5', subject: 'y' };
@@ -1369,6 +1447,28 @@ describe('renderAttachedSection', () => {
       '',
       '- #7',
       '  - `src/b.ts:3` platform-claim: Folia drops x',
+      '',
+      'Run report: [PR comment](https://github.com/o/r/pull/9#issuecomment-1)',
+      '',
+    ]);
+  });
+
+  it('lists this run’s recorded values under ### Recorded between its Issues and the run-report line', () => {
+    const lines = renderAttachedSection({
+      ...SECTION_INPUT,
+      landed: [{ ...SEVEN, tdd: { ...SEVEN.tdd, recorded: ['a'] } }],
+      unlanded: [],
+    }).split('\n');
+
+    expect(lines.slice(lines.indexOf('### Issues'))).toEqual([
+      '### Issues',
+      '',
+      '- fixes #7 — add the x tool',
+      '',
+      '### Recorded',
+      '',
+      '- #7',
+      '  - `a`',
       '',
       'Run report: [PR comment](https://github.com/o/r/pull/9#issuecomment-1)',
       '',

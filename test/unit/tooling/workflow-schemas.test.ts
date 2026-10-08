@@ -167,6 +167,14 @@ describe('consumed fields are required', () => {
     });
   });
 
+  it('requires the tdd’s recorded values, an array of strings', () => {
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('recorded');
+    expect(AGENT_OUTPUT_SCHEMAS.tdd.properties.recorded).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
   it('requires the PR writer’s summary, door, door note, blast radius and ramifications', () => {
     expect(AGENT_OUTPUT_SCHEMAS.prWriter).toEqual({
       type: 'object',
