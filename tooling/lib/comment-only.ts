@@ -27,10 +27,16 @@ export interface FileChange {
   readonly headPath: string | null;
 }
 
-/** The revisions to compare; a `null` head is the working tree. */
+/** The side compared against the base: a revision, the staged index or the working tree. */
+export type Head =
+  | { readonly kind: 'revision'; readonly rev: string }
+  | { readonly kind: 'index' }
+  | { readonly kind: 'worktree' };
+
+/** The base revision and the side compared against it. */
 export interface Revisions {
   readonly base: string;
-  readonly head: string | null;
+  readonly head: Head;
 }
 
 /** A token difference located in one changed file. */
@@ -47,30 +53,41 @@ export interface CommentOnlyReport {
   readonly difference: FileDifference | null;
 }
 
-const USAGE = 'usage: comment-only [<base> | <base>..<head>]';
+const USAGE = 'usage: comment-only [--cached] [<base>] | <base>..<head>';
+
+/** A code token with its place in the syntax tree: each ancestor's kind and child index. */
+interface PlacedToken {
+  readonly token: CodeToken;
+  readonly path: string;
+}
+
+const isJSDoc = (node: ts.Node): boolean =>
+  node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode;
 
 /** CRLF reads as LF, as a template literal reads it, so a CRLF checkout matches its LF blob. */
-function codeTokens(fileName: string, source: string): CodeToken[] {
+function codeTokens(fileName: string, source: string): PlacedToken[] {
   const lf = source.replaceAll('\r\n', '\n');
   const sf = ts.createSourceFile(fileName, lf, ts.ScriptTarget.Latest, false);
-  const tokens: CodeToken[] = [];
-  const visit = (node: ts.Node): void => {
+  const tokens: PlacedToken[] = [];
+  const visit = (node: ts.Node, path: string): void => {
     if (node.kind >= ts.SyntaxKind.FirstToken && node.kind <= ts.SyntaxKind.LastToken) {
       const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-      tokens.push({ kind: node.kind, text: node.getText(sf), line });
+      tokens.push({ token: { kind: node.kind, text: node.getText(sf), line }, path });
       return;
     }
-    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) {
-      return;
+    const children = node.getChildren(sf).filter((child) => !isJSDoc(child));
+    for (const [i, child] of children.entries()) {
+      visit(child, `${path}/${String(node.kind)}:${String(i)}`);
     }
-    for (const child of node.getChildren(sf)) visit(child);
   };
-  visit(sf);
+  visit(sf, '');
   return tokens;
 }
 
 /**
- * Compare two versions of a file token by token, on kind and text only.
+ * Compare two versions of a file token by token, on kind, text and place in
+ * the syntax tree — so a line break a comment edit adds or removes, which
+ * changes where a statement ends (`return` then a newline), is a difference.
  *
  * @param fileName - Name the parser is given for both sides.
  * @param base - The base side's text; `''` when the file is added.
@@ -84,10 +101,13 @@ export function firstDifference(
 ): TokenDifference | null {
   const b = codeTokens(fileName, base);
   const h = codeTokens(fileName, head);
-  for (const [i, bt] of b.entries()) {
-    const ht = h[i];
-    if (ht === undefined) break;
-    if (bt.kind !== ht.kind || bt.text !== ht.text) return { base: bt, head: ht };
+  for (const [i, { token: bt, path }] of b.entries()) {
+    const placed = h[i];
+    if (placed === undefined) break;
+    const ht = placed.token;
+    if (bt.kind !== ht.kind || bt.text !== ht.text || path !== placed.path) {
+      return { base: bt, head: ht };
+    }
   }
   return null;
 }
@@ -119,20 +139,23 @@ const oneSided = (status: string, path: string): FileChange => ({
 });
 
 /**
- * Read the command's arguments: none (base `HEAD` against the working tree),
- * `<base>` against the working tree, or `<base>..<head>`.
+ * Read the command's arguments: an optional `<base>` (default `HEAD`) against
+ * the working tree, or against the staged index after `--cached`; or `<base>..<head>`.
  *
- * @throws {@link Error} with the usage line when there is more than one argument, the
- *   argument holds `...`, or a `..` form lacks a revision on either side.
+ * @throws {@link Error} with the usage line when more than one revision argument is
+ *   given, the argument holds `...`, a `..` form lacks a revision on either side, or
+ *   `--cached` precedes a `..` form.
  */
 export function parseRevisions(args: readonly string[]): Revisions {
-  if (args.length > 1 || args[0]?.includes('...') === true) throw new Error(USAGE);
-  const [arg = 'HEAD'] = args;
-  if (!arg.includes('..')) return { base: arg, head: null };
+  const cached = args[0] === '--cached';
+  const revs = cached ? args.slice(1) : args;
+  if (revs.length > 1 || revs[0]?.includes('...') === true) throw new Error(USAGE);
+  const [arg = 'HEAD'] = revs;
+  if (!arg.includes('..')) return { base: arg, head: { kind: cached ? 'index' : 'worktree' } };
   const parts = arg.split('..');
   const [base = '', head = ''] = parts;
-  if (parts.length !== 2 || base === '' || head === '') throw new Error(USAGE);
-  return { base, head };
+  if (cached || parts.length !== 2 || base === '' || head === '') throw new Error(USAGE);
+  return { base, head: { kind: 'revision', rev: head } };
 }
 
 const isCompared = (c: FileChange): boolean =>
@@ -140,7 +163,8 @@ const isCompared = (c: FileChange): boolean =>
 
 /**
  * Prove every changed TypeScript file between two revisions — or a revision
- * and the working tree, untracked files included — differs in comments only.
+ * and the staged index, or the working tree with untracked files included —
+ * differs in comments only.
  *
  * @remarks
  * A file counts as TypeScript when either path ends `.ts` or `.mts`. Files are
@@ -160,7 +184,7 @@ export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnly
     compared++;
     const d = firstDifference(
       displayPath(change),
-      readSide(top, revisions.base, change.basePath),
+      readSide(top, { kind: 'revision', rev: revisions.base }, change.basePath),
       readSide(top, revisions.head, change.headPath),
     );
     if (d !== null) return { compared, notCompared, difference: { change, ...d } };
@@ -168,20 +192,28 @@ export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnly
   return { compared, notCompared, difference: null };
 }
 
+// --end-of-options: a revision starting `-` is never read as an option.
+const diffRevs = (base: string, head: Head): string[] => {
+  if (head.kind === 'revision') return ['--end-of-options', base, head.rev];
+  return head.kind === 'index'
+    ? ['--cached', '--end-of-options', base]
+    : ['--end-of-options', base];
+};
+
 function changedFiles(top: string, { base, head }: Revisions): FileChange[] {
-  const revs = head === null ? [base] : [base, head];
   const changes = parseNameStatus(
-    gitPaths(top, ['diff', '--name-status', '-M', ...revs, '--'], 'diff'),
+    gitPaths(top, ['diff', '--name-status', '-M', ...diffRevs(base, head), '--'], 'diff'),
   );
-  if (head !== null) return changes;
+  if (head.kind !== 'worktree') return changes;
   const untracked = gitPaths(top, ['ls-files', '--others', '--exclude-standard'], 'untracked');
   return [...changes, ...untracked.map((path) => ({ basePath: null, headPath: path }))];
 }
 
-function readSide(top: string, rev: string | null, path: string | null): string {
+function readSide(top: string, side: Head, path: string | null): string {
   if (path === null) return '';
-  if (rev === null) return readFileSync(join(top, path), 'utf8');
-  return git(top, ['show', `${rev}:${path}`], 'show');
+  if (side.kind === 'worktree') return readFileSync(join(top, path), 'utf8');
+  const spec = side.kind === 'index' ? `:${path}` : `${side.rev}:${path}`;
+  return git(top, ['show', '--end-of-options', spec], 'show');
 }
 
 const renderToken = (t: CodeToken): string => {
@@ -192,7 +224,8 @@ const renderToken = (t: CodeToken): string => {
 /**
  * Render a difference as one line naming the file and both tokens.
  *
- * @returns The line, labelling a rename `<base path> -> <head path>`.
+ * @returns The line, labelling a rename `<base path> -> <head path>`, and
+ *   ending `(parsed differently)` when the two tokens read the same.
  */
 export function formatDifference(d: FileDifference): string {
   const { basePath, headPath } = d.change;
@@ -200,5 +233,7 @@ export function formatDifference(d: FileDifference): string {
     basePath !== null && headPath !== null && basePath !== headPath
       ? `${basePath} -> ${headPath}`
       : displayPath(d.change);
-  return `code differs in ${label}: base ${renderToken(d.base)}, head ${renderToken(d.head)}`;
+  const same = d.base.kind === d.head.kind && d.base.text === d.head.text;
+  const tokens = `base ${renderToken(d.base)}, head ${renderToken(d.head)}`;
+  return `code differs in ${label}: ${tokens}${same ? ' (parsed differently)' : ''}`;
 }

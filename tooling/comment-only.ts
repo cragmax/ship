@@ -1,6 +1,7 @@
 /**
- * `npx tsx tooling/comment-only.ts [<base> | <base>..<head>]` — prove a change to TypeScript
- * files is comment-only ({@link proveCommentOnly}); with no head it reads the working tree.
+ * `npx tsx tooling/comment-only.ts [--cached] [<base>] | <base>..<head>` — prove a change to
+ * TypeScript files is comment-only ({@link proveCommentOnly}); with no head it reads the
+ * working tree, or the staged index under `--cached`.
  *
  * Exit 0: stdout lists each `not compared: <path>`, then the count of token-identical files.
  * Exit 1: one stderr line naming the first code difference. Exit 2: a usage error or a git

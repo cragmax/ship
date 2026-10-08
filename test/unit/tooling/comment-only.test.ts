@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,6 +12,7 @@ import {
   parseRevisions,
   proveCommentOnly,
 } from '../../../tooling/lib/comment-only.js';
+import { StepFailure } from '../../../tooling/worktree/types.js';
 import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
 import { mustRun } from '../../helpers/worktree-fixture.js';
 
@@ -49,6 +50,9 @@ const COMMENT_ONLY = [
 ].join('\n');
 
 const ONE_TOKEN = COMMENT_ONLY.replace('String(r) + x', 'String(r) - x');
+
+const WORKTREE = { kind: 'worktree' } as const;
+const INDEX = { kind: 'index' } as const;
 
 describe('firstDifference', () => {
   it('names the first differing code token on each side with its line', () => {
@@ -89,6 +93,18 @@ describe('firstDifference', () => {
     expect(firstDifference('n.ts', '', 'export const x = 1;\n')).toMatchObject({
       base: { kind: ts.SyntaxKind.EndOfFileToken, text: '', line: 1 },
       head: { text: 'export', line: 1 },
+    });
+  });
+
+  // regression: same tokens, but the newline inside the comment ends the return (ASI).
+  it.each([
+    ['a comment edit', 'return /* why\n */ value;', 'return /* why */ value;'],
+    ['a code edit', 'return\n  value;', 'return value;'],
+  ])('fails %s that moves a line break past a return', (_edit, base, head) => {
+    const wrap = (body: string): string => `export function f(value: number) {\n  ${body}\n}\n`;
+    expect(firstDifference('a.ts', wrap(base), wrap(head))).toMatchObject({
+      base: { text: 'value', line: 3 },
+      head: { text: 'value', line: 2 },
     });
   });
 
@@ -134,16 +150,25 @@ describe('parseNameStatus', () => {
 
 describe('parseRevisions', () => {
   it.each([
-    [[], { base: 'HEAD', head: null }],
-    [['v1.2'], { base: 'v1.2', head: null }],
-    [['v1.2..abc'], { base: 'v1.2', head: 'abc' }],
+    [[], { base: 'HEAD', head: WORKTREE }],
+    [['v1.2'], { base: 'v1.2', head: WORKTREE }],
+    [['--cached'], { base: 'HEAD', head: INDEX }],
+    [['--cached', 'v1.2'], { base: 'v1.2', head: INDEX }],
+    [['v1.2..abc'], { base: 'v1.2', head: { kind: 'revision', rev: 'abc' } }],
   ])('reads %j', (args, expected) => {
     expect(parseRevisions(args)).toEqual(expected);
   });
 
-  it.each([[['a...b']], [['a..']], [['..b']], [['a', 'b']]])('refuses %j', (args) => {
+  it.each([
+    [['a...b']],
+    [['a..']],
+    [['..b']],
+    [['a', 'b']],
+    [['--cached', 'a..b']],
+    [['--cached', 'a', 'b']],
+  ])('refuses %j', (args) => {
     expect(() => parseRevisions(args)).toThrow(
-      new Error('usage: comment-only [<base> | <base>..<head>]'),
+      new Error('usage: comment-only [--cached] [<base>] | <base>..<head>'),
     );
   });
 });
@@ -169,11 +194,37 @@ describe('proveCommentOnly', () => {
     mustRun('git', ['mv', 'b.ts', 'lib-b.ts'], dir);
     writeFileSync(join(dir, 'lib-b.ts'), B_TRIMMED);
     writeFileSync(join(dir, 'n.md'), 'y\n');
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null })).toEqual({
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toEqual({
       compared: 2,
       notCompared: ['n.md'],
       difference: null,
     });
+  });
+
+  // The working tree undoes the staged code change, so only --cached sees what would commit.
+  it('reads the staged index, not the working tree, under --cached', () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, 'a.ts'), ONE_TOKEN);
+    mustRun('git', ['add', 'a.ts'], dir);
+    writeFileSync(join(dir, 'a.ts'), COMMENT_ONLY);
+    writeFileSync(join(dir, 'untracked.ts'), 'export const u = 1;\n');
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: INDEX })).toMatchObject({
+      compared: 1,
+      notCompared: [],
+      difference: { change: { basePath: 'a.ts', headPath: 'a.ts' }, head: { text: '-' } },
+    });
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE }).difference).toMatchObject({
+      change: { headPath: 'untracked.ts' },
+    });
+  });
+
+  // regression: unguarded, git read --output=… as an option and wrote the diff to a file.
+  it('reads a base starting with - as a revision, failing on it', () => {
+    const dir = makeRepo();
+    expect(() => proveCommentOnly(dir, { base: '--output=out', head: WORKTREE })).toThrow(
+      StepFailure,
+    );
+    expect(existsSync(join(dir, 'out'))).toBe(false);
   });
 
   it('names the changed file and tokens of a code change in a revision range', () => {
@@ -187,7 +238,9 @@ describe('proveCommentOnly', () => {
       },
       'trim',
     );
-    expect(proveCommentOnly(dir, { base: first, head: second })).toMatchObject({
+    expect(
+      proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } }),
+    ).toMatchObject({
       compared: 1,
       notCompared: ['n.md'],
       difference: {
@@ -206,17 +259,19 @@ describe('proveCommentOnly', () => {
       { rename: [['b.ts', 'lib-b.ts']], write: { 'lib-b.ts': B_TRIMMED } },
       'trim',
     );
-    expect(proveCommentOnly(dir, { base: first, head: second })).toEqual({
-      compared: 1,
-      notCompared: [],
-      difference: null,
-    });
+    expect(proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } })).toEqual(
+      {
+        compared: 1,
+        notCompared: [],
+        difference: null,
+      },
+    );
   });
 
   it('compares an untracked TypeScript file as added', () => {
     const dir = makeRepo();
     writeFileSync(join(dir, 'new.ts'), 'export const x = 1;\n');
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null }).difference).toMatchObject({
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE }).difference).toMatchObject({
       change: { basePath: null, headPath: 'new.ts' },
       head: { text: 'export' },
     });
@@ -225,7 +280,7 @@ describe('proveCommentOnly', () => {
   it('compares a deleted TypeScript file against an empty head', () => {
     const dir = makeRepo();
     rmSync(join(dir, 'b.ts'));
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null })).toEqual({
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toEqual({
       compared: 1,
       notCompared: [],
       difference: {
@@ -240,7 +295,7 @@ describe('proveCommentOnly', () => {
     const dir = makeRepo();
     mkdirSync(join(dir, 'tmp'));
     writeFileSync(join(dir, 'tmp', 'scratch.ts'), 'export const x = 1;\n');
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null })).toEqual({
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toEqual({
       compared: 0,
       notCompared: [],
       difference: null,
@@ -250,14 +305,14 @@ describe('proveCommentOnly', () => {
   it('lists a deleted non-TypeScript file under its base path', () => {
     const dir = makeRepo();
     rmSync(join(dir, 'n.md'));
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null }).notCompared).toEqual(['n.md']);
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE }).notCompared).toEqual(['n.md']);
   });
 
   it('passes untracked .ts and .mts files holding only comments', () => {
     const dir = makeRepo();
     writeFileSync(join(dir, 'notes.ts'), '// only\n');
     writeFileSync(join(dir, 'notes.mts'), '// only\n');
-    expect(proveCommentOnly(dir, { base: 'HEAD', head: null })).toEqual({
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toEqual({
       compared: 2,
       notCompared: [],
       difference: null,
@@ -283,6 +338,17 @@ describe('formatDifference', () => {
         head: minus,
       }),
     ).toBe('code differs in b.ts -> lib/b.ts: base line 15 `+`, head line 8 `-`');
+  });
+
+  it('marks two tokens that read the same as parsed differently', () => {
+    const value = { kind: ts.SyntaxKind.Identifier, text: 'value', line: 3 };
+    expect(
+      formatDifference({
+        change: { basePath: 'a.ts', headPath: 'a.ts' },
+        base: value,
+        head: { ...value, line: 2 },
+      }),
+    ).toBe('code differs in a.ts: base line 3 `value`, head line 2 `value` (parsed differently)');
   });
 
   it('renders the end-of-file token of an absent side', () => {
