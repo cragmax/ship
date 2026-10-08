@@ -7,10 +7,9 @@
  * request. An entry that halted or landed nothing gets the retro alone
  * ({@link unshippedEpicEnd}).
  *
- * - **No server tier here** — PR CI's `Server integration` workflow
- *   (`.github/workflows/server-integration.yml`) runs it on both engines
- *   against the pull request, and its verdict is the PR's checks list
- *   (ADR-0045 decision 6, #1059).
+ * - **No server-tier step here** — the publish's push runs it: the pre-push
+ *   hook's `server-tier` job runs both engines across the local pool, and a
+ *   red tier refuses the push (ADR-0045 decision 6, amended 2026-10-08).
  * - **A critic landing that leaves the batch unverified halts the epic**:
  *   no master sync, no push.
  * - **A code conflict or a failed sync stops the epic**: no bump, no push.
