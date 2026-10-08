@@ -1803,9 +1803,21 @@ const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
+      salvage: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            location: { type: 'string' },
+            kind: { type: 'string', enum: ['defect', 'platform-claim', 'test-claim'] },
+            claim: { type: 'string' },
+          },
+          required: ['location', 'kind', 'claim'],
+        },
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'salvage'],
   },
   diffReview: {
     type: 'object',
@@ -2403,12 +2415,17 @@ function renderBlockedComment(input) {
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
 }
-function commitMessage(issue, card) {
+function commitMessage(issue, card, salvage = []) {
+  const block =
+    salvage.length === 0
+      ? []
+      : ['Salvage:', ...salvage.map((item) => neutralText(`- ${salvageText(item)}`)), ''];
   return [
     subjectLine(card.commit),
     '',
     `${card.closes} #${String(issue)}`,
     '',
+    ...block,
     CO_AUTHOR_TRAILER,
     '',
   ].join('\n');
@@ -2437,6 +2454,7 @@ function renderPrBody(input) {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
+    ...salvageSection(input.landed, 2),
     ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -2451,6 +2469,7 @@ function renderAttachedSection(input) {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
+    ...salvageSection(input.landed, 3),
     report,
     '',
   ].join('\n');
@@ -2465,6 +2484,17 @@ function renderAttachedReport(input) {
 }
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+function salvageText(item) {
+  return `\`${item.location}\` ${item.kind}: ${item.claim}`;
+}
+function salvageSection(landed, depth) {
+  const lines = landed.flatMap((l) =>
+    l.tdd.salvage.length === 0
+      ? []
+      : [`- #${String(l.issue)}`, ...l.tdd.salvage.map((item) => `  - ${salvageText(item)}`)],
+  );
+  return lines.length === 0 ? [] : section('Salvage', lines, depth);
 }
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
@@ -2833,7 +2863,9 @@ async function landSlice(at) {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const out = await runTool(at.ctx.hooks, 'land', argv, at.place);
+  const message = commitMessage(at.issue, requireCard(at), at.tdd?.salvage);
+  const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
+  const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed') {

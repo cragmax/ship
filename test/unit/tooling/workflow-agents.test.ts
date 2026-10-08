@@ -254,6 +254,26 @@ describe('workflow agents', () => {
     ).toEqual([]);
   });
 
+  it('ship-tdd returns its salvage items under its ## Report and return', () => {
+    const bullet =
+      section(agentText('ship-tdd'), '## Report and return')
+        .split('\n')
+        .find((l) => l.startsWith('- `salvage`')) ?? '';
+
+    expect(
+      [
+        '`location`',
+        '`kind`',
+        '`defect`',
+        '`platform-claim`',
+        '`test-claim`',
+        '`claim`',
+        '`[]`',
+        '`Salvage:`',
+      ].filter((token) => !bullet.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',

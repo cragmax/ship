@@ -216,6 +216,7 @@ export const TDD_GREEN = {
     green: '✓ test/unit/tooling/x.test.ts › adds x',
     reason: '',
   },
+  salvage: [],
 };
 
 /** A diff review that found two rules findings and one plan finding. */

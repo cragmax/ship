@@ -11,6 +11,7 @@ import {
   LAND_OK,
   PLAN_CARD,
   REPORT_DIR,
+  TDD_GREEN,
   type FakeRun,
 } from './_fake-hooks.js';
 import { epicRun, holdable, idle } from './_fake-parallel.js';
@@ -746,5 +747,77 @@ describe('runShip — the diff review counts', () => {
       '- Diff review: 3 rules, 0 plan findings',
       '- Diff review: 0 rules, 4 plan findings',
     ]);
+  });
+});
+
+const SALVAGE_A = {
+  location: 'src/a.ts:12',
+  kind: 'defect',
+  claim: 'honoured nowhere; fixes #12 later',
+};
+const SALVAGE_B = { location: 'src/b.ts:3', kind: 'platform-claim', claim: 'Folia drops x' };
+const SALVAGE_C = { location: 'src/c.ts:40', kind: 'test-claim', claim: 'a test pins the order' };
+
+describe('runShip — salvage', () => {
+  it('renders each landed slice’s salvage under its issue in a ## Salvage section between the Issues list and the run report', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      'tdd:7-1': { ...TDD_GREEN, salvage: [SALVAGE_A, SALVAGE_B] },
+      'tdd:8-1': { ...TDD_GREEN, salvage: [SALVAGE_C] },
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const body = bodyOf(run);
+    const at = body.indexOf('## Salvage');
+    expect(at).toBeGreaterThan(body.indexOf('## Issues'));
+    expect(body.slice(at, at + 9)).toEqual([
+      '## Salvage',
+      '',
+      '- #7',
+      '  - `src/a.ts:12` defect: honoured nowhere; fixes (see #12) later',
+      '  - `src/b.ts:3` platform-claim: Folia drops x',
+      '- #8',
+      '  - `src/c.ts:40` test-claim: a test pins the order',
+      '',
+      '<details><summary>Run report</summary>',
+    ]);
+  });
+
+  it('lands the slice with a message file carrying its salvage block', async () => {
+    const salvage = { location: 'src/a.ts:12', kind: 'defect', claim: 'honoured nowhere' };
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, salvage: [salvage] } });
+
+    await runShip(run.hooks, 'issues 7');
+
+    const land = run.calls.find((c) => c.label === 'runner:land:7-1');
+    const flag = land?.argv.indexOf('--message-file') ?? -1;
+    expect(land?.argv.slice(flag, flag + 2)).toEqual([
+      '--message-file',
+      `${REPORT_DIR}/commit-7-1.txt`,
+    ]);
+    expect(land?.prompt).toContain(
+      [
+        `Write first: ${REPORT_DIR}/commit-7-1.txt`,
+        '----- BEGIN FILE -----',
+        'feat(build): add the x tool',
+        '',
+        'fixes #7',
+        '',
+        'Salvage:',
+        '- `src/a.ts:12` defect: honoured nowhere',
+        '',
+        'Co-Authored-By: Claude <noreply@anthropic.com>',
+        '----- END FILE -----',
+      ].join('\n'),
+    );
+  });
+
+  it('renders no Salvage section when no landed slice recorded salvage', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(bodyOf(run)).not.toContain('## Salvage');
   });
 });

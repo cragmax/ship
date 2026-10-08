@@ -460,7 +460,8 @@ async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
 }
 
 /**
- * Land the authored slice on the batch — run inside the commit queue.
+ * Land the authored slice on the batch — run inside the commit queue — its
+ * message file first rewritten with the tdd's salvage.
  *
  * @param at - The attempt; gains `commit`, `committedAt` and `size` when it
  *   lands (`size` stays `null` when the envelope's `lines` is), `conflicts`
@@ -480,7 +481,9 @@ async function landSlice(at: Attempt): Promise<SchedulerEvent> {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const out = await runTool(at.ctx.hooks, 'land', argv, at.place);
+  const message = commitMessage(at.issue, requireCard(at), at.tdd?.salvage);
+  const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
+  const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed') {
@@ -631,7 +634,7 @@ function planPath(at: Attempt): string {
 }
 
 /**
- * The attempt's commit message file: the tdd writes it, the landing reads it.
+ * The attempt's commit message file: the tdd writes it; the landing rewrites it, salvage added.
  *
  * @param at - The attempt.
  * @returns `<reportDir>/commit-<issue>-<attempt>.txt`.
