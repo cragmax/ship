@@ -129,8 +129,6 @@ const oneSided = (status: string, path: string): FileChange => ({
  * Read the command's arguments: none (base `HEAD` against the working tree),
  * `<base>` against the working tree, or `<base>..<head>`.
  *
- * @param args - The command's arguments.
- * @returns The revisions to compare.
  * @throws {@link Error} with the usage line when there is more than one argument, the
  *   argument holds `...`, or a `..` form lacks a revision on either side.
  */
@@ -159,8 +157,6 @@ const isTypeScript = (path: string | null): boolean => path !== null && TYPESCRI
  * an added file, so it fails when it holds code.
  *
  * @param cwd - Any directory inside the repository.
- * @param revisions - The sides to compare.
- * @returns The comparison's outcome.
  * @throws {@link StepFailure} when a git command fails, an unknown revision included.
  */
 export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnlyReport {
@@ -206,7 +202,6 @@ const renderToken = (t: CodeToken): string => {
 /**
  * Render a difference as one line naming the file and both tokens.
  *
- * @param d - The difference.
  * @returns The line, labelling a rename `<base path> -> <head path>`.
  */
 export function formatDifference(d: FileDifference): string {
