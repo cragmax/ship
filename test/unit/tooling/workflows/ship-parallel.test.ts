@@ -287,12 +287,19 @@ describe('runShip — issues in flight at once', () => {
 
   const UP_TO_CUT = ['runner:check:8-1', 'runner:cut-slice:8-1'];
   const UP_TO_PLAN = [...UP_TO_CUT, 'runner:provision:8-1', 'planner:8-1'];
+  const UP_TO_DIFF_REVIEW = [...UP_TO_PLAN, 'planReviewer:8-1', 'tdd:8-1', 'diffReview:8-1'];
   it.each<[string, string[]]>([
     ['runner:check:8-1', ['runner:check:8-1']],
     ['runner:cut-slice:8-1', [...UP_TO_CUT, 'runner:teardown:8-1']],
     ['runner:provision:8-1', [...UP_TO_CUT, 'runner:provision:8-1', 'runner:teardown:8-1']],
     ['planner:8-1', [...UP_TO_PLAN, 'runner:teardown:8-1']],
     ['planReviewer:8-1', [...UP_TO_PLAN, 'planReviewer:8-1', 'runner:teardown:8-1']],
+    ['diffReview:8-1', [...UP_TO_DIFF_REVIEW, 'runner:teardown:8-1']],
+    ['reviewer:8-1', [...UP_TO_DIFF_REVIEW, 'reviewer:8-1', 'runner:teardown:8-1']],
+    [
+      'testReview:8-1',
+      [...UP_TO_DIFF_REVIEW, 'reviewer:8-1', 'testReview:8-1', 'runner:teardown:8-1'],
+    ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));
     const run = fakeHooks(

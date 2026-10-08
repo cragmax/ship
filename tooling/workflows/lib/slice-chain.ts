@@ -7,11 +7,11 @@
  * queue, the landing.
  *
  * **Every attempt ends the same way** ({@link runAttempt}): its slice, when
- * one was cut, is torn down first, then the attempt reports its primary
- * event and the halt it called for, for the drive loop to settle
- * (`commit-queue.ts`). Whatever ended it — a landing, a stage that blocked,
- * an agent that died, a not-ready re-check, or its entry halting — no issue
- * settles while its slice exists.
+ * one was cut, is torn down first, then the attempt reports how its slice
+ * left it (landed, or the event that ended it) and the halt it called for,
+ * for the drive loop to settle (`commit-queue.ts`). Whatever ended it — a
+ * landing, a stage that blocked, an agent that died, a not-ready re-check,
+ * or its entry halting — no issue settles while its slice exists.
  *
  * **A halting entry stops its attempts** at the next stage boundary, and a
  * queued landing of a halting entry never runs; such an attempt ends with
@@ -98,27 +98,36 @@ export interface EntryContext extends EntrySetup {
   readonly priorSlices: () => readonly PriorSlice[];
 }
 
-/** How an attempt ended, for the drive loop to settle. */
-export interface AttemptEnding {
-  /** What ended it. */
-  readonly primary: SchedulerEvent;
-  /** The halt it called for: its primary `epic-halt`, else its teardown's; `null` for none. */
+/** How an attempt's slice left it: landed on the batch, or not. */
+type SliceOutcome =
+  | {
+      readonly kind: 'landed';
+      /** What the slice produced. */
+      readonly work: SliceWork;
+      /** The batch commit. */
+      readonly commit: string;
+      /** The `land` envelope's `at`; `null` when it had none. */
+      readonly committedAt: string | null;
+      /** `null` unless the `land` envelope carried `files` and `lines`. */
+      readonly size: SliceSize | null;
+    }
+  | {
+      readonly kind: 'unlanded';
+      /** What ended it. */
+      readonly primary: SchedulerEvent;
+      /** A conflicting landing's files; `[]` otherwise. */
+      readonly conflicts: readonly string[];
+    };
+
+/** How an attempt ended, for the drive loop to settle: its slice's outcome, then its teardown's. */
+export type AttemptEnding = SliceOutcome & {
+  /** The halt it called for: an unlanded `epic-halt` primary, else its teardown's; or `null`. */
   readonly halt: EpicHaltEvent | null;
   /** What the teardown left behind; `null` when it was clean or had nothing to tear down. */
   readonly residue: string | null;
-  /** What the slice produced; `null` unless it was authored. */
-  readonly work: SliceWork | null;
-  /** The batch commit; `null` unless it landed. */
-  readonly commit: string | null;
-  /** The files a conflicting landing named; `[]` unless the landing was a harvest conflict. */
-  readonly conflicts: readonly string[];
-  /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut answered with one. */
+  /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut gave one. */
   readonly startedAt: string | null;
-  /** When it landed (the `land` envelope's `at`); `null` unless it landed. */
-  readonly committedAt: string | null;
-  /** Its landed commit's size (the `land` envelope's `files` count and `lines`); `null` unless it landed with both. */
-  readonly size: SliceSize | null;
-}
+};
 
 /** An attempt's note to the drive loop. */
 export type AttemptNote =
@@ -139,8 +148,8 @@ export type AttemptNote =
       readonly ending: AttemptEnding;
     };
 
-/** One attempt: who it is, and what its ending reads, filled in as its stages learn it. */
-interface Attempt {
+/** Who an attempt is — its entry, issue, number and call place; nothing in it changes. */
+interface AttemptId {
   readonly ctx: EntryContext;
   readonly issue: number;
   readonly attempt: number;
@@ -149,25 +158,31 @@ interface Attempt {
   readonly place: ToolPlace;
   /** The files the previous attempt's landing conflicted on; `[]` for none. */
   readonly previousConflicts: readonly string[];
-  /** The slice a cut named, a failed cut's included: what the teardown removes; `null` if none. */
-  slice: string | null;
-  startedAt: string | null;
-  committedAt: string | null;
-  size: SliceSize | null;
-  conflicts: readonly string[];
-  work: SliceWork | null;
-  commit: string | null;
 }
 
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
 type Step<T> = { readonly next: T } | { readonly stop: SchedulerEvent };
 
+/** What a cut named, a failed cut's too: the slice to tear down, and when; `null`s for none. */
+interface CutTrace {
+  readonly slice: string | null;
+  readonly startedAt: string | null;
+}
+
+/** No cut, or one that named nothing: nothing to tear down. */
+const NO_CUT: CutTrace = { slice: null, startedAt: null };
+
 /** A slice the cut made: its attempt, its worktree and the batch commit it was cut at. */
-interface CutSlice {
-  readonly at: Attempt;
+interface CutSlice extends CutTrace {
+  readonly at: AttemptId;
   readonly slice: string;
   readonly base: string;
 }
+
+/** The re-check and cut's answer: the cut slice, or the stop and what the cut named. */
+type Opened =
+  | { readonly next: CutSlice }
+  | { readonly stop: SchedulerEvent; readonly cut: CutTrace };
 
 /** A provisioned slice: the project dir its server-tier runs lease against. */
 interface ProvisionedSlice extends CutSlice {
@@ -179,24 +194,26 @@ interface PlannedSlice extends ProvisionedSlice {
   readonly card: PlanCard;
 }
 
-/** A built slice: the tdd's answer, its commit `tdd.sha`. */
+/** A built slice: the tdd's answer; `sha` its commit. */
 interface BuiltSlice extends PlannedSlice {
   readonly tdd: TddOutput;
+  readonly sha: string;
 }
 
-/**
- * The built slice as the stages after the build read it: its commit, moved
- * by each amend, and each review's answer, `null` until given.
- */
-interface ReviewingSlice extends BuiltSlice {
-  sha: string;
-  diffReview: DiffReviewOutput | null;
-  review: ReviewOutput | null;
-  testReview: TestReviewOutput | null;
+/** A diff-reviewed slice: the diff reviewer's answer. */
+interface DiffReviewedSlice extends BuiltSlice {
+  readonly diffReview: DiffReviewOutput;
 }
 
-/** A stage after the build: `null` to go on, or the event that ends the attempt. */
-type ReviewStage = (s: ReviewingSlice) => Promise<SchedulerEvent | null>;
+/** A reviewed slice: the reviewer's answer; `sha` its amend. */
+interface ReviewedSlice extends DiffReviewedSlice {
+  readonly review: ReviewOutput;
+}
+
+/** An authored slice: the test reviewer's answer, `null` when skipped; `sha` the last amend. */
+interface AuthoredSlice extends ReviewedSlice {
+  readonly testReview: TestReviewOutput | null;
+}
 
 /**
  * Run one attempt of an issue, up to its authored slice; the note for an
@@ -215,84 +232,56 @@ export async function runAttempt(
   attempt: number,
   previousConflicts: readonly string[] = [],
 ): Promise<AttemptNote> {
-  const at = newAttempt(ctx, issue, attempt, previousConflicts);
-  const authored = await authorSlice(at).catch((err: unknown) => ({ stop: stageThrew(at, err) }));
-  if ('stop' in authored) return endAttempt(at, authored.stop);
+  const at = attemptId(ctx, issue, attempt, previousConflicts);
+  const opened = await openSlice(at).catch(
+    (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
+  );
+  if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
+  const cut = opened.next;
+  const authored = await authorSlice(cut).catch((err: unknown) => ({ stop: stageThrew(at, err) }));
+  if ('stop' in authored) return endAttempt(at, cut, notLanded(authored.stop));
   const slice = authored.next;
   const landing = ctx.queue
-    .enqueue(() => landSlice(slice).catch((err: unknown) => landThrew(at, err)))
-    .then((event) => endAttempt(at, event));
+    .enqueue(() => landSlice(slice).catch((err: unknown) => notLanded(landThrew(at, err))))
+    .then((outcome) => endAttempt(at, cut, outcome));
   return { kind: 'authored', issue, landing };
 }
 
-/**
- * A fresh attempt record.
- *
- * @param ctx - The entry.
- * @param issue - The issue.
- * @param attempt - The attempt number.
- * @param previousConflicts - The previous attempt's conflicting files.
- * @returns The record, nothing learnt yet.
- */
-function newAttempt(
+/** Who the attempt is, its tag `<issue>-<attempt>`. */
+function attemptId(
   ctx: EntryContext,
   issue: number,
   attempt: number,
   previousConflicts: readonly string[],
-): Attempt {
+): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return {
-    ctx,
-    issue,
-    attempt,
-    tag,
-    place: runPlace(ctx.reportDir, tag),
-    previousConflicts,
-    slice: null,
-    startedAt: null,
-    committedAt: null,
-    size: null,
-    conflicts: [],
-    work: null,
-    commit: null,
-  };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag), previousConflicts };
 }
 
-/** The stages after the build, in order. */
-const REVIEW_STAGES: readonly ReviewStage[] = [diffReviewStage, reviewStage, testReviewStage];
-
-/**
- * Build the slice, then run the stages after the build; the attempt's `work`
- * is filled in once the slice is authored.
- */
-async function authorSlice(at: Attempt): Promise<Step<ReviewingSlice>> {
-  const built = await buildSlice(at);
-  if ('stop' in built) return built;
-  const s = startReviews(built.next);
-  const stop = await reviewSlice(s);
-  if (stop !== null) return { stop };
-  const { card, tdd, diffReview, review, testReview } = s;
-  if (diffReview === null || review === null) {
-    return { stop: blocked(at, 'authoring left no work') };
-  }
-  at.work = { card, tdd, diffReview, review, testReview };
-  return { next: s };
-}
-
-/** Run the stages from the re-check through the tdd, each at a boundary that sees a halt. */
-async function buildSlice(at: Attempt): Promise<Step<BuiltSlice>> {
+/** Re-check the issue, then cut its slice, each at a boundary that sees a halt. */
+async function openSlice(at: AttemptId): Promise<Opened> {
   const ready = await atBoundary({ next: at }, at, recheckStage);
-  const cut = await atBoundary(ready, at, cutStage);
-  const provisioned = await atBoundary(cut, at, provisionStage);
+  if ('stop' in ready) return { stop: ready.stop, cut: NO_CUT };
+  if (at.ctx.isHalting()) return { stop: haltedStop(at), cut: NO_CUT };
+  return cutStage(at);
+}
+
+/** Run the provision through the test review, each stage at a boundary that sees a halt. */
+async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
+  const { at } = cut;
+  const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const planned = await atBoundary(provisioned, at, planStage);
-  const reviewed = await atBoundary(planned, at, planReviewStage);
-  return atBoundary(reviewed, at, tddStage);
+  const approved = await atBoundary(planned, at, planReviewStage);
+  const built = await atBoundary(approved, at, tddStage);
+  const diffReviewed = await atBoundary(built, at, diffReviewStage);
+  const reviewed = await atBoundary(diffReviewed, at, reviewStage);
+  return atBoundary(reviewed, at, testReviewStage);
 }
 
 /** Pass a stop on; else stop for a halting entry; else run the next stage. */
 async function atBoundary<I, O>(
   step: Step<I>,
-  at: Attempt,
+  at: AttemptId,
   stage: (input: I) => Promise<Step<O>>,
 ): Promise<Step<O>> {
   if ('stop' in step) return step;
@@ -300,23 +289,8 @@ async function atBoundary<I, O>(
   return stage(step.next);
 }
 
-/** The built slice as the reviews start from: its commit the tdd's, no review yet. */
-function startReviews(built: BuiltSlice): ReviewingSlice {
-  return { ...built, sha: built.tdd.sha, diffReview: null, review: null, testReview: null };
-}
-
-/** Run the stages after the build, stopping at the first that ends the attempt or for a halt. */
-async function reviewSlice(s: ReviewingSlice): Promise<SchedulerEvent | null> {
-  for (const stage of REVIEW_STAGES) {
-    if (s.at.ctx.isHalting()) return haltedStop(s.at);
-    const stop = await stage(s);
-    if (stop !== null) return stop;
-  }
-  return null;
-}
-
 /** Re-check the issue is still open and labelled; `label-removed` when not. */
-async function recheckStage(at: Attempt): Promise<Step<Attempt>> {
+async function recheckStage(at: AttemptId): Promise<Step<AttemptId>> {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
   if (out === null) return { stop: died(at) };
   if (out.ready === true) return { next: at };
@@ -327,10 +301,10 @@ async function recheckStage(at: Attempt): Promise<Step<Attempt>> {
 }
 
 /**
- * Cut the attempt's slice from the batch head; a cut that names its slice
- * records it on the attempt for the teardown, even when it fails.
+ * Cut the attempt's slice from the batch head; a stop carries the slice a
+ * failed cut named, for the teardown.
  */
-async function cutStage(at: Attempt): Promise<Step<CutSlice>> {
+async function cutStage(at: AttemptId): Promise<Opened> {
   const argv = [
     at.ctx.batch,
     '--issue',
@@ -340,13 +314,15 @@ async function cutStage(at: Attempt): Promise<Step<CutSlice>> {
     ...attachedRunArgs(at.ctx),
   ];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
-  if (typeof out?.slice === 'string') at.slice = out.slice;
-  if (typeof out?.at === 'string') at.startedAt = out.at;
-  if (out === null) return { stop: died(at) };
-  if (out.status !== 'ok' || typeof out.slice !== 'string' || typeof out.base !== 'string') {
-    return { stop: blocked(at, envelopeProblem('cut-slice', out)) };
+  if (out === null) return { stop: died(at), cut: NO_CUT };
+  const cut: CutTrace = {
+    slice: typeof out.slice === 'string' ? out.slice : null,
+    startedAt: typeof out.at === 'string' ? out.at : null,
+  };
+  if (out.status !== 'ok' || cut.slice === null || typeof out.base !== 'string') {
+    return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
-  return { next: { at, slice: out.slice, base: out.base } };
+  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt } };
 }
 
 /**
@@ -418,7 +394,7 @@ async function tddStage(planned: PlannedSlice): Promise<Step<BuiltSlice>> {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...planned, tdd } };
+  return { next: { ...planned, tdd, sha: tdd.sha } };
 }
 
 /**
@@ -426,7 +402,7 @@ async function tddStage(planned: PlannedSlice): Promise<Step<BuiltSlice>> {
  * issue and plan; the findings go to {@link diffReviewPath} for the reviewer.
  * `agent-died` when the diff reviewer returns nothing.
  */
-async function diffReviewStage(s: ReviewingSlice): Promise<SchedulerEvent | null> {
+async function diffReviewStage(s: BuiltSlice): Promise<Step<DiffReviewedSlice>> {
   const { at } = s;
   const values = {
     ...sliceCommitValues(s),
@@ -434,55 +410,49 @@ async function diffReviewStage(s: ReviewingSlice): Promise<SchedulerEvent | null
     reportDir: at.ctx.reportDir,
   };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
-  if (out === null) return died(at);
-  s.diffReview = out;
-  return null;
+  if (out === null) return { stop: died(at) };
+  return { next: { ...s, diffReview: out } };
 }
 
 /**
  * Review the slice — the diff review's findings verified, its own
- * correctness pass — amending its commit with any fix; the amend moves `sha`.
+ * correctness pass — amending its commit with any fix; its output's `sha` is the amend.
  */
-async function reviewStage(s: ReviewingSlice): Promise<SchedulerEvent | null> {
+async function reviewStage(s: DiffReviewedSlice): Promise<Step<ReviewedSlice>> {
   const { at } = s;
   const values = { ...sliceReviewValues(s, 'review'), findingsPath: diffReviewPath(at) };
   const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return died(at);
-  if (review.verdict === 'blocked') return blocked(at, `review: ${review.summary}`);
-  s.review = review;
-  s.sha = review.sha;
-  return null;
+  if (review === null) return { stop: died(at) };
+  if (review.verdict === 'blocked') return { stop: blocked(at, `review: ${review.summary}`) };
+  return { next: { ...s, review, sha: review.sha } };
 }
 
-/** Harden the tests on the slice's final shape, unless it changes no code; an amend moves `sha`. */
-async function testReviewStage(s: ReviewingSlice): Promise<SchedulerEvent | null> {
+/** Harden the tests on the slice's final shape, unless it changes no code; `sha` its amend. */
+async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
-  if (isTrivialSurface(s.tdd.files)) return null;
+  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  if (out === null) return died(at);
-  if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
-  s.testReview = out;
-  s.sha = out.sha;
-  return null;
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
+  return { next: { ...s, testReview: out, sha: out.sha } };
 }
 
 /**
  * Land the authored slice on the batch — run inside the commit queue — its
  * message file first rewritten with the tdd's salvage.
  *
- * @param s - The authored slice; its attempt gains `commit`, `committedAt`
- *   and `size` when it lands (`size` stays `null` when the envelope's
- *   `lines` is), `conflicts` when it conflicts.
- * @returns Resolves to the landing's event (`commit-queue.ts`), or
- *   `epic-halt` without landing when the entry is halting.
+ * @returns Resolves to the slice's outcome: `landed` with the commit, its
+ *   instant and size (`null` when the envelope's `lines` is), or `unlanded`
+ *   with the landing's event (`commit-queue.ts`) — `epic-halt` without
+ *   landing when the entry is halting.
  */
-async function landSlice(s: ReviewingSlice): Promise<SchedulerEvent> {
+async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const { at } = s;
-  if (at.ctx.isHalting()) return haltedStop(at);
+  if (at.ctx.isHalting()) return notLanded(haltedStop(at));
   const argv = [
     at.ctx.batch,
     s.sha,
@@ -498,16 +468,26 @@ async function landSlice(s: ReviewingSlice): Promise<SchedulerEvent> {
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
-  if (event.kind === 'committed') {
-    at.commit = out?.commit ?? null;
-    at.committedAt = out?.at ?? null;
-    at.size =
-      typeof out?.lines === 'number' && out.files !== undefined
-        ? { files: out.files.length, lines: out.lines }
-        : null;
+  if (event.kind === 'committed' && typeof out?.commit === 'string') {
+    const { card, tdd, diffReview, review, testReview } = s;
+    return {
+      kind: 'landed',
+      work: { card, tdd, diffReview, review, testReview },
+      commit: out.commit,
+      committedAt: out.at ?? null,
+      size:
+        typeof out.lines === 'number' && out.files !== undefined
+          ? { files: out.files.length, lines: out.lines }
+          : null,
+    };
   }
-  if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
-  return event;
+  const conflicts = event.kind === 'harvest-conflict' ? (out?.conflicts ?? []) : [];
+  return { kind: 'unlanded', primary: event, conflicts };
+}
+
+/** The outcome of a slice that did not land, `primary` ending it. */
+function notLanded(primary: SchedulerEvent): SliceOutcome {
+  return { kind: 'unlanded', primary, conflicts: [] };
 }
 
 /**
@@ -519,7 +499,7 @@ async function landSlice(s: ReviewingSlice): Promise<SchedulerEvent> {
  * @param err - The throw.
  * @returns `epic-halt`, naming it.
  */
-function landThrew(at: Attempt, err: unknown): SchedulerEvent {
+function landThrew(at: AttemptId, err: unknown): SchedulerEvent {
   at.ctx.markHalting();
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: `land threw: ${errorText(err)}` };
 }
@@ -529,26 +509,30 @@ function landThrew(at: Attempt, err: unknown): SchedulerEvent {
  * rejects is read as the runner returning nothing — residue, not a halt.
  *
  * @param at - The attempt.
- * @param primary - What ended it.
+ * @param cut - What the cut named: the slice the teardown removes, and `startedAt`.
+ * @param outcome - How the slice left the attempt.
  * @returns Resolves to the `ended` note; never rejects.
  */
-async function endAttempt(at: Attempt, primary: SchedulerEvent): Promise<AttemptNote> {
+async function endAttempt(
+  at: AttemptId,
+  cut: CutTrace,
+  outcome: SliceOutcome,
+): Promise<AttemptNote> {
   const teardown =
-    at.slice === null
+    cut.slice === null
       ? null
-      : await runTool(at.ctx.hooks, 'teardown', [at.slice], at.place).catch(() => null);
+      : await runTool(at.ctx.hooks, 'teardown', [cut.slice], at.place).catch(() => null);
   const teardownHalt = teardownEvent(teardown, at.ctx.epic);
   if (teardownHalt !== null) at.ctx.markHalting();
+  const halt =
+    outcome.kind === 'unlanded' && outcome.primary.kind === 'epic-halt'
+      ? outcome.primary
+      : teardownHalt;
   const ending: AttemptEnding = {
-    primary,
-    halt: primary.kind === 'epic-halt' ? primary : teardownHalt,
-    residue: at.slice === null ? null : teardownResidue(teardown),
-    work: at.work,
-    commit: at.commit,
-    conflicts: at.conflicts,
-    startedAt: at.startedAt,
-    committedAt: at.committedAt,
-    size: at.size,
+    ...outcome,
+    halt,
+    residue: cut.slice === null ? null : teardownResidue(teardown),
+    startedAt: cut.startedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
@@ -606,7 +590,7 @@ function leaseValues(s: ProvisionedSlice): LeaseValues {
  * @returns The issue, the slice, its base and plan, the current commit and
  *   the tdd's changed paths.
  */
-function sliceCommitValues(s: ReviewingSlice): SliceCommitValues {
+function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   return {
     issue: s.at.issue,
     slice: s.slice,
@@ -624,7 +608,7 @@ function sliceCommitValues(s: ReviewingSlice): SliceCommitValues {
  * @returns The values, the slice's lease recipe ({@link leaseValues}) among
  *   them.
  */
-function sliceReviewValues(s: ReviewingSlice, report: string): SliceReviewValues {
+function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
   return {
     ...sliceCommitValues(s),
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
@@ -638,7 +622,7 @@ function sliceReviewValues(s: ReviewingSlice, report: string): SliceReviewValues
  * @param at - The attempt.
  * @returns `<reportDir>/plans/<issue>.md`.
  */
-function planPath(at: Attempt): string {
+function planPath(at: AttemptId): string {
   return `${at.ctx.reportDir}/plans/${String(at.issue)}.md`;
 }
 
@@ -648,7 +632,7 @@ function planPath(at: Attempt): string {
  * @param at - The attempt.
  * @returns `<reportDir>/commit-<issue>-<attempt>.txt`.
  */
-function messagePath(at: Attempt): string {
+function messagePath(at: AttemptId): string {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
 }
 
@@ -659,7 +643,7 @@ function messagePath(at: Attempt): string {
  * @param at - The attempt.
  * @returns `<reportDir>/diff-review-<issue>-<attempt>.md`.
  */
-function diffReviewPath(at: Attempt): string {
+function diffReviewPath(at: AttemptId): string {
   return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
 
@@ -669,7 +653,7 @@ function diffReviewPath(at: Attempt): string {
  * @param at - The attempt.
  * @returns `epic-halt` for the entry.
  */
-function haltedStop(at: Attempt): SchedulerEvent {
+function haltedStop(at: AttemptId): SchedulerEvent {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };
 }
 
@@ -679,7 +663,7 @@ function haltedStop(at: Attempt): SchedulerEvent {
  * @param at - The attempt.
  * @returns `agent-died`.
  */
-function died(at: Attempt): SchedulerEvent {
+function died(at: AttemptId): SchedulerEvent {
   return { kind: 'agent-died', issue: at.issue };
 }
 
@@ -690,7 +674,7 @@ function died(at: Attempt): SchedulerEvent {
  * @param reason - Why.
  * @returns `blocked`.
  */
-function blocked(at: Attempt, reason: string): SchedulerEvent {
+function blocked(at: AttemptId, reason: string): SchedulerEvent {
   return { kind: 'blocked', issue: at.issue, reason };
 }
 
@@ -701,7 +685,7 @@ function blocked(at: Attempt, reason: string): SchedulerEvent {
  * @param err - The throw.
  * @returns `blocked`, naming it.
  */
-function stageThrew(at: Attempt, err: unknown): SchedulerEvent {
+function stageThrew(at: AttemptId, err: unknown): SchedulerEvent {
   return blocked(at, `a stage threw: ${errorText(err)}`);
 }
 

@@ -92,6 +92,12 @@ type Note =
 /** An issue's final attempt, as its schedule reports it. */
 type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt' | 'size'>;
 
+/** What settling reads of an ending, by its kind. */
+interface EndingFacts extends Pick<Timing, 'committedAt' | 'size'> {
+  readonly primary: SchedulerEvent;
+  readonly conflicts: readonly string[];
+}
+
 /** The loop's state. */
 interface Drive {
   readonly input: DriveInput;
@@ -215,22 +221,43 @@ function onNote(d: Drive, note: Note): void {
 function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const { events, entry } = settleEvents(ending.primary, ending.halt, {
+  const { primary, conflicts, committedAt, size } = endingFacts(issue, ending);
+  const { events, entry } = settleEvents(primary, ending.halt, {
     issue,
     epic,
     entry: haltOf(d, i),
   });
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.conflicts.set(issue, ending.conflicts);
+  d.conflicts.set(issue, conflicts);
   d.timing.set(issue, {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
-    committedAt: ending.committedAt,
-    size: ending.size,
+    committedAt,
+    size,
   });
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+
+/** What settling reads of an ending; a `landed` one's primary is `committed`. */
+function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
+  switch (ending.kind) {
+    case 'landed':
+      return {
+        primary: { kind: 'committed', issue },
+        conflicts: [],
+        committedAt: ending.committedAt,
+        size: ending.size,
+      };
+    case 'unlanded':
+      return {
+        primary: ending.primary,
+        conflicts: ending.conflicts,
+        committedAt: null,
+        size: null,
+      };
+  }
 }
 
 /**
@@ -250,36 +277,50 @@ function record(
   ending: AttemptEnding,
   events: readonly SchedulerEvent[],
 ): void {
-  const { work, commit } = ending;
-  if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
-    d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
-    return;
+  const committed = events.some((e) => e.kind === 'committed');
+  if (ending.kind === 'landed' && committed) {
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
   }
-  const report = unlandedOutcome(issue, ending, haltOf(d, i) === 'halted');
+  const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
 
 /**
- * An attempt's outcome for an issue that did not land now.
+ * An attempt's outcome for its issue, `committed` whether its settle events
+ * hold one; `null` when the issue restarts ({@link unlandedOutcome}).
+ */
+function issueOutcome(
+  issue: number,
+  ending: AttemptEnding,
+  committed: boolean,
+  halted: boolean,
+): IssueReport | null {
+  switch (ending.kind) {
+    case 'landed':
+      return committed
+        ? { issue, outcome: 'landed', cite: ending.work.card.closes, commit: ending.commit }
+        : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
+    case 'unlanded':
+      return unlandedOutcome(issue, ending.primary, halted);
+  }
+}
+
+/**
+ * An attempt's outcome for an issue whose slice did not land.
  *
  * @param issue - The issue.
- * @param ending - How the attempt ended.
+ * @param primary - What ended the attempt.
  * @param halted - Whether its entry is halted.
- * @returns `landed-then-halted`, `halted`, `blocked` or `removed`; `null`
- *   when the issue restarts (`harvest-conflict`, a first `agent-died`) —
- *   the scheduler's `block` records a second death.
+ * @returns `halted`, `blocked` or `removed`; `null` when the issue restarts
+ *   (`harvest-conflict`, a first `agent-died`) — the scheduler's `block`
+ *   records a second death.
  */
 function unlandedOutcome(
   issue: number,
-  ending: AttemptEnding,
+  primary: SchedulerEvent,
   halted: boolean,
 ): IssueReport | null {
-  const { primary, commit } = ending;
   const reason = 'reason' in primary ? primary.reason : undefined;
-  if (primary.kind === 'committed' && commit !== null) {
-    return { issue, outcome: 'landed-then-halted', cite: 'see', commit };
-  }
   if (halted)
     return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
   if (primary.kind === 'blocked')

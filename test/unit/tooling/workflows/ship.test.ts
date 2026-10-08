@@ -12,6 +12,7 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
   BATCH,
+  DIFF_REVIEW_OK,
   fakeHooks,
   GATE_OK,
   inTurn,
@@ -1090,6 +1091,154 @@ describe('runShip — an attempt through the build', () => {
   });
 });
 
+const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):/;
+const UP_TO_REVIEW = ['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1'];
+const UP_TO_LAND = [...UP_TO_REVIEW, 'testReview:7-1', 'runner:land:7-1'];
+const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
+  [
+    'blocked by the reviewer',
+    {
+      reviewer: {
+        verdict: 'blocked',
+        sha: '',
+        summary: 'the fix needs a design call',
+        leaseLines: [],
+      },
+    },
+    [...UP_TO_REVIEW, 'runner:teardown:7-1'],
+    'review: the fix needs a design call',
+  ],
+  [
+    'blocked by a reviewer that threw',
+    {
+      reviewer: () => {
+        throw new Error('runtime crashed');
+      },
+    },
+    [...UP_TO_REVIEW, 'runner:teardown:7-1'],
+    'a stage threw: runtime crashed',
+  ],
+  [
+    'blocked by the test reviewer',
+    {
+      testReview: {
+        verdict: 'blocked',
+        sha: '',
+        survivors: 0,
+        summary: 'a test cannot be made to fail',
+        leaseLines: [],
+      },
+    },
+    [...UP_TO_REVIEW, 'testReview:7-1', 'runner:teardown:7-1'],
+    'test review: a test cannot be made to fail',
+  ],
+  [
+    'blocked by a landing refused as more than one commit',
+    {
+      'runner:land': {
+        ...LAND_OK,
+        status: 'refused',
+        reason: 'slice-not-single-commit',
+        commit: null,
+        errors: [{ step: 'preconditions', message: 'the slice is 2 commits' }],
+      },
+    },
+    [...UP_TO_LAND, 'runner:teardown:7-1'],
+    'land refused (slice-not-single-commit): the slice is 2 commits',
+  ],
+  [
+    'blocked by a landing whose build rolled back',
+    {
+      'runner:land': {
+        ...LAND_OK,
+        status: 'failed',
+        commit: null,
+        rolledBack: true,
+        errors: [{ step: 'build', message: 'tsc failed' }],
+      },
+    },
+    [...UP_TO_LAND, 'runner:teardown:7-1'],
+    'land failed: tsc failed',
+  ],
+];
+
+describe('runShip — an attempt after the build', () => {
+  it.each(AFTER_BUILD_ENDINGS)(
+    'ends the attempt %s, its slice torn down, nothing landed',
+    async (_name, responses, calls, reason) => {
+      const run = fakeHooks(responses);
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run).filter((l) => AFTER_BUILD_CALL.test(l))).toEqual(calls);
+      expect(report.epics[0]).toMatchObject({
+        outcome: 'nothing-landed',
+        issues: [{ issue: 7, outcome: 'blocked', cite: 'see', reason }],
+        schedule: [
+          {
+            issue: 7,
+            attempts: 1,
+            startedAt: '2026-09-29T10:00:00.000Z',
+            committedAt: null,
+            size: null,
+          },
+        ],
+      });
+    },
+  );
+
+  it.each(['reviewer', 'testReview'])(
+    'retries the issue in a fresh slice when the %s returns nothing, then blocks it',
+    async (agent) => {
+      const run = fakeHooks({ [agent]: null });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(
+        labels(run).filter((l) =>
+          new RegExp(`^(runner:(cut-slice|land|teardown)|${agent}):`).test(l),
+        ),
+      ).toEqual([
+        'runner:cut-slice:7-1',
+        `${agent}:7-1`,
+        'runner:teardown:7-1',
+        'runner:cut-slice:7-2',
+        `${agent}:7-2`,
+        'runner:teardown:7-2',
+      ]);
+      expect(report.epics[0]).toMatchObject({
+        outcome: 'nothing-landed',
+        issues: [
+          { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+        ],
+        schedule: [{ issue: 7, attempts: 2, committedAt: null, size: null }],
+      });
+    },
+  );
+
+  it('halts the entry when the land call throws: teardown, epic-halt then blocked, the issue halted', async () => {
+    const run = fakeHooks({
+      'runner:land': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(when(run, 'call runner:land:7-1')).toBeLessThan(when(run, 'call runner:teardown:7-1'));
+    expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(
+      when(run, 'log fed epic-halt the issue list'),
+    );
+    expect(when(run, 'log fed epic-halt the issue list')).toBeLessThan(
+      when(run, 'log fed blocked #7'),
+    );
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      issues: [{ issue: 7, outcome: 'halted', cite: 'see', reason: 'land threw: runner crashed' }],
+    });
+  });
+});
+
 describe('runShip — what an attempt hands on', () => {
   it.each([
     ['fixes', 'fixes #7'],
@@ -1508,6 +1657,31 @@ describe('runShip — a halting entry', () => {
     });
   });
 
+  it('runs no queued landing of the entry after a land call that throws', async () => {
+    const run = fakeHooks({
+      'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
+      scout: {
+        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+        overlaps: [],
+      },
+      'runner:land': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(labels(run).filter((l) => l.startsWith('tdd'))).toEqual(['tdd:7-1', 'tdd:8-1']);
+    expect(labels(run).filter((l) => l.startsWith('runner:land'))).toEqual(['runner:land:7-1']);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      issues: [
+        { issue: 7, outcome: 'halted', cite: 'see', reason: 'land threw: runner crashed' },
+        { issue: 8, outcome: 'halted', cite: 'see', reason: 'its epic halted' },
+      ],
+    });
+  });
+
   it('reports a landing its teardown halts landed-then-halted, with its commit, and no epic end', async () => {
     const run = fakeHooks({ 'runner:teardown': TEARDOWN_SHRANK });
 
@@ -1631,7 +1805,7 @@ describe('runShip — a halting entry', () => {
   });
 });
 
-describe('runAttempt — the halt it calls for', () => {
+describe('runAttempt — how an attempt ends', () => {
   const entry = (run: FakeRun, halting: boolean): Parameters<typeof runAttempt>[0] => ({
     epic: null,
     tag: 'list',
@@ -1648,6 +1822,76 @@ describe('runAttempt — the halt it calls for', () => {
     markHalting: () => undefined,
     priorSlices: () => [],
   });
+  const ENDINGS: [string, Readonly<Record<string, unknown>>, Readonly<Record<string, unknown>>][] =
+    [
+      [
+        'landed',
+        {},
+        {
+          kind: 'landed',
+          work: {
+            card: PLAN_CARD,
+            tdd: TDD_GREEN,
+            diffReview: DIFF_REVIEW_OK,
+            review: {
+              verdict: 'fixed',
+              sha: 'slice2',
+              summary: 'renamed a helper',
+              leaseLines: [],
+            },
+            testReview: {
+              verdict: 'hardened',
+              sha: 'slice3',
+              survivors: 0,
+              summary: 'pinned a bound',
+              leaseLines: [],
+            },
+          },
+          commit: 'landed1',
+          committedAt: LAND_OK.at,
+          size: { files: 2, lines: 40 },
+          halt: null,
+          residue: null,
+          startedAt: '2026-09-29T10:00:00.000Z',
+        },
+      ],
+      [
+        'conflicted on landing',
+        { 'runner:land': LAND_CONFLICT },
+        {
+          kind: 'unlanded',
+          primary: { kind: 'harvest-conflict', issue: 7 },
+          conflicts: ['tooling/x.ts'],
+          halt: null,
+          residue: null,
+          startedAt: '2026-09-29T10:00:00.000Z',
+        },
+      ],
+      [
+        'failed its cut, naming its slice',
+        { 'runner:cut-slice': CUT_FAILED },
+        {
+          kind: 'unlanded',
+          primary: { kind: 'blocked', issue: 7, reason: 'cut-slice failed: worktree add failed' },
+          conflicts: [],
+          halt: null,
+          residue: null,
+          startedAt: '2026-09-29T10:00:00.000Z',
+        },
+      ],
+    ];
+
+  it.each(ENDINGS)(
+    'ends an attempt that %s with exactly its kind’s fields',
+    async (_name, responses, ending) => {
+      const run = fakeHooks(responses);
+
+      const note = await runAttempt(entry(run, false), 7, 1);
+      const end = note.kind === 'authored' ? await note.landing : note;
+
+      expect(end).toEqual({ kind: 'ended', issue: 7, ending });
+    },
+  );
 
   it('stops an attempt of a halting entry at its first stage boundary, before the re-check', async () => {
     const run = fakeHooks();
