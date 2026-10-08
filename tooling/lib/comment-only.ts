@@ -49,15 +49,8 @@ export interface CommentOnlyReport {
 
 const USAGE = 'usage: comment-only [<base> | <base>..<head>]';
 
-/**
- * Tokenise a TypeScript source as the parser reads it, comments dropped.
- *
- * @param fileName - Name the parser is given; its extension picks the script kind.
- * @param source - The file's text; `''` stands for an absent file. CRLF reads as LF, as a
- *   template literal reads it, so a CRLF checkout matches its LF blob.
- * @returns The code tokens in source order, always ending in `EndOfFileToken`.
- */
-export function codeTokens(fileName: string, source: string): CodeToken[] {
+/** CRLF reads as LF, as a template literal reads it, so a CRLF checkout matches its LF blob. */
+function codeTokens(fileName: string, source: string): CodeToken[] {
   const lf = source.replaceAll('\r\n', '\n');
   const sf = ts.createSourceFile(fileName, lf, ts.ScriptTarget.Latest, false);
   const tokens: CodeToken[] = [];
@@ -142,9 +135,8 @@ export function parseRevisions(args: readonly string[]): Revisions {
   return { base, head };
 }
 
-const TYPESCRIPT = /\.m?ts$/u;
-
-const isTypeScript = (path: string | null): boolean => path !== null && TYPESCRIPT.test(path);
+const isCompared = (c: FileChange): boolean =>
+  [c.basePath, c.headPath].some((p) => p !== null && /\.m?ts$/u.test(p));
 
 /**
  * Prove every changed TypeScript file between two revisions — or a revision
@@ -162,8 +154,6 @@ const isTypeScript = (path: string | null): boolean => path !== null && TYPESCRI
 export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnlyReport {
   const top = git(cwd, ['rev-parse', '--show-toplevel'], 'toplevel');
   const changes = changedFiles(top, revisions);
-  const isCompared = (c: FileChange): boolean =>
-    isTypeScript(c.basePath) || isTypeScript(c.headPath);
   const notCompared = changes.filter((c) => !isCompared(c)).map(displayPath);
   let compared = 0;
   for (const change of changes.filter(isCompared)) {

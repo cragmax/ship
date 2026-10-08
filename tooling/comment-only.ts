@@ -9,6 +9,7 @@
  */
 
 import { formatDifference, parseRevisions, proveCommentOnly } from './lib/comment-only.js';
+import { describeError } from './lib/describe-error.js';
 import { StepFailure } from './worktree/types.js';
 
 function main(): void {
@@ -25,8 +26,7 @@ function main(): void {
     );
   } catch (error) {
     const detail = error instanceof StepFailure && error.detail ? `\n${error.detail}` : '';
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`comment-only: ${message}${detail}\n`);
+    process.stderr.write(`comment-only: ${describeError(error)}${detail}\n`);
     process.exitCode = 2;
   }
 }
