@@ -285,6 +285,38 @@ describe('runShip — issues in flight at once', () => {
     });
   });
 
+  const UP_TO_CUT = ['runner:check:8-1', 'runner:cut-slice:8-1'];
+  const UP_TO_PLAN = [...UP_TO_CUT, 'runner:provision:8-1', 'planner:8-1'];
+  it.each<[string, string[]]>([
+    ['runner:check:8-1', ['runner:check:8-1']],
+    ['runner:cut-slice:8-1', [...UP_TO_CUT, 'runner:teardown:8-1']],
+    ['runner:provision:8-1', [...UP_TO_CUT, 'runner:provision:8-1', 'runner:teardown:8-1']],
+    ['planner:8-1', [...UP_TO_PLAN, 'runner:teardown:8-1']],
+    ['planReviewer:8-1', [...UP_TO_PLAN, 'planReviewer:8-1', 'runner:teardown:8-1']],
+  ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
+    const hold = holdable(new RegExp(`^${stage}$`));
+    const run = fakeHooks(
+      { ...list([7, 8]), 'runner:land': LAND_BATCH_DIRTY },
+      { gate: hold.gate },
+    );
+
+    const done = runShip(run.hooks, 'issues 7 8');
+    await idle();
+    expect(hold.held()).toEqual([stage]);
+    expect(run.timeline).toContain('log fed epic-halt the issue list');
+    hold.releaseAll();
+    const report = await done;
+
+    expect(labels(run).filter((l) => l.endsWith(':8-1'))).toEqual(calls);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      issues: [
+        { issue: 7, outcome: 'halted', cite: 'see' },
+        { issue: 8, outcome: 'halted', cite: 'see', reason: 'its epic halted' },
+      ],
+    });
+  });
+
   it('reports each issue’s schedule: blockers, attempts, and the final attempt’s cut and land instants', async () => {
     const cutAt = (call: RecordedCall): unknown => ({
       ...CUT_OK,

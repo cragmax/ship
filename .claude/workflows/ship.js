@@ -2682,10 +2682,11 @@ function bumpText(bump) {
 
 async function runAttempt(ctx, issue, attempt, previousConflicts = []) {
   const at = newAttempt(ctx, issue, attempt, previousConflicts);
-  const stop = await authorSlice(at).catch((err) => stageThrew(at, err));
-  if (stop !== null) return endAttempt(at, stop);
+  const authored = await authorSlice(at).catch((err) => ({ stop: stageThrew(at, err) }));
+  if ('stop' in authored) return endAttempt(at, authored.stop);
+  const slice = authored.next;
   const landing = ctx.queue
-    .enqueue(() => landSlice(at).catch((err) => landThrew(at, err)))
+    .enqueue(() => landSlice(slice).catch((err) => landThrew(at, err)))
     .then((event) => endAttempt(at, event));
   return { kind: 'authored', issue, landing };
 }
@@ -2703,47 +2704,56 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     committedAt: null,
     size: null,
     conflicts: [],
-    base: '',
-    projectDir: '',
-    sha: '',
-    card: null,
-    tdd: null,
-    diffReview: null,
-    review: null,
-    testReview: null,
     work: null,
     commit: null,
   };
 }
-const AUTHOR_STAGES = [
-  recheckStage,
-  cutStage,
-  provisionStage,
-  planStage,
-  planReviewStage,
-  tddStage,
-  diffReviewStage,
-  reviewStage,
-  testReviewStage,
-];
+const REVIEW_STAGES = [diffReviewStage, reviewStage, testReviewStage];
 async function authorSlice(at) {
-  for (const stage of AUTHOR_STAGES) {
-    if (at.ctx.isHalting()) return haltedStop(at);
-    const stop = await stage(at);
+  const built = await buildSlice(at);
+  if ('stop' in built) return built;
+  const s = startReviews(built.next);
+  const stop = await reviewSlice(s);
+  if (stop !== null) return { stop };
+  const { card, tdd, diffReview, review, testReview } = s;
+  if (diffReview === null || review === null) {
+    return { stop: blocked(at, 'authoring left no work') };
+  }
+  at.work = { card, tdd, diffReview, review, testReview };
+  return { next: s };
+}
+async function buildSlice(at) {
+  const ready = await atBoundary({ next: at }, at, recheckStage);
+  const cut = await atBoundary(ready, at, cutStage);
+  const provisioned = await atBoundary(cut, at, provisionStage);
+  const planned = await atBoundary(provisioned, at, planStage);
+  const reviewed = await atBoundary(planned, at, planReviewStage);
+  return atBoundary(reviewed, at, tddStage);
+}
+async function atBoundary(step, at, stage) {
+  if ('stop' in step) return step;
+  if (at.ctx.isHalting()) return { stop: haltedStop(at) };
+  return stage(step.next);
+}
+function startReviews(built) {
+  return { ...built, sha: built.tdd.sha, diffReview: null, review: null, testReview: null };
+}
+async function reviewSlice(s) {
+  for (const stage of REVIEW_STAGES) {
+    if (s.at.ctx.isHalting()) return haltedStop(s.at);
+    const stop = await stage(s);
     if (stop !== null) return stop;
   }
-  const { card, tdd, diffReview, review, testReview } = at;
-  if (card === null || tdd === null || diffReview === null || review === null)
-    return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, diffReview, review, testReview };
   return null;
 }
 async function recheckStage(at) {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
-  if (out === null) return died(at);
-  if (out.ready === true) return null;
-  if (out.ready === false) return { kind: 'label-removed', issue: at.issue };
-  return blocked(at, `check gave no verdict: ${out.stderrTail ?? `exit ${String(out.exitCode)}`}`);
+  if (out === null) return { stop: died(at) };
+  if (out.ready === true) return { next: at };
+  if (out.ready === false) return { stop: { kind: 'label-removed', issue: at.issue } };
+  return {
+    stop: blocked(at, `check gave no verdict: ${out.stderrTail ?? `exit ${String(out.exitCode)}`}`),
+  };
 }
 async function cutStage(at) {
   const argv = [
@@ -2757,117 +2767,119 @@ async function cutStage(at) {
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
   if (typeof out?.slice === 'string') at.slice = out.slice;
   if (typeof out?.at === 'string') at.startedAt = out.at;
-  if (out === null) return died(at);
-  if (out.status !== 'ok' || at.slice === null || typeof out.base !== 'string') {
-    return blocked(at, envelopeProblem('cut-slice', out));
+  if (out === null) return { stop: died(at) };
+  if (out.status !== 'ok' || typeof out.slice !== 'string' || typeof out.base !== 'string') {
+    return { stop: blocked(at, envelopeProblem('cut-slice', out)) };
   }
-  at.base = out.base;
-  return null;
+  return { next: { at, slice: out.slice, base: out.base } };
 }
 function attachedRunArgs(entry) {
   return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
 }
-async function provisionStage(at) {
-  const argv = [at.slice ?? '', '--batch', at.ctx.batch, '--server'];
+async function provisionStage(cut) {
+  const { at } = cut;
+  const argv = [cut.slice, '--batch', at.ctx.batch, '--server'];
   const out = await runTool(at.ctx.hooks, 'provision', argv, at.place);
-  if (out === null) return died(at);
+  if (out === null) return { stop: died(at) };
   const projectDir = out.env?.PH_PROJECT_DIR;
   if (out.status !== 'ok' || typeof projectDir !== 'string') {
-    return blocked(at, envelopeProblem('provision', out));
+    return { stop: blocked(at, envelopeProblem('provision', out)) };
   }
-  at.projectDir = projectDir;
-  return null;
+  return { next: { ...cut, projectDir } };
 }
-async function planStage(at) {
-  const card = await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(at, 'plan'), at.tag);
-  return acceptCard(at, card);
+async function planStage(s) {
+  const { at } = s;
+  return acceptCard(s, await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(s, 'plan'), at.tag));
 }
-async function planReviewStage(at) {
+async function planReviewStage(planned) {
+  const { at } = planned;
   const values = {
     issue: at.issue,
-    slice: at.slice ?? '',
+    slice: planned.slice,
     planPath: planPath(at),
     findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
     reportDir: at.ctx.reportDir,
   };
   const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return died(at);
-  if (review.findings === 0) return null;
+  if (review === null) return { stop: died(at) };
+  if (review.findings === 0) return { next: planned };
   const applied = await AGENT_CALLS.planner(
     at.ctx.hooks,
-    plannerValues(at, 'apply', review.findingsPath),
+    plannerValues(planned, 'apply', review.findingsPath),
     at.tag,
   );
-  return acceptCard(at, applied);
+  return acceptCard(planned, applied);
 }
-async function tddStage(at) {
-  const card = requireCard(at);
+async function tddStage(planned) {
+  const { at } = planned;
   const values = {
     issue: at.issue,
     attempt: at.attempt,
-    slice: at.slice ?? '',
-    base: at.base,
+    slice: planned.slice,
+    base: planned.base,
     planPath: planPath(at),
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
-    message: commitMessage(at.issue, card),
-    lease: leaseValues(at),
+    message: commitMessage(at.issue, planned.card),
+    lease: leaseValues(planned),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
-  if (tdd === null) return died(at);
+  if (tdd === null) return { stop: died(at) };
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
-    return blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`);
+    return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  at.tdd = tdd;
-  at.sha = tdd.sha;
-  return null;
+  return { next: { ...planned, tdd } };
 }
-async function diffReviewStage(at) {
+async function diffReviewStage(s) {
+  const { at } = s;
   const values = {
-    ...sliceCommitValues(at),
+    ...sliceCommitValues(s),
     findingsPath: diffReviewPath(at),
     reportDir: at.ctx.reportDir,
   };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
   if (out === null) return died(at);
-  at.diffReview = out;
+  s.diffReview = out;
   return null;
 }
-async function reviewStage(at) {
-  const values = { ...sliceReviewValues(at, 'review'), findingsPath: diffReviewPath(at) };
+async function reviewStage(s) {
+  const { at } = s;
+  const values = { ...sliceReviewValues(s, 'review'), findingsPath: diffReviewPath(at) };
   const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
   if (review === null) return died(at);
   if (review.verdict === 'blocked') return blocked(at, `review: ${review.summary}`);
-  at.review = review;
-  at.sha = review.sha;
+  s.review = review;
+  s.sha = review.sha;
   return null;
 }
-async function testReviewStage(at) {
-  if (isTrivialSurface(at.tdd?.files ?? [])) return null;
+async function testReviewStage(s) {
+  const { at } = s;
+  if (isTrivialSurface(s.tdd.files)) return null;
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
-    sliceReviewValues(at, 'test-review'),
+    sliceReviewValues(s, 'test-review'),
     at.tag,
   );
   if (out === null) return died(at);
   if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
-  at.testReview = out;
-  at.sha = out.sha;
+  s.testReview = out;
+  s.sha = out.sha;
   return null;
 }
-async function landSlice(at) {
+async function landSlice(s) {
+  const { at } = s;
   if (at.ctx.isHalting()) return haltedStop(at);
   const argv = [
     at.ctx.batch,
-    at.sha,
+    s.sha,
     '--base',
-    at.base,
+    s.base,
     '--message-file',
     messagePath(at),
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const message = commitMessage(at.issue, requireCard(at), at.tdd?.salvage);
+  const message = commitMessage(at.issue, s.card, s.tdd.salvage);
   const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
@@ -2907,44 +2919,46 @@ async function endAttempt(at, primary) {
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
-function acceptCard(at, card) {
-  if (card === null) return died(at);
-  if (card.verdict !== 'plan') return blocked(at, `planner ${card.verdict}: ${card.evidence}`);
-  at.card = card;
-  return null;
+function acceptCard(s, card) {
+  if (card === null) return { stop: died(s.at) };
+  if (card.verdict !== 'plan') {
+    return { stop: blocked(s.at, `planner ${card.verdict}: ${card.evidence}`) };
+  }
+  return { next: { ...s, card } };
 }
-function plannerValues(at, mode, findingsPath) {
+function plannerValues(s, mode, findingsPath) {
+  const { at } = s;
   return {
     mode,
     issue: at.issue,
     attempt: at.attempt,
-    slice: at.slice ?? '',
+    slice: s.slice,
     reportDir: at.ctx.reportDir,
     planPath: planPath(at),
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
     ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
-    lease: leaseValues(at),
+    lease: leaseValues(s),
   };
 }
-function leaseValues(at) {
-  return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
+function leaseValues(s) {
+  return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
 }
-function sliceCommitValues(at) {
+function sliceCommitValues(s) {
   return {
-    issue: at.issue,
-    slice: at.slice ?? '',
-    base: at.base,
-    planPath: planPath(at),
-    sha: at.sha,
-    files: at.tdd?.files ?? [],
+    issue: s.at.issue,
+    slice: s.slice,
+    base: s.base,
+    planPath: planPath(s.at),
+    sha: s.sha,
+    files: s.tdd.files,
   };
 }
-function sliceReviewValues(at, report) {
+function sliceReviewValues(s, report) {
   return {
-    ...sliceCommitValues(at),
-    reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
-    lease: leaseValues(at),
+    ...sliceCommitValues(s),
+    reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
+    lease: leaseValues(s),
   };
 }
 function planPath(at) {
@@ -2955,10 +2969,6 @@ function messagePath(at) {
 }
 function diffReviewPath(at) {
   return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
-}
-function requireCard(at) {
-  if (at.card === null) throw new Error('ship: the tdd stage ran without a plan card');
-  return at.card;
 }
 function haltedStop(at) {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };

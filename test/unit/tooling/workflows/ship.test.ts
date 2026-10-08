@@ -949,6 +949,147 @@ describe('runShip — an attempt that does not land', () => {
   });
 });
 
+const SLICE_7 = 'C:/src/ph-runs/7/slice-7-1';
+const CUT_FAILED = {
+  exitCode: 1,
+  envelopePath: 'e.json',
+  status: 'failed',
+  branch: 'slice/7/7-1',
+  base: null,
+  slice: SLICE_7,
+  at: '2026-09-29T10:00:00.000Z',
+  errors: [{ step: 'worktree', message: 'worktree add failed' }],
+};
+const UP_TO_PLAN = [
+  'runner:check:7-1',
+  'runner:cut-slice:7-1',
+  'runner:provision:7-1',
+  'planner:7-1',
+];
+const BUILD_CALL =
+  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):/;
+const BUILD_ENDINGS: [
+  string,
+  Readonly<Record<string, unknown>>,
+  string[],
+  Readonly<Record<string, unknown>>,
+][] = [
+  [
+    'not ready at the re-check',
+    {
+      'runner:check': { exitCode: 1, envelopePath: 'e.json', issue: 7, ready: false, failures: [] },
+    },
+    ['runner:check:7-1'],
+    { outcome: 'removed', reason: 'no longer open and ready-for-agent' },
+  ],
+  [
+    'blocked by a failed cut that named its slice',
+    { 'runner:cut-slice': CUT_FAILED },
+    ['runner:check:7-1', 'runner:cut-slice:7-1', 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'cut-slice failed: worktree add failed' },
+  ],
+  [
+    'blocked by a failed cut that named no slice',
+    { 'runner:cut-slice': { ...CUT_FAILED, slice: null } },
+    ['runner:check:7-1', 'runner:cut-slice:7-1'],
+    { outcome: 'blocked', reason: 'cut-slice failed: worktree add failed' },
+  ],
+  [
+    'blocked by a failed provision',
+    {
+      'runner:provision': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'install', message: 'npm ci failed' }],
+        env: { PH_PROJECT_DIR: BATCH },
+      },
+    },
+    ['runner:check:7-1', 'runner:cut-slice:7-1', 'runner:provision:7-1', 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'provision failed: npm ci failed' },
+  ],
+  [
+    'blocked by the planner',
+    { planner: { ...PLAN_CARD, verdict: 'blocked', evidence: 'needs a human answer' } },
+    [...UP_TO_PLAN, 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'planner blocked: needs a human answer' },
+  ],
+  [
+    'stale by the applier',
+    {
+      ...PLAN_REVIEW_FINDINGS,
+      applier: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+    },
+    [...UP_TO_PLAN, 'planReviewer:7-1', 'applier:7-1', 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'planner stale: done at abc123' },
+  ],
+  [
+    'blocked by the tdd',
+    {
+      tdd: { ...TDD_GREEN, verdict: 'BLOCKED', sha: '', reason: 'the plan names a missing symbol' },
+    },
+    [...UP_TO_PLAN, 'planReviewer:7-1', 'tdd:7-1', 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'tdd BLOCKED: the plan names a missing symbol' },
+  ],
+  [
+    'blocked by a tdd that committed nothing',
+    { tdd: { ...TDD_GREEN, sha: '' } },
+    [...UP_TO_PLAN, 'planReviewer:7-1', 'tdd:7-1', 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'tdd GREEN: no commit' },
+  ],
+  [
+    'blocked by a planner that threw',
+    {
+      planner: () => {
+        throw new Error('runtime crashed');
+      },
+    },
+    [...UP_TO_PLAN, 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'a stage threw: runtime crashed' },
+  ],
+];
+
+describe('runShip — an attempt through the build', () => {
+  it.each(BUILD_ENDINGS)(
+    'ends the attempt %s, tearing down only a slice the cut named',
+    async (_name, responses, calls, ending) => {
+      const run = fakeHooks(responses);
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run).filter((l) => BUILD_CALL.test(l))).toEqual(calls);
+      expect(report.epics[0]).toMatchObject({
+        outcome: 'nothing-landed',
+        issues: [{ issue: 7, cite: 'see', ...ending }],
+      });
+    },
+  );
+
+  it('retries the issue in a fresh slice when the plan reviewer returns nothing, then blocks it', async () => {
+    const run = fakeHooks({ planReviewer: null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):/.test(l)),
+    ).toEqual([
+      'runner:cut-slice:7-1',
+      'planReviewer:7-1',
+      'runner:teardown:7-1',
+      'runner:cut-slice:7-2',
+      'planReviewer:7-2',
+      'runner:teardown:7-2',
+    ]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      issues: [
+        { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+      ],
+      schedule: [{ issue: 7, attempts: 2 }],
+    });
+  });
+});
+
 describe('runShip — what an attempt hands on', () => {
   it.each([
     ['fixes', 'fixes #7'],
@@ -1115,7 +1256,18 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['reviewer:7-1', 'testReview:7-1'])(
+  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1', 'tdd:7-1'])(
+    'hands %s the slice worktree the cut named',
+    async (label) => {
+      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(promptOf(run, label).split('\n')).toContain(`Slice worktree: ${SLICE_7}`);
+    },
+  );
+
+  it.each(['tdd:7-1', 'reviewer:7-1', 'testReview:7-1'])(
     'hands %s the slice base the cut answered',
     async (label) => {
       const run = fakeHooks();
@@ -1480,26 +1632,39 @@ describe('runShip — a halting entry', () => {
 });
 
 describe('runAttempt — the halt it calls for', () => {
+  const entry = (run: FakeRun, halting: boolean): Parameters<typeof runAttempt>[0] => ({
+    epic: null,
+    tag: 'list',
+    branch: 'ship/7',
+    main: 'C:/main',
+    batch: BATCH,
+    base: 'base0',
+    reportDir: REPORT_DIR,
+    registry: 'registry.json',
+    attachedRun: null,
+    hooks: run.hooks,
+    queue: createCommitQueue(),
+    isHalting: () => halting,
+    markHalting: () => undefined,
+    priorSlices: () => [],
+  });
+
+  it('stops an attempt of a halting entry at its first stage boundary, before the re-check', async () => {
+    const run = fakeHooks();
+
+    const note = await runAttempt(entry(run, true), 7, 1);
+
+    expect(labels(run)).toEqual([]);
+    expect(note).toMatchObject({
+      kind: 'ended',
+      ending: { primary: { kind: 'epic-halt', epic: null, reason: 'its epic halted' } },
+    });
+  });
+
   it('ends with the landing’s halt, not its teardown’s, when both call for one', async () => {
     const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY, 'runner:teardown': TEARDOWN_SHRANK });
-    const ctx = {
-      epic: null,
-      tag: 'list',
-      branch: 'ship/7',
-      main: 'C:/main',
-      batch: BATCH,
-      base: 'base0',
-      reportDir: REPORT_DIR,
-      registry: 'registry.json',
-      attachedRun: null,
-      hooks: run.hooks,
-      queue: createCommitQueue(),
-      isHalting: () => false,
-      markHalting: () => undefined,
-      priorSlices: () => [],
-    };
 
-    const note = await runAttempt(ctx, 7, 1);
+    const note = await runAttempt(entry(run, false), 7, 1);
     const end = note.kind === 'authored' ? await note.landing : note;
 
     expect(end).toMatchObject({
