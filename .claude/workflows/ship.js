@@ -2104,16 +2104,20 @@ function teardownEvent(teardown, epic) {
 function teardownResidue(teardown) {
   return teardown?.status === 'ok' ? null : envelopeProblem('teardown', teardown);
 }
-function settleEvents(primary, teardown, at) {
-  const halt = primary.kind === 'epic-halt' ? primary : teardownEvent(teardown, at.epic);
+function settleEvents(primary, halt, at) {
   if (halt !== null) {
     const blocked = { kind: 'blocked', issue: at.issue, reason: halt.reason };
-    return at.entryHalted ? [blocked] : [halt, blocked];
+    return { events: at.entry === 'halted' ? [blocked] : [halt, blocked], entry: 'halted' };
   }
-  if (at.entryHalted && primary.kind === 'committed') {
-    return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
+  if (at.entry === 'halted' && primary.kind === 'committed') {
+    const blocked = {
+      kind: 'blocked',
+      issue: at.issue,
+      reason: 'landed after its epic halted',
+    };
+    return { events: [blocked], entry: 'halted' };
   }
-  return [primary];
+  return { events: [primary], entry: at.entry };
 }
 
 const LEASE_LINE =
@@ -2888,10 +2892,11 @@ async function endAttempt(at, primary) {
     at.slice === null
       ? null
       : await runTool(at.ctx.hooks, 'teardown', [at.slice], at.place).catch(() => null);
-  if (teardownEvent(teardown, at.ctx.epic) !== null) at.ctx.markHalting();
+  const teardownHalt = teardownEvent(teardown, at.ctx.epic);
+  if (teardownHalt !== null) at.ctx.markHalting();
   const ending = {
     primary,
-    teardown,
+    halt: primary.kind === 'epic-halt' ? primary : teardownHalt,
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
@@ -3427,8 +3432,7 @@ function newDrive(input) {
     attempts: new Map(),
     conflicts: new Map(),
     timing: new Map(),
-    halting: new Set(),
-    halted: new Set(),
+    halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
@@ -3441,9 +3445,9 @@ function newDrive(input) {
       ...entry,
       hooks: input.hooks,
       queue: createCommitQueue(),
-      isHalting: () => d.halting.has(i),
+      isHalting: () => haltOf(d, i) !== 'running',
       markHalting: () => {
-        d.halting.add(i);
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
       priorSlices: () =>
         (d.landed.get(i) ?? []).map((l) => ({
@@ -3454,6 +3458,9 @@ function newDrive(input) {
     });
   });
   return d;
+}
+function haltOf(d, i) {
+  return d.halts.get(i) ?? 'running';
 }
 function flightKey(note) {
   return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
@@ -3470,11 +3477,12 @@ function onNote(d, note) {
 function settle(d, issue, ending) {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const events = settleEvents(ending.primary, ending.teardown, {
+  const { events, entry } = settleEvents(ending.primary, ending.halt, {
     issue,
     epic,
-    entryHalted: d.halted.has(i),
+    entry: haltOf(d, i),
   });
+  d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
   d.conflicts.set(issue, ending.conflicts);
   d.timing.set(issue, {
@@ -3483,10 +3491,6 @@ function settle(d, issue, ending) {
     committedAt: ending.committedAt,
     size: ending.size,
   });
-  if (events.some((e) => e.kind === 'epic-halt')) {
-    d.halting.add(i);
-    d.halted.add(i);
-  }
   record(d, i, issue, ending, events);
   feed(d, events);
 }
@@ -3497,7 +3501,7 @@ function record(d, i, issue, ending, events) {
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
-  const report = unlandedOutcome(issue, ending, d.halted.has(i));
+  const report = unlandedOutcome(issue, ending, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
 function unlandedOutcome(issue, ending, halted) {

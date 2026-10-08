@@ -33,10 +33,8 @@
  * until it settles, and the entry's one epic end starts after its last issue
  * settles. This is the resume boundary of ADR-0045 decision 10.
  *
- * **Two halt flags per entry.** *Halting* is raised as soon as a landing or
- * teardown calls for a halt — the entry's attempts stop and its queued
- * landings never run. *Halted* means the scheduler was fed `epic-halt`;
- * `settleEvents` reads it, since a second `epic-halt` throws.
+ * **One halt state per entry** ({@link HaltState}): once it leaves `running`,
+ * the entry's attempts stop and its queued landings never run.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -51,7 +49,12 @@ import type {
 } from '../../lib/run-scheduler.types.js';
 import type { RunGraph } from '../../lib/run-set.js';
 
-import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
+import {
+  createCommitQueue,
+  settleEvents,
+  type CommitQueue,
+  type HaltState,
+} from './commit-queue.js';
 import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr-body.js';
@@ -100,8 +103,8 @@ interface Drive {
   readonly conflicts: Map<number, readonly string[]>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
-  readonly halting: Set<number>;
-  readonly halted: Set<number>;
+  /** Each entry's halt state; an entry it lacks is `running`. */
+  readonly halts: Map<number, HaltState>;
   readonly outcomes: Map<number, IssueReport>;
   readonly landed: Map<number, LandedIssue[]>;
   readonly residue: Map<number, string[]>;
@@ -143,8 +146,7 @@ function newDrive(input: DriveInput): Drive {
     attempts: new Map(),
     conflicts: new Map(),
     timing: new Map(),
-    halting: new Set(),
-    halted: new Set(),
+    halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
@@ -157,9 +159,9 @@ function newDrive(input: DriveInput): Drive {
       ...entry,
       hooks: input.hooks,
       queue: createCommitQueue(),
-      isHalting: () => d.halting.has(i),
+      isHalting: () => haltOf(d, i) !== 'running',
       markHalting: () => {
-        d.halting.add(i);
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
       priorSlices: () =>
         (d.landed.get(i) ?? []).map((l) => ({
@@ -170,6 +172,10 @@ function newDrive(input: DriveInput): Drive {
     });
   });
   return d;
+}
+
+function haltOf(d: Drive, i: number): HaltState {
+  return d.halts.get(i) ?? 'running';
 }
 
 /**
@@ -209,11 +215,12 @@ function onNote(d: Drive, note: Note): void {
 function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const events = settleEvents(ending.primary, ending.teardown, {
+  const { events, entry } = settleEvents(ending.primary, ending.halt, {
     issue,
     epic,
-    entryHalted: d.halted.has(i),
+    entry: haltOf(d, i),
   });
+  d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
   d.conflicts.set(issue, ending.conflicts);
   d.timing.set(issue, {
@@ -222,10 +229,6 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     committedAt: ending.committedAt,
     size: ending.size,
   });
-  if (events.some((e) => e.kind === 'epic-halt')) {
-    d.halting.add(i);
-    d.halted.add(i);
-  }
   record(d, i, issue, ending, events);
   feed(d, events);
 }
@@ -253,7 +256,7 @@ function record(
     d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
     return;
   }
-  const report = unlandedOutcome(issue, ending, d.halted.has(i));
+  const report = unlandedOutcome(issue, ending, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
 

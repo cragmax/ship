@@ -8,7 +8,7 @@
  *
  * **Every attempt ends the same way** ({@link runAttempt}): its slice, when
  * one was cut, is torn down first, then the attempt reports its primary
- * event and the teardown's envelope for the drive loop to settle
+ * event and the halt it called for, for the drive loop to settle
  * (`commit-queue.ts`). Whatever ended it — a landing, a stage that blocked,
  * an agent that died, a not-ready re-check, or its entry halting — no issue
  * settles while its slice exists.
@@ -40,7 +40,13 @@ import {
   type TddOutput,
   type TestReviewOutput,
 } from './agent-calls.js';
-import { landingEvent, teardownEvent, teardownResidue, type CommitQueue } from './commit-queue.js';
+import {
+  landingEvent,
+  teardownEvent,
+  teardownResidue,
+  type CommitQueue,
+  type EpicHaltEvent,
+} from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage, type SliceSize } from './pr-body.js';
 import type {
@@ -51,13 +57,7 @@ import type {
   SliceReviewValues,
 } from './prompts.js';
 import { isTrivialSurface } from './stages.js';
-import {
-  envelopeProblem,
-  runPlace,
-  runTool,
-  type TeardownOutput,
-  type ToolPlace,
-} from './tool-calls.js';
+import { envelopeProblem, runPlace, runTool, type ToolPlace } from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
 export interface EntrySetup {
@@ -102,8 +102,8 @@ export interface EntryContext extends EntrySetup {
 export interface AttemptEnding {
   /** What ended it. */
   readonly primary: SchedulerEvent;
-  /** The slice teardown's output; `null` when no slice was cut or the runner returned none. */
-  readonly teardown: TeardownOutput | null;
+  /** The halt it called for: its primary `epic-halt`, else its teardown's; `null` for none. */
+  readonly halt: EpicHaltEvent | null;
   /** What the teardown left behind; `null` when it was clean or had nothing to tear down. */
   readonly residue: string | null;
   /** What the slice produced; `null` unless it was authored. */
@@ -525,10 +525,11 @@ async function endAttempt(at: Attempt, primary: SchedulerEvent): Promise<Attempt
     at.slice === null
       ? null
       : await runTool(at.ctx.hooks, 'teardown', [at.slice], at.place).catch(() => null);
-  if (teardownEvent(teardown, at.ctx.epic) !== null) at.ctx.markHalting();
+  const teardownHalt = teardownEvent(teardown, at.ctx.epic);
+  if (teardownHalt !== null) at.ctx.markHalting();
   const ending: AttemptEnding = {
     primary,
-    teardown,
+    halt: primary.kind === 'epic-halt' ? primary : teardownHalt,
     residue: at.slice === null ? null : teardownResidue(teardown),
     work: at.work,
     commit: at.commit,
