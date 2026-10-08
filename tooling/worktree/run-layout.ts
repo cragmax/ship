@@ -128,9 +128,7 @@ export function runLayout(main: string, slug: string): RunLayout {
   };
 }
 
-/**
- * The file name of a batch's trimmed pool registry inside a report dir.
- */
+/** The file name of a batch's trimmed pool registry inside a report dir. */
 export const BATCH_REGISTRY_FILE = 'pool-registry.batch.json';
 
 /**
