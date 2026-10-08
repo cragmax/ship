@@ -33,10 +33,8 @@
  * until it settles, and the entry's one epic end starts after its last issue
  * settles. This is the resume boundary of ADR-0045 decision 10.
  *
- * **Two halt flags per entry.** *Halting* is raised as soon as a landing or
- * teardown calls for a halt — the entry's attempts stop and its queued
- * landings never run. *Halted* means the scheduler was fed `epic-halt`;
- * `settleEvents` reads it, since a second `epic-halt` throws.
+ * **One halt state per entry** ({@link HaltState}): once it leaves `running`,
+ * the entry's attempts stop and its queued landings never run.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -51,7 +49,12 @@ import type {
 } from '../../lib/run-scheduler.types.js';
 import type { RunGraph } from '../../lib/run-set.js';
 
-import { createCommitQueue, settleEvents, type CommitQueue } from './commit-queue.js';
+import {
+  createCommitQueue,
+  settleEvents,
+  type CommitQueue,
+  type HaltState,
+} from './commit-queue.js';
 import { epicEnd, unshippedEpicEnd, type EpicReport, type IssueReport } from './epic-end.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr-body.js';
@@ -89,6 +92,12 @@ type Note =
 /** An issue's final attempt, as its schedule reports it. */
 type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt' | 'size'>;
 
+/** What settling reads of an ending, by its kind. */
+interface EndingFacts extends Pick<Timing, 'committedAt' | 'size'> {
+  readonly primary: SchedulerEvent;
+  readonly conflicts: readonly string[];
+}
+
 /** The loop's state. */
 interface Drive {
   readonly input: DriveInput;
@@ -100,8 +109,8 @@ interface Drive {
   readonly conflicts: Map<number, readonly string[]>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
-  readonly halting: Set<number>;
-  readonly halted: Set<number>;
+  /** Each entry's halt state; an entry it lacks is `running`. */
+  readonly halts: Map<number, HaltState>;
   readonly outcomes: Map<number, IssueReport>;
   readonly landed: Map<number, LandedIssue[]>;
   readonly residue: Map<number, string[]>;
@@ -143,8 +152,7 @@ function newDrive(input: DriveInput): Drive {
     attempts: new Map(),
     conflicts: new Map(),
     timing: new Map(),
-    halting: new Set(),
-    halted: new Set(),
+    halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
@@ -157,9 +165,9 @@ function newDrive(input: DriveInput): Drive {
       ...entry,
       hooks: input.hooks,
       queue: createCommitQueue(),
-      isHalting: () => d.halting.has(i),
+      isHalting: () => haltOf(d, i) !== 'running',
       markHalting: () => {
-        d.halting.add(i);
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
       priorSlices: () =>
         (d.landed.get(i) ?? []).map((l) => ({
@@ -170,6 +178,10 @@ function newDrive(input: DriveInput): Drive {
     });
   });
   return d;
+}
+
+function haltOf(d: Drive, i: number): HaltState {
+  return d.halts.get(i) ?? 'running';
 }
 
 /**
@@ -209,25 +221,43 @@ function onNote(d: Drive, note: Note): void {
 function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const events = settleEvents(ending.primary, ending.teardown, {
+  const { primary, conflicts, committedAt, size } = endingFacts(issue, ending);
+  const { events, entry } = settleEvents(primary, ending.halt, {
     issue,
     epic,
-    entryHalted: d.halted.has(i),
+    entry: haltOf(d, i),
   });
+  d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.conflicts.set(issue, ending.conflicts);
+  d.conflicts.set(issue, conflicts);
   d.timing.set(issue, {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
-    committedAt: ending.committedAt,
-    size: ending.size,
+    committedAt,
+    size,
   });
-  if (events.some((e) => e.kind === 'epic-halt')) {
-    d.halting.add(i);
-    d.halted.add(i);
-  }
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+
+/** What settling reads of an ending; a `landed` one's primary is `committed`. */
+function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
+  switch (ending.kind) {
+    case 'landed':
+      return {
+        primary: { kind: 'committed', issue },
+        conflicts: [],
+        committedAt: ending.committedAt,
+        size: ending.size,
+      };
+    case 'unlanded':
+      return {
+        primary: ending.primary,
+        conflicts: ending.conflicts,
+        committedAt: null,
+        size: null,
+      };
+  }
 }
 
 /**
@@ -247,36 +277,50 @@ function record(
   ending: AttemptEnding,
   events: readonly SchedulerEvent[],
 ): void {
-  const { work, commit } = ending;
-  if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
-    d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
-    return;
+  const committed = events.some((e) => e.kind === 'committed');
+  if (ending.kind === 'landed' && committed) {
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
   }
-  const report = unlandedOutcome(issue, ending, d.halted.has(i));
+  const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
 
 /**
- * An attempt's outcome for an issue that did not land now.
+ * An attempt's outcome for its issue, `committed` whether its settle events
+ * hold one; `null` when the issue restarts ({@link unlandedOutcome}).
+ */
+function issueOutcome(
+  issue: number,
+  ending: AttemptEnding,
+  committed: boolean,
+  halted: boolean,
+): IssueReport | null {
+  switch (ending.kind) {
+    case 'landed':
+      return committed
+        ? { issue, outcome: 'landed', cite: ending.work.card.closes, commit: ending.commit }
+        : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
+    case 'unlanded':
+      return unlandedOutcome(issue, ending.primary, halted);
+  }
+}
+
+/**
+ * An attempt's outcome for an issue whose slice did not land.
  *
  * @param issue - The issue.
- * @param ending - How the attempt ended.
+ * @param primary - What ended the attempt.
  * @param halted - Whether its entry is halted.
- * @returns `landed-then-halted`, `halted`, `blocked` or `removed`; `null`
- *   when the issue restarts (`harvest-conflict`, a first `agent-died`) —
- *   the scheduler's `block` records a second death.
+ * @returns `halted`, `blocked` or `removed`; `null` when the issue restarts
+ *   (`harvest-conflict`, a first `agent-died`) — the scheduler's `block`
+ *   records a second death.
  */
 function unlandedOutcome(
   issue: number,
-  ending: AttemptEnding,
+  primary: SchedulerEvent,
   halted: boolean,
 ): IssueReport | null {
-  const { primary, commit } = ending;
   const reason = 'reason' in primary ? primary.reason : undefined;
-  if (primary.kind === 'committed' && commit !== null) {
-    return { issue, outcome: 'landed-then-halted', cite: 'see', commit };
-  }
   if (halted)
     return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
   if (primary.kind === 'blocked')

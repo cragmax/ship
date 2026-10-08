@@ -1803,9 +1803,21 @@ const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
+      salvage: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            location: { type: 'string' },
+            kind: { type: 'string', enum: ['defect', 'platform-claim', 'test-claim'] },
+            claim: { type: 'string' },
+          },
+          required: ['location', 'kind', 'claim'],
+        },
+      },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence'],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'salvage'],
   },
   diffReview: {
     type: 'object',
@@ -2092,16 +2104,20 @@ function teardownEvent(teardown, epic) {
 function teardownResidue(teardown) {
   return teardown?.status === 'ok' ? null : envelopeProblem('teardown', teardown);
 }
-function settleEvents(primary, teardown, at) {
-  const halt = primary.kind === 'epic-halt' ? primary : teardownEvent(teardown, at.epic);
+function settleEvents(primary, halt, at) {
   if (halt !== null) {
     const blocked = { kind: 'blocked', issue: at.issue, reason: halt.reason };
-    return at.entryHalted ? [blocked] : [halt, blocked];
+    return { events: at.entry === 'halted' ? [blocked] : [halt, blocked], entry: 'halted' };
   }
-  if (at.entryHalted && primary.kind === 'committed') {
-    return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
+  if (at.entry === 'halted' && primary.kind === 'committed') {
+    const blocked = {
+      kind: 'blocked',
+      issue: at.issue,
+      reason: 'landed after its epic halted',
+    };
+    return { events: [blocked], entry: 'halted' };
   }
-  return [primary];
+  return { events: [primary], entry: at.entry };
 }
 
 const LEASE_LINE =
@@ -2403,12 +2419,17 @@ function renderBlockedComment(input) {
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
 }
-function commitMessage(issue, card) {
+function commitMessage(issue, card, salvage = []) {
+  const block =
+    salvage.length === 0
+      ? []
+      : ['Salvage:', ...salvage.map((item) => neutralText(`- ${salvageText(item)}`)), ''];
   return [
     subjectLine(card.commit),
     '',
     `${card.closes} #${String(issue)}`,
     '',
+    ...block,
     CO_AUTHOR_TRAILER,
     '',
   ].join('\n');
@@ -2437,6 +2458,7 @@ function renderPrBody(input) {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
+    ...salvageSection(input.landed, 2),
     ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -2451,6 +2473,7 @@ function renderAttachedSection(input) {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
+    ...salvageSection(input.landed, 3),
     report,
     '',
   ].join('\n');
@@ -2465,6 +2488,17 @@ function renderAttachedReport(input) {
 }
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+function salvageText(item) {
+  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
+}
+function salvageSection(landed, depth) {
+  const lines = landed.flatMap((l) =>
+    l.tdd.salvage.length === 0
+      ? []
+      : [`- #${String(l.issue)}`, ...l.tdd.salvage.map((item) => `  - ${salvageText(item)}`)],
+  );
+  return lines.length === 0 ? [] : section('Salvage', lines, depth);
 }
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
@@ -2646,70 +2680,53 @@ function bumpText(bump) {
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }
 
+const NO_CUT = { slice: null, startedAt: null };
 async function runAttempt(ctx, issue, attempt, previousConflicts = []) {
-  const at = newAttempt(ctx, issue, attempt, previousConflicts);
-  const stop = await authorSlice(at).catch((err) => stageThrew(at, err));
-  if (stop !== null) return endAttempt(at, stop);
+  const at = attemptId(ctx, issue, attempt, previousConflicts);
+  const opened = await openSlice(at).catch((err) => ({ stop: stageThrew(at, err), cut: NO_CUT }));
+  if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
+  const cut = opened.next;
+  const authored = await authorSlice(cut).catch((err) => ({ stop: stageThrew(at, err) }));
+  if ('stop' in authored) return endAttempt(at, cut, notLanded(authored.stop));
+  const slice = authored.next;
   const landing = ctx.queue
-    .enqueue(() => landSlice(at).catch((err) => landThrew(at, err)))
-    .then((event) => endAttempt(at, event));
+    .enqueue(() => landSlice(slice).catch((err) => notLanded(landThrew(at, err))))
+    .then((outcome) => endAttempt(at, cut, outcome));
   return { kind: 'authored', issue, landing };
 }
-function newAttempt(ctx, issue, attempt, previousConflicts) {
+function attemptId(ctx, issue, attempt, previousConflicts) {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return {
-    ctx,
-    issue,
-    attempt,
-    tag,
-    place: runPlace(ctx.reportDir, tag),
-    previousConflicts,
-    slice: null,
-    startedAt: null,
-    committedAt: null,
-    size: null,
-    conflicts: [],
-    base: '',
-    projectDir: '',
-    sha: '',
-    card: null,
-    tdd: null,
-    diffReview: null,
-    review: null,
-    testReview: null,
-    work: null,
-    commit: null,
-  };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag), previousConflicts };
 }
-const AUTHOR_STAGES = [
-  recheckStage,
-  cutStage,
-  provisionStage,
-  planStage,
-  planReviewStage,
-  tddStage,
-  diffReviewStage,
-  reviewStage,
-  testReviewStage,
-];
-async function authorSlice(at) {
-  for (const stage of AUTHOR_STAGES) {
-    if (at.ctx.isHalting()) return haltedStop(at);
-    const stop = await stage(at);
-    if (stop !== null) return stop;
-  }
-  const { card, tdd, diffReview, review, testReview } = at;
-  if (card === null || tdd === null || diffReview === null || review === null)
-    return blocked(at, 'authoring left no work');
-  at.work = { card, tdd, diffReview, review, testReview };
-  return null;
+async function openSlice(at) {
+  const ready = await atBoundary({ next: at }, at, recheckStage);
+  if ('stop' in ready) return { stop: ready.stop, cut: NO_CUT };
+  if (at.ctx.isHalting()) return { stop: haltedStop(at), cut: NO_CUT };
+  return cutStage(at);
+}
+async function authorSlice(cut) {
+  const { at } = cut;
+  const provisioned = await atBoundary({ next: cut }, at, provisionStage);
+  const planned = await atBoundary(provisioned, at, planStage);
+  const approved = await atBoundary(planned, at, planReviewStage);
+  const built = await atBoundary(approved, at, tddStage);
+  const diffReviewed = await atBoundary(built, at, diffReviewStage);
+  const reviewed = await atBoundary(diffReviewed, at, reviewStage);
+  return atBoundary(reviewed, at, testReviewStage);
+}
+async function atBoundary(step, at, stage) {
+  if ('stop' in step) return step;
+  if (at.ctx.isHalting()) return { stop: haltedStop(at) };
+  return stage(step.next);
 }
 async function recheckStage(at) {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
-  if (out === null) return died(at);
-  if (out.ready === true) return null;
-  if (out.ready === false) return { kind: 'label-removed', issue: at.issue };
-  return blocked(at, `check gave no verdict: ${out.stderrTail ?? `exit ${String(out.exitCode)}`}`);
+  if (out === null) return { stop: died(at) };
+  if (out.ready === true) return { next: at };
+  if (out.ready === false) return { stop: { kind: 'label-removed', issue: at.issue } };
+  return {
+    stop: blocked(at, `check gave no verdict: ${out.stderrTail ?? `exit ${String(out.exitCode)}`}`),
+  };
 }
 async function cutStage(at) {
   const argv = [
@@ -2721,193 +2738,204 @@ async function cutStage(at) {
     ...attachedRunArgs(at.ctx),
   ];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
-  if (typeof out?.slice === 'string') at.slice = out.slice;
-  if (typeof out?.at === 'string') at.startedAt = out.at;
-  if (out === null) return died(at);
-  if (out.status !== 'ok' || at.slice === null || typeof out.base !== 'string') {
-    return blocked(at, envelopeProblem('cut-slice', out));
+  if (out === null) return { stop: died(at), cut: NO_CUT };
+  const cut = {
+    slice: typeof out.slice === 'string' ? out.slice : null,
+    startedAt: typeof out.at === 'string' ? out.at : null,
+  };
+  if (out.status !== 'ok' || cut.slice === null || typeof out.base !== 'string') {
+    return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
-  at.base = out.base;
-  return null;
+  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt } };
 }
 function attachedRunArgs(entry) {
   return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
 }
-async function provisionStage(at) {
-  const argv = [at.slice ?? '', '--batch', at.ctx.batch, '--server'];
+async function provisionStage(cut) {
+  const { at } = cut;
+  const argv = [cut.slice, '--batch', at.ctx.batch, '--server'];
   const out = await runTool(at.ctx.hooks, 'provision', argv, at.place);
-  if (out === null) return died(at);
+  if (out === null) return { stop: died(at) };
   const projectDir = out.env?.PH_PROJECT_DIR;
   if (out.status !== 'ok' || typeof projectDir !== 'string') {
-    return blocked(at, envelopeProblem('provision', out));
+    return { stop: blocked(at, envelopeProblem('provision', out)) };
   }
-  at.projectDir = projectDir;
-  return null;
+  return { next: { ...cut, projectDir } };
 }
-async function planStage(at) {
-  const card = await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(at, 'plan'), at.tag);
-  return acceptCard(at, card);
+async function planStage(s) {
+  const { at } = s;
+  return acceptCard(s, await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(s, 'plan'), at.tag));
 }
-async function planReviewStage(at) {
+async function planReviewStage(planned) {
+  const { at } = planned;
   const values = {
     issue: at.issue,
-    slice: at.slice ?? '',
+    slice: planned.slice,
     planPath: planPath(at),
     findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
     reportDir: at.ctx.reportDir,
   };
   const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return died(at);
-  if (review.findings === 0) return null;
+  if (review === null) return { stop: died(at) };
+  if (review.findings === 0) return { next: planned };
   const applied = await AGENT_CALLS.planner(
     at.ctx.hooks,
-    plannerValues(at, 'apply', review.findingsPath),
+    plannerValues(planned, 'apply', review.findingsPath),
     at.tag,
   );
-  return acceptCard(at, applied);
+  return acceptCard(planned, applied);
 }
-async function tddStage(at) {
-  const card = requireCard(at);
+async function tddStage(planned) {
+  const { at } = planned;
   const values = {
     issue: at.issue,
     attempt: at.attempt,
-    slice: at.slice ?? '',
-    base: at.base,
+    slice: planned.slice,
+    base: planned.base,
     planPath: planPath(at),
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
-    message: commitMessage(at.issue, card),
-    lease: leaseValues(at),
+    message: commitMessage(at.issue, planned.card),
+    lease: leaseValues(planned),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
-  if (tdd === null) return died(at);
+  if (tdd === null) return { stop: died(at) };
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
-    return blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`);
+    return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  at.tdd = tdd;
-  at.sha = tdd.sha;
-  return null;
+  return { next: { ...planned, tdd, sha: tdd.sha } };
 }
-async function diffReviewStage(at) {
+async function diffReviewStage(s) {
+  const { at } = s;
   const values = {
-    ...sliceCommitValues(at),
+    ...sliceCommitValues(s),
     findingsPath: diffReviewPath(at),
     reportDir: at.ctx.reportDir,
   };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
-  if (out === null) return died(at);
-  at.diffReview = out;
-  return null;
+  if (out === null) return { stop: died(at) };
+  return { next: { ...s, diffReview: out } };
 }
-async function reviewStage(at) {
-  const values = { ...sliceReviewValues(at, 'review'), findingsPath: diffReviewPath(at) };
+async function reviewStage(s) {
+  const { at } = s;
+  const values = { ...sliceReviewValues(s, 'review'), findingsPath: diffReviewPath(at) };
   const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return died(at);
-  if (review.verdict === 'blocked') return blocked(at, `review: ${review.summary}`);
-  at.review = review;
-  at.sha = review.sha;
-  return null;
+  if (review === null) return { stop: died(at) };
+  if (review.verdict === 'blocked') return { stop: blocked(at, `review: ${review.summary}`) };
+  return { next: { ...s, review, sha: review.sha } };
 }
-async function testReviewStage(at) {
-  if (isTrivialSurface(at.tdd?.files ?? [])) return null;
+async function testReviewStage(s) {
+  const { at } = s;
+  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
-    sliceReviewValues(at, 'test-review'),
+    sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  if (out === null) return died(at);
-  if (out.verdict === 'blocked') return blocked(at, `test review: ${out.summary}`);
-  at.testReview = out;
-  at.sha = out.sha;
-  return null;
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
+  return { next: { ...s, testReview: out, sha: out.sha } };
 }
-async function landSlice(at) {
-  if (at.ctx.isHalting()) return haltedStop(at);
+async function landSlice(s) {
+  const { at } = s;
+  if (at.ctx.isHalting()) return notLanded(haltedStop(at));
   const argv = [
     at.ctx.batch,
-    at.sha,
+    s.sha,
     '--base',
-    at.base,
+    s.base,
     '--message-file',
     messagePath(at),
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const out = await runTool(at.ctx.hooks, 'land', argv, at.place);
+  const message = commitMessage(at.issue, s.card, s.tdd.salvage);
+  const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
+  const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
-  if (event.kind === 'committed') {
-    at.commit = out?.commit ?? null;
-    at.committedAt = out?.at ?? null;
-    at.size =
-      typeof out?.lines === 'number' && out.files !== undefined
-        ? { files: out.files.length, lines: out.lines }
-        : null;
+  if (event.kind === 'committed' && typeof out?.commit === 'string') {
+    const { card, tdd, diffReview, review, testReview } = s;
+    return {
+      kind: 'landed',
+      work: { card, tdd, diffReview, review, testReview },
+      commit: out.commit,
+      committedAt: out.at ?? null,
+      size:
+        typeof out.lines === 'number' && out.files !== undefined
+          ? { files: out.files.length, lines: out.lines }
+          : null,
+    };
   }
-  if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
-  return event;
+  const conflicts = event.kind === 'harvest-conflict' ? (out?.conflicts ?? []) : [];
+  return { kind: 'unlanded', primary: event, conflicts };
+}
+function notLanded(primary) {
+  return { kind: 'unlanded', primary, conflicts: [] };
 }
 function landThrew(at, err) {
   at.ctx.markHalting();
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: `land threw: ${errorText(err)}` };
 }
-async function endAttempt(at, primary) {
+async function endAttempt(at, cut, outcome) {
   const teardown =
-    at.slice === null
+    cut.slice === null
       ? null
-      : await runTool(at.ctx.hooks, 'teardown', [at.slice], at.place).catch(() => null);
-  if (teardownEvent(teardown, at.ctx.epic) !== null) at.ctx.markHalting();
+      : await runTool(at.ctx.hooks, 'teardown', [cut.slice], at.place).catch(() => null);
+  const teardownHalt = teardownEvent(teardown, at.ctx.epic);
+  if (teardownHalt !== null) at.ctx.markHalting();
+  const halt =
+    outcome.kind === 'unlanded' && outcome.primary.kind === 'epic-halt'
+      ? outcome.primary
+      : teardownHalt;
   const ending = {
-    primary,
-    teardown,
-    residue: at.slice === null ? null : teardownResidue(teardown),
-    work: at.work,
-    commit: at.commit,
-    conflicts: at.conflicts,
-    startedAt: at.startedAt,
-    committedAt: at.committedAt,
-    size: at.size,
+    ...outcome,
+    halt,
+    residue: cut.slice === null ? null : teardownResidue(teardown),
+    startedAt: cut.startedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
-function acceptCard(at, card) {
-  if (card === null) return died(at);
-  if (card.verdict !== 'plan') return blocked(at, `planner ${card.verdict}: ${card.evidence}`);
-  at.card = card;
-  return null;
+function acceptCard(s, card) {
+  if (card === null) return { stop: died(s.at) };
+  if (card.verdict !== 'plan') {
+    return { stop: blocked(s.at, `planner ${card.verdict}: ${card.evidence}`) };
+  }
+  return { next: { ...s, card } };
 }
-function plannerValues(at, mode, findingsPath) {
+function plannerValues(s, mode, findingsPath) {
+  const { at } = s;
   return {
     mode,
     issue: at.issue,
     attempt: at.attempt,
-    slice: at.slice ?? '',
+    slice: s.slice,
     reportDir: at.ctx.reportDir,
     planPath: planPath(at),
     ...(findingsPath === undefined ? {} : { findingsPath }),
     priorSlices: at.ctx.priorSlices(),
     ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
-    lease: leaseValues(at),
+    lease: leaseValues(s),
   };
 }
-function leaseValues(at) {
-  return { main: at.ctx.main, projectDir: at.projectDir, registry: at.ctx.registry };
+function leaseValues(s) {
+  return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
 }
-function sliceCommitValues(at) {
+function sliceCommitValues(s) {
   return {
-    issue: at.issue,
-    slice: at.slice ?? '',
-    base: at.base,
-    planPath: planPath(at),
-    sha: at.sha,
-    files: at.tdd?.files ?? [],
+    issue: s.at.issue,
+    slice: s.slice,
+    base: s.base,
+    planPath: planPath(s.at),
+    sha: s.sha,
+    files: s.tdd.files,
   };
 }
-function sliceReviewValues(at, report) {
+function sliceReviewValues(s, report) {
   return {
-    ...sliceCommitValues(at),
-    reportPath: `${at.ctx.reportDir}/${report}-${at.tag}.md`,
-    lease: leaseValues(at),
+    ...sliceCommitValues(s),
+    reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
+    lease: leaseValues(s),
   };
 }
 function planPath(at) {
@@ -2918,10 +2946,6 @@ function messagePath(at) {
 }
 function diffReviewPath(at) {
   return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
-}
-function requireCard(at) {
-  if (at.card === null) throw new Error('ship: the tdd stage ran without a plan card');
-  return at.card;
 }
 function haltedStop(at) {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };
@@ -3395,8 +3419,7 @@ function newDrive(input) {
     attempts: new Map(),
     conflicts: new Map(),
     timing: new Map(),
-    halting: new Set(),
-    halted: new Set(),
+    halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
@@ -3409,9 +3432,9 @@ function newDrive(input) {
       ...entry,
       hooks: input.hooks,
       queue: createCommitQueue(),
-      isHalting: () => d.halting.has(i),
+      isHalting: () => haltOf(d, i) !== 'running',
       markHalting: () => {
-        d.halting.add(i);
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
       priorSlices: () =>
         (d.landed.get(i) ?? []).map((l) => ({
@@ -3422,6 +3445,9 @@ function newDrive(input) {
     });
   });
   return d;
+}
+function haltOf(d, i) {
+  return d.halts.get(i) ?? 'running';
 }
 function flightKey(note) {
   return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
@@ -3438,42 +3464,62 @@ function onNote(d, note) {
 function settle(d, issue, ending) {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const events = settleEvents(ending.primary, ending.teardown, {
+  const { primary, conflicts, committedAt, size } = endingFacts(issue, ending);
+  const { events, entry } = settleEvents(primary, ending.halt, {
     issue,
     epic,
-    entryHalted: d.halted.has(i),
+    entry: haltOf(d, i),
   });
+  d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.conflicts.set(issue, ending.conflicts);
+  d.conflicts.set(issue, conflicts);
   d.timing.set(issue, {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
-    committedAt: ending.committedAt,
-    size: ending.size,
+    committedAt,
+    size,
   });
-  if (events.some((e) => e.kind === 'epic-halt')) {
-    d.halting.add(i);
-    d.halted.add(i);
-  }
   record(d, i, issue, ending, events);
   feed(d, events);
 }
-function record(d, i, issue, ending, events) {
-  const { work, commit } = ending;
-  if (events.some((e) => e.kind === 'committed') && work !== null && commit !== null) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...work, issue, commit }]);
-    d.outcomes.set(issue, { issue, outcome: 'landed', cite: work.card.closes, commit });
-    return;
+function endingFacts(issue, ending) {
+  switch (ending.kind) {
+    case 'landed':
+      return {
+        primary: { kind: 'committed', issue },
+        conflicts: [],
+        committedAt: ending.committedAt,
+        size: ending.size,
+      };
+    case 'unlanded':
+      return {
+        primary: ending.primary,
+        conflicts: ending.conflicts,
+        committedAt: null,
+        size: null,
+      };
   }
-  const report = unlandedOutcome(issue, ending, d.halted.has(i));
+}
+function record(d, i, issue, ending, events) {
+  const committed = events.some((e) => e.kind === 'committed');
+  if (ending.kind === 'landed' && committed) {
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
+  }
+  const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
-function unlandedOutcome(issue, ending, halted) {
-  const { primary, commit } = ending;
-  const reason = 'reason' in primary ? primary.reason : undefined;
-  if (primary.kind === 'committed' && commit !== null) {
-    return { issue, outcome: 'landed-then-halted', cite: 'see', commit };
+function issueOutcome(issue, ending, committed, halted) {
+  switch (ending.kind) {
+    case 'landed':
+      return committed
+        ? { issue, outcome: 'landed', cite: ending.work.card.closes, commit: ending.commit }
+        : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
+    case 'unlanded':
+      return unlandedOutcome(issue, ending.primary, halted);
   }
+}
+function unlandedOutcome(issue, primary, halted) {
+  const reason = 'reason' in primary ? primary.reason : undefined;
   if (halted)
     return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
   if (primary.kind === 'blocked')

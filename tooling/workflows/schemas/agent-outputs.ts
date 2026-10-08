@@ -147,6 +147,20 @@ export const TddEvidenceSchema = z.object({
   reason: z.string(),
 });
 
+/** One claim a comment trim would otherwise drop, kept for the maintainer to file. */
+const SalvageItemSchema = z.object({
+  /** Where the claim sat, as `path:line`. */
+  location: z.string(),
+  /**
+   * `defect`: a known defect or accepted residual; `platform-claim`: an
+   * external-system claim without a `PF-N`; `test-claim`: a claim that a test
+   * pins it, with no test pinning it.
+   */
+  kind: z.enum(['defect', 'platform-claim', 'test-claim']),
+  /** The claim, in one line. */
+  claim: z.string(),
+});
+
 /** The tdd's answer. */
 export const TddOutputSchema = z.object({
   /** `GREEN`, `PARTIAL` (some tests authored but unrun), or `BLOCKED`. */
@@ -161,6 +175,8 @@ export const TddOutputSchema = z.object({
   probes: z.array(ProbeRecordSchema),
   /** Its tracer test's red-green, or why it saw none. */
   evidence: TddEvidenceSchema,
+  /** Each claim it salvaged from a comment it trimmed; empty when none. */
+  salvage: z.array(SalvageItemSchema),
   /** Why, when `BLOCKED` or `PARTIAL`. */
   reason: z.string().exactOptional(),
 });

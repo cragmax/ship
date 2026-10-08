@@ -149,63 +149,89 @@ describe('settleEvents', () => {
     epic: 1025,
     reason: 'land refused (batch-dirty): no',
   } as const;
+  const SHRANK = {
+    kind: 'epic-halt',
+    epic: 1025,
+    reason: 'teardown refused (source-shrank): node_modules lost 40 entries',
+  } as const;
   const blockedBy = (reason: string) => ({ kind: 'blocked', issue: 7, reason });
 
   it.each([
-    ['a landing with a clean teardown', COMMITTED, TD_OK, false, [COMMITTED]],
-    ['a halting landing', halting, TD_OK, false, [halting, blockedBy(halting.reason)]],
+    ['a landing with a clean teardown', COMMITTED, null, 'running', [COMMITTED], 'running'],
+    [
+      'a halting landing',
+      halting,
+      halting,
+      'halting',
+      [halting, blockedBy(halting.reason)],
+      'halted',
+    ],
     [
       'a landing whose teardown shrank a source (landed-then-halted)',
       COMMITTED,
-      TD_SHRANK,
-      false,
-      [
-        {
-          kind: 'epic-halt',
-          epic: 1025,
-          reason: 'teardown refused (source-shrank): node_modules lost 40 entries',
-        },
-        blockedBy('teardown refused (source-shrank): node_modules lost 40 entries'),
-      ],
+      SHRANK,
+      'halting',
+      [SHRANK, blockedBy(SHRANK.reason)],
+      'halted',
     ],
-    ['a halt in an entry already halted', halting, TD_OK, true, [blockedBy(halting.reason)]],
+    [
+      'a halt in an entry already halted',
+      halting,
+      halting,
+      'halted',
+      [blockedBy(halting.reason)],
+      'halted',
+    ],
     [
       'a shrunk source in an entry already halted',
       { kind: 'agent-died', issue: 7 },
-      TD_SHRANK,
-      true,
-      [blockedBy('teardown refused (source-shrank): node_modules lost 40 entries')],
+      SHRANK,
+      'halted',
+      [blockedBy(SHRANK.reason)],
+      'halted',
     ],
     [
       'a landing in an entry already halted',
       COMMITTED,
-      TD_OK,
-      true,
+      null,
+      'halted',
       [blockedBy('landed after its epic halted')],
+      'halted',
+    ],
+    [
+      'a landing in an entry halting but not yet halted',
+      COMMITTED,
+      null,
+      'halting',
+      [COMMITTED],
+      'halting',
     ],
     [
       'a chain-level block with no slice',
       { kind: 'blocked', issue: 7, reason: 'planner stale' },
       null,
-      false,
+      'running',
       [blockedBy('planner stale')],
+      'running',
     ],
     [
       'a dead agent',
       { kind: 'agent-died', issue: 7 },
-      TD_OK,
-      false,
+      null,
+      'running',
       [{ kind: 'agent-died', issue: 7 }],
+      'running',
     ],
     [
       'a not-ready re-check with no slice',
       { kind: 'label-removed', issue: 7 },
       null,
-      false,
+      'running',
       [{ kind: 'label-removed', issue: 7 }],
+      'running',
     ],
-  ] as const)('settles %s', (_name, primary, td, entryHalted, events) => {
-    expect(settleEvents(primary, td, { ...AT, entryHalted })).toEqual(events);
+  ] as const)('settles %s', (_name, primary, halt, entry, events, after) => {
+    expect(settleEvents(primary, halt, { ...AT, entry })).toEqual({ events, entry: after });
   });
 });
 

@@ -6,11 +6,11 @@
  *
  * **The settle rule** (the scheduler's consumer protocol, step 7): every
  * attempt's slice is torn down before its final events are fed, and
- * {@link settleEvents} turns the attempt's primary event and the teardown's
- * envelope into those events. A halt — from the landing or from a teardown
- * that found a link target shrunk — feeds `epic-halt` for the entry, then
- * `blocked` for the halting issue itself, so the issue settles as halted
- * and the entry can drain.
+ * {@link settleEvents} turns the attempt's primary event and the halt it
+ * called for into those events and the entry's next halt state. A halt —
+ * from the landing or from a teardown that found a link target shrunk —
+ * feeds `epic-halt` for the entry, then `blocked` for the halting issue
+ * itself, so the issue settles as halted and the entry can drain.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -38,6 +38,20 @@ export interface CommitQueue {
 
 /** The scheduler's `epic-halt` event. */
 export type EpicHaltEvent = Extract<SchedulerEvent, { readonly kind: 'epic-halt' }>;
+
+/**
+ * An entry's halt state: `halting` once a landing or teardown calls for a
+ * halt, `halted` once the scheduler is fed its one `epic-halt`.
+ */
+export type HaltState = 'running' | 'halting' | 'halted';
+
+/** An attempt's settle events, and its entry's halt state after them. */
+export interface Settled {
+  /** The events, in feeding order. */
+  readonly events: SchedulerEvent[];
+  /** The entry's halt state once they are fed. */
+  readonly entry: HaltState;
+}
 
 /** Which issue an event concerns, and its entry's `epic` key. */
 export interface EventSubject {
@@ -148,25 +162,30 @@ export function teardownResidue(teardown: TeardownOutput | null): string | null 
  * @param primary - What ended the attempt: the landing's event, or the
  *   chain's own (`blocked`, `agent-died`, `label-removed`, or `epic-halt`
  *   when it stopped for its halting entry).
- * @param teardown - The slice teardown's output; `null` when there was no slice.
- * @param at - The issue, its entry, and whether the entry was already fed `epic-halt`.
- * @returns `[epic-halt, blocked]` when the primary or the teardown halts —
- *   `[blocked]` alone when the entry was already halted, since a second halt
- *   throws; `[blocked]` for a `committed` in an already-halted entry, which
- *   the scheduler refuses; otherwise `[primary]`.
+ * @param halt - The halt the attempt called for — `primary` itself when it is
+ *   an `epic-halt`; `null` for none.
+ * @param at - The issue, its entry, and the entry's halt state before settling.
+ * @returns With a halt, `[epic-halt, blocked]` — `[blocked]` alone in an entry
+ *   already halted — and the entry `halted`; for a `committed` in an entry
+ *   already halted, which the scheduler refuses, `[blocked]`; otherwise
+ *   `[primary]` and the entry's state unchanged.
  */
 export function settleEvents(
   primary: SchedulerEvent,
-  teardown: TeardownOutput | null,
-  at: EventSubject & { readonly entryHalted: boolean },
-): SchedulerEvent[] {
-  const halt = primary.kind === 'epic-halt' ? primary : teardownEvent(teardown, at.epic);
+  halt: EpicHaltEvent | null,
+  at: EventSubject & { readonly entry: HaltState },
+): Settled {
   if (halt !== null) {
     const blocked: SchedulerEvent = { kind: 'blocked', issue: at.issue, reason: halt.reason };
-    return at.entryHalted ? [blocked] : [halt, blocked];
+    return { events: at.entry === 'halted' ? [blocked] : [halt, blocked], entry: 'halted' };
   }
-  if (at.entryHalted && primary.kind === 'committed') {
-    return [{ kind: 'blocked', issue: at.issue, reason: 'landed after its epic halted' }];
+  if (at.entry === 'halted' && primary.kind === 'committed') {
+    const blocked: SchedulerEvent = {
+      kind: 'blocked',
+      issue: at.issue,
+      reason: 'landed after its epic halted',
+    };
+    return { events: [blocked], entry: 'halted' };
   }
-  return [primary];
+  return { events: [primary], entry: at.entry };
 }

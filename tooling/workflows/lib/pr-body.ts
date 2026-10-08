@@ -1,11 +1,7 @@
 /**
  * The `ship` workflow's texts that land in git and on GitHub: each landed
- * issue's commit message, and each epic's pull request title and body — the
- * PR writer's Summary ({@link summaryLines}), the Evidence
- * ({@link evidenceBullet}), the PR writer's Merge Danger
- * ({@link mergeDangerLines}), the visible Issues list, then the run report,
- * folded in `<details>` unless the PR writer returned nothing (the order:
- * {@link renderPrBody}) — and each attached run's section, appended to the
+ * issue's commit message, each epic's pull request title and body
+ * ({@link renderPrBody}), and each attached run's section, appended to the
  * open PR's body after the run's push ({@link renderAttachedSection}), and
  * its run report, posted as a PR comment ({@link renderAttachedReport}).
  *
@@ -18,9 +14,10 @@
  * that landed the issue — never in a run report. Every other issue is cited
  * `see #N`, the epic container included, and every text carrying agent- or
  * tool-written words passes through {@link neutralText}, which turns
- * `fixed #12` into `fixed (see #12)`: a commit's whole subject line, a PR
- * body as a whole, sparing only its landed `fixes` issues, and an attached
- * run's section as a whole, sparing only that run's landed `fixes` issues.
+ * `fixed #12` into `fixed (see #12)`: a commit's subject line and each
+ * salvage line, a PR body as a whole, sparing only its landed `fixes`
+ * issues, and an attached run's section as a whole, sparing only that run's
+ * landed `fixes` issues.
  * The body a section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
@@ -42,7 +39,7 @@ import type {
   SliceWork,
 } from './agent-calls.js';
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
-import { evidenceBullet } from './pr-evidence.js';
+import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from './sync-master-step.js';
@@ -269,15 +266,27 @@ export function subjectLine(commit: CommitSpec): string {
  *
  * @param issue - The issue.
  * @param card - Its plan card's commit and closing choice.
+ * @param salvage - The claims its slice salvaged; none by default.
  * @returns The subject line, a blank line, `fixes #N` (or `see #N`), a
- *   blank line and {@link CO_AUTHOR_TRAILER}, newline-terminated.
+ *   blank line; with salvage, `Salvage:`, one `- ` line per item per
+ *   {@link salvageText} with every closing keyword defused, and a blank line;
+ *   then {@link CO_AUTHOR_TRAILER}, newline-terminated.
  */
-export function commitMessage(issue: number, card: Pick<PlanCard, 'commit' | 'closes'>): string {
+export function commitMessage(
+  issue: number,
+  card: Pick<PlanCard, 'commit' | 'closes'>,
+  salvage: readonly SalvageItem[] = [],
+): string {
+  const block =
+    salvage.length === 0
+      ? []
+      : ['Salvage:', ...salvage.map((item) => neutralText(`- ${salvageText(item)}`)), ''];
   return [
     subjectLine(card.commit),
     '',
     `${card.closes} #${String(issue)}`,
     '',
+    ...block,
     CO_AUTHOR_TRAILER,
     '',
   ].join('\n');
@@ -334,8 +343,9 @@ export function sliceLeaseLines(
  * @returns Markdown, neutralised whole but for the landed `fixes` issues,
  *   the PR writer's prose included: `## Summary` per {@link summaryLines};
  *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
- *   `## Issues` per {@link issueListLines}; then the run report per
- *   {@link reportBlock}. Each section per {@link section}.
+ *   `## Issues` per {@link issueListLines}; `## Salvage` per
+ *   {@link salvageSection}; then the run report per {@link reportBlock}.
+ *   Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
   const body = [
@@ -343,6 +353,7 @@ export function renderPrBody(input: PrBodyInput): string {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
+    ...salvageSection(input.landed, 2),
     ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -356,13 +367,13 @@ export function renderPrBody(input: PrBodyInput): string {
  * @returns Markdown, neutralised whole but for this run's landed `fixes`
  *   issues: `## Attached run <R>`, a blank line; `### Evidence`, one bullet
  *   per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- *   container line; then one run-report line and a blank line —
- *   `Run report: [PR comment](<url>)` with a `reportComment`, else
+ *   container line; `### Salvage` per {@link salvageSection}; then one
+ *   run-report line and a blank line — `Run report: [PR comment](<url>)`
+ *   with a `reportComment`, else
  *   `Run report: not posted to this PR; it is in <reportDir>.`, the report
- *   dir in a code span. No run
- *   report, no Summary and no Merge Danger: the report is posted as its own
- *   PR comment ({@link renderAttachedReport}), and an attached run has no PR
- *   writer.
+ *   dir in a code span. No run report, no Summary and no Merge Danger: the
+ *   report is posted as its own PR comment ({@link renderAttachedReport}),
+ *   and an attached run has no PR writer.
  */
 export function renderAttachedSection(input: AttachedSectionInput): string {
   const report =
@@ -374,6 +385,7 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
+    ...salvageSection(input.landed, 3),
     report,
     '',
   ].join('\n');
@@ -406,6 +418,27 @@ export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportCo
  */
 function evidenceList(landed: readonly LandedIssue[]): string[] {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+
+/** A claim a slice salvaged from a trimmed comment. */
+type SalvageItem = SliceWork['tdd']['salvage'][number];
+
+/** One salvage item's text, the same in the commit body and the PR body. */
+function salvageText(item: SalvageItem): string {
+  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
+}
+
+/**
+ * Each landed issue's salvage, nested under its `- #N` line, in a section;
+ * no lines at all when none salvaged anything.
+ */
+function salvageSection(landed: readonly LandedIssue[], depth: 2 | 3): string[] {
+  const lines = landed.flatMap((l) =>
+    l.tdd.salvage.length === 0
+      ? []
+      : [`- #${String(l.issue)}`, ...l.tdd.salvage.map((item) => `  - ${salvageText(item)}`)],
+  );
+  return lines.length === 0 ? [] : section('Salvage', lines, depth);
 }
 
 /**
