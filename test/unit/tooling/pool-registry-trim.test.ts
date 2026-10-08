@@ -23,8 +23,8 @@ afterEach(() => {
 });
 
 describe('trimRegistry', () => {
-  // The real registry is exactly the warm set, so only an added cold entry
-  // shows the filter dropping anything.
+  // The added cold entry keeps the test independent of how many cold servers
+  // the real registry holds.
   it('drops a registered server outside the warm set', () => {
     const entries = JSON.parse(readFileSync(REAL_REGISTRY, 'utf8')) as Record<string, unknown>[];
     const source = join(dir, 'source.json');
