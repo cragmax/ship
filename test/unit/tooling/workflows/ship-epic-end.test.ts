@@ -821,3 +821,27 @@ describe('runShip — salvage', () => {
     expect(bodyOf(run)).not.toContain('## Salvage');
   });
 });
+
+describe('runShip — recorded', () => {
+  it('renders each landed slice’s recorded values under its issue in a ## Recorded section between the Issues list and the run report', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      'tdd:7-1': { ...TDD_GREEN, recorded: ['a', 'b'] },
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const body = bodyOf(run);
+    const at = body.indexOf('## Recorded');
+    expect(at).toBeGreaterThan(body.indexOf('## Issues'));
+    expect(body.slice(at, at + 7)).toEqual([
+      '## Recorded',
+      '',
+      '- #7',
+      '  - `a`',
+      '  - `b`',
+      '',
+      '<details><summary>Run report</summary>',
+    ]);
+  });
+});

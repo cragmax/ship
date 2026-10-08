@@ -344,7 +344,8 @@ export function sliceLeaseLines(
  *   the PR writer's prose included: `## Summary` per {@link summaryLines};
  *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
  *   `## Issues` per {@link issueListLines}; `## Salvage` per
- *   {@link salvageSection}; then the run report per {@link reportBlock}.
+ *   {@link salvageItems} and `## Recorded` per {@link recordedItems}, each
+ *   per {@link perIssueSection}; then the run report per {@link reportBlock}.
  *   Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
@@ -353,7 +354,8 @@ export function renderPrBody(input: PrBodyInput): string {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    ...salvageSection(input.landed, 2),
+    ...perIssueSection('Salvage', input.landed, salvageItems, 2),
+    ...perIssueSection('Recorded', input.landed, recordedItems, 2),
     ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -367,7 +369,9 @@ export function renderPrBody(input: PrBodyInput): string {
  * @returns Markdown, neutralised whole but for this run's landed `fixes`
  *   issues: `## Attached run <R>`, a blank line; `### Evidence`, one bullet
  *   per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- *   container line; `### Salvage` per {@link salvageSection}; then one
+ *   container line; `### Salvage` per {@link salvageItems} and
+ *   `### Recorded` per {@link recordedItems}, each per
+ *   {@link perIssueSection}; then one
  *   run-report line and a blank line — `Run report: [PR comment](<url>)`
  *   with a `reportComment`, else
  *   `Run report: not posted to this PR; it is in <reportDir>.`, the report
@@ -385,7 +389,8 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...salvageSection(input.landed, 3),
+    ...perIssueSection('Salvage', input.landed, salvageItems, 3),
+    ...perIssueSection('Recorded', input.landed, recordedItems, 3),
     report,
     '',
   ].join('\n');
@@ -428,17 +433,40 @@ function salvageText(item: SalvageItem): string {
   return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
 }
 
+/** A landed issue's salvage lines, one per item per {@link salvageText}. */
+function salvageItems(landed: LandedIssue): string[] {
+  return landed.tdd.salvage.map(salvageText);
+}
+
 /**
- * Each landed issue's salvage, nested under its `- #N` line, in a section;
- * no lines at all when none salvaged anything.
+ * A landed issue's recorded values in the tdd's order, each per {@link oneLine}, blanks dropped,
+ * as a {@link codeSpan} so its markdown and mentions render inert; its closing keywords are left
+ * to the body's {@link neutralText}.
  */
-function salvageSection(landed: readonly LandedIssue[], depth: 2 | 3): string[] {
-  const lines = landed.flatMap((l) =>
-    l.tdd.salvage.length === 0
+function recordedItems(landed: LandedIssue): string[] {
+  return landed.tdd.recorded
+    .map(oneLine)
+    .filter((entry) => entry !== '')
+    .map(codeSpan);
+}
+
+/**
+ * Each landed issue's `itemsOf` lines, nested under its `- #N` line, in a `heading` section at
+ * `depth`; an issue with none is left out, and no lines at all when no issue has any.
+ */
+function perIssueSection(
+  heading: string,
+  landed: readonly LandedIssue[],
+  itemsOf: (landed: LandedIssue) => readonly string[],
+  depth: 2 | 3,
+): string[] {
+  const lines = landed.flatMap((l) => {
+    const items = itemsOf(l);
+    return items.length === 0
       ? []
-      : [`- #${String(l.issue)}`, ...l.tdd.salvage.map((item) => `  - ${salvageText(item)}`)],
-  );
-  return lines.length === 0 ? [] : section('Salvage', lines, depth);
+      : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
+  });
+  return lines.length === 0 ? [] : section(heading, lines, depth);
 }
 
 /**

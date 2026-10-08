@@ -177,6 +177,11 @@ export const TddOutputSchema = z.object({
   evidence: TddEvidenceSchema,
   /** Each claim it salvaged from a comment it trimmed; empty when none. */
   salvage: z.array(SalvageItemSchema),
+  /**
+   * Each value its plan asked it to record for the PR body (a count, a size
+   * the build produced), one per entry; empty when the plan asks for none.
+   */
+  recorded: z.array(z.string()),
   /** Why, when `BLOCKED` or `PARTIAL`. */
   reason: z.string().exactOptional(),
 });

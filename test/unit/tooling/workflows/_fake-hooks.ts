@@ -217,6 +217,7 @@ export const TDD_GREEN = {
     reason: '',
   },
   salvage: [],
+  recorded: [],
 };
 
 /** A diff review that found two rules findings and one plan finding. */

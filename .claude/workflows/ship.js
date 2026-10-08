@@ -1815,9 +1815,19 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['location', 'kind', 'claim'],
         },
       },
+      recorded: { type: 'array', items: { type: 'string' } },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'salvage'],
+    required: [
+      'verdict',
+      'sha',
+      'files',
+      'leaseLines',
+      'probes',
+      'evidence',
+      'salvage',
+      'recorded',
+    ],
   },
   diffReview: {
     type: 'object',
@@ -2458,7 +2468,8 @@ function renderPrBody(input) {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    ...salvageSection(input.landed, 2),
+    ...perIssueSection('Salvage', input.landed, salvageItems, 2),
+    ...perIssueSection('Recorded', input.landed, recordedItems, 2),
     ...reportBlock(input),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -2473,7 +2484,8 @@ function renderAttachedSection(input) {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...salvageSection(input.landed, 3),
+    ...perIssueSection('Salvage', input.landed, salvageItems, 3),
+    ...perIssueSection('Recorded', input.landed, recordedItems, 3),
     report,
     '',
   ].join('\n');
@@ -2492,13 +2504,23 @@ function evidenceList(landed) {
 function salvageText(item) {
   return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
 }
-function salvageSection(landed, depth) {
-  const lines = landed.flatMap((l) =>
-    l.tdd.salvage.length === 0
+function salvageItems(landed) {
+  return landed.tdd.salvage.map(salvageText);
+}
+function recordedItems(landed) {
+  return landed.tdd.recorded
+    .map(oneLine)
+    .filter((entry) => entry !== '')
+    .map(codeSpan);
+}
+function perIssueSection(heading, landed, itemsOf, depth) {
+  const lines = landed.flatMap((l) => {
+    const items = itemsOf(l);
+    return items.length === 0
       ? []
-      : [`- #${String(l.issue)}`, ...l.tdd.salvage.map((item) => `  - ${salvageText(item)}`)],
-  );
-  return lines.length === 0 ? [] : section('Salvage', lines, depth);
+      : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
+  });
+  return lines.length === 0 ? [] : section(heading, lines, depth);
 }
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));

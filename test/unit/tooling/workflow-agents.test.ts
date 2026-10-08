@@ -274,6 +274,25 @@ describe('workflow agents', () => {
     ).toEqual([]);
   });
 
+  it('ship-tdd returns its plan-required values in recorded under its ## Report and return', () => {
+    const bullet =
+      section(agentText('ship-tdd'), '## Report and return')
+        .split('\n')
+        .find((l) => l.startsWith('- `recorded`')) ?? '';
+
+    expect(
+      ['`[]`', 'commit message file', 'PR body'].filter((token) => !bullet.includes(token)),
+    ).toEqual([]);
+  });
+
+  it('planner routes a commit-body acceptance request to the tdd’s recorded', () => {
+    const plan = section(agentText('planner'), '## Plan mode');
+
+    expect(
+      ['`recorded`', 'commit body', 'ship-tdd.md'].filter((token) => !plan.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
