@@ -62,6 +62,7 @@ import {
   prTitle,
   renderAttachedReport,
   renderAttachedSection,
+  renderBlockedComment,
   renderPrBody,
   sliceLeaseLines,
   type CriticReport,
@@ -102,6 +103,19 @@ export interface IssueReport {
   readonly commit?: string;
   /** Why, when it did not land. */
   readonly reason?: string;
+}
+
+/** One issue the run blocked, and whether its reason reached the issue as a comment. */
+interface IssueComment {
+  /** The issue. */
+  readonly issue: number;
+  /** The posted comment's URL; `null` when the post failed. */
+  readonly url: string | null;
+  /**
+   * Why the post failed — the `post-issue-comment` envelope's problem, or the
+   * call's throw; absent when it posted.
+   */
+  readonly problem?: string;
 }
 
 /** One entry's result. */
@@ -156,6 +170,12 @@ export interface EpicReport {
   readonly retro?: readonly RetroFinding[] | null;
   /** The entry's lease totals; absent without an epic end. */
   readonly leases?: LeaseAggregate;
+  /**
+   * One record per issue the run blocked, in the entry's order: its
+   * reason's comment, posted or not ({@link commentBlockedStep}); absent
+   * when no issue was blocked.
+   */
+  readonly issueComments?: readonly IssueComment[];
 }
 
 /** An epic end's inputs. */
@@ -211,6 +231,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
       message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
     }),
   );
+  const issueComments = await commentBlockedStep(input, published.pr);
   if (state.retro === undefined)
     state.retro = await retroStep(input, retroReport(input, published));
   return {
@@ -225,6 +246,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
 }
 
@@ -239,6 +261,7 @@ export async function unshippedEpicEnd(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues' | 'schedule' | 'residue'>,
   outcome: 'halted' | 'nothing-landed',
 ): Promise<EpicReport> {
+  const issueComments = await commentBlockedStep(input, undefined);
   const report: EpicReport = {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -246,8 +269,75 @@ export async function unshippedEpicEnd(
     issues: input.issues,
     schedule: input.schedule,
     residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
   return { ...report, retro: await retroStep(input, report) };
+}
+
+/**
+ * Tell each issue the run blocked why, as one comment each
+ * (`post-issue-comment`, `gh` run from the main checkout), the comment
+ * written first to `<reportDir>/issue-comment-<N>.md` per
+ * {@link renderBlockedComment}. The run changes no label.
+ *
+ * @param input - The entry and its issues.
+ * @param pr - The run's pull request, when it opened one.
+ * @returns Resolves to one record per `blocked` issue, in the entry's order:
+ *   its `url`, or `url: null` with the `problem` — the envelope's per
+ *   `envelopeProblem`, `post-issue-comment ok without a url`, or
+ *   `post-issue-comment threw: …`. Never rejects, so a failed post never
+ *   fails the run; `[]` when no issue was blocked.
+ */
+async function commentBlockedStep(
+  input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues'>,
+  pr: number | undefined,
+): Promise<IssueComment[]> {
+  const { entry } = input;
+  const comments: IssueComment[] = [];
+  for (const issue of input.issues) {
+    if (issue.outcome !== 'blocked') continue;
+    const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
+    const content = renderBlockedComment({
+      issue: issue.issue,
+      ...(issue.reason === undefined ? {} : { reason: issue.reason }),
+      ...(pr === undefined ? {} : { pr }),
+      branch: entry.branch,
+      reportDir: entry.reportDir,
+    });
+    const argv = [entry.main, '--issue', String(issue.issue), '--comment-file', path];
+    const place = runPlace(entry.reportDir, String(issue.issue), { path, content });
+    comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
+  }
+  return comments;
+}
+
+/**
+ * One `post-issue-comment` call, its outcome as the report records it.
+ *
+ * @param hooks - The workflow hooks.
+ * @param issue - The issue.
+ * @param argv - The command's arguments after its name.
+ * @param place - Where its envelope goes, with the comment to write first.
+ * @returns Resolves to the record per {@link commentBlockedStep}; never rejects.
+ */
+async function postIssueComment(
+  hooks: WorkflowHooks,
+  issue: number,
+  argv: readonly string[],
+  place: ReturnType<typeof runPlace>,
+): Promise<IssueComment> {
+  try {
+    const out = await runTool(hooks, 'post-issue-comment', argv, place);
+    if (out?.status !== 'ok') {
+      return { issue, url: null, problem: envelopeProblem('post-issue-comment', out) };
+    }
+    return typeof out.url === 'string'
+      ? { issue, url: out.url }
+      : { issue, url: null, problem: 'post-issue-comment ok without a url' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { issue, url: null, problem: `post-issue-comment threw: ${message}` };
+  }
 }
 
 /**

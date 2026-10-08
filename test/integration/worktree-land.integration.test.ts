@@ -166,6 +166,8 @@ describe('land', () => {
       expect(rawMessage(run.batch, head)).toBe(MESSAGE);
       expect(r.json.files).toEqual(['del.txt', 'docs/added.md', 'mod.txt']);
       expect(commitPaths(run.batch, head)).toEqual(r.json.files);
+      // one line deleted, one added, one rewritten (an insertion and a deletion)
+      expect(r.json.lines).toBe(4);
       expect(porcelain(run.batch)).toBe('');
       expect(r.json).toMatchObject({ rolledBack: false, batchClean: true, conflicts: [] });
     },

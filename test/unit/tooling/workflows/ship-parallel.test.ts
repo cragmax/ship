@@ -301,14 +301,22 @@ describe('runShip — issues in flight at once', () => {
     const report = await runShip(run.hooks, 'issues 7 8 9');
 
     expect(report.epics[0]?.schedule).toEqual([
-      { issue: 7, blockers: [], attempts: 2, startedAt: 'cut 7-2', committedAt: 'land 7-2' },
-      { issue: 8, blockers: [], attempts: 1, startedAt: 'cut 8-1', committedAt: null },
+      {
+        issue: 7,
+        blockers: [],
+        attempts: 2,
+        startedAt: 'cut 7-2',
+        committedAt: 'land 7-2',
+        size: { files: 2, lines: 40 },
+      },
+      { issue: 8, blockers: [], attempts: 1, startedAt: 'cut 8-1', committedAt: null, size: null },
       {
         issue: 9,
         blockers: [{ issue: 8, source: 'declared' }],
         attempts: 0,
         startedAt: null,
         committedAt: null,
+        size: null,
       },
     ]);
   });

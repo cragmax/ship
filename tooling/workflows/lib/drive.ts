@@ -87,7 +87,7 @@ type Note =
   | { readonly kind: 'epic-end'; readonly entry: number; readonly report: EpicReport };
 
 /** An issue's final attempt, as its schedule reports it. */
-type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt'>;
+type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt' | 'size'>;
 
 /** The loop's state. */
 interface Drive {
@@ -220,6 +220,7 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
     committedAt: ending.committedAt,
+    size: ending.size,
   });
   if (events.some((e) => e.kind === 'epic-halt')) {
     d.halting.add(i);
@@ -516,7 +517,7 @@ function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
  * @param graph - The graph its blockers are read from.
  * @param overlap - Pre-flight's overlap record, for each blocker's source.
  * @returns Its blockers ascending, each with its source per
- *   {@link scheduleBlocker}, `attempts: 0`, both instants `null`.
+ *   {@link scheduleBlocker}, `attempts: 0`, both instants and the size `null`.
  */
 export function neverStarted(
   issue: number,
@@ -528,7 +529,7 @@ export function neverStarted(
     .map((e) => e.blocker)
     .sort((a, b) => a - b)
     .map((blocker) => scheduleBlocker(blocker, issue, overlap));
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
 }
 
 /**

@@ -24,12 +24,14 @@
  * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
  * npx tsx <main-checkout>/tooling/worktree.ts append-pr-body BATCH --pr N --section-file F
  * npx tsx <main-checkout>/tooling/worktree.ts post-pr-comment BATCH --pr N --comment-file F
+ * npx tsx <main-checkout>/tooling/worktree.ts post-issue-comment MAIN --issue N --comment-file F
  * ```
  *
  * The commit queue runs `land` once per slice: it harvests, checks the
  * staged set as `staged-guard` does, builds when needed, then commits. The
  * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
- * that order. A resync runs `cut-batch --attach`, `sync-master` and
+ * that order, then `post-issue-comment` once per issue the run blocked. A
+ * resync runs `cut-batch --attach`, `sync-master` and
  * `publish --push-only`. An attached run runs `preflight --attach`,
  * `cut-batch --attach --attached-run`, `cut-slice --attached-run`,
  * `publish --push-only`, `post-pr-comment` and `append-pr-body`.
@@ -77,6 +79,7 @@ import { attachBatch } from './worktree/cut-attach.js';
 import { harvest } from './worktree/harvest.js';
 import { land } from './worktree/land.js';
 import { liveRuns } from './worktree/live-runs.js';
+import { postIssueComment } from './worktree/post-issue-comment.js';
 import { postPrComment } from './worktree/post-pr-comment.js';
 import { preflight } from './worktree/preflight.js';
 import { provision } from './worktree/provision.js';
@@ -101,6 +104,7 @@ import {
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
+  PostIssueCommentResultSchema,
   PostPrCommentResultSchema,
   PreflightResultSchema,
   PublishResultSchema,
@@ -347,6 +351,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       postPrComment({
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
+        commentFile: pathFlag(args, '--comment-file'),
+      }),
+  },
+  'post-issue-comment': {
+    schema: PostIssueCommentResultSchema,
+    valueFlags: ['--issue', '--comment-file'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) =>
+      postIssueComment({
+        cwd: args.target,
+        issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
         commentFile: pathFlag(args, '--comment-file'),
       }),
   },

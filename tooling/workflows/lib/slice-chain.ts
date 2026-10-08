@@ -42,7 +42,7 @@ import {
 } from './agent-calls.js';
 import { landingEvent, teardownEvent, teardownResidue, type CommitQueue } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import { commitMessage } from './pr-body.js';
+import { commitMessage, type SliceSize } from './pr-body.js';
 import type {
   LeaseValues,
   PlannerValues,
@@ -116,6 +116,8 @@ export interface AttemptEnding {
   readonly startedAt: string | null;
   /** When it landed (the `land` envelope's `at`); `null` unless it landed. */
   readonly committedAt: string | null;
+  /** Its landed commit's size (the `land` envelope's `files` count and `lines`); `null` unless it landed with both. */
+  readonly size: SliceSize | null;
 }
 
 /** An attempt's note to the drive loop. */
@@ -150,6 +152,7 @@ interface Attempt {
   slice: string | null;
   startedAt: string | null;
   committedAt: string | null;
+  size: SliceSize | null;
   conflicts: readonly string[];
   base: string;
   projectDir: string;
@@ -218,6 +221,7 @@ function newAttempt(
     slice: null,
     startedAt: null,
     committedAt: null,
+    size: null,
     conflicts: [],
     base: '',
     projectDir: '',
@@ -458,8 +462,9 @@ async function testReviewStage(at: Attempt): Promise<SchedulerEvent | null> {
 /**
  * Land the authored slice on the batch — run inside the commit queue.
  *
- * @param at - The attempt; gains `commit` and `committedAt` when it lands,
- *   `conflicts` when it conflicts.
+ * @param at - The attempt; gains `commit`, `committedAt` and `size` when it
+ *   lands (`size` stays `null` when the envelope's `lines` is), `conflicts`
+ *   when it conflicts.
  * @returns Resolves to the landing's event (`commit-queue.ts`), or
  *   `epic-halt` without landing when the entry is halting.
  */
@@ -481,6 +486,10 @@ async function landSlice(at: Attempt): Promise<SchedulerEvent> {
   if (event.kind === 'committed') {
     at.commit = out?.commit ?? null;
     at.committedAt = out?.at ?? null;
+    at.size =
+      typeof out?.lines === 'number' && out.files !== undefined
+        ? { files: out.files.length, lines: out.lines }
+        : null;
   }
   if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
@@ -523,6 +532,7 @@ async function endAttempt(at: Attempt, primary: SchedulerEvent): Promise<Attempt
     conflicts: at.conflicts,
     startedAt: at.startedAt,
     committedAt: at.committedAt,
+    size: at.size,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }

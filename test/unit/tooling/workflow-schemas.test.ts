@@ -103,6 +103,7 @@ describe('consumed fields are required', () => {
       'check-master': WORKTREE_OPTIONAL,
       'append-pr-body': WORKTREE_OPTIONAL,
       'post-pr-comment': WORKTREE_OPTIONAL,
+      'post-issue-comment': WORKTREE_OPTIONAL,
     });
   });
 

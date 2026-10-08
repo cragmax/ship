@@ -84,6 +84,7 @@ export function land(input: LandInput): LandResult {
     sha: null,
     commit: null,
     files: [],
+    lines: null,
     conflicts: [],
     rolledBack: false,
     batchClean: false,
@@ -94,6 +95,7 @@ export function land(input: LandInput): LandResult {
     assertRunBatch(batch);
     assertBatchClean(batch);
     result.sha = assertSingleCommit(batch, input.sha, input.base);
+    result.lines = changedLines(batch, result.sha);
     staged = pick(result, batch, result.sha, selfPath);
     if (staged) {
       assertStagedSet(batch, result.files);
@@ -110,6 +112,31 @@ export function land(input: LandInput): LandResult {
   }
   result.batchClean = isClean(batch);
   return result;
+}
+
+/**
+ * The lines the slice commit changes against its parent, the size the
+ * schedule reports against the slice budget (`SLICE_BUDGET`,
+ * `tooling/workflows/lib/stages.ts`).
+ *
+ * @param batch - The batch worktree (shares the object database).
+ * @param sha - The resolved slice commit.
+ * @returns Insertions plus deletions over the commit's text files; a binary
+ *   file (git's `-` counts) adds none.
+ * @throws StepFailure `preconditions` when git fails.
+ */
+function changedLines(batch: string, sha: string): number {
+  const rows = git(
+    batch,
+    ['diff-tree', '-r', '--no-commit-id', '--numstat', '--no-renames', sha],
+    'preconditions',
+  );
+  let lines = 0;
+  for (const row of rows.split('\n')) {
+    const [added = '-', removed = '-'] = row.split('\t');
+    lines += (added === '-' ? 0 : Number(added)) + (removed === '-' ? 0 : Number(removed));
+  }
+  return lines;
 }
 
 /**

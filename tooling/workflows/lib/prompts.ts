@@ -25,6 +25,7 @@ import {
   PLAN_PROBES_PER_ISSUE,
   PROBE_CAP_MINUTES,
   PROBES_PER_ISSUE,
+  SLICE_BUDGET,
 } from './stages.js';
 
 /** A live run's changed files, for the scout's overlap judgment. */
@@ -310,6 +311,19 @@ function probeCapsLine(minutes: number, probes: number): string {
 }
 
 /**
+ * The `Slice budget:` line — {@link SLICE_BUDGET} as the planner, the plan
+ * reviewer and the retro read it.
+ *
+ * @returns `Slice budget: <files> files in scope, <tasks> tasks, <lines> lines landed`.
+ */
+function sliceBudgetLine(): string {
+  return (
+    `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
+    `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
+  );
+}
+
+/**
  * A slice's server-tier recipe: the lease command template, where its
  * version comes from, and the stage's probe caps.
  *
@@ -410,6 +424,7 @@ export const PROMPTS = {
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
       ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -424,6 +439,7 @@ export const PROMPTS = {
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
       probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
     ].join('\n'),
   tdd: (values: TddValues): string =>
     [
@@ -467,6 +483,7 @@ export const PROMPTS = {
       `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+      sliceBudgetLine(),
     ].join('\n'),
   prWriter: (values: PrWriterValues): string =>
     [

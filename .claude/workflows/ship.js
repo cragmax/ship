@@ -47,6 +47,7 @@ const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
+const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 };
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -606,6 +607,12 @@ function leaseCommand(lease) {
 function probeCapsLine(minutes, probes) {
   return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
 }
+function sliceBudgetLine() {
+  return (
+    `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
+    `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
+  );
+}
 function serverTierLines(lease, minutes, probes) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
@@ -665,6 +672,7 @@ const PROMPTS = {
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
       ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -679,6 +687,7 @@ const PROMPTS = {
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
       probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -721,6 +730,7 @@ const PROMPTS = {
       `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+      sliceBudgetLine(),
     ].join('\n'),
   prWriter: (values) =>
     [
@@ -1179,6 +1189,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       },
       commit: { type: ['string', 'null'] },
       files: { type: 'array', items: { type: 'string' } },
+      lines: { type: ['integer', 'null'] },
       conflicts: { type: 'array', items: { type: 'string' } },
       rolledBack: { type: 'boolean' },
       batchClean: { type: 'boolean' },
@@ -1189,6 +1200,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       'errors',
       'commit',
       'files',
+      'lines',
       'conflicts',
       'rolledBack',
       'batchClean',
@@ -1596,6 +1608,54 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'url'],
   },
+  'post-issue-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'url'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1872,6 +1932,7 @@ const TOOL_COMMANDS = {
   publish: [WORKTREE_CLI, 'publish'],
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
+  'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1962,6 +2023,7 @@ const TOOL_SCHEMAS = {
   publish: envelopeSchema('publish'),
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
+  'post-issue-comment': envelopeSchema('post-issue-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -2324,6 +2386,20 @@ function neutralText(text, closing = new Set()) {
     text,
   );
 }
+function renderBlockedComment(input) {
+  const run =
+    input.pr === undefined
+      ? `branch \`${input.branch}\`, no pull request`
+      : `PR #${String(input.pr)}`;
+  return [
+    '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
+    '',
+    `**Not landed: blocked.** ${neutralText(input.reason ?? 'no reason recorded')}`,
+    '',
+    `Run: ${run}. Report dir: \`${input.reportDir}\`.`,
+    '',
+  ].join('\n');
+}
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
 }
@@ -2461,9 +2537,13 @@ function overlapLine(edge) {
 function scheduleLine(entry) {
   const blockers =
     entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
+  const size =
+    entry.size === null
+      ? 'none'
+      : `${String(entry.size.files)} files, ${String(entry.size.lines)} lines`;
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
-    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}`
   );
 }
 function blockerText(blocker) {
@@ -2587,6 +2667,7 @@ function newAttempt(ctx, issue, attempt, previousConflicts) {
     slice: null,
     startedAt: null,
     committedAt: null,
+    size: null,
     conflicts: [],
     base: '',
     projectDir: '',
@@ -2758,6 +2839,10 @@ async function landSlice(at) {
   if (event.kind === 'committed') {
     at.commit = out?.commit ?? null;
     at.committedAt = out?.at ?? null;
+    at.size =
+      typeof out?.lines === 'number' && out.files !== undefined
+        ? { files: out.files.length, lines: out.lines }
+        : null;
   }
   if (event.kind === 'harvest-conflict') at.conflicts = out?.conflicts ?? [];
   return event;
@@ -2781,6 +2866,7 @@ async function endAttempt(at, primary) {
     conflicts: at.conflicts,
     startedAt: at.startedAt,
     committedAt: at.committedAt,
+    size: at.size,
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
@@ -3039,6 +3125,7 @@ async function epicEnd(input) {
     outcome: 'stopped',
     message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
   }));
+  const issueComments = await commentBlockedStep(input, published.pr);
   if (state.retro === undefined)
     state.retro = await retroStep(input, retroReport(input, published));
   return {
@@ -3053,9 +3140,11 @@ async function epicEnd(input) {
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
 }
 async function unshippedEpicEnd(input, outcome) {
+  const issueComments = await commentBlockedStep(input, undefined);
   const report = {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -3063,8 +3152,42 @@ async function unshippedEpicEnd(input, outcome) {
     issues: input.issues,
     schedule: input.schedule,
     residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
   return { ...report, retro: await retroStep(input, report) };
+}
+async function commentBlockedStep(input, pr) {
+  const { entry } = input;
+  const comments = [];
+  for (const issue of input.issues) {
+    if (issue.outcome !== 'blocked') continue;
+    const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
+    const content = renderBlockedComment({
+      issue: issue.issue,
+      ...(issue.reason === undefined ? {} : { reason: issue.reason }),
+      ...(pr === undefined ? {} : { pr }),
+      branch: entry.branch,
+      reportDir: entry.reportDir,
+    });
+    const argv = [entry.main, '--issue', String(issue.issue), '--comment-file', path];
+    const place = runPlace(entry.reportDir, String(issue.issue), { path, content });
+    comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
+  }
+  return comments;
+}
+async function postIssueComment(hooks, issue, argv, place) {
+  try {
+    const out = await runTool(hooks, 'post-issue-comment', argv, place);
+    if (out?.status !== 'ok') {
+      return { issue, url: null, problem: envelopeProblem('post-issue-comment', out) };
+    }
+    return typeof out.url === 'string'
+      ? { issue, url: out.url }
+      : { issue, url: null, problem: 'post-issue-comment ok without a url' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { issue, url: null, problem: `post-issue-comment threw: ${message}` };
+  }
 }
 async function shipSteps(input, state) {
   const { hooks, entry } = input;
@@ -3326,6 +3449,7 @@ function settle(d, issue, ending) {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
     committedAt: ending.committedAt,
+    size: ending.size,
   });
   if (events.some((e) => e.kind === 'epic-halt')) {
     d.halting.add(i);
@@ -3501,7 +3625,7 @@ function neverStarted(issue, graph, overlap) {
     .map((e) => e.blocker)
     .sort((a, b) => a - b)
     .map((blocker) => scheduleBlocker(blocker, issue, overlap));
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null };
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
 }
 function scheduleBlocker(blocker, dependent, overlap) {
   const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);

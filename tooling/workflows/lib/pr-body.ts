@@ -103,6 +103,14 @@ export type ScheduleBlocker =
       readonly confidence: OverlapConfidence;
     };
 
+/** A landed slice's size, as the `land` envelope measured its commit. */
+export interface SliceSize {
+  /** The paths the commit changes. */
+  readonly files: number;
+  /** The lines it changes: insertions plus deletions over its text files. */
+  readonly lines: number;
+}
+
 /** One issue's line of an entry's schedule. */
 export interface ScheduleEntry {
   /** The issue. */
@@ -115,6 +123,8 @@ export interface ScheduleEntry {
   readonly startedAt: string | null;
   /** When its commit landed; `null` unless it landed. */
   readonly committedAt: string | null;
+  /** Its landed commit's size, for the retro's slice-budget read; `null` unless it landed. */
+  readonly size: SliceSize | null;
 }
 
 /** The critic's part of an epic end. */
@@ -202,6 +212,46 @@ export function neutralText(text: string, closing: ReadonlySet<number> = new Set
       ),
     text,
   );
+}
+
+/** What a blocked issue's comment says about its run. */
+interface BlockedCommentInput {
+  /** The issue. */
+  readonly issue: number;
+  /** Why the run blocked it, as the run report records it; absent when unknown. */
+  readonly reason?: string;
+  /** The run's pull request, when it opened one. */
+  readonly pr?: number;
+  /** The run branch. */
+  readonly branch: string;
+  /** The run's report directory. */
+  readonly reportDir: string;
+}
+
+/**
+ * The comment an unattended run posts on an issue it blocked
+ * (`post-issue-comment`), so the reason — a planner's split proposal among
+ * them — sits on the issue the next triage or `/to-tickets` reads.
+ *
+ * @param input - The issue, its reason and the run.
+ * @returns A quote line saying the run changed nothing on the issue; the
+ *   reason (`no reason recorded` without one) with every closing keyword
+ *   defused ({@link neutralText}); then the run — `PR #N`, or its branch
+ *   and `no pull request` — and the report dir; a trailing newline.
+ */
+export function renderBlockedComment(input: BlockedCommentInput): string {
+  const run =
+    input.pr === undefined
+      ? `branch \`${input.branch}\`, no pull request`
+      : `PR #${String(input.pr)}`;
+  return [
+    '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
+    '',
+    `**Not landed: blocked.** ${neutralText(input.reason ?? 'no reason recorded')}`,
+    '',
+    `Run: ${run}. Report dir: \`${input.reportDir}\`.`,
+    '',
+  ].join('\n');
 }
 
 /**
@@ -522,16 +572,21 @@ function overlapLine(edge: OverlapEdge): string {
  * One issue's schedule line.
  *
  * @param entry - Its schedule.
- * @returns `- #N: blockers …; started …; committed …; attempts K`: each
- *   blocker per {@link blockerText}, `, `-joined, `none` for none; `never`
- *   for a missing instant.
+ * @returns `- #N: blockers …; started …; committed …; attempts K; size …`:
+ *   each blocker per {@link blockerText}, `, `-joined, `none` for none;
+ *   `never` for a missing instant; the size `<files> files, <lines> lines`,
+ *   or `none` unless it landed.
  */
 function scheduleLine(entry: ScheduleEntry): string {
   const blockers =
     entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
+  const size =
+    entry.size === null
+      ? 'none'
+      : `${String(entry.size.files)} files, ${String(entry.size.lines)} lines`;
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
-    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}`
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}`
   );
 }
 

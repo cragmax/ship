@@ -23,6 +23,7 @@ import type {
   LandResultSchema,
   MasterMoveSchema,
   OpenedPrSchema,
+  PostIssueCommentResultSchema,
   PostPrCommentResultSchema,
   PreflightCheckSchema,
   PreflightProblemSchema,
@@ -79,6 +80,9 @@ export type AppendPrBodyResult = z.infer<typeof AppendPrBodyResultSchema>;
 
 /** Envelope of `post-pr-comment <batch> --pr N --comment-file F`. */
 export type PostPrCommentResult = z.infer<typeof PostPrCommentResultSchema>;
+
+/** Envelope of `post-issue-comment <main> --issue N --comment-file F`. */
+export type PostIssueCommentResult = z.infer<typeof PostIssueCommentResultSchema>;
 
 /** One `master` ref at the launch and now. */
 export type MasterMove = z.infer<typeof MasterMoveSchema>;

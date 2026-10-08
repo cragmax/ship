@@ -11,11 +11,13 @@ import {
   prTitle,
   renderAttachedReport,
   renderAttachedSection,
+  renderBlockedComment,
   renderPrBody,
   type AttachedSectionInput,
   type LandedIssue,
   type PrBodyInput,
   type ScheduleBlocker,
+  type SliceSize,
 } from '../../../../tooling/workflows/lib/pr-body.js';
 
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
@@ -227,6 +229,7 @@ const INPUT: PrBodyInput = {
       attempts: 1,
       startedAt: '2026-09-29T10:00:00.000Z',
       committedAt: '2026-09-29T10:20:00.000Z',
+      size: { files: 2, lines: 40 },
     },
     {
       issue: 9,
@@ -237,6 +240,7 @@ const INPUT: PrBodyInput = {
       attempts: 0,
       startedAt: null,
       committedAt: null,
+      size: null,
     },
   ],
   leases: {
@@ -392,8 +396,8 @@ describe('renderPrBody', () => {
       '- [duplication] two x helpers (applied)',
       '- [test-gaps] no cross-slice test (not applied)',
       '- #7 → #8 (likely): both edit tooling/x.ts',
-      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
-      '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0',
+      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
+      '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0; size none',
       '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
       '- folia: 0 leases, waited 0.0s total (max 0.0s), held 0.0s total',
       '- #7: waited 1.5s, held 42.0s',
@@ -405,16 +409,16 @@ describe('renderPrBody', () => {
   });
 
   it.each<[string, readonly ScheduleBlocker[], string]>([
-    ['none', [], '- #9: blockers none; started never; committed never; attempts 0'],
+    ['none', [], '- #9: blockers none; started never; committed never; attempts 0; size none'],
     [
       'one declared',
       [{ issue: 7, source: 'declared' }],
-      '- #9: blockers #7 (declared); started never; committed never; attempts 0',
+      '- #9: blockers #7 (declared); started never; committed never; attempts 0; size none',
     ],
     [
       'one overlap, likely',
       [{ issue: 7, source: 'overlap', confidence: 'likely' }],
-      '- #9: blockers #7 (overlap, likely); started never; committed never; attempts 0',
+      '- #9: blockers #7 (overlap, likely); started never; committed never; attempts 0; size none',
     ],
     [
       'mixed',
@@ -422,15 +426,39 @@ describe('renderPrBody', () => {
         { issue: 7, source: 'declared' },
         { issue: 8, source: 'overlap', confidence: 'unsure' },
       ],
-      '- #9: blockers #7 (declared), #8 (overlap, unsure); started never; committed never; attempts 0',
+      '- #9: blockers #7 (declared), #8 (overlap, unsure); started never; committed never; attempts 0; size none',
     ],
   ])('renders a schedule line whose blockers are %s', (_name, blockers, line) => {
     const lines = renderPrBody({
       ...INPUT,
-      schedule: [{ issue: 9, blockers, attempts: 0, startedAt: null, committedAt: null }],
+      schedule: [
+        { issue: 9, blockers, attempts: 0, startedAt: null, committedAt: null, size: null },
+      ],
     }).split('\n');
 
     expect(lines[lines.indexOf('## Schedule') + 2]).toBe(line);
+  });
+
+  // Hand-written: the size the retro reads against the slice budget, at the line's end.
+  it.each<[string, SliceSize | null, string]>([
+    ['landed', { files: 23, lines: 912 }, 'size 23 files, 912 lines'],
+    ['not landed', null, 'size none'],
+  ])('ends a schedule line with the slice’s size when it %s', (_name, size, tail) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      schedule: [
+        {
+          issue: 9,
+          blockers: [],
+          attempts: 1,
+          startedAt: '2026-09-29T10:00:00.000Z',
+          committedAt: size === null ? null : '2026-09-29T10:20:00.000Z',
+          size,
+        },
+      ],
+    }).split('\n');
+
+    expect(lines[lines.indexOf('## Schedule') + 2]?.endsWith(`; attempts 1; ${tail}`)).toBe(true);
   });
 
   it('renders None. for an empty section and the critic’s other outcomes', () => {
@@ -1315,5 +1343,47 @@ describe('renderAttachedReport', () => {
     expect(text).toContain('fixes (see #7) already');
     expect(text).toContain('closes (see #8)');
     expect(text).toContain('fixes (see #3) too');
+  });
+});
+
+describe('renderBlockedComment', () => {
+  const BLOCKED = {
+    issue: 7,
+    reason: 'planner blocked: over the slice budget: 34 files, 25 tasks',
+    branch: 'ship/epic-9',
+    reportDir: 'C:/r/reports',
+  };
+
+  it('quotes that the run changed nothing, states the reason, then names the PR and the report dir', () => {
+    expect(renderBlockedComment({ ...BLOCKED, pr: 12 }).split('\n')).toEqual([
+      '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
+      '',
+      '**Not landed: blocked.** planner blocked: over the slice budget: 34 files, 25 tasks',
+      '',
+      'Run: PR #12. Report dir: `C:/r/reports`.',
+      '',
+    ]);
+  });
+
+  it('names the branch and no pull request when the run opened none', () => {
+    expect(renderBlockedComment(BLOCKED)).toContain(
+      'Run: branch `ship/epic-9`, no pull request. Report dir: `C:/r/reports`.',
+    );
+  });
+
+  it('says no reason was recorded when the report carries none', () => {
+    const noReason = { issue: BLOCKED.issue, branch: BLOCKED.branch, reportDir: BLOCKED.reportDir };
+
+    expect(renderBlockedComment(noReason)).toContain('**Not landed: blocked.** no reason recorded');
+  });
+
+  it('defuses a closing keyword in the reason, so the comment closes nothing', () => {
+    const text = renderBlockedComment({
+      ...BLOCKED,
+      reason: 'tdd BLOCKED: fixes #8 would be undone',
+    });
+
+    expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([]);
+    expect(text).toContain('fixes (see #8) would be undone');
   });
 });

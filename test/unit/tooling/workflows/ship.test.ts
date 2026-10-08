@@ -691,6 +691,7 @@ describe('runShip — an attempt that does not land', () => {
             attempts: 1,
             startedAt: '2026-09-29T10:00:00.000Z',
             committedAt: null,
+            size: null,
           },
         ],
         residue: [],
@@ -711,6 +712,110 @@ describe('runShip — an attempt that does not land', () => {
       issues: [
         { issue: 7, outcome: 'blocked', cite: 'see', reason: expect.stringMatching(/stale/) },
       ],
+    });
+  });
+
+  describe('a blocked issue hears why', () => {
+    const COMMENT_FILE = `${REPORT_DIR}/issue-comment-7.md`;
+
+    it('posts the reason on the issue from the main checkout, the comment written first, after the slice is torn down', async () => {
+      const run = fakeHooks(PLANNER_STALE);
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      const call = run.calls.find((c) => c.label === 'runner:post-issue-comment:7');
+      expect(call?.argv).toEqual([
+        'tooling/worktree.ts',
+        'post-issue-comment',
+        'C:/src/main',
+        '--issue',
+        '7',
+        '--comment-file',
+        COMMENT_FILE,
+      ]);
+      expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(
+        when(run, 'call runner:post-issue-comment:7'),
+      );
+      const lines = call?.prompt.split('\n') ?? [];
+      const from = lines.indexOf(`Write first: ${COMMENT_FILE}`);
+      expect(lines.slice(from, from + 8)).toEqual([
+        `Write first: ${COMMENT_FILE}`,
+        '----- BEGIN FILE -----',
+        '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
+        '',
+        '**Not landed: blocked.** planner stale: x already exists at abc123',
+        '',
+        `Run: branch \`ship/7\`, no pull request. Report dir: \`${REPORT_DIR}\`.`,
+        '----- END FILE -----',
+      ]);
+      expect(report.epics[0]).toMatchObject({
+        outcome: 'nothing-landed',
+        issueComments: [{ issue: 7, url: 'https://x/issues/7#issuecomment-2' }],
+      });
+    });
+
+    it('names the PR when the run opened one, on the shipping path', async () => {
+      const run = fakeHooks({
+        ...TWO_ISSUES,
+        'planner:8-1': { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+      });
+
+      const report = await runShip(run.hooks, 'issues 7 8');
+
+      const posted = run.calls.find((c) => c.label === 'runner:post-issue-comment:8')?.prompt ?? '';
+      expect(report.epics[0]?.outcome).toBe('pr');
+      expect(posted).toContain(`Run: PR #${String(report.epics[0]?.pr)}. Report dir:`);
+      expect(report.epics[0]?.issueComments).toEqual([
+        { issue: 8, url: 'https://x/issues/7#issuecomment-2' },
+      ]);
+      expect(labels(run).filter((l) => l.startsWith('runner:post-issue-comment'))).toEqual([
+        'runner:post-issue-comment:8',
+      ]);
+    });
+
+    it.each([
+      [
+        'a failed post',
+        {
+          exitCode: 1,
+          envelopePath: 'e.json',
+          status: 'failed',
+          url: null,
+          errors: [{ step: 'issue-comment', message: 'gh issue comment 7 exited 1' }],
+        },
+        'post-issue-comment failed: gh issue comment 7 exited 1',
+      ],
+      [
+        'a runner that returned nothing',
+        null,
+        'the runner returned nothing for post-issue-comment',
+      ],
+      [
+        'an ok post without a url',
+        { ...LAND_OK, url: null },
+        'post-issue-comment ok without a url',
+      ],
+    ])(
+      'records %s as the comment’s problem and still ends the entry',
+      async (_name, answer, problem) => {
+        const run = fakeHooks({ ...PLANNER_STALE, 'runner:post-issue-comment': answer });
+
+        const report = await runShip(run.hooks, 'issues 7');
+
+        expect(report.epics[0]).toMatchObject({
+          outcome: 'nothing-landed',
+          issueComments: [{ issue: 7, url: null, problem: expect.stringContaining(problem) }],
+        });
+      },
+    );
+
+    it('comments on no issue, and reports no comments, when every issue landed', async () => {
+      const run = fakeHooks();
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run).filter((l) => l.startsWith('runner:post-issue-comment'))).toEqual([]);
+      expect(report.epics[0]).not.toHaveProperty('issueComments');
     });
   });
 
@@ -934,6 +1039,53 @@ describe('runShip — what an attempt hands on', () => {
         .split('\n')
         .filter((l) => l.startsWith('Probe caps: ')),
     ).toEqual([line]);
+  });
+
+  // Hand-written: the slice budget set 2026-10-08 from the landed history (ADR-0045 decision 4).
+  const BUDGET = 'Slice budget: 15 files in scope, 12 tasks, 1000 lines landed';
+
+  it.each(['planner:7-1', 'applier:7-1', 'planReviewer:7-1', 'retro:list'])(
+    'hands %s the slice budget, once',
+    async (label) => {
+      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(
+        promptOf(run, label)
+          .split('\n')
+          .filter((l) => l.startsWith('Slice budget: ')),
+      ).toEqual([BUDGET]);
+    },
+  );
+
+  it.each(['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1', 'testReview:7-1'])(
+    'hands %s no slice budget: the plan it builds or checks is already within it',
+    async (label) => {
+      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(promptOf(run, label)).not.toContain('Slice budget: ');
+    },
+  );
+
+  it('carries the land envelope’s files and lines into the run report’s schedule as the slice’s size', async () => {
+    const run = fakeHooks({
+      'runner:land': { ...LAND_OK, files: ['a.ts', 'b.ts', 'c.ts'], lines: 912 },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]?.size).toEqual({ files: 3, lines: 912 });
+  });
+
+  it('records no size for a landing whose envelope carries no lines', async () => {
+    const run = fakeHooks({ 'runner:land': { ...LAND_OK, lines: null } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]).toMatchObject({ committedAt: LAND_OK.at, size: null });
   });
 
   it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1', 'diffReview:7-1'])(
@@ -1189,6 +1341,7 @@ describe('runShip — a halting entry', () => {
             attempts: 1,
             startedAt: '2026-09-29T10:00:00.000Z',
             committedAt: '2026-09-29T10:20:00.000Z',
+            size: { files: 2, lines: 40 },
           },
         ],
         residue: ['teardown refused (source-shrank): node_modules lost 40 entries'],

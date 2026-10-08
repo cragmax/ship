@@ -35,6 +35,7 @@ import {
   CutBatchResultSchema,
   CutSliceResultSchema,
   LandResultSchema,
+  PostIssueCommentResultSchema,
   PostPrCommentResultSchema,
   PreflightResultSchema,
   PublishResultSchema,
@@ -100,6 +101,7 @@ export const TOOL_ENVELOPES = {
     ...STATUS,
     commit: true,
     files: true,
+    lines: true,
     conflicts: true,
     rolledBack: true,
     batchClean: true,
@@ -130,6 +132,9 @@ export const TOOL_ENVELOPES = {
   }),
   'append-pr-body': AppendPrBodyResultSchema.pick({ ...STATUS }).extend({ errors: ERRORS }),
   'post-pr-comment': PostPrCommentResultSchema.pick({ ...STATUS, url: true }).extend({
+    errors: ERRORS,
+  }),
+  'post-issue-comment': PostIssueCommentResultSchema.pick({ ...STATUS, url: true }).extend({
     errors: ERRORS,
   }),
 } satisfies Record<WorktreeToolName, z.ZodObject>;

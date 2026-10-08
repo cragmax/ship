@@ -135,6 +135,11 @@ export const LandResultSchema = ResultBaseSchema.extend({
   commit: z.string().nullable(),
   /** The harvest's `files`: every path the slice commit changes, both endpoints of a rename, sorted. */
   files: z.array(z.string()),
+  /**
+   * The lines the slice commit changes: insertions plus deletions over its
+   * text files, a binary file counting none; `null` until the commit resolves.
+   */
+  lines: z.int().nullable(),
   /** The harvest's `conflicts`: paths that would not apply. */
   conflicts: z.array(z.string()),
   /** Whether a started harvest was reset and the batch verified clean afterwards. */
@@ -272,6 +277,14 @@ export const AppendPrBodyResultSchema = ResultBaseSchema.extend({
 export const PostPrCommentResultSchema = ResultBaseSchema.extend({
   /** The PR the comment was posted to, as given. */
   pr: z.int(),
+  /** The posted comment's URL, as `gh` printed it; `null` unless the command is `ok`. */
+  url: z.string().nullable(),
+});
+
+/** Envelope of `post-issue-comment <main> --issue N --comment-file F`; `worktree` is `gh`'s directory. */
+export const PostIssueCommentResultSchema = ResultBaseSchema.extend({
+  /** The issue the comment was posted to, as given. */
+  issue: z.int(),
   /** The posted comment's URL, as `gh` printed it; `null` unless the command is `ok`. */
   url: z.string().nullable(),
 });

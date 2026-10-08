@@ -31,6 +31,7 @@ import { publish as publishInProcess, pushBranch } from '../../tooling/worktree/
 import type {
   AppendPrBodyResult,
   BumpResult,
+  PostIssueCommentResult,
   PostPrCommentResult,
   PublishResult,
 } from '../../tooling/worktree/types-run.js';
@@ -41,6 +42,7 @@ import {
   headSha,
   makeBareOrigin,
   prependPath,
+  readFakeIssueCommented,
   readFakePrCommented,
   readFakePrCreated,
   readFakePrEdited,
@@ -799,6 +801,71 @@ describe('post-pr-comment', () => {
 
     expect(r.json.status).toBe('ok');
     expect(readFakePrCommented(bin)?.body).toBe(comment);
+  });
+});
+
+describe('post-issue-comment', () => {
+  // CRLF and non-ASCII: both must reach gh unchanged.
+  const COMMENT =
+    '> *Posted by an unattended `/ship` run.*\r\n\r\n**Not landed: blocked.** over — budget\r\n';
+
+  /** Run `post-issue-comment` on issue 7 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  function issueCommentRun({
+    comment = COMMENT,
+    gh,
+  }: { comment?: string | null; gh?: FakePrComment } = {}): {
+    r: ReturnType<typeof runCli<PostIssueCommentResult>>;
+    bin: string;
+    file: string;
+  } {
+    const bin = writeFakeGh(root, {});
+    if (gh !== undefined) setFakePrComment(bin, gh);
+    const file = `${root}/issue-comment-7.md`;
+    if (comment !== null) writeFileSync(file, comment);
+    const r = runCli<PostIssueCommentResult>(
+      ['post-issue-comment', root, '--issue', '7', '--comment-file', file],
+      { env: prependPath(bin) },
+    );
+    return { r, bin, file };
+  }
+
+  it('posts the comment file to the issue and returns the comment’s URL', TIMEOUT, () => {
+    const { r, bin, file } = issueCommentRun();
+
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      issue: 7,
+      url: 'https://github.com/fixture/repo/issues/7#issuecomment-1',
+      worktree: root,
+    });
+    expect(readFakeIssueCommented(bin)).toEqual({
+      argv: ['issue', 'comment', '7', '--body-file', file],
+      body: COMMENT,
+    });
+    expect(readFakePrCommented(bin)).toBeNull();
+  });
+
+  it(
+    'fails issue-comment with gh’s exit code when gh issue comment exits non-zero',
+    TIMEOUT,
+    () => {
+      const { r } = issueCommentRun({ gh: { exit: 1 } });
+
+      expect(r.code).toBe(1);
+      expect(r.json).toMatchObject({ status: 'failed', issue: 7, url: null });
+      expect(r.json.errors.map((e) => e.step)).toEqual(['issue-comment']);
+      expect(r.json.errors[0]?.message).toContain('gh issue comment 7 exited 1');
+    },
+  );
+
+  it('fails comment and calls no gh when the comment file is missing', TIMEOUT, () => {
+    const { r, bin } = issueCommentRun({ comment: null });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', url: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['comment']);
+    expect(readFakeIssueCommented(bin)).toBeNull();
   });
 });
 

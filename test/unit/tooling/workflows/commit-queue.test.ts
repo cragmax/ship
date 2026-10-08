@@ -17,6 +17,7 @@ const land = (fields: Partial<LandOutput>): LandOutput => ({
   errors: [],
   commit: null,
   files: [],
+  lines: null,
   conflicts: [],
   rolledBack: false,
   batchClean: true,

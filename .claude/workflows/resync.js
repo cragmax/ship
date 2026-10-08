@@ -85,6 +85,7 @@ const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const PLAN_PROBE_CAP_MINUTES = 5;
 const PLAN_PROBES_PER_ISSUE = 2;
+const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 };
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -177,6 +178,12 @@ function leaseCommand(lease) {
 function probeCapsLine(minutes, probes) {
   return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
 }
+function sliceBudgetLine() {
+  return (
+    `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
+    `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
+  );
+}
 function serverTierLines(lease, minutes, probes) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
@@ -236,6 +243,7 @@ const PROMPTS = {
       ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
       `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
       ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
       ...(values.conflicts === undefined
         ? []
         : [
@@ -250,6 +258,7 @@ const PROMPTS = {
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
       probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
+      sliceBudgetLine(),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -292,6 +301,7 @@ const PROMPTS = {
       `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
+      sliceBudgetLine(),
     ].join('\n'),
   prWriter: (values) =>
     [
@@ -750,6 +760,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       },
       commit: { type: ['string', 'null'] },
       files: { type: 'array', items: { type: 'string' } },
+      lines: { type: ['integer', 'null'] },
       conflicts: { type: 'array', items: { type: 'string' } },
       rolledBack: { type: 'boolean' },
       batchClean: { type: 'boolean' },
@@ -760,6 +771,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
       'errors',
       'commit',
       'files',
+      'lines',
       'conflicts',
       'rolledBack',
       'batchClean',
@@ -1167,6 +1179,54 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'url'],
   },
+  'post-issue-comment': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      url: { type: ['string', 'null'] },
+    },
+    required: ['status', 'errors', 'url'],
+  },
 };
 const AGENT_OUTPUT_SCHEMAS = {
   scout: {
@@ -1443,6 +1503,7 @@ const TOOL_COMMANDS = {
   publish: [WORKTREE_CLI, 'publish'],
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
+  'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1533,6 +1594,7 @@ const TOOL_SCHEMAS = {
   publish: envelopeSchema('publish'),
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
+  'post-issue-comment': envelopeSchema('post-issue-comment'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({

@@ -237,12 +237,13 @@ export const PLAN_CARD = {
   probes: [],
 };
 
-/** A clean land of #7's slice. */
+/** A clean land of #7's slice: {@link TDD_FILES}, 40 lines changed. */
 export const LAND_OK = {
   ...OK,
   sha: 'slice1',
   commit: 'landed1',
   files: TDD_FILES,
+  lines: 40,
   conflicts: [],
   rolledBack: false,
   batchClean: true,
@@ -330,6 +331,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   },
   'runner:append-pr-body': OK,
   'runner:post-pr-comment': { ...OK, url: 'https://x/pull/9#issuecomment-1' },
+  'runner:post-issue-comment': { ...OK, url: 'https://x/issues/7#issuecomment-2' },
   critic: {
     outcome: 'clean',
     sha: '',

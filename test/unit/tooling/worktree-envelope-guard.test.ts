@@ -34,6 +34,9 @@ vi.mock('../../../tooling/worktree/cut-attach.js', () => ({ attachBatch: command
 vi.mock('../../../tooling/worktree/harvest.js', () => ({ harvest: commandMock }));
 vi.mock('../../../tooling/worktree/land.js', () => ({ land: commandMock }));
 vi.mock('../../../tooling/worktree/live-runs.js', () => ({ liveRuns: commandMock }));
+vi.mock('../../../tooling/worktree/post-issue-comment.js', () => ({
+  postIssueComment: commandMock,
+}));
 vi.mock('../../../tooling/worktree/post-pr-comment.js', () => ({ postPrComment: commandMock }));
 vi.mock('../../../tooling/worktree/preflight.js', () => ({ preflight: commandMock }));
 vi.mock('../../../tooling/worktree/provision.js', () => ({ provision: commandMock }));
@@ -129,6 +132,7 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
       ['append-pr-body', 'C:/b', '--pr', '9', '--section-file', 'C:/s.md'],
       ['post-pr-comment', 'C:/b', '--pr', '9', '--comment-file', 'C:/c.md'],
+      ['post-issue-comment', 'C:/main', '--issue', '7', '--comment-file', 'C:/c.md'],
     ].map((argv) => ({ argv, line: argv.join(' ') })),
   )('guards $line with its command’s own schema', async ({ argv }) => {
     const [command = ''] = argv;

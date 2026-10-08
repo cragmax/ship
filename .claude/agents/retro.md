@@ -22,7 +22,8 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Report dir:` — the run's report directory.
-- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (each blocker with its source — declared, or overlap and its confidence — attempts, cut and land instants), the teardown residue.
+- `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (each blocker with its source — declared, or overlap and its confidence — attempts, cut and land instants, and a landed slice's `size`: files and lines changed), the teardown residue.
+- `Slice budget:` — the most lines a landed slice may change, and the file and task counts its plan was held to (`GLOSSARY.md` _Slice budget_).
 
 ## Discipline
 
@@ -37,7 +38,8 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 ## Look for
 
 - retries and requeues — an issue with more than one attempt, and why (a harvest conflict, an agent that died);
-- blocked stages, and the reason each gave;
+- blocked stages, and the reason each gave — and a blocked issue whose comment did not post (the run report's `issueComments`, a `problem` per failed post);
+- a landed slice whose schedule `size` is over `Slice budget:`'s lines — `genuine`: cite its plan (`plans/<N>.md`, the File scope and Tasks counts) and name the split that would have fit;
 - probes that hit their cap or stayed inconclusive, and how many each issue ran — the tdd reports, and the `plan-time` entries under each plan's Probes (`plans/<N>.md`);
 - a lease wait longer than its hold (the lease lines in the tdd, review and test-review reports);
 - plan deviations the tdd or the reviewer recorded;

@@ -91,8 +91,8 @@ describe('runShip — the overlap estimate', () => {
       .split('\n')
       .filter((l) => /^- #\d+: blockers /.test(l));
     expect(scheduleLines).toEqual([
-      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
-      '- #8: blockers #7 (overlap, likely); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1',
+      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
+      '- #8: blockers #7 (overlap, likely); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
     ]);
   });
 
@@ -188,7 +188,7 @@ describe('runShip — the overlap estimate', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    const never = { attempts: 0, startedAt: null, committedAt: null };
+    const never = { attempts: 0, startedAt: null, committedAt: null, size: null };
     expect(report.epics.map((e) => e.schedule)).toEqual([
       [
         { issue: 1, blockers: [], ...never },
