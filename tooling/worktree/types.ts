@@ -88,9 +88,7 @@ export type LiveRun = z.infer<typeof LiveRunSchema>;
 /** Envelope of `live-runs <main>`; `worktree` is the main checkout. */
 export type LiveRunsResult = z.infer<typeof LiveRunsResultSchema>;
 
-/**
- * A step failed; the command stops and reports `failed`.
- */
+/** A step failed; the command stops and reports `failed`. */
 export class StepFailure extends Error {
   override readonly name: string = 'StepFailure';
   /** The failing step, reported as `errors[0].step`. */

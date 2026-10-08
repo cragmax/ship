@@ -1,6 +1,4 @@
-/**
- * An error formatter shared by the tooling CLIs.
- */
+/** An error formatter shared by the tooling CLIs. */
 
 /**
  * Describe an error: its message, plus its errno `code` when it carries one.
