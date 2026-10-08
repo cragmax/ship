@@ -2,9 +2,8 @@
 name: runner
 description: >
   Runs exactly one repo tooling command for a saved workflow, from the main
-  checkout, backgrounded and polled to completion, and returns the fields its
-  output schema names, copied from the command's JSON envelope. Writes only
-  its envelope and a file the prompt hands it verbatim; never interprets a
+  checkout, and transcribes its JSON envelope into the output schema's fields.
+  Writes only its envelope and a file the prompt hands it; never interprets a
   result.
 tools: Bash, Read, Write
 ---
