@@ -2490,7 +2490,7 @@ function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
 function salvageText(item) {
-  return `\`${item.location}\` ${item.kind}: ${item.claim}`;
+  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
 }
 function salvageSection(landed, depth) {
   const lines = landed.flatMap((l) =>

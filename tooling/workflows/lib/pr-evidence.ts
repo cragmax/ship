@@ -97,7 +97,7 @@ function codeFence(pseudocode: string): string {
  *   each side (a span strips one space each side, and a text that starts or
  *   ends with a backtick needs the space to keep it off the delimiter).
  */
-function codeSpan(text: string): string {
+export function codeSpan(text: string): string {
   const longest = longestBacktickRun(text);
   if (longest === 0) return `\`${text}\``;
   const delimiter = '`'.repeat(longest + 1);
@@ -121,7 +121,7 @@ function longestBacktickRun(text: string): number {
  * @returns Its LF- or CRLF-separated lines, each trimmed, the empty ones
  *   dropped, joined with one space.
  */
-function oneLine(text: string): string {
+export function oneLine(text: string): string {
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())

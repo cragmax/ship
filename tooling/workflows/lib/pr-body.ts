@@ -39,7 +39,7 @@ import type {
   SliceWork,
 } from './agent-calls.js';
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
-import { evidenceBullet } from './pr-evidence.js';
+import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from './sync-master-step.js';
@@ -425,7 +425,7 @@ type SalvageItem = SliceWork['tdd']['salvage'][number];
 
 /** One salvage item's text, the same in the commit body and the PR body. */
 function salvageText(item: SalvageItem): string {
-  return `\`${item.location}\` ${item.kind}: ${item.claim}`;
+  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
 }
 
 /**
