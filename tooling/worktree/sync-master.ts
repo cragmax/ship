@@ -68,7 +68,7 @@ import { Conflict, Refusal, recordFailure, StepFailure } from './types.js';
 
 /** The doc indexes: a conflict in one goes to a resolver, never refuses. */
 const DOC_INDEX_PATHS: readonly string[] = [
-  'CONTEXT.md',
+  'GLOSSARY.md',
   'docs/adr/readme.md',
   'docs/platform-facts/readme.md',
 ];
