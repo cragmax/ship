@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { runSlug } from '../../../tooling/lib/run-slug.js';
 import {
   attachedRunReports,
   criticSliceLayout,
   nextAttachedRun,
   RUN_BRANCH_PREFIX,
   runLayout,
-  runSlug,
   runSlugOf,
   sliceBranchPrefix,
   sliceLayout,

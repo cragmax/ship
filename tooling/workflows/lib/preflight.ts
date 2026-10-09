@@ -10,9 +10,9 @@
  * dependents ({@link dropWithDependents}); a live-run code overlap, and any overlap
  * {@link settleOverlap} keeps across two epics, still refuses. **An attached run**'s `no-open-pr`,
  * `slices-live` and `unpublished-commits` refuse like any check; {@link runScout} owns the target.
+ * **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
 
 import { GENERATED_FILES } from '../../lib/generated-files.js';
@@ -29,6 +29,7 @@ import {
   type RunEdge,
   type RunGraph,
 } from '../../lib/run-set.js';
+import { runSlug } from '../../lib/run-slug.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
 import {
@@ -164,19 +165,16 @@ export async function runPreflight(
   hooks: WorkflowHooks,
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
-  const checks = await runTool(
-    hooks,
-    'preflight',
-    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
-  );
+  const checks = await runTool(hooks, 'preflight', preflightArgv(args));
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
-  const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(checks);
+  const kept = exemptSpentSlices(checks, live);
+  const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
+  const main = mainSnapshot(kept);
   if (gate?.runSet === undefined) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
@@ -184,6 +182,41 @@ export async function runPreflight(
   const scout = await runScout(hooks, graph, live, args.attach);
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+}
+
+/**
+ * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
+ * or the list's.
+ */
+function preflightArgv(args: ShipArgs): string[] {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+
+/**
+ * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
+ * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
+ * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
+ */
+function exemptSpentSlices(
+  checks: PreflightOutput | null,
+  live: LiveRunsOutput | null,
+): PreflightOutput | null {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok: PreflightOutput = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
 }
 
 /**

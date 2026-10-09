@@ -84,6 +84,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
                 'no-open-pr',
                 'slices-live',
                 'unpublished-commits',
+                'stale-slice-branch',
               ],
             },
             message: { type: 'string' },

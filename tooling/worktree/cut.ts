@@ -16,6 +16,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { posix } from 'node:path';
 
+import { runSlug, type RunSelection } from '../lib/run-slug.js';
+
 import {
   assertMainWorktree,
   git,
@@ -29,10 +31,8 @@ import {
   criticSliceLayout,
   RUN_BASE_BRANCH,
   runLayout,
-  runSlug,
   runSlugOf,
   sliceLayout,
-  type RunSelection,
 } from './run-layout.js';
 import type { CutBatchResult, CutSliceResult } from './types-run.js';
 import { Refusal, recordFailure } from './types.js';

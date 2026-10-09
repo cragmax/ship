@@ -20,7 +20,9 @@ import { pathToFileURL } from 'node:url';
 
 import type { z } from 'zod';
 
+import type { RunSelection } from './lib/run-slug.js';
 import { toPosix } from './shared.js';
+import { RUN_BRANCH_SHAPE } from './workflows/lib/run-branch.js';
 import { appendPrBody } from './worktree/append-pr-body.js';
 import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
@@ -37,7 +39,6 @@ import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
 import { retireRun } from './worktree/retire-run.js';
-import type { RunSelection } from './worktree/run-layout.js';
 import {
   guardEnvelope,
   HarvestResultSchema,
@@ -191,12 +192,17 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   preflight: {
     schema: PreflightResultSchema,
     valueFlags: [],
-    optionFlags: ['--attach'],
+    optionFlags: ['--attach', '--slug'],
     switchFlags: [],
     rest: NO_REST,
     run: (args) => {
       const attach = args.values.get('--attach');
-      return preflight({ main: args.target, ...(attach === undefined ? {} : { attach }) });
+      const slug = args.values.get('--slug');
+      return preflight({
+        main: args.target,
+        ...(attach === undefined ? {} : { attach }),
+        ...(slug === undefined ? {} : { slugs: slugList(slug) }),
+      });
     },
   },
   'cut-batch': {
@@ -371,6 +377,19 @@ function positiveInt(text: string, flag: string): number {
     throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
   }
   return Number(text);
+}
+
+/**
+ * Read `preflight`'s `--slug`: run slugs, comma-separated, each in `runSlug`'s domain.
+ *
+ * @throws UsageError for an empty or malformed slug.
+ */
+function slugList(text: string): string[] {
+  const slugs = text.split(',');
+  if (slugs.some((slug) => !RUN_BRANCH_SHAPE.test(`ship/${slug}`))) {
+    throw new UsageError(`flag --slug needs run slugs separated by commas, got '${text}'`);
+  }
+  return slugs;
 }
 
 /**

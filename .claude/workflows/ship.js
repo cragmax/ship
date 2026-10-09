@@ -8,7 +8,7 @@ export const meta = {
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
+        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -66,7 +66,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
+      'and the overlap estimate; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -836,6 +837,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
                 'no-open-pr',
                 'slices-live',
                 'unpublished-commits',
+                'stale-slice-branch',
               ],
             },
             message: { type: 'string' },
@@ -3998,20 +4000,26 @@ function overlapFail(message) {
   throw new Error(`run overlap: ${message}`);
 }
 
+const EPIC_SLUG_PREFIX = 'epic-';
+function runSlug(selection) {
+  if ('epic' in selection) return `${EPIC_SLUG_PREFIX}${String(selection.epic)}`;
+  return [...selection.issues]
+    .sort((a, b) => a - b)
+    .map(String)
+    .join('-');
+}
+
 async function runPreflight(hooks, args) {
-  const checks = await runTool(
-    hooks,
-    'preflight',
-    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
-  );
+  const checks = await runTool(hooks, 'preflight', preflightArgv(args));
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
-  const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(checks);
+  const kept = exemptSpentSlices(checks, live);
+  const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
+  const main = mainSnapshot(kept);
   if (gate?.runSet === undefined) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
@@ -4019,6 +4027,27 @@ async function runPreflight(hooks, args) {
   const scout = await runScout(hooks, graph, live, args.attach);
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+}
+function preflightArgv(args) {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+function exemptSpentSlices(checks, live) {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
 }
 async function settleOverlap(hooks, found) {
   const { graph } = found;

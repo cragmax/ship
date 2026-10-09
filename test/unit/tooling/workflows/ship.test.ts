@@ -18,6 +18,7 @@ import {
   inTurn,
   LAND_OK,
   LIVE_RUNS_NONE,
+  liveRuns,
   PLAN_CARD,
   PREFLIGHT_OK,
   REPORT_DIR,
@@ -242,13 +243,32 @@ describe('runShip — pre-flight only', () => {
       'overlapEstimator',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
-      ['tooling/worktree.ts', 'preflight', '.'],
+      ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
       ['tooling/run-gate.ts', 'epics', '1025'],
       ['tooling/worktree.ts', 'live-runs', '.'],
       [],
       [],
     ]);
     expect(run.phases).toEqual(['Pre-flight']);
+  });
+
+  it.each([
+    {
+      args: 'issues 9 7 8 --preflight-only',
+      slugs: '7-8-9',
+      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', '7-8-9'],
+    },
+    {
+      args: 'epics 1025 1030 --preflight-only',
+      slugs: 'epic-1025,epic-1030',
+      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025,epic-1030'],
+    },
+  ])('passes --slug $slugs for $args', async ({ args, argv }) => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, args);
+
+    expect(run.calls.find((c) => c.label === 'runner:preflight')?.argv).toEqual(argv);
   });
 });
 
@@ -269,6 +289,99 @@ describe('runShip — pre-flight refusals', () => {
       epics: [],
     });
     expect(run.calls.filter(isCutOrLand)).toEqual([]);
+  });
+});
+
+const STALE_7 = {
+  check: 'stale-slice-branch',
+  message: 'slice/7/1212-1 is left over from a run of ship/7',
+};
+
+const STALE_PREFLIGHT = {
+  ...PREFLIGHT_OK,
+  exitCode: 1,
+  status: 'refused',
+  reason: 'preflight-failed',
+  problems: [STALE_7],
+};
+
+describe('runShip — leftover slice branches', () => {
+  it('refuses a stale-slice-branch problem though the scout finds #7 fresh, cutting nothing', async () => {
+    const run = fakeHooks({ 'runner:preflight': STALE_PREFLIGHT });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('refused');
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: STALE_7.message }]);
+    expect(run.calls.map((c) => c.label)).toContain('scout');
+    expect(run.calls.filter(isCutOrLand)).toEqual([]);
+  });
+
+  it.each([
+    { name: 'a spent run of a longer slug', live: { branch: 'ship/77' } },
+    {
+      name: 'an open run of the same slug',
+      live: { branch: 'ship/7', spent: false, pr: { state: 'open', number: 100 } },
+    },
+  ])('still refuses for $name', async ({ live }) => {
+    const run = fakeHooks({ 'runner:preflight': STALE_PREFLIGHT, ...liveRuns(live) });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: STALE_7.message }]);
+    expect(run.calls.map((c) => c.label)).not.toContain('runner:teardown:spent-1');
+  });
+
+  it('still refuses a slice branch of ship/77 beside a spent ship/7', async () => {
+    const stale77 = {
+      check: 'stale-slice-branch',
+      message: 'slice/77/1-1 is left over from a run of ship/77',
+    };
+    const run = fakeHooks({
+      'runner:preflight': { ...STALE_PREFLIGHT, problems: [stale77] },
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 77 --preflight-only');
+
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: stale77.message }]);
+  });
+
+  it('drops the problem of a spent ship/7 and retires that run before cutting', async () => {
+    const run = fakeHooks({
+      'runner:preflight': STALE_PREFLIGHT,
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('done');
+    expect(report.refusals).toBeUndefined();
+    expect(report.cleanup).toEqual({
+      tornDown: ['C:/src/ph-runs/old-0/batch'],
+      retired: ['ship/7'],
+      skipped: [],
+      residue: [],
+      blocked: null,
+      stop: null,
+    });
+    expect(report.epics[0]?.mainUntouched).toBe(true);
+  });
+
+  it('keeps master-ahead when it drops the spent run’s problem', async () => {
+    const run = fakeHooks({
+      'runner:preflight': {
+        ...STALE_PREFLIGHT,
+        problems: [{ check: 'master-ahead', message: 'local master is 2 commits ahead' }, STALE_7],
+      },
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 --preflight-only');
+
+    expect(report.refusals).toEqual([
+      { kind: 'master-ahead', message: 'local master is 2 commits ahead' },
+    ]);
   });
 });
 
