@@ -148,8 +148,8 @@ export const ProvisionBatchResultSchema = ResultBaseSchema.extend({
   nodeModules: z.string().nullable(),
   /** The batch's built `dist`, or `null` when not built. */
   dist: z.string().nullable(),
-  /** The batch's self-install workspace, or `null` when not created. */
-  workspace: z.string().nullable(),
+  /** The batch's `paper-harness/` project-dir marker, or `null` when not created. */
+  projectDirMarker: z.string().nullable(),
   /** The trimmed pool registry written for the batch, or `null`. */
   registry: z.string().nullable(),
   /** The warm members the trimmed registry holds. */

@@ -1,7 +1,7 @@
 /**
  * `provision-batch <batch> --report-dir <dir>` — make a batch worktree the
  * junction source for its slices: a real `npm ci` tree, a real `dist`, a
- * real self-install workspace, and the trimmed warm-set pool registry,
+ * `paper-harness/` project-dir marker, and the trimmed warm-set pool registry,
  * written outside every worktree. No rollback: this runs at launch with the
  * maintainer present, and `npm ci` cannot meaningfully be undone — a
  * failure fails the launch.
@@ -49,7 +49,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
     errors: [],
     nodeModules: null,
     dist: null,
-    workspace: null,
+    projectDirMarker: null,
     registry: null,
     warm: [],
     env: null,
@@ -65,7 +65,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
     result.nodeModules = `${batch}/node_modules`;
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
     result.dist = `${batch}/dist`;
-    result.workspace = createWorkspace(batch);
+    result.projectDirMarker = createProjectDirMarker(batch);
     const registry = `${reportDir}/${BATCH_REGISTRY_FILE}`;
     result.warm = trimRegistry(`${batch}/src/server-pool/registry/pool-registry.json`, registry);
     result.registry = registry;
@@ -110,19 +110,19 @@ function checkPreconditions(options: ProvisionBatchOptions): void {
 }
 
 /**
- * Create the batch's real self-install workspace
- * (`paper-harness/{helpers,tests}`).
+ * Create the batch's `paper-harness/{helpers,tests}` marker, which `loadConfig` requires under
+ * `PH_PROJECT_DIR`.
  *
  * @param batch - The batch worktree.
- * @returns The workspace path.
- * @throws StepFailure `workspace` when `paper-harness` exists as a link.
+ * @returns The marker path.
+ * @throws StepFailure `project-dir-marker` when `paper-harness` exists as a link.
  */
-function createWorkspace(batch: string): string {
-  const workspace = `${batch}/paper-harness`;
-  if (linkTarget(workspace) !== null) {
-    throw new StepFailure('workspace', `${workspace} is a link, not a real workspace`);
+function createProjectDirMarker(batch: string): string {
+  const marker = `${batch}/paper-harness`;
+  if (linkTarget(marker) !== null) {
+    throw new StepFailure('project-dir-marker', `${marker} is a link, not a real directory`);
   }
-  mkdirSync(`${workspace}/helpers`, { recursive: true });
-  mkdirSync(`${workspace}/tests`, { recursive: true });
-  return workspace;
+  mkdirSync(`${marker}/helpers`, { recursive: true });
+  mkdirSync(`${marker}/tests`, { recursive: true });
+  return marker;
 }

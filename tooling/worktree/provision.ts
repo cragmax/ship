@@ -134,7 +134,7 @@ export function provision(options: ProvisionOptions): ProvisionResult {
  *   StepFailure `preconditions` when the slice or batch is not a linked
  *   (non-main) worktree root of one repository, they are the same worktree,
  *   the batch lacks a real non-empty `node_modules` or its `paper-harness/`
- *   workspace, or the slice's `dist` is a link (the build deletes `dist`,
+ *   project-dir marker, or the slice's `dist` is a link (the build deletes `dist`,
  *   which must never reach through a link).
  */
 function checkPreconditions(options: ProvisionOptions): void {

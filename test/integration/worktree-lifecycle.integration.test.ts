@@ -201,7 +201,7 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
 
 describe('provision-batch', () => {
   it(
-    'installs, builds, creates the workspace and writes the trimmed warm registry',
+    'installs, builds, creates the project-dir marker and writes the trimmed warm registry',
     TIMEOUT,
     () => {
       const main = makeFixtureRepo(root, template);
@@ -245,7 +245,7 @@ describe('provision-batch', () => {
       ]);
       expect(run.json.nodeModules).toBe(toPosix(join(batch, 'node_modules')));
       expect(run.json.dist).toBe(toPosix(join(batch, 'dist')));
-      expect(run.json.workspace).toBe(toPosix(join(batch, 'paper-harness')));
+      expect(run.json.projectDirMarker).toBe(toPosix(join(batch, 'paper-harness')));
       expect(run.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch), PH_POOL_REGISTRY: registry });
       expect(porcelain(batch)).toBe('');
     },
