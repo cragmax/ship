@@ -133,5 +133,5 @@ async function pushStep(
 }
 
 function noCleanup(): CleanupReport {
-  return { tornDown: [], skipped: [], residue: [], blocked: null, stop: null };
+  return { tornDown: [], retired: [], skipped: [], residue: [], blocked: null, stop: null };
 }

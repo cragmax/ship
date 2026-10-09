@@ -1,14 +1,14 @@
 /**
- * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears down the batch and slice
- * worktrees of an unattended run, and lists the live runs (ADR-0045); `COMMANDS` holds each
- * command's flags and arity. A command prints one JSON object on one stdout line and nothing else:
- * the envelope whose schema is in `worktree/schemas.ts` or `worktree/schemas-run.ts`, checked
- * before printing ({@link runWorktreeCli}). No npm script wraps it, as `npm run` prints a banner.
+ * Worktree lifecycle CLI (ADR-0045) — checks, cuts, provisions, lands into and tears down an
+ * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs;
+ * `COMMANDS` holds each command's flags and arity. A command prints one JSON object on one stdout
+ * line and nothing else: its envelope, checked against its schema (`worktree/schemas*.ts`) before
+ * printing ({@link runWorktreeCli}). No npm script wraps it, as `npm run` prints a banner.
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
- * (`assertNotSelfHosted`, `worktree/git.ts`) when the CLI lies inside its target — except
- * `cut-batch`, which writes only `.git` and a sibling directory. Target paths and path flags
- * resolve against the starting cwd; every other argument is kept as given.
+ * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and a sibling
+ * directory) and `retire-run` (its guards prove no worktree, so no CLI, lies in the run root it
+ * removes). Target paths and path flags resolve against the starting cwd; the rest stays as given.
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
  * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout) — the runner
@@ -36,6 +36,7 @@ import { provision } from './worktree/provision.js';
 import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
+import { retireRun } from './worktree/retire-run.js';
 import type { RunSelection } from './worktree/run-layout.js';
 import {
   guardEnvelope,
@@ -44,6 +45,7 @@ import {
   ProvisionBatchResultSchema,
   ProvisionResultSchema,
   ResultBaseSchema,
+  RetireRunResultSchema,
   StagedGuardResultSchema,
   TeardownResultSchema,
 } from './worktree/schemas.js';
@@ -171,6 +173,13 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: { min: 1, max: Infinity },
     run: (args) => stagedGuard({ worktree: args.target, files: args.rest }),
+  },
+  'retire-run': {
+    schema: RetireRunResultSchema,
+    valueFlags: ['--branch'],
+    switchFlags: [],
+    rest: NO_REST,
+    run: (args) => retireRun({ main: args.target, branch: args.values.get('--branch') ?? '' }),
   },
   'live-runs': {
     schema: LiveRunsResultSchema,

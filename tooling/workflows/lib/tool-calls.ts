@@ -37,6 +37,7 @@ export type ToolName =
   | 'provision'
   | 'land'
   | 'teardown'
+  | 'retire-run'
   | 'sync-master'
   | 'bump'
   | 'check-master'
@@ -130,6 +131,9 @@ export type LandOutput = EnvelopeOutput<'land'>;
 /** `teardown`'s consumed fields. */
 export type TeardownOutput = EnvelopeOutput<'teardown'>;
 
+/** `retire-run`'s consumed fields. */
+export type RetireRunOutput = EnvelopeOutput<'retire-run'>;
+
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = EnvelopeOutput<'sync-master'>;
 
@@ -163,6 +167,7 @@ export interface ToolOutputs {
   provision: ProvisionOutput;
   land: LandOutput;
   teardown: TeardownOutput;
+  'retire-run': RetireRunOutput;
   'sync-master': SyncMasterOutput;
   bump: BumpOutput;
   'check-master': CheckMasterOutput;
@@ -190,6 +195,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
+  'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
@@ -309,6 +315,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   provision: envelopeSchema('provision'),
   land: envelopeSchema('land'),
   teardown: envelopeSchema('teardown'),
+  'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),

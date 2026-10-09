@@ -794,6 +794,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -877,6 +879,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -957,6 +961,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1020,6 +1026,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1073,6 +1081,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1124,6 +1134,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1176,6 +1188,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1240,6 +1254,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1255,6 +1271,55 @@ const TOOL_ENVELOPE_SCHEMAS = {
       registered: { type: 'boolean' },
     },
     required: ['status', 'errors', 'removed', 'registered'],
+  },
+  'retire-run': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+    },
+    required: ['status', 'errors'],
   },
   'sync-master': {
     type: 'object',
@@ -1289,6 +1354,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1374,6 +1441,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1425,6 +1494,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1479,6 +1550,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1546,6 +1619,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1593,6 +1668,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1641,6 +1718,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1948,6 +2027,7 @@ const TOOL_COMMANDS = {
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
+  'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
@@ -2039,6 +2119,7 @@ const TOOL_SCHEMAS = {
   provision: envelopeSchema('provision'),
   land: envelopeSchema('land'),
   teardown: envelopeSchema('teardown'),
+  'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
@@ -4102,6 +4183,7 @@ function toolError(out, what) {
 async function cleanupSpent(hooks, live) {
   const report = {
     tornDown: [],
+    retired: [],
     skipped: [],
     residue: [],
     blocked: null,
@@ -4121,13 +4203,19 @@ async function cleanupRun(hooks, run, report) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, report);
+  else await tearDownSpent(hooks, target.path, run.branch, report);
 }
-async function tearDownSpent(hooks, path, report) {
+async function tearDownSpent(hooks, path, branch, report) {
   const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
   const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
   if (out?.status === 'ok') {
     report.tornDown.push(path);
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
+      ...PRE_CUT,
+      tag,
+    });
+    if (retired?.status === 'ok') report.retired.push(branch);
+    else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
     report.stop = envelopeProblem('teardown', out);
   } else {

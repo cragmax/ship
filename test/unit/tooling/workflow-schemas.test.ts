@@ -97,6 +97,7 @@ describe('consumed fields are required', () => {
       provision: WORKTREE_OPTIONAL,
       land: WORKTREE_OPTIONAL,
       teardown: WORKTREE_OPTIONAL,
+      'retire-run': WORKTREE_OPTIONAL,
       'sync-master': WORKTREE_OPTIONAL,
       bump: WORKTREE_OPTIONAL,
       publish: WORKTREE_OPTIONAL,
