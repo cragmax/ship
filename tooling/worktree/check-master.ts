@@ -1,20 +1,17 @@
 /**
- * `check-master <main> --local SHA --remote SHA [--synced SHA]` — whether
- * local `master` and `origin`'s only moved forward since the launch shas
- * given (#1080), and `origin`'s also since the `--synced` sha, when given:
- * the `origin/master` the epic end's own sync merged or found merged (#1095).
- * The epic end runs it just before its push. `origin`'s side is read live
- * with `git ls-remote`, never the remote-tracking ref, which only says what
- * the last fetch saw. Each ref's move is one of the moves
- * `schemas-run.ts` `MasterMoveSchema` defines.
+ * `check-master <main> --local SHA --remote SHA [--synced SHA]` — whether local `master` and
+ * `origin`'s only moved forward since the launch shas given, and `origin`'s also since the
+ * `--synced` sha, when given: the `origin/master` the epic end's own sync merged or found merged
+ * (#1080, #1095). The epic end runs it just before its push. `origin`'s side is read live with
+ * `git ls-remote`, never the remote-tracking ref, which only says what the last fetch saw. Each
+ * ref's move is one of the moves `schemas-run.ts` `MasterMoveSchema` defines.
  *
- * **Fail closed.** A sha the object store lacks — launch, synced or
- * current — triggers a fetch of `origin`, then a second look; a sha still
- * missing makes the move `undecidable`, which refuses like `deleted` and
- * `rewound`. Only `equal` and `forward` on both refs pass.
+ * **Fail closed.** A sha the object store lacks — launch, synced or current — triggers a fetch of
+ * `origin`, then a second look; a sha still missing makes the move `undecidable`, which refuses
+ * like `deleted` and `rewound`. Only `equal` and `forward` on both refs pass.
  *
- * Read-only toward every worktree, so there is no self-hosted guard (like
- * `preflight`): the fetch writes only `.git`'s remote-tracking refs.
+ * Read-only toward every worktree, so there is no self-hosted guard: the fetch writes only
+ * `.git`'s remote-tracking refs.
  */
 
 import { runCaptured } from './exec.js';
@@ -47,7 +44,6 @@ const MASTER_REF = `refs/heads/${RUN_BASE_BRANCH}`;
  * Check both `master` refs against their launch shas, and `origin`'s
  * against the synced sha.
  *
- * @param input - The main checkout, the two launch shas and the synced sha.
  * @returns The envelope: `ok` with both moves `equal` or `forward`;
  *   `refused` `master-not-forward` at step `check`, naming each other ref
  *   with its move, its launch sha, `origin`'s synced sha and its current sha;
@@ -88,10 +84,8 @@ export function checkMaster(input: CheckMasterInput): CheckMasterResult {
 }
 
 /**
- * Read local `master`.
+ * Read local `master`'s sha; `null` when the ref does not exist.
  *
- * @param main - The main checkout.
- * @returns Its sha; `null` when the ref does not exist.
  * @throws StepFailure `local-master` on any other non-zero exit.
  */
 function localMaster(main: string): string | null {
@@ -108,15 +102,9 @@ function localMaster(main: string): string | null {
 }
 
 /**
- * Judge `origin`'s move: against its launch sha, then — only when that
- * passed and a synced sha was given — against the synced sha.
+ * Judge `origin`'s move from its launch sha; when that move is `equal` or `forward` and a synced
+ * sha was given, the move from the synced sha instead.
  *
- * @param main - The main checkout.
- * @param input - The launch and synced shas, as given.
- * @param current - `origin`'s current sha; `null` when the ref is gone.
- * @param fetchOnce - Fetches `origin`; a no-op after the command's first fetch.
- * @returns The move from the launch sha when it is neither `equal` nor
- *   `forward` or no synced sha was given, else the move from the synced sha.
  * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
  */
 function remoteMove(
@@ -137,13 +125,8 @@ function remoteMove(
 }
 
 /**
- * Decide one ref's move from a reference sha to its current one.
+ * Decide one ref's move from a reference sha to its current one (`null`: the ref is gone).
  *
- * @param main - The main checkout.
- * @param from - The reference sha, as given.
- * @param current - The current sha; `null` when the ref is gone.
- * @param fetchOnce - Fetches `origin`; a no-op after the command's first fetch.
- * @returns The move.
  * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
  */
 function moveFrom(
@@ -163,14 +146,7 @@ function moveFrom(
   return ancestry(main, pair[0], pair[1]);
 }
 
-/**
- * Resolve both shas of a move.
- *
- * @param main - The main checkout.
- * @param launch - The launch sha.
- * @param current - The current sha.
- * @returns Both as full shas; `null` when either is not in the object store.
- */
+/** Both shas of a move as full shas; `null` when either is not in the object store. */
 function knownPair(main: string, launch: string, current: string): [string, string] | null {
   const from = knownCommit(main, launch);
   const to = knownCommit(main, current);
@@ -178,12 +154,8 @@ function knownPair(main: string, launch: string, current: string): [string, stri
 }
 
 /**
- * Resolve a sha to a commit the checkout holds.
- *
- * @param main - The main checkout.
- * @param sha - The sha; never read as an option.
- * @returns The full sha; `null` when no such commit is in the object store
- *   (the `^{commit}` peel is what makes an absent full sha fail).
+ * Resolve a sha, never read as an option, to a full commit sha; `null` when no such commit is in
+ * the object store (the `^{commit}` peel is what makes an absent full sha fail).
  */
 function knownCommit(main: string, sha: string): string | null {
   const r = runCaptured(
@@ -195,12 +167,8 @@ function knownCommit(main: string, sha: string): string | null {
 }
 
 /**
- * Whether `launch` is an ancestor of `current`.
- *
- * @param main - The main checkout.
- * @param launch - A resolved full sha.
- * @param current - A resolved full sha.
- * @returns `forward` on exit 0, `rewound` on exit 1, `undecidable` otherwise.
+ * Whether full sha `launch` is an ancestor of `current`: `forward` on exit 0, `rewound` on exit 1,
+ * `undecidable` otherwise.
  */
 function ancestry(main: string, launch: string, current: string): MasterMove['move'] {
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', launch, current], {
@@ -213,10 +181,8 @@ function ancestry(main: string, launch: string, current: string): MasterMove['mo
 /**
  * Refuse unless both refs are `equal` or `forward`.
  *
- * @param local - Local `master`'s move.
- * @param remote - `origin`'s `master` move.
- * @throws Refusal `master-not-forward` at step `check`, naming each ref
- *   that is neither, its move and both shas.
+ * @throws Refusal `master-not-forward` at step `check`, naming each ref that is neither, its move
+ *   and both shas.
  */
 function assertForward(local: MasterMove, remote: MasterMove): void {
   const parts = (
