@@ -1,21 +1,16 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]`
- * — cut an unattended run's feature branch and batch worktree, and one
- * slice worktree (an issue attempt's, or the epic end's critic's, named for
- * its attached run when given), at the places `run-layout.ts` names
- * (ADR-0045).
+ * `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]` — cut an unattended
+ * run's feature branch and batch worktree, and one slice worktree, at the places `run-layout.ts`
+ * names (ADR-0045).
  *
- * Invariant, both commands: every guard runs before the first mutation — a
- * `git worktree add -b` — so a refusal leaves the repository's branches,
- * worktree list and every checkout exactly as they were.
+ * Invariant, both commands: every guard runs before the first mutation — a `git worktree add -b`
+ * — so a refusal leaves the repository's branches, worktree list and every checkout as they were.
  *
- * `cut-batch` is the one mutating command of the CLI without the
- * self-hosted guard: it must run from the main checkout, which is its
- * target. It is safe there because it never touches the main checkout's
- * working tree — it writes only `.git` (a branch and the worktree
- * registry) and a sibling directory, the run root. `cut-slice` keeps the
- * guard: its target is the batch, which the CLI never runs from.
+ * `cut-batch` is the one mutating command of the CLI without the self-hosted guard: it runs from
+ * the main checkout, its target, and writes only `.git` (a branch, the worktree registry) and the
+ * sibling run root, never the main checkout's working tree. `cut-slice` keeps the guard: its
+ * target is the batch, which the CLI never runs from.
  */
 
 import { existsSync, mkdirSync } from 'node:fs';
@@ -107,7 +102,6 @@ export function cutBatch(input: {
  * slice is named `a<R>-…` (`run-layout.ts`), so it never collides with an
  * earlier run's leftover branch of the same issue attempt or critic.
  *
- * @param input - Batch, which slice, the attached run, and the self-hosted seam.
  * @returns The envelope: `ok` with the branch, base and slice path;
  *   `refused` (harvest's linked-worktree reasons, `not-run-batch`,
  *   `branch-exists`, `path-exists`) before any mutation; or `failed`.
@@ -146,7 +140,6 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
 /**
  * Require the batch to have a run branch checked out.
  *
- * @param batch - The batch worktree.
  * @returns The run's slug.
  * @throws Refusal `not-run-batch` when the batch is detached or on a branch
  *   outside the run namespace.
@@ -167,8 +160,6 @@ export function assertRunBatch(batch: string): string {
 /**
  * Refuse when the branch exists already.
  *
- * @param dir - Any checkout of the repository.
- * @param branch - Short branch name.
  * @throws Refusal `branch-exists`.
  */
 function assertBranchFree(dir: string, branch: string): void {

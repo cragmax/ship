@@ -1,25 +1,16 @@
 /**
- * The epic end's forward-only check of `master` (#1080): before an epic's
- * push, `worktree.ts check-master` compares local `master` and `origin`'s
- * with the launch shas pre-flight recorded, and `origin`'s also with the
- * synced sha — the `origin/master` the epic end's own sync left the batch
- * containing (#1095), which a failed `origin` line names as its restore
- * point. The call runs inside the epic end's publish task of the repo lock
- * (`epic-end.ts`), so no other epic end talks to `origin` between the
- * check and the push.
+ * The epic end's forward-only check of `master`: before an epic's push,
+ * `worktree.ts check-master` compares local `master` and `origin`'s with the launch shas pre-flight
+ * recorded, and `origin`'s also with the synced sha, which a failed `origin` line names as its
+ * restore point (#1080, #1095). The call runs inside the epic end's publish task of the repo lock
+ * (`epic-end.ts`), so no other epic end talks to `origin` between the check and the push.
  *
- * - **Fail closed**: anything but an `ok` check naming two moves that are
- *   `equal` or `forward`, each with its current sha, is a failure — a
- *   deleted, rewound or undecidable ref, a failed or refused check, and a
- *   runner that returned nothing. "Could not tell" never passes.
- * - **No launch snapshot stops the epic**: with no launch shas a rewind
- *   cannot be ruled out, so the check fails without a tool call rather than
- *   passing.
- * - **No synced sha stops the epic**: a sync result naming no `upstream`
- *   fails the check without a tool call, as a missing launch snapshot does.
+ * **Fail closed**: anything but an `ok` check naming two moves that are `equal` or `forward`, each
+ * with its current sha, is a failure — a deleted, rewound or undecidable ref, a failed or refused
+ * check, and a runner that returned nothing. "Could not tell" never passes.
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import type { MasterMove } from '../../worktree/types-run.js';
@@ -69,9 +60,6 @@ const NO_SYNCED = 'master sync named no origin/master sha to check against';
 /**
  * Check that `master` only moved forward since the launch.
  *
- * @param hooks - The workflow hooks.
- * @param entry - The entry's main checkout, report directory and tag.
- * @param launch - The main checkout as pre-flight found it.
  * @param synced - The `origin/master` sha the epic end's sync left the
  *   batch containing; `null` when the sync named none.
  * @returns Resolves to the check; with no launch snapshot, or no synced
@@ -95,12 +83,6 @@ export async function checkMasterStep(
   return checkOf(out);
 }
 
-/**
- * Read `check-master`'s output as a check.
- *
- * @param out - The output; `null` when the runner returned none.
- * @returns Passed only for an `ok` output naming two forward moves.
- */
 function checkOf(out: CheckMasterOutput | null): MasterCheck {
   const local = out?.local ?? null;
   const remote = out?.remote ?? null;
@@ -110,15 +92,6 @@ function checkOf(out: CheckMasterOutput | null): MasterCheck {
   return { passed: false, local, remote, failure: failureOf(out, local, remote) };
 }
 
-/**
- * The one line a failed check reports.
- *
- * @param out - `check-master`'s output.
- * @param local - Local `master`'s move.
- * @param remote - `origin`'s `master` move.
- * @returns For a `master-not-forward` refusal, each named ref that is not
- *   forward, `; `-joined; otherwise the envelope's problem.
- */
 function failureOf(
   out: CheckMasterOutput | null,
   local: MasterMove | null,
@@ -134,28 +107,12 @@ function failureOf(
   return envelopeProblem('check-master', out);
 }
 
-/**
- * Whether a move passes.
- *
- * @param move - The move.
- * @returns `true` for an `equal` or `forward` move with a current sha.
- */
 function isForward(move: MasterMove | null): move is ForwardMove {
   return (
     move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
   );
 }
 
-/**
- * One failed ref's line.
- *
- * @param which - `local` or `origin`.
- * @param move - Its move.
- * @returns `<which> master <move>: launch <sha>, now <sha|deleted> — restore it from <sha>`;
- *   a move carrying a synced sha (`origin` only) adds `, synced <sha>` after
- *   the launch sha and restores from the synced sha, any other from its
- *   launch sha.
- */
 function moveLine(which: 'local' | 'origin', move: MasterMove): string {
   const synced = move.synced === null ? '' : `, synced ${move.synced}`;
   return (

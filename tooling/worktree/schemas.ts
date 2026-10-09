@@ -1,19 +1,17 @@
 /**
- * The worktree CLI's envelope schemas: the canonical home of every envelope
- * `tooling/worktree.ts` prints (the run-branch and epic-end commands' are in
- * `schemas-run.ts`). `types.ts` and `types-run.ts` export each envelope's
- * type as the schema's `z.infer`, and the saved workflows' tool-output
- * schemas are `.pick`s of these (`tooling/workflows/schemas/`), so a field
- * renamed here breaks every builder and reader at compile time.
+ * The worktree CLI's envelope schemas: the canonical home of every envelope `tooling/worktree.ts`
+ * prints (the run-branch and epic-end commands' are in `schemas-run.ts`). `types.ts` and
+ * `types-run.ts` export each envelope's type as the schema's `z.infer`, and the saved workflows'
+ * tool-output schemas are `.pick`s of these (`tooling/workflows/schemas/`), so a field renamed here
+ * breaks every builder and reader at compile time.
  *
- * Every filesystem path in an envelope is absolute with forward slashes;
- * the path lists of `harvest`, `land`, `staged-guard`, `live-runs` and
- * `sync-master` (`files`, `conflicts`, `pending`, `expected`, `staged`,
- * `missing`, `unexpected`, `landed`) are repository-relative, as git
- * spells them. Every count, port and number is an integer.
+ * Every filesystem path in an envelope is absolute with forward slashes; the path lists of
+ * `harvest`, `land`, `staged-guard`, `live-runs` and `sync-master` (`files`, `conflicts`,
+ * `pending`, `expected`, `staged`, `missing`, `unexpected`, `landed`) are repository-relative, as
+ * git spells them. Every count, port and number is an integer.
  *
- * Objects strip unknown keys when parsed; nothing here parses an envelope
- * but {@link guardEnvelope}, which never prints the parse output.
+ * Objects strip unknown keys when parsed; nothing here parses an envelope but
+ * {@link guardEnvelope}, which never prints the parse output.
  */
 
 import { z } from 'zod';
@@ -54,11 +52,13 @@ export const RefusalReasonSchema = z.enum([
   'path-exists',
   // Cut-batch `--attach`: neither the local branch nor `origin`'s exists.
   'branch-missing',
-  // Cut-batch `--attach`: the branch is checked out elsewhere than the run's batch; the message names where.
+  // Cut-batch `--attach`: the branch is checked out elsewhere than the run's batch; the message
+  // names where.
   'branch-checked-out',
   // Cut-batch `--attach`: the local branch and `origin`'s each have commits the other lacks.
   'branch-diverged',
-  // Cut-batch --attach: the local branch has first-parent non-merge commits origin lacks; the message names the count.
+  // Cut-batch --attach: the local branch has first-parent non-merge commits origin lacks; the
+  // message names the count.
   'unpublished-commits',
   // Preflight: a check failed; the envelope's `problems` names each.
   'preflight-failed',
@@ -77,7 +77,8 @@ export const RefusalReasonSchema = z.enum([
   // Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;
   // the message names the state and the number.
   'no-open-pr',
-  // Check-master: a master ref was deleted or rewound since the launch, or its move could not be decided; local / remote name each.
+  // Check-master: a master ref was deleted or rewound since the launch, or its move could not be
+  // decided; local / remote name each.
   'master-not-forward',
 ]);
 
@@ -299,7 +300,6 @@ export function guardEnvelope(result: ResultBase, schema: z.ZodType): ResultBase
 /**
  * A zod issue's path as a reader spells it.
  *
- * @param path - The issue's path.
  * @returns `a.b[0].c`; `(root)` for the envelope itself.
  */
 function issuePath(path: readonly PropertyKey[]): string {

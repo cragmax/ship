@@ -78,7 +78,10 @@ export type PlanCard = z.infer<typeof PlanCardSchema>;
 /** The plan reviewer's answer. */
 export type PlanReview = z.infer<typeof PlanReviewSchema>;
 
-/** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
+/**
+ * One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the
+ * tdd's.
+ */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
 
 /** The tdd's evidence: its tracer test's red-green, or why it saw none. */
@@ -131,9 +134,6 @@ export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
 /**
  * The overlap estimator's output schema, built per call: a pair's endpoints
  * may only be the run's issues.
- *
- * @param issues - The run-set issues.
- * @returns The emitted schema, `a` and `b` narrowed to `issues`.
  */
 function overlapSchema(issues: readonly number[]): JsonSchema {
   const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
@@ -152,14 +152,7 @@ function overlapSchema(issues: readonly number[]): JsonSchema {
   };
 }
 
-/**
- * Run one agent and keep its answer only when it is an object.
- *
- * @param hooks - The workflow hooks.
- * @param prompt - The prompt.
- * @param options - The call's options.
- * @returns Resolves to the answer; `null` when there is none.
- */
+/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
 async function askAgent<T>(
   hooks: WorkflowHooks,
   prompt: string,

@@ -29,8 +29,6 @@ export const WARM_SET: readonly WarmMember[] = [
  * Whether a registry entry is the given warm member — the one spelling of
  * a member's identity, which `preflight` matches by too.
  *
- * @param member - Warm-set member.
- * @param entry - Registry entry.
  * @returns `true` when type, host and RCON port all match.
  */
 export function isMember(member: WarmMember, entry: PoolEntry): boolean {
@@ -42,7 +40,6 @@ export function isMember(member: WarmMember, entry: PoolEntry): boolean {
 /**
  * Name a warm member.
  *
- * @param member - The member.
  * @returns `<type>@<host>:<rconPort>`.
  */
 export function memberLabel(member: WarmMember): string {
@@ -53,8 +50,6 @@ export function memberLabel(member: WarmMember): string {
  * Write the warm-set subset of `source` to `dest` (2-space JSON, trailing
  * newline). Kept entries are copied verbatim, relative `logPath` included.
  *
- * @param source - Registry to read.
- * @param dest - File to write.
  * @returns The warm set, in {@link WARM_SET} order.
  * @throws StepFailure `registry` when `source` fails to load (the loader's
  *   message) or lacks any warm member; `dest` is not written then.

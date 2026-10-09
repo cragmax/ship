@@ -1,22 +1,12 @@
 /**
- * The run layout of an unattended run (ADR-0045) — the one home of its
- * naming rules. Every tool that names a run's branch or directory derives
- * it here, never by re-spelling the rule:
+ * The run layout of an unattended run (ADR-0045) — the one home of its naming rules. Every tool
+ * that names a run's branch or directory derives it here, never by re-spelling the rule.
  *
- * - the slug: `epic-<E>` for an epic run, the issue numbers ascending and
- *   joined with `-` for an explicit list;
- * - the feature branch `ship/<slug>` — the namespace pre-flight's live-run
- *   check keys on, which nothing else may use;
- * - the run root `<dirname(main)>/ph-ship/<slug>/`, a sibling of the main
- *   checkout, holding `ship-<head>/` (the batch worktree, head per
- *   {@link runHead}), `slice-<N>-<K>/` (one per issue attempt),
- *   `slice-critic/` (the epic end's critic) and `reports/`;
- * - the slice branch `slice/<slug>/<N>-<K>`, and the critic's
- *   `slice/<slug>/critic` — never under `ship/`;
- * - an attached run R's own names beside those: its report folder
- *   `reports/attach-<R>/`, its slices `slice-a<R>-<N>-<K>/` and
- *   `slice-a<R>-critic/`, on `slice/<slug>/a<R>-<N>-<K>` and
- *   `slice/<slug>/a<R>-critic` ({@link nextAttachedRun} picks R).
+ * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
+ * check keys on, and nothing else may use it: slice branches (`slice/<slug>/…`) never sit under it.
+ * The run root, a sibling of the main checkout, holds the batch worktree, the slices and `reports/`
+ * ({@link runLayout} spells each). An attached run R's names sit beside the run's own, prefixed
+ * `a<R>-` ({@link nextAttachedRun} picks R).
  *
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
@@ -84,23 +74,9 @@ export function runSlug(selection: RunSelection): string {
 }
 
 /**
- * The head of a run's slug, which names its batch worktree `ship-<head>`.
- * An epic slug is its own head. Any other slug's head is its text before
- * the first `-` — for an explicit list the lowest issue, since
- * {@link runSlug} sorts ascending; a slug with no `-` is its own head.
- *
- * Derived from the slug alone because `cut-batch --attach` knows only the
- * branch ({@link runSlugOf}), never the run selection.
- *
- * Not `ship-<slug>`: #1079 measured it (2026-09-30) — the deepest file
- * under a batch's real `node_modules` is 154 characters below the batch
- * folder. With the longest real slug, `ship-<slug>` brings that path to
- * 256 characters against Windows' traditional 260-character limit
- * (`core.longpaths` unset); `ship-<head>` gives 226.
- *
- * @param slug - From {@link runSlug} or {@link runSlugOf}.
- * @returns The slug for an epic run; otherwise the text before its first
- *   `-`, or the whole slug when it has none.
+ * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
+ * issue: {@link runSlug} sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
+ * branch. Not `ship-<slug>`: its `node_modules` paths near Windows' 260-character limit (#1079).
  */
 function runHead(slug: string): string {
   if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
@@ -134,7 +110,6 @@ export const BATCH_REGISTRY_FILE = 'pool-registry.batch.json';
 /**
  * The namespace of a run's slice branches.
  *
- * @param slug - The run's slug.
  * @returns `slice/<slug>/`.
  */
 export function sliceBranchPrefix(slug: string): string {
@@ -142,13 +117,8 @@ export function sliceBranchPrefix(slug: string): string {
 }
 
 /**
- * A slice's layout from its id.
- *
- * @param root - The run root.
- * @param slug - The run's slug.
- * @param id - The slice id, prefixed `a<run>-` for an attached run's.
- * @param run - The attached run's number; `null` for an unattached run.
- * @returns `<root>/slice-<id>` on `slice/<slug>/<id>`.
+ * `<root>/slice-<id>` on `slice/<slug>/<id>`; when `run` (an attached run's number) is non-null,
+ * this prefixes the id with `a<run>-` itself.
  */
 function sliceAt(root: string, slug: string, id: string, run: number | null): SliceLayout {
   const named = run === null ? id : `a${String(run)}-${id}`;
@@ -159,8 +129,6 @@ function sliceAt(root: string, slug: string, id: string, run: number | null): Sl
  * The layout of attempt `attempt` of `issue`'s slice.
  *
  * @param root - The run root ({@link RunLayout.root}).
- * @param slug - The run's slug.
- * @param issue - The issue number.
  * @param attempt - The attempt number, 1 for the first.
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
@@ -181,7 +149,6 @@ export function sliceLayout(
  * The layout of the epic end's critic slice — one per run.
  *
  * @param root - The run root ({@link RunLayout.root}).
- * @param slug - The run's slug.
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
  * @returns `<root>/slice-critic` on `slice/<slug>/critic`, or
@@ -198,8 +165,6 @@ export function criticSliceLayout(
 /**
  * An attached run's own report folder.
  *
- * @param layout - The run's layout.
- * @param run - The attached run's number.
  * @returns `<reports>/attach-<run>`.
  */
 export function attachedRunReports(layout: RunLayout, run: number): string {

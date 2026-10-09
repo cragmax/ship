@@ -76,12 +76,7 @@ function resyncBranchOfObject(raw: unknown): string | { readonly problem: string
   return typeof branch === 'string' ? branch : { problem: 'branch is not a string' };
 }
 
-/**
- * Parse JSON text.
- *
- * @param text - The text.
- * @returns The value, boxed; `null` when it is not JSON.
- */
+/** Parse JSON text: the value, boxed; `null` when it is not JSON. */
 function resyncJson(text: string): { readonly value: unknown } | null {
   try {
     return { value: JSON.parse(text) as unknown };

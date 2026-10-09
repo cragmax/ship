@@ -70,13 +70,7 @@ interface Run {
   readonly created: Created[];
 }
 
-/**
- * Render a merged vitest config: the base config plus a top-level
- * `cacheDir` (the non-deprecated key).
- *
- * @param spec - Which base and cache dir.
- * @returns The config file's source.
- */
+/** Render a merged vitest config: the base plus a top-level `cacheDir`, the non-deprecated key. */
 function renderConfig(spec: VitestConfigSpec): string {
   return [
     "import { defineConfig, mergeConfig } from 'vitest/config';",
@@ -90,7 +84,6 @@ function renderConfig(spec: VitestConfigSpec): string {
 /**
  * Provision a slice worktree.
  *
- * @param options - Slice, batch and `--server`.
  * @returns The envelope: `ok` with `env`, or `failed` with the step and the
  *   paths rolled back.
  */
@@ -127,15 +120,9 @@ export function provision(options: ProvisionOptions): ProvisionResult {
 }
 
 /**
- * Check the slice and batch before anything is created.
- *
- * @param options - Slice, batch and the running CLI's file.
- * @throws Refusal `self-hosted` when the CLI runs from inside the slice.
- *   StepFailure `preconditions` when the slice or batch is not a linked
- *   (non-main) worktree root of one repository, they are the same worktree,
- *   the batch lacks a real non-empty `node_modules` or its `paper-harness/`
- *   workspace, or the slice's `dist` is a link (the build deletes `dist`,
- *   which must never reach through a link).
+ * Throws Refusal `self-hosted` when the CLI runs inside the slice, and StepFailure `preconditions`
+ * unless slice and batch are distinct linked (non-main) worktree roots of one repository, the batch
+ * has a real non-empty `node_modules` and its `paper-harness/`, and the slice's `dist` is no link.
  */
 function checkPreconditions(options: ProvisionOptions): void {
   assertNotSelfHosted(options.slice, options.selfPath ?? import.meta.filename);
@@ -153,15 +140,14 @@ function checkPreconditions(options: ProvisionOptions): void {
   }
   if (!existsSync(`${options.batch}/paper-harness`))
     fail(`${options.batch}/paper-harness is missing`);
+  // The build deletes `dist`, which must never reach through a link.
   if (linkTarget(`${options.slice}/dist`) !== null) fail(`${options.slice}/dist is a link`);
 }
 
 /**
  * Require `path` to be a worktree root other than the main worktree.
  *
- * @param path - The worktree.
  * @param role - `slice` or `batch`, for the message.
- * @returns Its identity.
  * @throws StepFailure `preconditions` otherwise.
  */
 function requireLinkedWorktree(path: string, role: string): WorktreeIdentity {
@@ -173,10 +159,9 @@ function requireLinkedWorktree(path: string, role: string): WorktreeIdentity {
 }
 
 /**
- * Link `<slice>/node_modules` to `<batch>/node_modules`: create it when
- * absent, reuse it when it already links there.
+ * Link `<slice>/node_modules` to `<batch>/node_modules`, created when absent, reused when it
+ * already links there; `run` gains the junction.
  *
- * @param run - Call state; gains the junction.
  * @throws StepFailure `junction` when the path exists as anything else.
  */
 function ensureJunction(run: Run): void {

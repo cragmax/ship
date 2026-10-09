@@ -1,31 +1,15 @@
 /**
- * `run-gate` — decides whether an unattended run may start, and derives its
- * dependency edges (#1031). A thin shell over the pure core
- * (`tooling/lib/run-gate.ts`) and its `gh` boundary
- * (`tooling/lib/run-gate-gh.ts`): parse argv, gather issue data with the real
- * `gh`, print the verdict as JSON.
+ * Decides whether an unattended run may start and derives its dependency edges (#1031): a shell
+ * over the pure core `tooling/lib/run-gate.ts` and its `gh` boundary `tooling/lib/run-gate-gh.ts`.
+ * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
+ * `#` — quote a `#N` token, since PowerShell and bash both read an unquoted leading `#` as a
+ * comment. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
- * Usage (square brackets = optional):
- *
- * ```
- * npx tsx tooling/run-gate.ts epics N... [--exclude]
- * npx tsx tooling/run-gate.ts issues N... [--exclude]
- * npx tsx tooling/run-gate.ts check N
- * ```
- *
- * Numbers may be space-separated, comma-separated or both, each with an
- * optional leading `#` — quote a `#N` token, since PowerShell and bash both
- * read an unquoted leading `#` as a comment.
- * `check N` is the mid-run re-check: OPEN and labelled, never blockers.
- *
- * **Output contract.** stdout carries only the JSON (`GateVerdict` for
- * `epics`/`issues`, `IssueCheck` for `check`), pretty-printed, one trailing
- * newline; diagnostics go to stderr. Exit codes follow the `paper-harness run`
- * convention: `0` ok / ready, `1` refused / not ready (read the JSON), `2` a
- * usage, `gh` or schema error (stdout empty, read stderr).
- *
- * **Never `process.exit()`.** `main` sets `process.exitCode` and returns, so
- * the stdout JSON a caller parses is always flushed in full.
+ * **Output contract.** stdout carries only the JSON (`GateVerdict` for `epics` / `issues`,
+ * `IssueCheck` for `check`), pretty-printed, one trailing newline; diagnostics go to stderr. Exit
+ * `0` ok / ready, `1` refused / not ready (read the JSON), `2` a usage, `gh` or schema error
+ * (stdout empty, read stderr). Never `process.exit()`: `main` sets `process.exitCode` and
+ * returns, so the stdout JSON a caller parses is flushed in full.
  */
 
 import { pathToFileURL } from 'node:url';
@@ -91,8 +75,6 @@ export function exitCodeFor(result: GateVerdict | IssueCheck): number {
 /**
  * Split the post-subcommand tokens into numbers and the `--exclude` flag.
  *
- * @param tokens - The tokens after the subcommand.
- * @returns The operands in argv order, and the `--exclude` token if given.
  * @throws On an unknown flag, a non-positive-integer piece, or a duplicate.
  */
 function parseOperands(tokens: readonly string[]): {
@@ -111,8 +93,6 @@ function parseOperands(tokens: readonly string[]): {
 /**
  * Accept the one known flag.
  *
- * @param token - A `--`-prefixed token.
- * @returns The token.
  * @throws When it is not `--exclude`.
  */
 function parseFlag(token: string): string {
@@ -124,8 +104,6 @@ function parseFlag(token: string): string {
  * Split one token on commas into issue numbers; empty pieces (`1027,`) are
  * skipped so a comma-then-space list splits cleanly across tokens.
  *
- * @param token - A non-flag token.
- * @returns Its numbers, in order.
  * @throws When a piece is not a positive integer.
  */
 function parseNumberToken(token: string): number[] {
@@ -138,8 +116,6 @@ function parseNumberToken(token: string): number[] {
 /**
  * Append an operand, refusing a repeat.
  *
- * @param operands - The operands so far (mutated).
- * @param operand - The new operand.
  * @throws When its number is already present.
  */
 function addOperand(operands: Operand[], operand: Operand): void {
@@ -152,9 +128,6 @@ function addOperand(operands: Operand[], operand: Operand): void {
 /**
  * Parse one number piece (`N` or `#N`).
  *
- * @param piece - One comma-separated piece of a token.
- * @param token - The whole token, for the diagnostic.
- * @returns The positive integer.
  * @throws When the piece is not a positive integer.
  */
 function parseIssueNumber(piece: string, token: string): number {
@@ -169,9 +142,6 @@ function parseIssueNumber(piece: string, token: string): number {
 /**
  * Build `check` arguments.
  *
- * @param operands - The parsed numbers (at least one).
- * @param exclude - The `--exclude` token, if given.
- * @returns The check arguments.
  * @throws When `--exclude` is given or there is more than one number.
  */
 function checkArgs(operands: readonly Operand[], exclude: string | undefined): RunGateArgs {
@@ -183,12 +153,7 @@ function checkArgs(operands: readonly Operand[], exclude: string | undefined): R
   return { kind: 'check', issue: first.value };
 }
 
-/**
- * A usage error carrying the usage line.
- *
- * @param reason - What was wrong.
- * @returns The error.
- */
+/** A usage error carrying the usage line. */
 function usageError(reason: string): Error {
   return new Error(`run-gate: ${reason}\n${USAGE}`);
 }
@@ -196,8 +161,6 @@ function usageError(reason: string): Error {
 /**
  * The real {@link GhJson} port: run `gh` and parse its stdout as JSON.
  *
- * @param args - The gh arguments.
- * @returns The parsed stdout.
  * @throws When gh fails or times out (60s) — the message carries gh's
  *   stderr, else execa's short message — or prints non-JSON.
  */

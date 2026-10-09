@@ -37,7 +37,6 @@ export interface ProvisionBatchOptions {
 /**
  * Provision a batch worktree.
  *
- * @param options - Batch and report dir.
  * @returns The envelope: `ok` with `env`, or `failed` / `refused`.
  */
 export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchResult {
@@ -78,16 +77,10 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
 }
 
 /**
- * Guards that run before anything is installed or written.
+ * Pre-install guards: `npm ci` would wipe the main worktree's `node_modules` or a link's target.
  *
- * @param options - Batch, report dir and the running CLI's file.
- * @throws Refusal `self-hosted` when the CLI runs from inside the batch;
- *   StepFailure `preconditions` when the batch is not a worktree root or
- *   its `node_modules` is a link (`npm ci` would empty the link's target);
- *   Refusal `main-worktree` when the batch is the main worktree (`npm ci`
- *   would wipe the main checkout's `node_modules`); Refusal
- *   `report-dir-inside-worktree` when the report dir lies inside any
- *   registered worktree.
+ * @throws Refusal `self-hosted`, `main-worktree`, `report-dir-inside-worktree` (report dir in any
+ *   worktree); StepFailure `preconditions`: not a worktree root, or `node_modules` is a link.
  */
 function checkPreconditions(options: ProvisionBatchOptions): void {
   const { batch, reportDir } = options;
@@ -110,11 +103,8 @@ function checkPreconditions(options: ProvisionBatchOptions): void {
 }
 
 /**
- * Create the batch's real self-install workspace
- * (`paper-harness/{helpers,tests}`).
+ * Create the batch's real self-install workspace (`paper-harness/{helpers,tests}`).
  *
- * @param batch - The batch worktree.
- * @returns The workspace path.
  * @throws StepFailure `workspace` when `paper-harness` exists as a link.
  */
 function createWorkspace(batch: string): string {

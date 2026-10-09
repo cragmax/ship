@@ -1,23 +1,8 @@
 /**
- * Drift gate: render the generated artifacts in-memory and string-compare
- * them to the on-disk equivalents. Mirrors `tooling/check-manifest-coverage.ts`
- * but simpler — no checker context, just string equality.
- *
- * Target checks:
- *
- * 1. `src/init/templates/helpers-readme.md` — content equals
- *    `replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown())`.
- * 2. `tooling/workflows/lib/schemas.generated.ts` — equals a fresh emission
- *    from its zod sources under `tooling/workflows/schemas/`, line endings
- *    normalised ({@link checkSchemaModule}).
- * 3. Each saved workflow in {@link WORKFLOWS} — the committed
- *    `.claude/workflows/<name>.js` equals a fresh render, line endings
- *    normalised ({@link checkRenderedWorkflows}).
- *
- * The former `src/tools/promote-script.ts` destructure target was retired
- * by #580; the body→suite-of-one wrapper at
- * `src/tools/script-ingest/wrap-body-as-suite.ts` imports `CONTEXT_BAG_NAMES`
- * at runtime and is drift-proof by construction.
+ * Drift gate: each generated target must equal a fresh in-memory render — the
+ * `helpers-readme.md` markers block, `schemas.generated.ts` ({@link checkSchemaModule}) and
+ * each saved workflow in {@link WORKFLOWS} ({@link checkRenderedWorkflows}), the latter two
+ * with line endings normalised.
  *
  * On drift, prints a per-target failure line and the hint
  * "Run `npm run codegen` to regenerate." then exits 1.
@@ -47,9 +32,6 @@ type CheckResult = { target: string; ok: boolean; reason?: string };
 
 async function checkMarkersFile(absPath: string, displayPath: string): Promise<CheckResult> {
   const onDisk = await readFile(absPath, 'utf-8');
-  // Computing the expected: take the on-disk file, splice in the freshly
-  // rendered between-markers content. If the on-disk content already matches
-  // the rendered output, this is a no-op and equality holds.
   const expected = replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown());
   if (expected === onDisk) {
     return { target: displayPath, ok: true };

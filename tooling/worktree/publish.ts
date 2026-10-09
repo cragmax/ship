@@ -45,7 +45,6 @@ export interface PublishInput {
 /**
  * Push the batch's run branch and open its PR.
  *
- * @param input - Batch, title, body and log files, and the self-hosted seam.
  * @returns The envelope: `ok` with `pushed` and `pr`; `refused` before any
  *   mutation (harvest's linked-worktree reasons, `not-run-batch`,
  *   `pr-exists`); or `failed` with the step — `pr-state`, `body-too-long`
@@ -80,14 +79,10 @@ export function publish(input: PublishInput): PublishResult {
 }
 
 /**
- * Refuse a branch that already has an open PR: a second `gh pr create`
- * fails, and a push would silently update the open one. The lookup is
- * `live-runs`' ({@link lookupPr}).
+ * Refuse a branch with an open PR: a second `gh pr create` fails; a push would update it silently.
  *
- * @param batch - The batch worktree (`gh`'s working directory).
- * @param branch - The run branch, short form.
- * @throws StepFailure `pr-state` when `gh` fails or answers unreadably —
- *   never read as "no PR"; Refusal `pr-exists` naming the open PR.
+ * @throws StepFailure `pr-state` when `gh` fails or answers unreadably (never read as "no PR");
+ *   Refusal `pr-exists` naming the open PR.
  */
 function assertNoOpenPr(batch: string, branch: string): void {
   const { info, error } = lookupPr(batch, branch);
@@ -117,22 +112,18 @@ function assertBodyWithinLimit(bodyFile: string): void {
 }
 
 /**
- * Push the branch to `origin`, setting its upstream; the pre-push hook runs
- * the full gate. Never forced: a push `origin` would have to lose commits
- * for fails, and is reported — never retried with force. `publish` and
- * `publish --push-only` both push through here.
+ * Push the branch to `origin`, setting its upstream; the pre-push hook runs the full gate. Never
+ * forced: a push `origin` would have to lose commits for fails, and is reported — never retried
+ * with force. `publish` and `publish --push-only` both push through here.
  *
  * @remarks
- * The refspec names both sides, unforced: a bare `<branch>` refspec takes
- * its destination and force from config — under `push.default=upstream` a
- * branch tracking `origin/master` pushes to `master`, and a `+` mapping in
- * `remote.origin.push` forces it (git 2.55, observed 2026-09-28).
+ * The refspec names both sides, unforced: a bare `<branch>` refspec takes its destination and force
+ * from config — under `push.default=upstream` a branch tracking `origin/master` pushes to
+ * `master`, and a `+` mapping in `remote.origin.push` forces it (git 2.55).
  *
- * @param batch - The batch worktree.
  * @param branch - The run branch, short form.
- * @param logFile - Where the output goes.
- * @throws StepFailure `push` on a non-zero exit — a non-fast-forward
- *   included — spawn failure or budget kill.
+ * @throws StepFailure `push` on a non-zero exit — a non-fast-forward included — spawn failure or
+ *   budget kill.
  */
 export function pushBranch(batch: string, branch: string, logFile: string): void {
   const ref = `refs/heads/${branch}`;
@@ -153,9 +144,6 @@ export function pushBranch(batch: string, branch: string, logFile: string): void
 /**
  * Open the PR, branch → `master`.
  *
- * @param batch - The batch worktree (`gh`'s working directory).
- * @param branch - The run branch, short form.
- * @param input - The title and body file.
  * @returns The PR, read from the URL `gh` prints.
  * @throws StepFailure `pr` when `gh` fails or prints no PR URL.
  */

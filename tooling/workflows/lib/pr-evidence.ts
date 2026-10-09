@@ -17,8 +17,6 @@ import type { TddEvidence } from './agent-calls.js';
 /**
  * One landed issue's Evidence bullet.
  *
- * @param issue - The issue.
- * @param evidence - Its tdd's evidence.
  * @returns A `tracer` per {@link tracerBullet}. A `none` as the one line
  *   `- **#N** no red-green — <reason>`, the reason per {@link oneLine};
  *   `no reason given` when that is empty.
@@ -33,15 +31,8 @@ export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
 }
 
 /**
- * A tracer's bullet.
- *
- * @param ref - The issue, as `#N`.
- * @param evidence - The tracer's evidence.
- * @returns `- **#N**` and the test verbatim as a code span per
- *   {@link codeSpan}; the pseudocode per {@link codeBlock}; then `  **Before:** <red>` and
- *   `  **After:** <green>`, each per {@link oneLine}. The one line
- *   `- **#N** evidence incomplete` instead when the test is blank, or the red
- *   or the green is empty per {@link oneLine}.
+ * A tracer's bullet; the one line `- **#N** evidence incomplete` instead when the test is blank,
+ * or the red or the green is empty per {@link oneLine}.
  */
 function tracerBullet(ref: string, evidence: TddEvidence): string[] {
   const red = oneLine(evidence.red);
@@ -57,14 +48,7 @@ function tracerBullet(ref: string, evidence: TddEvidence): string[] {
   ];
 }
 
-/**
- * The pseudocode as a fenced block nested in the bullet.
- *
- * @param pseudocode - The pseudocode.
- * @returns None for blank pseudocode. Else `  <fence>text`, the pseudocode's
- *   lines (its trailing whitespace dropped) each indented two spaces, then
- *   `  <fence>`; the fence per {@link codeFence}.
- */
+/** The pseudocode as a fenced block nested in the bullet; none for blank pseudocode. */
 function codeBlock(pseudocode: string): string[] {
   if (pseudocode.trim() === '') return [];
   const fence = codeFence(pseudocode);
@@ -78,12 +62,7 @@ function codeBlock(pseudocode: string): string[] {
   ];
 }
 
-/**
- * The fence no backtick run in the pseudocode can close.
- *
- * @param pseudocode - The pseudocode.
- * @returns Backticks, one more than its longest backtick run, at least three.
- */
+/** The fence no backtick run in the pseudocode can close: one longer, at least three. */
 function codeFence(pseudocode: string): string {
   return '`'.repeat(Math.max(3, longestBacktickRun(pseudocode) + 1));
 }
@@ -104,12 +83,6 @@ export function codeSpan(text: string): string {
   return `${delimiter} ${text} ${delimiter}`;
 }
 
-/**
- * The longest run of backticks in a text.
- *
- * @param text - The text.
- * @returns Its length; 0 when the text holds no backtick.
- */
 function longestBacktickRun(text: string): number {
   return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
 }
@@ -117,7 +90,6 @@ function longestBacktickRun(text: string): number {
 /**
  * A text on one line.
  *
- * @param text - The text.
  * @returns Its LF- or CRLF-separated lines, each trimmed, the empty ones
  *   dropped, joined with one space.
  */

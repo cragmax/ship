@@ -58,7 +58,14 @@ export interface EpicChild {
   readonly state: IssueState;
 }
 
-/** Why the gate refused (or, in exclude mode, dropped) something. */
+/**
+ * Why the gate refused (or, in exclude mode, dropped) something. Per issue: `closed` — CLOSED;
+ * `missing-label` — lacks the exact {@link READY_LABEL}; `open-blocker` — an out-of-set OPEN
+ * blocker (an out-of-set CLOSED one is satisfied); `cross-epic-blocker` — an in-set blocker in
+ * another epic entry, since an epic's branch never carries another epic's commit. Run-wide:
+ * `cycle` — each cycle among the in-set edges; `empty-epic` — an epic entry with no issues;
+ * `empty-run-set` — exclude mode dropped every issue.
+ */
 export type GateFailure =
   | { readonly kind: 'closed'; readonly issue: number; readonly message: string }
   | { readonly kind: 'missing-label'; readonly issue: number; readonly message: string }
@@ -84,7 +91,16 @@ export type Exclusion =
   | { readonly issue: number; readonly cause: 'failed' }
   | { readonly issue: number; readonly cause: 'dependent'; readonly blockers: readonly number[] };
 
-/** The gate's answer for a launch. */
+/**
+ * The gate's answer for a launch. A refused verdict, whatever the mode: `failures` lists every
+ * failure, `excluded` is `[]`, and `runSet` / `edges` are the resolved pre-exclusion set, for
+ * information only. An `ok` exclude verdict: the post-exclusion set, the drop reasons as
+ * `failures`, the drop list as `excluded`. Deterministic: `edges` are the same-entry in-set
+ * edges, deduped, sorted by (`blocker`, `dependent`); `runSet` keeps spec order; `excluded` is
+ * ascending by issue, each dependent listing its dropped OPEN direct blockers ascending;
+ * `failures` are ordered by subject (issue, else epic), then kind in {@link GateFailure}
+ * declaration order, then blocker, with `cycle` and `empty-run-set` last.
+ */
 export interface GateVerdict extends RunGraph {
   /** Whether the run may start. */
   readonly verdict: 'ok' | 'refused';
@@ -127,11 +143,9 @@ export interface RunGateInput {
  * in spec order, holding its OPEN sub-issues ascending — a closed sub-issue is
  * done, so it is omitted rather than failed (and, being CLOSED, it satisfies
  * any dependent it blocks). An epic left with no open sub-issue resolves to an
- * empty entry, which {@link evaluateRunGate} refuses (R6).
+ * empty entry, which {@link evaluateRunGate} refuses.
  *
- * @param spec - The launch spec.
  * @param epicChildren - Each spec epic's sub-issues, open and closed.
- * @returns The run set.
  * @throws When `epicChildren` lacks a spec epic.
  */
 export function resolveRunSet(
@@ -153,9 +167,6 @@ export function resolveRunSet(
 /**
  * One spec epic's sub-issues.
  *
- * @param epicChildren - Each spec epic's sub-issues.
- * @param epic - The epic.
- * @returns Its sub-issues.
  * @throws When the caller supplied no sub-issue list for a spec epic.
  */
 function childrenOf(
@@ -173,7 +184,6 @@ function childrenOf(
  * in-set blocker stays OPEN until the run's PR merges its `fixes #N`, so a
  * blocker check would mark every dependent not-ready.
  *
- * @param facts - The issue's facts.
  * @returns The check; `failures` holds only `closed` / `missing-label`.
  */
 export function checkIssue(facts: IssueFacts): IssueCheck {
@@ -185,7 +195,6 @@ export function checkIssue(facts: IssueFacts): IssueCheck {
  * The blockers outside the run set — the issues whose state
  * {@link evaluateRunGate} needs in `blockerStates`.
  *
- * @param runSet - The resolved run set.
  * @param facts - Facts for every run-set issue.
  * @returns The out-of-set blocker numbers, deduped, ascending.
  */
@@ -199,38 +208,14 @@ export function outOfSetBlockers(runSet: RunSet, facts: readonly IssueFacts[]): 
 }
 
 /**
- * Evaluate the run gate over a resolved run set.
- *
- * Per issue: CLOSED fails `closed` (R2); lacking the exact
- * {@link READY_LABEL} fails `missing-label` (R3). Per blocker (R4): one in the
- * run set yields an edge — or, when it sits in a different epic entry, fails
- * `cross-epic-blocker` (an epic's branch never carries another epic's
- * commit); one outside and CLOSED is satisfied; one outside and OPEN fails
- * `open-blocker`. Run-wide: every cycle among the in-set edges fails `cycle`
- * (R5) and every empty epic entry fails `empty-epic` (R6).
- *
- * `refuse` mode refuses on any failure. `exclude` mode (R8) refuses only on a
- * `cycle` or `empty-epic`; otherwise it drops each failed issue, then the
- * transitive dependents of the failed OPEN ones — walked over the in-set
- * edges minus every edge whose blocker is CLOSED, since a closed blocker
- * satisfies its dependent — then removes emptied entries, and refuses with
- * `empty-run-set` if nothing remains.
- *
- * Every refused verdict has one shape, whatever the mode (R7): `failures`
- * lists every failure found, `excluded` is `[]`, and `runSet`/`edges` are the
- * resolved pre-exclusion set, for information only. An `ok` verdict in
- * exclude mode carries the post-exclusion set, the drop reasons as
- * `failures`, and the drop list as `excluded`.
- *
- * Output is deterministic (R9, R10): `edges` are the same-entry in-set edges,
- * deduped, sorted by (`blocker`, `dependent`); `runSet` keeps spec order;
- * `excluded` is ascending by issue, each dependent listing its dropped OPEN
- * direct blockers ascending; `failures` are ordered by subject (issue, else epic),
- * then kind in {@link GateFailure} declaration order, then blocker, with
- * `cycle` and `empty-run-set` last.
+ * Evaluate the run gate over a resolved run set: the failures of {@link GateFailure}, the verdict
+ * shapes and ordering of {@link GateVerdict}; an in-set blocker yields an edge. `refuse` mode
+ * refuses on any failure. `exclude` mode refuses only on a `cycle` or `empty-epic`; otherwise it
+ * drops each failed issue, then the transitive dependents of the failed OPEN ones — walked over
+ * the in-set edges minus every edge whose blocker is CLOSED, since a closed blocker satisfies its
+ * dependent — then removes emptied entries, and refuses with `empty-run-set` if nothing remains.
  *
  * @param input - The resolved run set, facts, blocker states and mode.
- * @returns The verdict.
  * @throws When `facts` lacks a run-set issue or `blockerStates` lacks an
  *   out-of-set blocker — a caller bug, never a verdict.
  */
@@ -263,21 +248,16 @@ export function evaluateRunGate(input: RunGateInput): GateVerdict {
 }
 
 /**
- * Whether exclude mode may drop the failure's issue rather than refuse.
- *
- * @param f - The failure.
- * @returns `true` for the per-issue kinds; `false` for `cycle`, `empty-epic`
- *   and `empty-run-set`.
+ * Whether exclude mode may drop the failure's issue rather than refuse: `true` for the per-issue
+ * kinds, `false` for `cycle`, `empty-epic` and `empty-run-set`.
  */
 function isExcludable(f: GateFailure): f is Extract<GateFailure, { issue: number }> {
   return 'issue' in f;
 }
 
 /**
- * R8's drop list (rule stated on {@link evaluateRunGate}).
- *
- * @param analysis - The analysis; every failure in it is excludable.
- * @returns The exclusions, ascending by issue.
+ * The exclude-mode drop list ({@link evaluateRunGate}), ascending by issue; every failure in
+ * `analysis` is excludable.
  */
 function exclusions(analysis: Analysis): Exclusion[] {
   const failed = new Set(analysis.failures.filter(isExcludable).map((f) => f.issue));
@@ -297,13 +277,7 @@ function exclusions(analysis: Analysis): Exclusion[] {
   ].sort((a, b) => a.issue - b.issue);
 }
 
-/**
- * The run set minus the dropped issues, emptied entries removed.
- *
- * @param runSet - The resolved run set.
- * @param excluded - The drop list.
- * @returns The post-exclusion run set, entry order kept.
- */
+/** The run set minus the dropped issues, emptied entries removed, entry order kept. */
 function keptRunSet(runSet: RunSet, excluded: readonly Exclusion[]): RunSet {
   const dropped = new Set(excluded.map((x) => x.issue));
   return runSet
@@ -317,18 +291,13 @@ interface Analysis {
   readonly entries: EntryIndex;
   /** Facts per run-set issue. */
   readonly facts: ReadonlyMap<number, IssueFacts>;
-  /** Every failure found, in R10 order. */
+  /** Every failure found, in {@link GateVerdict} order. */
   readonly failures: readonly GateFailure[];
   /** Every blocker → dependent edge with both ends in the set, cross-epic included. */
   readonly inSetEdges: readonly RunEdge[];
 }
 
-/**
- * Assess every run-set issue and the run as a whole (R2–R6).
- *
- * @param input - The gate input.
- * @returns The analysis.
- */
+/** Assess every run-set issue and the run as a whole (the checks of {@link GateFailure}). */
 function analyse(input: RunGateInput): Analysis {
   const entries = indexEntries(input.runSet);
   const facts = indexFacts(input.facts);
@@ -361,12 +330,7 @@ interface EntrySlot {
 /** Every run-set issue's {@link EntrySlot}. */
 type EntryIndex = ReadonlyMap<number, EntrySlot>;
 
-/**
- * Map every run-set issue to its entry.
- *
- * @param runSet - The run set.
- * @returns Issue → entry slot.
- */
+/** Map every run-set issue to its entry. */
 function indexEntries(runSet: RunSet): EntryIndex {
   const entries = new Map<number, EntrySlot>();
   runSet.forEach((entry, position) => {
@@ -376,9 +340,8 @@ function indexEntries(runSet: RunSet): EntryIndex {
 }
 
 /**
- * R6: one `empty-epic` failure per epic entry with no issues.
+ * One `empty-epic` failure per epic entry with no issues.
  *
- * @param runSet - The resolved run set.
  * @returns The failures, in entry order.
  */
 function emptyEpicFailures(runSet: RunSet): GateFailure[] {
@@ -387,25 +350,14 @@ function emptyEpicFailures(runSet: RunSet): GateFailure[] {
   );
 }
 
-/**
- * R9: keep the edges whose ends share an entry.
- *
- * @param edges - In-set edges.
- * @param entries - Where each run-set issue sits.
- * @returns The same-entry edges, order preserved.
- */
+/** Keep the in-set edges whose ends share an entry, order preserved. */
 function sameEntryEdges(edges: readonly RunEdge[], entries: EntryIndex): RunEdge[] {
   return edges.filter(
     (e) => entries.get(e.blocker)?.position === entries.get(e.dependent)?.position,
   );
 }
 
-/**
- * Key the facts by issue number.
- *
- * @param facts - The facts list.
- * @returns Issue → facts.
- */
+/** Key the facts by issue number. */
 function indexFacts(facts: readonly IssueFacts[]): ReadonlyMap<number, IssueFacts> {
   return new Map(facts.map((f) => [f.number, f]));
 }
@@ -413,9 +365,6 @@ function indexFacts(facts: readonly IssueFacts[]): ReadonlyMap<number, IssueFact
 /**
  * The facts for one run-set issue.
  *
- * @param facts - Issue → facts.
- * @param issue - The run-set issue.
- * @returns Its facts.
  * @throws When the caller supplied no facts for a run-set issue.
  */
 function factsFor(facts: ReadonlyMap<number, IssueFacts>, issue: number): IssueFacts {
@@ -425,12 +374,8 @@ function factsFor(facts: ReadonlyMap<number, IssueFacts>, issue: number): IssueF
 }
 
 /**
- * One issue's own failures (R2–R4) and its incoming in-set edges.
- *
- * @param facts - The issue's facts.
- * @param entries - Where each run-set issue sits.
- * @param blockerStates - States of the out-of-set blockers.
- * @returns The failures, in kind order then blocker ascending, and the edges.
+ * One issue's own and blocker failures, in kind order then blocker ascending, and its incoming
+ * in-set edges.
  */
 function assessIssue(
   facts: IssueFacts,
@@ -453,9 +398,8 @@ function assessIssue(
 }
 
 /**
- * R2 + R3: the failures an issue earns on its own, blockers aside.
+ * The failures an issue earns on its own, blockers aside.
  *
- * @param facts - The issue's facts.
  * @returns `closed` and/or `missing-label`, in that order.
  */
 function ownFailures(facts: IssueFacts): IssueCheckFailure[] {
@@ -472,14 +416,8 @@ interface BlockerPlacement {
 }
 
 /**
- * R4: the failure one blocker causes, if any.
- *
- * @param issue - The dependent.
- * @param blocker - The blocker.
- * @param placement - Where the blocker and the dependent sit.
- * @param blockerStates - States of the out-of-set blockers.
- * @returns `open-blocker` for an OPEN out-of-set blocker, `cross-epic-blocker`
- *   for an in-set blocker in another epic entry, else `undefined`.
+ * The failure one blocker of `issue` causes: `open-blocker` for an OPEN out-of-set blocker,
+ * `cross-epic-blocker` for an in-set blocker in another epic entry, else `undefined`.
  */
 function blockerFailure(
   issue: number,
@@ -496,7 +434,7 @@ function blockerFailure(
   return crossEpic ? crossEpicFailure(issue, blocker, home.epic) : undefined;
 }
 
-/** R10's kind rank: the {@link GateFailure} declaration order. */
+/** The failure-kind rank: the {@link GateFailure} declaration order. */
 const KIND_RANK: Readonly<Record<GateFailure['kind'], number>> = {
   closed: 0,
   'missing-label': 1,
@@ -507,13 +445,7 @@ const KIND_RANK: Readonly<Record<GateFailure['kind'], number>> = {
   'empty-run-set': 6,
 };
 
-/**
- * R10's comparator for subject failures (order stated on {@link evaluateRunGate}).
- *
- * @param a - One failure.
- * @param b - The other.
- * @returns A sort comparator result.
- */
+/** The comparator for subject failures (order stated on {@link GateVerdict}). */
 function compareFailures(a: GateFailure, b: GateFailure): number {
   return (
     subjectOf(a) - subjectOf(b) ||
@@ -525,7 +457,6 @@ function compareFailures(a: GateFailure, b: GateFailure): number {
 /**
  * A failure's subject number.
  *
- * @param f - The failure.
  * @returns Its issue, else its epic, else 0 (run-level kinds never reach the sort).
  */
 function subjectOf(f: GateFailure): number {
@@ -537,7 +468,6 @@ function subjectOf(f: GateFailure): number {
 /**
  * A failure's blocker number.
  *
- * @param f - The failure.
  * @returns Its blocker, or 0 for a blocker-less kind.
  */
 function blockerOf(f: GateFailure): number {
@@ -547,9 +477,6 @@ function blockerOf(f: GateFailure): number {
 /**
  * An out-of-set blocker's state.
  *
- * @param blockerStates - States of the out-of-set blockers.
- * @param blocker - The blocker.
- * @returns Its state.
  * @throws When the caller supplied no state for an out-of-set blocker.
  */
 function blockerState(blockerStates: ReadonlyMap<number, IssueState>, blocker: number): IssueState {
@@ -558,23 +485,13 @@ function blockerState(blockerStates: ReadonlyMap<number, IssueState>, blocker: n
   return state;
 }
 
-/**
- * Dedupe edges and sort them by (`blocker`, `dependent`).
- *
- * @param edges - The edges.
- * @returns A new, sorted, duplicate-free list.
- */
+/** Dedupe edges and sort them by (`blocker`, `dependent`), into a new list. */
 function sortEdges(edges: readonly RunEdge[]): RunEdge[] {
   const unique = new Map(edges.map((e) => [`${String(e.blocker)}>${String(e.dependent)}`, e]));
   return [...unique.values()].sort((a, b) => a.blocker - b.blocker || a.dependent - b.dependent);
 }
 
-/**
- * Render an issue reference.
- *
- * @param n - The issue number.
- * @returns `#n`.
- */
+/** Render an issue reference: `#n`. */
 function ref(n: number): string {
   return `#${String(n)}`;
 }

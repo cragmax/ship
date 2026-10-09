@@ -42,9 +42,12 @@ export const AttachInfoSchema = z.object({
 export const CutBatchResultSchema = ResultBaseSchema.extend({
   /** The feature branch created or attached (`ship/<slug>`), short form. */
   branch: z.string().nullable(),
-  /** The `master` commit the branch was cut at; with `--attach`, the branch's tip (the batch's `HEAD`). */
+  /**
+   * The `master` commit the branch was cut at; with `--attach`, the branch's tip (the batch's
+   * `HEAD`).
+   */
   base: z.string().nullable(),
-  /** The run root. */
+  /** The run's root directory, as `run-layout.ts` `runLayout` derives it. */
   runRoot: z.string().nullable(),
   /** The batch worktree. */
   batch: z.string().nullable(),
@@ -115,7 +118,7 @@ export const PreflightResultSchema = ResultBaseSchema.extend({
       master: z.object({
         /** Local `refs/heads/master`. */
         local: z.string(),
-        /** `origin`'s `refs/heads/master`, read live with `git ls-remote`, never the tracking ref. */
+        /** `origin`'s `refs/heads/master`, read live by `git ls-remote`, not the tracking ref. */
         remote: z.string(),
       }),
     })
@@ -133,7 +136,9 @@ export const LandResultSchema = ResultBaseSchema.extend({
   sha: z.string().nullable(),
   /** The new batch commit's sha; `null` unless the commit landed. */
   commit: z.string().nullable(),
-  /** The harvest's `files`: every path the slice commit changes, both endpoints of a rename, sorted. */
+  /**
+   * The harvest's `files`: every path the slice commit changes, both endpoints of a rename, sorted.
+   */
   files: z.array(z.string()),
   /**
    * The lines the slice commit changes: insertions plus deletions over its
@@ -281,7 +286,10 @@ export const PostPrCommentResultSchema = ResultBaseSchema.extend({
   url: z.string().nullable(),
 });
 
-/** Envelope of `post-issue-comment <main> --issue N --comment-file F`; `worktree` is `gh`'s directory. */
+/**
+ * Envelope of `post-issue-comment <main> --issue N --comment-file F`; `worktree` is `gh`'s
+ * directory.
+ */
 export const PostIssueCommentResultSchema = ResultBaseSchema.extend({
   /** The issue the comment was posted to, as given. */
   issue: z.int(),

@@ -1,36 +1,17 @@
 /**
- * Child-process runner for the worktree CLI. Output is always captured,
- * never inherited: the CLI's stdout carries exactly one JSON object, so a
- * child writing to it would corrupt the envelope. On failure the captured
- * tail travels in the envelope's `errors[].detail` instead.
+ * Child-process runner for the worktree CLI. Output is always captured, never inherited: the
+ * CLI's stdout carries exactly one JSON object, and a failure's tail travels in `errors[].detail`.
+ * The spawn budgets below are the only timeouts of a run's tool steps (the workflow sets none);
+ * every spawn that can outlast local git plumbing names its constant here.
  *
- * The spawn budgets below are the only timeouts of an unattended run's
- * tool steps: the CLI owns them, and the workflow that calls it sets none
- * of its own. Every spawn that can outlast local git plumbing — a network
- * call, an install, a build, a hooked commit — names its constant here; the
- * local `git` plumbing (`git.ts`) runs under the default.
- *
- * A budget kill is `execaSync`'s `timeout`. On Windows (#1048; Windows 11,
- * Node 24, Git for Windows 2.55) it reaches only the direct child, and its
- * descendants survive it except in a node → node chain:
- *
- * - an npm chain (`npm run` → cmd → npm-cli → cmd → node) outlives it;
- * - a program an MSYS process execs (`sleep`, or Git Bash's sh-script `npm`,
- *   which runs as its own sh process) runs as a new Windows process whose
- *   parent is the exited fork, outside the Windows process tree:
- *   `taskkill /T` reaches neither it nor anything below it, native
- *   descendants included;
- * - the direct child can be a launcher. From a Windows-native PATH, `git` is
- *   Git's `cmd/git.exe`, and killing it leaves the real `git.exe` and its
- *   hook running; from Git Bash's PATH the real `git.exe` is the child — it
- *   dies, and its hook tree survives.
- *
- * Async execa gains nothing: `child.kill()` and its own `timeout` also kill
- * only the direct child, and its promise never settles while a survivor
- * holds the output pipe; the sync spawn returns at the budget. So a Windows
- * budget kill is reported, not repaired: {@link outputOf} appends
- * {@link orphanWarning}'s line. POSIX is unexamined: whether a hook's
- * children survive a SIGTERM to `git` there has not been probed.
+ * A budget kill is `execaSync`'s `timeout`. On Windows (11, Node 24, Git for Windows 2.55) it
+ * reaches only the direct child; its descendants survive except in a node → node chain (#1048). An
+ * npm chain outlives it; an MSYS-exec'd program runs outside the Windows process tree, beyond
+ * `taskkill /T`; killing a launcher (`cmd/git.exe`, from a Windows-native PATH) leaves the real
+ * `git.exe` and its hook running, and from Git Bash's PATH the real `git.exe` dies and its hook
+ * tree survives. Async execa kills no further, and never settles while a survivor holds the output
+ * pipe. So a Windows budget kill is reported, not repaired ({@link outputOf},
+ * {@link orphanWarning}); on POSIX, whether a hook's children survive SIGTERM to `git` is unprobed.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -99,7 +80,6 @@ export interface CaptureOptions {
 /**
  * Keep the last {@link TAIL_LINES} lines of `text`.
  *
- * @param text - Captured output.
  * @returns The trailing lines, joined with `\n`.
  */
 function lastLines(text: string): string {
@@ -107,24 +87,18 @@ function lastLines(text: string): string {
 }
 
 /**
- * Run a child with captured output, never throwing on a child failure.
- * `.cmd` shims (`npm` on Windows) resolve through execa.
+ * Run a child with captured output, never throwing on a child failure. `.cmd` shims (`npm` on
+ * Windows) resolve through execa.
  *
  * @remarks
- * The child gets this process's environment minus every `GIT_*` variable,
- * with `options.env` laid over it; an overlay must not set a `GIT_*`
- * variable. The CLI names each repository by explicit path (`git -C`), so
- * an inherited repository-location variable is always wrong: a git hook exports
- * `GIT_DIR`, and under it `git -C <worktree>` resolves the hook's
- * repository instead — its worktree list, its main checkout, its
- * `worktree remove`. A prefix rule rather than a list, so no name that
- * `git rev-parse --local-env-vars` prints can be missed; no child here
- * needs any other `GIT_*` setting.
+ * The child gets this process's environment minus every `GIT_*` variable, with `options.env`
+ * laid over it; an overlay must not set a `GIT_*` variable. The CLI names each repository by
+ * explicit path (`git -C`), so an inherited repository-location variable is always wrong: a git
+ * hook exports `GIT_DIR`, and under it `git -C <worktree>` resolves the hook's repository
+ * instead. A prefix rule rather than a list, so no name that `git rev-parse --local-env-vars`
+ * prints can be missed; no child here needs any other `GIT_*` setting.
  *
- * @param file - Executable name or path.
  * @param args - Argument vector, passed without a shell.
- * @param options - Working directory, optional timeout, env overlay and log file.
- * @returns Exit code, stdout, and the output tail.
  */
 export function runCaptured(
   file: string,
@@ -150,17 +124,9 @@ export function runCaptured(
 }
 
 /**
- * Compose a child's output: what it printed, then execa's message after a
- * budget kill — a killed child that printed anything would otherwise read
- * as a bare exit `-1` — or that message alone when it printed nothing. On
- * win32 a budget kill then appends {@link orphanWarning}'s line; POSIX gets
- * none.
- *
- * @param all - Interleaved stdout + stderr.
- * @param timedOut - Whether the budget killed the child.
- * @param failure - Execa's failure message; empty when the child succeeded.
- * @param cwd - The child's working directory, named by the warning.
- * @returns The composed output.
+ * What the child printed, then execa's message after a budget kill (else a killed child reads as
+ * a bare exit `-1`), or that message alone when it printed nothing; on win32 a budget kill then
+ * appends {@link orphanWarning}'s line.
  */
 function outputOf(all: string, timedOut: boolean, failure: string, cwd: string): string {
   const warning = timedOut && process.platform === 'win32' ? `\n${orphanWarning(cwd)}` : '';
@@ -169,27 +135,18 @@ function outputOf(all: string, timedOut: boolean, failure: string, cwd: string):
 }
 
 /**
- * The report of a Windows budget kill that reached only the direct child
- * (the file header has the why). It carries no remediation command: the
- * survivors cannot be found by `cwd`.
- *
- * @param cwd - The killed child's working directory, named as given — for a
- *   `git -C` spawn that is the CLI's own cwd, not the repository.
- * @returns The one warning line.
+ * The Windows budget-kill line (the file header has the why), naming `cwd` as given — for a
+ * `git -C` spawn the CLI's own cwd. No remediation command: survivors cannot be found by `cwd`.
  */
 function orphanWarning(cwd: string): string {
   return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
 }
 
 /**
- * Write the whole output to the log file.
+ * Write the whole output to the log file; `''` when written, else a line naming the failure.
  *
- * @param file - The log file.
- * @param output - The composed output.
- * @returns `''` when written; otherwise a line naming the failure.
- * @silences A failed write (a missing directory, a file held open): the
- *   child's outcome stands — a commit that landed must not read as failed —
- *   and the returned line reaches the caller in the tail.
+ * @silences A failed write: the child's outcome stands — a commit that landed must not read as
+ *   failed — and the returned line reaches the caller in the tail.
  */
 function writeLog(file: string, output: string): string {
   try {
@@ -216,10 +173,6 @@ export function freshLogDir(command: string): string {
 /**
  * Run a child as a named step.
  *
- * @param step - Step name reported on failure.
- * @param file - Executable name or path.
- * @param args - Argument vector.
- * @param options - Working directory and optional timeout.
  * @returns What the child produced, when it exited 0.
  * @throws StepFailure for `step` carrying the output tail, on any non-zero
  *   exit, spawn failure or timeout.

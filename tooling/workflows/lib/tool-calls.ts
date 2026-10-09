@@ -1,34 +1,18 @@
 /**
- * The saved workflows' tooling calls: each runs one repo CLI command
- * through the `runner` agent, which writes the full envelope into a fresh
- * directory of its own under the call's {@link ToolPlace} and returns only
- * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS}
- * row.
+ * The saved workflows' tooling calls: each runs one repo CLI command through the `runner` agent,
+ * which writes the full envelope into a fresh directory of its own under the call's
+ * {@link ToolPlace} — so concurrent launches and repeated calls never share one — and returns only
+ * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS} row.
  *
- * **Schemas.** A worktree tool's row is `schemas.generated.ts`'s emission
- * of its pick in `tooling/workflows/schemas/tool-envelopes.ts` — the one
- * source of the consumed fields, their schema and their type, and of which
- * are required — plus the runner's own fields ({@link toolSchema}). The run
- * gate's `run-gate` and `check` rows are hand-written from
- * `tooling/lib/run-gate.ts`'s types: every consumed field required, save
- * those a failure or exclusion kind may lack.
- *
- * **Types.** Each output type is shallow-`Partial` all the same: a command
+ * **Types.** Each output type is shallow-`Partial`, required fields included: a command
  * that exits 2 prints no verdict, one that threw or failed its envelope
  * schema prints only the base fields (`tooling/worktree.ts`
  * `runWorktreeCli`), and the runtime enforces nothing beyond `required`
  * that anyone has observed, so a reader treats a missing field as a
  * failure, never as a pass.
  *
- * **Envelope places.** A call before the run is cut writes under
- * {@link TOOL_ENVELOPE_DIR} in the main checkout ({@link PRE_CUT}); every
- * later call writes under its run's report directory. Either way the runner
- * makes each call's directory unique, so concurrent launches and repeated
- * calls never share an envelope file.
- *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect; the zod sources are imported for their types
- * only.
+ * no top-level side effect; the zod sources are imported for types only.
  */
 
 import type { z } from 'zod';
@@ -80,7 +64,10 @@ export interface ToolPlace {
   readonly write?: FileToWrite;
 }
 
-/** The place of every call before the run is cut. */
+/**
+ * The place of every call before the run is cut: under {@link TOOL_ENVELOPE_DIR} in the main
+ * checkout.
+ */
 export const PRE_CUT: ToolPlace = { dir: TOOL_ENVELOPE_DIR };
 
 /**
@@ -105,7 +92,7 @@ interface ToolBase {
   readonly stderrTail?: string;
 }
 
-/** A worktree-CLI tool's output: the base, and its envelope's consumed fields, each possibly absent. */
+/** A worktree tool's output: the base and its envelope's consumed fields, each possibly absent. */
 type EnvelopeOutput<N extends WorktreeToolName> = ToolBase &
   Partial<z.infer<(typeof TOOL_ENVELOPES)[N]>>;
 
@@ -244,10 +231,7 @@ const RUN_GRAPH = {
 /**
  * A tool output's schema: the runner's fields — `exitCode` and
  * `envelopePath` required, `stderrTail` not — plus the tool's consumed
- * fields.
- *
- * @param consumed - The consumed fields' object schema.
- * @returns The schema, the consumed fields' `required` kept.
+ * fields, their `required` kept.
  */
 function toolSchema(consumed: {
   readonly properties: Readonly<Record<string, unknown>>;
@@ -265,17 +249,19 @@ function toolSchema(consumed: {
   };
 }
 
-/**
- * A worktree tool's schema: {@link toolSchema} over its emitted row.
- *
- * @param name - The tool.
- * @returns The schema.
- */
+/** A worktree tool's schema: {@link toolSchema} over its emitted row. */
 function envelopeSchema(name: WorktreeToolName): JsonSchema {
   return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
 }
 
-/** Each tool's output schema: only what the workflow reads. */
+/**
+ * Each tool's output schema: only what the workflow reads. A worktree tool's row is
+ * `schemas.generated.ts`' emission of its pick in `tooling/workflows/schemas/tool-envelopes.ts` —
+ * the one source of the consumed fields, their schema and their type, and of which are required —
+ * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
+ * hand-written from `tooling/lib/run-gate.ts`' types: every consumed field required, save those a
+ * failure or exclusion kind may lack.
+ */
 export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   preflight: envelopeSchema('preflight'),
   'run-gate': toolSchema({
@@ -335,8 +321,6 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
 /**
  * Run one tooling command through the runner.
  *
- * @param hooks - The workflow hooks.
- * @param name - The tool.
  * @param argv - The command words after {@link TOOL_COMMANDS}'s, unquoted.
  * @param place - Where the envelope goes, the call's tag and a file to
  *   write first; default {@link PRE_CUT}.
@@ -370,7 +354,6 @@ export async function runTool<N extends ToolName>(
  * reports a tool that let it down (pre-flight's refusals, whose outputs may
  * carry no `status`, word theirs apart).
  *
- * @param tool - The tool.
  * @param out - Its output; `null` when the runner returned none.
  * @returns `<tool> <status>[ (<reason>)]: <first error or stderr tail>`.
  */

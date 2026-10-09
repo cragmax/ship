@@ -48,12 +48,8 @@ export function mergeDangerLines(writer: PrWriterOutput | null): string[] {
 }
 
 /**
- * A text's lines, its blank lines at either end dropped.
- *
- * @param text - The text.
- * @returns None for a blank text. Else its LF- or CRLF-separated lines from
- *   its first non-blank one, its trailing whitespace dropped; inner lines
- *   verbatim, indentation and blank lines kept.
+ * A text's LF- or CRLF-separated lines, outer blank lines and trailing whitespace dropped;
+ * inner lines verbatim, indentation and blank lines kept. None for a blank text.
  */
 function textLines(text: string): string[] {
   const trimmed = text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();

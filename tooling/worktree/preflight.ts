@@ -1,23 +1,15 @@
 /**
- * `preflight <main> [--attach ship/<slug>]` — the checks an unattended run
- * needs to hold before it cuts anything (ADR-0045): local `master` level
- * with `origin/master` after a fetch, `gh` logged in, and every warm-set
- * server answering RCON; with `--attach`, an attached run's target branch
- * too — its PR open (a `gh` that cannot report it is a `no-open-pr`
- * problem, never a pass), no slice linked into its batch, and no commits of
- * its own `origin` lacks. It also snapshots the main checkout's `HEAD`,
- * whether it is dirty, and the launch shas of local `master` and of
- * `origin`'s (`git ls-remote`, not the tracking ref), the baseline of the
- * epic end's master check; a remote without `master` fails step
- * `snapshot`. A dirty main checkout is recorded, never a problem.
+ * `preflight <main> [--attach ship/<slug>]` — the checks an unattended run holds before it cuts
+ * anything (ADR-0045): local `master` level with `origin/master` after a fetch, `gh` logged in,
+ * every warm-set server answering RCON; with `--attach`, the target branch's checks
+ * ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and the
+ * launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref) — the
+ * epic end's master-check baseline. A dirty main checkout is recorded, never a problem.
  *
- * Read-only toward every worktree, so there is no self-hosted guard (like
- * `live-runs`): the fetch writes only `.git`'s remote-tracking refs. It
- * never starts a server — an unreachable warm member is a problem to
- * report, not to fix.
- *
- * Every check runs even when an earlier one failed, so one envelope names
- * every problem; only a git or registry failure stops the command.
+ * Read-only toward every worktree, so no self-hosted guard: the fetch writes only remote-tracking
+ * refs. It never starts a server: an unreachable warm member is reported, not fixed. Every check
+ * runs even when an earlier one failed, so one envelope names every problem; only a git or
+ * registry failure stops the command.
  */
 
 import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js';
@@ -58,7 +50,6 @@ const REGISTRY_PATH = 'src/server-pool/registry/pool-registry.json';
 /**
  * Run every pre-flight check against the main checkout.
  *
- * @param input - The main checkout and the probe seam.
  * @returns The envelope: `ok` with the counts and snapshot; `refused`
  *   `preflight-failed` with every problem — with `attach`, the target's
  *   `no-open-pr`, `slices-live` and `unpublished-commits` among them;
@@ -100,11 +91,9 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
 }
 
 /**
- * Count local `master` against `origin/master` and record a problem for
- * each side that is ahead.
+ * Count local `master` against a freshly fetched `origin/master` into `result`'s `ahead` and
+ * `behind`, with one problem per side that is ahead.
  *
- * @param main - The main checkout, freshly fetched.
- * @param result - Envelope; gains `ahead`, `behind` and any problems.
  * @throws StepFailure `master` when either ref does not resolve.
  */
 function checkMasterLevel(main: string, result: PreflightResult): void {
@@ -133,10 +122,8 @@ function checkMasterLevel(main: string, result: PreflightResult): void {
 }
 
 /**
- * Read `origin`'s `master` live, for the launch snapshot.
+ * Read `origin`'s `master` live with `git ls-remote`, for the launch snapshot.
  *
- * @param main - The main checkout.
- * @returns The sha `git ls-remote` names.
  * @throws StepFailure `snapshot` when `ls-remote` fails or names no ref.
  */
 function remoteMaster(main: string): string {
@@ -148,11 +135,8 @@ function remoteMaster(main: string): string {
 }
 
 /**
- * Ask `gh` whether it is logged in.
- *
- * @param main - The main checkout (`gh`'s working directory).
- * @returns A `gh-auth` problem carrying `gh`'s output when it exits
- *   non-zero or cannot be run; none otherwise.
+ * Ask `gh` whether it is logged in: a `gh-auth` problem carrying its output when it exits non-zero
+ * or cannot run.
  */
 function checkGhAuth(main: string): PreflightProblem[] {
   const r = runCaptured('gh', ['auth', 'status'], { cwd: main, timeoutMs: GH_TIMEOUT_MS });
@@ -161,13 +145,9 @@ function checkGhAuth(main: string): PreflightProblem[] {
 }
 
 /**
- * Probe every warm-set member at the RCON address and password the main
- * checkout's registry gives it.
+ * Probe each warm member at the RCON address the main checkout's registry gives it: one problem
+ * `warm-unreachable` per member it lacks or the probe cannot reach, in {@link WARM_SET} order.
  *
- * @param main - The main checkout.
- * @param probe - The probe.
- * @returns One `warm-unreachable` problem per member the registry lacks or
- *   the probe could not reach, naming it; in {@link WARM_SET} order.
  * @throws StepFailure `registry` when the registry fails to load.
  */
 async function checkWarmSet(main: string, probe: WarmProbe): Promise<PreflightProblem[]> {
@@ -183,14 +163,7 @@ async function checkWarmSet(main: string, probe: WarmProbe): Promise<PreflightPr
   });
 }
 
-/**
- * Probe one warm member.
- *
- * @param member - The member.
- * @param registry - The main checkout's registry entries.
- * @param probe - The probe.
- * @returns `null` when it answered; otherwise why not.
- */
+/** Probe one warm member: `null` when it answered; otherwise why not. */
 async function probeMember(
   member: WarmMember,
   registry: readonly PoolEntry[],
@@ -204,16 +177,10 @@ async function probeMember(
 }
 
 /**
- * Check an attached run's target branch: its PR is open, no slice links
- * into its batch, and it has no commits of its own `origin` lacks.
+ * One problem per failed check of attach target `branch` (short form), in order: `no-open-pr` (a
+ * `gh` that cannot report the PR included), `slices-live`, `unpublished-commits`.
  *
- * @param main - The main checkout, freshly fetched.
- * @param branch - The target branch, short form.
- * @returns One problem per failed check, in that order: `no-open-pr` (a
- *   `gh` that cannot report the PR included), `slices-live`,
- *   `unpublished-commits`.
- * @throws Refusal `not-run-batch` unless the branch is a `ship/` run
- *   branch; StepFailure when git fails.
+ * @throws Refusal `not-run-batch` unless `branch` is a `ship/` branch; StepFailure when git fails.
  */
 function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
   const { batch } = runLayout(main, attachSlug(branch));
@@ -229,13 +196,9 @@ function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
 }
 
 /**
- * Run one attach guard and read its refusal as a problem.
+ * Run one attach guard: `null` when it passed; a thrown Refusal or `pr-state` StepFailure becomes
+ * the `check` problem with its message ("could not ask" refuses, never passes).
  *
- * @param check - The check the guard backs.
- * @param guard - The guard; throws to fail.
- * @returns `null` when it passed; the problem, carrying the guard's message,
- *   when it threw a Refusal or a StepFailure at step `pr-state` — "could not
- *   ask" refuses, never passes.
  * @throws Whatever else the guard threw.
  */
 function problemOf(check: PreflightCheck, guard: () => unknown): PreflightProblem | null {
@@ -253,7 +216,6 @@ function problemOf(check: PreflightCheck, guard: () => unknown): PreflightProble
 /**
  * Refuse when any check failed.
  *
- * @param problems - Every failed check.
  * @throws Refusal `preflight-failed` naming each problem's check.
  */
 function assertNoProblems(problems: readonly PreflightProblem[]): void {
