@@ -19,14 +19,19 @@ const REASON = 'both edit tooling/x.ts';
 /**
  * An estimator answer naming the given pairs.
  *
- * @param pairs - Each pair's endpoints and confidence.
+ * @param pairs - Each pair's endpoints, confidence and shared paths (default `tooling/x.ts`).
  * @returns The answer.
  */
 const estimate = (
-  ...pairs: readonly { a: number; b: number; confidence: 'likely' | 'unsure' }[]
+  ...pairs: readonly {
+    a: number;
+    b: number;
+    confidence: 'likely' | 'unsure';
+    shared?: readonly string[];
+  }[]
 ): unknown => ({
   issues: [],
-  pairs: pairs.map((p) => ({ ...p, shared: ['tooling/x.ts'], reason: REASON })),
+  pairs: pairs.map(({ shared = ['tooling/x.ts'], ...p }) => ({ ...p, shared, reason: REASON })),
   areaMap: 'read',
 });
 
@@ -61,6 +66,44 @@ describe('runShip — the overlap estimate', () => {
         sequenced: [],
         areaMap: 'read',
       },
+    });
+  });
+
+  it('adds no edge for a pair whose only shared path is eslint-suppressions.json', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      overlapEstimator: estimate({
+        a: 7,
+        b: 8,
+        confidence: 'likely',
+        shared: ['eslint-suppressions.json'],
+      }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
+
+    expect(report).toMatchObject({
+      status: 'preflight-ok',
+      graph: { runSet: [{ epic: null, issues: [7, 8] }], edges: [] },
+      overlap: { added: [], sequenced: [], areaMap: 'read' },
+    });
+  });
+
+  it.each([
+    ['eslint-suppressions.json and a code file', ['eslint-suppressions.json', 'tooling/x.ts']],
+    ['no path', []],
+  ])('keeps the edge of a pair sharing %s', async (_name, shared) => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'likely', shared }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
+
+    expect(report.overlap).toEqual({
+      added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: REASON }],
+      sequenced: [],
+      areaMap: 'read',
     });
   });
 
@@ -225,6 +268,28 @@ describe('runShip — the overlap estimate', () => {
       epics: [],
     });
     expect(labels(run).filter((l) => l.startsWith('runner:cut-batch'))).toEqual([]);
+  });
+
+  it('refuses no launch for a cross-epic pair whose only shared path is eslint-suppressions.json', async () => {
+    const run = fakeHooks({
+      ...epicRun([
+        { epic: 1, issues: [1, 2] },
+        { epic: 2, issues: [3] },
+      ]),
+      overlapEstimator: estimate({
+        a: 1,
+        b: 3,
+        confidence: 'unsure',
+        shared: ['eslint-suppressions.json'],
+      }),
+    });
+
+    const report = await runShip(run.hooks, 'epics 1 2 --preflight-only');
+
+    expect(report).toMatchObject({
+      status: 'preflight-ok',
+      overlap: { added: [], sequenced: [] },
+    });
   });
 
   it('reports each epic’s own overlap edges in its PR body', async () => {

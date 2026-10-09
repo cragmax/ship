@@ -29,6 +29,8 @@
  * rollback then deletes it.
  */
 
+import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+
 import { runCaptured } from './exec.js';
 import {
   assertNotSelfHosted,
@@ -40,6 +42,7 @@ import {
   samePath,
   statusEntries,
 } from './git.js';
+import { regenerateSuppressions } from './regenerate-suppressions.js';
 import { compareSets, formatDifference, sortedSet, stagedPaths } from './staged-set.js';
 import {
   Conflict,
@@ -220,7 +223,9 @@ function sliceFiles(batch: string, sha: string): string[] {
  *
  * @param batch - The batch worktree.
  * @param sha - The resolved slice commit.
- * @throws Conflict `cherry-pick` naming the unmerged paths; StepFailure
+ * @throws Conflict `cherry-pick` naming the unmerged paths — a conflict
+ *   confined to `eslint-suppressions.json` is regenerated instead
+ *   ({@link regenerateSuppressions}); StepFailure
  *   `cherry-pick` when git exits non-zero with none (an environment
  *   failure such as a held `index.lock`, which a requeue would not fix).
  */
@@ -231,6 +236,10 @@ function cherryPick(batch: string, sha: string): void {
   if (r.exitCode === 0) return;
   const unmerged = gitPaths(batch, ['diff', '--name-only', '--diff-filter=U'], 'cherry-pick');
   const message = `git cherry-pick --no-commit ${sha} exited ${String(r.exitCode)} in ${batch}`;
+  if (unmerged.length > 0 && unmerged.every((p) => p === ESLINT_SUPPRESSIONS)) {
+    regenerateSuppressions(batch);
+    return;
+  }
   if (unmerged.length > 0) {
     throw new Conflict('cherry-pick', message, sortedSet(unmerged), r.tail);
   }

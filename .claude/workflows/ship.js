@@ -3780,6 +3780,9 @@ function eventSubject(event) {
   return event.epic === null ? 'the issue list' : `epic #${String(event.epic)}`;
 }
 
+const ESLINT_SUPPRESSIONS = 'eslint-suppressions.json';
+const GENERATED_FILES = [ESLINT_SUPPRESSIONS];
+
 function mergeOverlapEdges(graph, pairs) {
   const issues = runSetIssues(graph.runSet);
   overlapAssertPairs(issues, pairs);
@@ -3929,9 +3932,10 @@ async function settleOverlap(hooks, found) {
       { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
     ]);
   }
+  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged;
   try {
-    merged = mergeOverlapEdges(graph, estimate.pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
@@ -3939,15 +3943,18 @@ async function settleOverlap(hooks, found) {
   if (merged.kind === 'cross-entry') {
     return withRefusals(
       found,
-      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
     );
   }
   const overlap = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+function generatedOnly(pair) {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
 }
 function withRefusals(found, refusals) {
   return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };

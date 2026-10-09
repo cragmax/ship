@@ -1,8 +1,8 @@
 /**
- * Plain fixture repos (per-test `mkdtemp` roots, no npm template — harvest
- * and staged-guard never install or build), each holding a batch worktree
- * and the slice worktrees whose commits it harvests; never this
- * repository's own worktrees. Case-collision and case-rename cases are
+ * Plain fixture repos (per-test `mkdtemp` roots, no npm template — only the
+ * suppressions-regeneration cases borrow this checkout's `node_modules`),
+ * each holding a batch worktree and the slice worktrees whose commits it
+ * harvests; never this repository's own worktrees. Case-collision and case-rename cases are
  * win32-only: that filesystem behaviour has been observed there alone.
  *
  * @integrationTier standalone
@@ -33,6 +33,7 @@ import {
   untrackedNames,
   type Changes,
 } from '../helpers/worktree-fixture-git.js';
+import { linkNodeModules } from '../helpers/hooked-run.js';
 import { addWorktree, mustRun, porcelain, runCli, runIn } from '../helpers/worktree-fixture.js';
 
 const WIN32 = process.platform === 'win32';
@@ -75,6 +76,41 @@ function slicePair(base: Record<string, string>, slice: Changes, batch?: Changes
 /** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
 function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
   return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
+}
+
+/**
+ * One `no-console` hit.
+ *
+ * @param n - The logged value, which keeps each line distinct.
+ * @returns The line.
+ */
+const line = (n: number): string => `console.log(${String(n)});\n`;
+// Five lines keep the two sides' a.js edits apart, so git merges a.js and
+// conflicts on the suppressions file alone.
+const FILLER = 'const f1 = 1;\nconst f2 = 2;\nconst f3 = 3;\nconst f4 = 4;\nconst f5 = 5;\n';
+const TAIL = 'export { f1, f2, f3, f4, f5 };\n';
+/** An ESLint fixture: `no-console` an error, the borrowed `node_modules` ignored. */
+const LINT_BASE = {
+  '.gitignore': 'node_modules\n',
+  // drift-check-allow: .mjs — fixture file name, not a doc reference
+  'eslint.config.mjs':
+    "export default [{ files: ['**/*.js'], rules: { 'no-console': 'error' } }];\n",
+};
+
+/**
+ * An `eslint-suppressions.json` body in ESLint's own format.
+ *
+ * @param entries - Each file's `no-console` count.
+ * @returns The body.
+ */
+function supp(entries: Record<string, number>): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(entries).map(([f, n]) => [f, { 'no-console': { count: n } }]),
+    ),
+    null,
+    2,
+  );
 }
 
 describe('harvest', () => {
@@ -160,6 +196,126 @@ describe('harvest', () => {
     expect(headSha(batch)).toBe(head);
     expect(existsSync(join(batch, 'fresh.txt'))).toBe(false);
   });
+
+  it(
+    'regenerates a conflict confined to eslint-suppressions.json and stages the slice',
+    { timeout: 120_000 },
+    () => {
+      const { batch, sha } = slicePair(
+        {
+          ...LINT_BASE,
+          'a.js': line(1) + FILLER + line(3) + line(4) + line(5) + TAIL,
+          'b.js': line(1) + line(2),
+          'eslint-suppressions.json': supp({ 'a.js': 4, 'b.js': 2 }),
+        },
+        {
+          write: {
+            'a.js': FILLER + line(3) + line(4) + line(5) + TAIL,
+            'c.js': line(9),
+            'eslint-suppressions.json': supp({ 'a.js': 3, 'c.js': 1 }),
+          },
+          remove: ['b.js'],
+        },
+        {
+          write: {
+            'a.js': line(1) + FILLER + line(5) + TAIL,
+            'd.js': line(8),
+            'eslint-suppressions.json': supp({ 'a.js': 2, 'b.js': 2, 'd.js': 1 }),
+          },
+        },
+      );
+      linkNodeModules(batch);
+
+      const run = runCli<HarvestResult>(['harvest', batch, sha]);
+
+      expect(run.code).toBe(0);
+      expect(run.json).toMatchObject({
+        status: 'ok',
+        conflicts: [],
+        files: ['a.js', 'b.js', 'c.js', 'eslint-suppressions.json'],
+      });
+      // a.js: max 3, pruned to the merged tree's one hit; b.js: deleted by
+      // the slice; c.js and d.js: each held by one side only.
+      expect(JSON.parse(mustRun('git', ['show', ':eslint-suppressions.json'], batch))).toEqual({
+        'a.js': { 'no-console': { count: 1 } },
+        'c.js': { 'no-console': { count: 1 } },
+        'd.js': { 'no-console': { count: 1 } },
+      });
+      expect(mustRun('git', ['diff', '--name-only', '--diff-filter=U'], batch)).toBe('');
+      expect(mustRun('git', ['diff'], batch)).toBe('');
+    },
+  );
+
+  it(
+    'fails a regeneration ESLint refuses as the suppressions step, rolled back',
+    { timeout: 120_000 },
+    () => {
+      // Each side adds hits to a.js; the merged a.js holds 4, one above the
+      // larger side's count.
+      const { batch, sha } = slicePair(
+        {
+          ...LINT_BASE,
+          'a.js': line(1) + FILLER + TAIL,
+          'eslint-suppressions.json': supp({ 'a.js': 1 }),
+        },
+        {
+          write: {
+            'a.js': line(1) + line(2) + FILLER + TAIL,
+            'eslint-suppressions.json': supp({ 'a.js': 2 }),
+          },
+        },
+        {
+          write: {
+            'a.js': line(1) + FILLER + line(3) + line(4) + TAIL,
+            'eslint-suppressions.json': supp({ 'a.js': 3 }),
+          },
+        },
+      );
+      linkNodeModules(batch);
+      const head = headSha(batch);
+
+      const run = runCli<HarvestResult>(['harvest', batch, sha]);
+
+      expect(run.code).toBe(1);
+      expect(run.json.status).toBe('failed');
+      expect(run.json.errors[0]?.step).toBe('suppressions');
+      expect(run.json.rolledBack).toBe(true);
+      expect(porcelain(batch)).toBe('');
+      expect(headSha(batch)).toBe(head);
+    },
+  );
+
+  it(
+    'reports a conflict spanning eslint-suppressions.json and another file as a conflict, rolled back',
+    TIMEOUT,
+    () => {
+      const { batch, sha } = slicePair(
+        { 'mod.txt': 'one\nshared\nthree\n', 'eslint-suppressions.json': supp({ 'a.js': 4 }) },
+        {
+          write: {
+            'mod.txt': 'one\nslice\nthree\n',
+            'eslint-suppressions.json': supp({ 'a.js': 3 }),
+          },
+        },
+        {
+          write: {
+            'mod.txt': 'one\nbatch\nthree\n',
+            'eslint-suppressions.json': supp({ 'a.js': 2 }),
+          },
+        },
+      );
+      const head = headSha(batch);
+
+      const run = runCli<HarvestResult>(['harvest', batch, sha]);
+
+      expect(run.code).toBe(1);
+      expect(run.json.status).toBe('conflict');
+      expect(run.json.conflicts).toEqual(['eslint-suppressions.json', 'mod.txt']);
+      expect(run.json.rolledBack).toBe(true);
+      expect(porcelain(batch)).toBe('');
+      expect(headSha(batch)).toBe(head);
+    },
+  );
 
   it.each([
     {

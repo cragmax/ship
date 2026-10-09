@@ -19,8 +19,8 @@
  *
  * **Exclude mode** drops a stale issue with its dependents through
  * {@link dropWithDependents}, as the gate drops a failing one; a code
- * overlap with a live run always refuses, and so does any overlap the
- * estimator names between two epics of the run, `unsure` included.
+ * overlap with a live run always refuses, and so does any overlap
+ * {@link settleOverlap} keeps between two epics of the run, `unsure` included.
  *
  * **An attached run** (`args.attach`) runs `preflight --attach <branch>`,
  * whose `no-open-pr`, `slices-live` and `unpublished-commits` problems on
@@ -31,6 +31,7 @@
  * no top-level side effect.
  */
 
+import { GENERATED_FILES } from '../../lib/generated-files.js';
 import type { GateFailure } from '../../lib/run-gate.js';
 import {
   mergeOverlapEdges,
@@ -199,7 +200,8 @@ export async function runPreflight(
  * Run the overlap estimate over the settled graph and merge its pairs —
  * every pair, `likely` and `unsure` alike — into the graph
  * (`tooling/lib/run-overlap.ts`). A graph of fewer than two issues needs no
- * estimate.
+ * estimate. A pair whose every shared path is a generated file is dropped
+ * first: it adds no edge and refuses nothing (#1294).
  *
  * @param hooks - The workflow hooks.
  * @param found - The outcome so far; its refusals are kept.
@@ -222,9 +224,10 @@ async function settleOverlap(
       { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
     ]);
   }
+  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged: OverlapMerge;
   try {
-    merged = mergeOverlapEdges(graph, estimate.pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
@@ -232,15 +235,19 @@ async function settleOverlap(
   if (merged.kind === 'cross-entry') {
     return withRefusals(
       found,
-      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
     );
   }
   const overlap: OverlapRecord = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+
+function generatedOnly(pair: EstimatedPair): boolean {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
 }
 
 /**
