@@ -10,8 +10,9 @@
 import { readFileSync } from 'node:fs';
 
 import { describeError } from '../lib/describe-error.js';
+import { GH_BODY_LIMIT } from '../lib/gh-body-limit.js';
 
-import { GH_BODY_LIMIT, GH_TIMEOUT_MS, runCaptured } from './exec.js';
+import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import { StepFailure } from './types.js';
 
 /** What a comment is posted on: a pull request or an issue. */

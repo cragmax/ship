@@ -845,3 +845,93 @@ describe('runShip — recorded', () => {
     ]);
   });
 });
+
+describe('runShip — the PR body limit', () => {
+  const OVER_LIMIT = {
+    retro: {
+      findings: [{ title: 'big', evidence: 'e'.repeat(66_000), kind: 'genuine', suggestion: 's' }],
+    },
+  };
+  const pointer = (file: string): string =>
+    `Moved to a PR comment: the body was over GitHub's 65536-character limit. Also in \`${REPORT_DIR}/${file}\`.`;
+
+  it('publishes the body with the bulky sections moved out, then posts each as a PR comment', async () => {
+    const run = fakeHooks(OVER_LIMIT);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const body = bodyOf(run);
+    expect(body).toContain(pointer('pr-comment-schedule.md'));
+    expect(body).toContain(pointer('pr-comment-retro-findings.md'));
+    expect(body.filter((l) => l.startsWith('- big (genuine)'))).toEqual([]);
+    const posts = run.calls.filter((c) => c.label === 'runner:post-pr-comment:list');
+    expect(posts.map((c) => c.argv)).toEqual(
+      ['pr-comment-schedule.md', 'pr-comment-retro-findings.md'].map((file) => [
+        'tooling/worktree.ts',
+        'post-pr-comment',
+        BATCH,
+        '--pr',
+        '42',
+        '--comment-file',
+        `${REPORT_DIR}/${file}`,
+      ]),
+    );
+    const [schedule, retro] = posts.map((c) => {
+      const lines = c.prompt.split('\n');
+      return lines.slice(
+        lines.indexOf('----- BEGIN FILE -----') + 1,
+        lines.indexOf('----- END FILE -----'),
+      );
+    });
+    expect(schedule?.slice(0, 2)).toEqual(['## Schedule', '']);
+    expect(schedule?.[2]).toMatch(/^- #7: blockers none; /);
+    expect(retro).toEqual(['## Retro findings', '', `- big (genuine): ${'e'.repeat(66_000)} — s`]);
+    const all = labels(run);
+    expect(all.indexOf('runner:post-pr-comment:list')).toBeGreaterThan(
+      all.indexOf('runner:publish:list'),
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
+  });
+
+  it('posts no comment for a body within the limit', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
+    expect(bodyOf(run).filter((l) => l.startsWith('Moved to a PR comment'))).toEqual([]);
+  });
+
+  it('reports each failed post, every post still made and the PR standing', async () => {
+    const run = fakeHooks({
+      ...OVER_LIMIT,
+      'runner:post-pr-comment': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'body-too-long', message: 'm' }],
+        url: null,
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l === 'runner:post-pr-comment:list')).toHaveLength(2);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      pr: 42,
+      prReportComment: 'post-pr-comment failed: m; post-pr-comment failed: m',
+    });
+  });
+
+  it('posts nothing when the publish opens no PR', async () => {
+    const run = fakeHooks({ ...OVER_LIMIT, 'runner:publish': null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
+    expect(report.epics[0]?.outcome).toBe('stopped');
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
+  });
+});

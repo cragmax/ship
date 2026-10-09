@@ -8,6 +8,7 @@ import type {
 } from '../../../../tooling/workflows/lib/agent-calls.js';
 import {
   commitMessage,
+  fitPrBody,
   prTitle,
   renderAttachedReport,
   renderAttachedSection,
@@ -1391,6 +1392,195 @@ describe('prTitle and commitMessage scrub the whole subject line', () => {
       prTitle({ branch: 'ship/7', landed: [{ ...SEVEN, card: { ...SEVEN.card, commit } }] }),
     ).toBe('fix(closes (see #5)): y');
     expect(commitMessage(7, { commit, closes: 'fixes' })).not.toMatch(closes(5));
+  });
+});
+
+const ISSUES = Array.from({ length: 29 }, (_, i) => i + 1);
+
+const cliqueInput = (reason: (blocker: number, dependent: number) => string): PrBodyInput => ({
+  ...INPUT,
+  landed: ISSUES.map((issue) => ({
+    issue,
+    commit: `c${String(issue)}`,
+    ...work({ subject: `trim the comments of area ${String(issue)}`, closes: 'fixes' }),
+  })),
+  unlanded: [],
+  overlap: {
+    added: ISSUES.flatMap((blocker) =>
+      ISSUES.filter((dependent) => dependent > blocker).map((dependent) => ({
+        blocker,
+        dependent,
+        confidence: 'likely' as const,
+        reason: reason(blocker, dependent),
+      })),
+    ),
+    sequenced: [],
+    areaMap: 'read',
+  },
+  schedule: ISSUES.map((issue) => ({
+    issue,
+    blockers: ISSUES.filter((b) => b < issue).map((b) => ({
+      issue: b,
+      source: 'overlap' as const,
+      confidence: 'likely' as const,
+    })),
+    attempts: 1,
+    startedAt: '2026-09-29T10:00:00.000Z',
+    committedAt: '2026-09-29T10:20:00.000Z',
+    size: { files: 2, lines: 40 },
+  })),
+});
+
+const pointer = (file: string): string =>
+  `Moved to a PR comment: the body was over GitHub's 65536-character limit. Also in \`${INPUT.reportDir}/${file}\`.`;
+
+describe('fitPrBody', () => {
+  // Distinct, padded reasons, so no grouping of the 406 edges can shrink the section.
+  // Retro evidence with an unlanded and a landed closing keyword: the moved text is neutralised.
+  const BIG: PrBodyInput = {
+    ...cliqueInput((b, d) =>
+      `both edit tooling/area-${String(b)}-${String(d)}.ts`.padEnd(120, '.'),
+    ),
+    retro: [{ title: 'gate', evidence: 'fixed #99; fixes #1', kind: 'genuine', suggestion: 's' }],
+  };
+
+  it('fits a 29-issue fully overlapping run within the limit, moving the bulky sections and losing nothing', () => {
+    const whole = renderPrBody(BIG);
+    expect(whole.length).toBeGreaterThan(65_536);
+
+    const fitted = fitPrBody(BIG);
+
+    expect(fitted.body.length).toBeLessThanOrEqual(65_536);
+    expect(fitted.comments.map((c) => c.file)).toEqual([
+      'pr-comment-overlap-edges.md',
+      'pr-comment-schedule.md',
+      'pr-comment-retro-findings.md',
+    ]);
+    const headings = ['## Overlap edges', '## Schedule', '## Retro findings'];
+    fitted.comments.forEach((c, i) => {
+      expect(c.text.length).toBeLessThanOrEqual(65_536);
+      expect(whole).toContain(c.text);
+      expect(c.text.split('\n')[0]).toBe(headings[i]);
+    });
+    expect(fitted.comments[2]?.text).toContain('- gate (genuine): fixed (see #99); fixes #1 — s');
+    expect(fitted.body.split('\n')).toEqual(
+      expect.arrayContaining([
+        pointer('pr-comment-overlap-edges.md'),
+        pointer('pr-comment-schedule.md'),
+        pointer('pr-comment-retro-findings.md'),
+      ]),
+    );
+    const kept = new Set(
+      [fitted.body, ...fitted.comments.map((c) => c.text)].join('\n').split('\n'),
+    );
+    expect(whole.split('\n').filter((line) => !kept.has(line))).toEqual([]);
+  });
+
+  it('returns a body the move cannot fit as it is, the sections still moved', () => {
+    const reason = 'r'.repeat(70_000);
+
+    const fitted = fitPrBody({ ...INPUT, unlanded: [{ issue: 9, outcome: 'blocked', reason }] });
+
+    expect(fitted.body.length).toBeGreaterThan(65_536);
+    expect(fitted.body).toContain(reason);
+    expect(fitted.comments.map((c) => c.file)).toEqual([
+      'pr-comment-overlap-edges.md',
+      'pr-comment-schedule.md',
+      'pr-comment-retro-findings.md',
+    ]);
+  });
+
+  it('moves nothing from a body within the limit', () => {
+    expect(fitPrBody(INPUT)).toEqual({ body: renderPrBody(INPUT), comments: [] });
+  });
+
+  it('moves nothing from a body of exactly the limit, and moves from one character over', () => {
+    const padded = (n: number): PrBodyInput => ({
+      ...INPUT,
+      retro: [{ title: 'pad', evidence: 'e'.repeat(n), kind: 'genuine', suggestion: 's' }],
+    });
+    const fill = 65_536 - renderPrBody(padded(0)).length;
+    expect(renderPrBody(padded(fill)).length).toBe(65_536);
+
+    expect(fitPrBody(padded(fill)).comments).toEqual([]);
+    expect(fitPrBody(padded(fill + 1)).comments.map((c) => c.file)).toEqual([
+      'pr-comment-overlap-edges.md',
+      'pr-comment-schedule.md',
+      'pr-comment-retro-findings.md',
+    ]);
+  });
+
+  it('keeps an empty movable section in the body', () => {
+    const fitted = fitPrBody({
+      ...BIG,
+      overlap: { ...BIG.overlap, added: [] },
+      retro: [{ title: 'big', evidence: 'e'.repeat(70_000), kind: 'genuine', suggestion: 's' }],
+    });
+
+    expect(fitted.comments.map((c) => c.file)).toEqual([
+      'pr-comment-schedule.md',
+      'pr-comment-retro-findings.md',
+    ]);
+    const lines = fitted.body.split('\n');
+    const at = lines.indexOf('## Overlap edges');
+    expect(lines.slice(at, at + 3)).toEqual(['## Overlap edges', '', 'None.']);
+  });
+});
+
+describe('renderPrBody — overlap edges', () => {
+  const overlapSection = (input: PrBodyInput): string[] => {
+    const lines = renderPrBody(input).split('\n');
+    const from = lines.indexOf('## Overlap edges') + 1;
+    const to = lines.findIndex((line, i) => i > from && line.startsWith('## '));
+    return lines.slice(from, to).filter((line) => line !== '');
+  };
+
+  it('groups a blocker’s edges sharing a reason into one line, so a 29-issue clique fits', () => {
+    const clique = cliqueInput(() => 'both trim comments');
+
+    const lines = overlapSection(clique);
+
+    expect(lines).toHaveLength(28);
+    expect(lines[0]).toBe(
+      '- #1 → #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29 (likely): both trim comments',
+    );
+    expect(lines[27]).toBe('- #28 → #29 (likely): both trim comments');
+    expect(fitPrBody(clique).comments).toEqual([]);
+  });
+
+  it('groups by blocker, confidence and reason, in edge order', () => {
+    const edge = (
+      blocker: number,
+      dependent: number,
+      confidence: 'likely' | 'unsure',
+      reason: string,
+    ) => ({
+      blocker,
+      dependent,
+      confidence,
+      reason,
+    });
+
+    const lines = overlapSection({
+      ...INPUT,
+      overlap: {
+        ...INPUT.overlap,
+        added: [
+          edge(7, 8, 'likely', 'a'),
+          edge(7, 9, 'likely', 'a'),
+          edge(7, 10, 'unsure', 'a'),
+          edge(7, 11, 'likely', 'b'),
+          edge(8, 9, 'likely', 'a'),
+        ],
+      },
+    });
+
+    expect(lines).toEqual([
+      '- #7 → #8, #9 (likely): a',
+      '- #7 → #10 (unsure): a',
+      '- #7 → #11 (likely): b',
+      '- #8 → #9 (likely): a',
+    ]);
   });
 });
 

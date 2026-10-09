@@ -20,7 +20,10 @@
  *   ends on, before the PR on the shipping path.
  * - **The PR writer runs on the shipping path only**, after the bump. One
  *   that returns nothing or rejects never blocks the PR; the body falls back
- *   ({@link renderPrBody}).
+ *   (`renderPrBody`).
+ * - **An over-limit PR body** ships as {@link fitPrBody} fits it, its moved
+ *   sections posted as PR comments once the PR is open ({@link openPr}); a
+ *   failed post is reported and never stops the epic.
  * - **An attached run** (the entry's `attachedRun` set) has no PR writer and
  *   opens no PR: its publish is `publish --push-only` onto the open PR, then
  *   its run report posted as one PR comment, then a section appended to the
@@ -29,10 +32,10 @@
  *   the branch.
  * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
  *   the publish task (the main-checkout look, the master check, the push and
- *   PR, and an attached run's report comment and body edit) each run as one
- *   task of the run's one lock, so no two epic ends talk to `origin` or read
- *   the main checkout at once; the critic, the bump, the retro and the PR
- *   writer run outside it.
+ *   PR with its moved sections' comments, and an attached run's report
+ *   comment and body edit) each run as one task of the run's one lock, so no
+ *   two epic ends talk to `origin` or read the main checkout at once; the
+ *   critic, the bump, the retro and the PR writer run outside it.
  * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
  *   again with `worktree.ts preflight` and compared with pre-flight's — read
  *   in the publish task before the push on the shipping path (so the PR body
@@ -58,11 +61,11 @@ import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
+  fitPrBody,
   prTitle,
   renderAttachedReport,
   renderAttachedSection,
   renderBlockedComment,
-  renderPrBody,
   sliceLeaseLines,
   type CriticReport,
   type LandedIssue,
@@ -145,9 +148,10 @@ export interface EpicReport {
    */
   readonly prBodyEdit?: string;
   /**
-   * Why an attached run's report comment was not posted to its PR — the
-   * `post-pr-comment` problem, or the call's throw — while the push stood;
-   * absent when it was posted or no post was due.
+   * Why a run-report comment — an attached run's report, or a PR body's
+   * moved sections — was not posted to its PR: the `post-pr-comment`
+   * problem, or the call's throw, one per failed post, `; `-joined, while the
+   * push stood; absent when every post was made or none was due.
    */
   readonly prReportComment?: string;
   /**
@@ -559,15 +563,17 @@ function publishedPr(out: PublishOutput | null): Published {
 }
 
 /**
- * Push the branch and open the PR. Runs inside the publish task, so it calls
- * the runner directly: a nested `enqueue` on the same lock would wait for
- * the task it is part of.
+ * Push the branch and open the PR, its body per {@link fitPrBody}; once the PR
+ * is open, post each moved section as a PR comment, in order. Runs inside the
+ * publish task, so it calls the runner directly: a nested `enqueue` on the
+ * same lock would wait for the task it is part of.
  *
  * @param input - The epic end's inputs.
  * @param found - The steps' results.
  * @param checked - The passed master check and the main-checkout
  *   comparison, both for the body.
- * @returns Resolves to `pr` with its number, or `stopped` naming the publish.
+ * @returns Resolves to `pr` with its number — with `prReportComment` naming
+ *   each failed post, `; `-joined — or `stopped` naming the publish.
  */
 async function openPr(
   input: EpicEndInput,
@@ -575,7 +581,7 @@ async function openPr(
   checked: Checked,
 ): Promise<Published> {
   const { hooks, entry } = input;
-  const body = renderPrBody({
+  const fitted = fitPrBody({
     ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
@@ -589,9 +595,16 @@ async function openPr(
     '--log',
     `${entry.reportDir}/publish.log`,
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  return publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const failures: string[] = [];
+  for (const moved of fitted.comments) {
+    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
+    if ('failure' in posted) failures.push(posted.failure);
+  }
+  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
 }
 
 /**

@@ -2322,6 +2322,8 @@ const AGENT_CALLS = {
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
+const GH_BODY_LIMIT = 65_536;
+
 function evidenceBullet(issue, evidence) {
   const ref = `#${String(issue)}`;
   if (evidence.kind === 'none') {
@@ -2463,6 +2465,22 @@ function sliceLeaseLines(work) {
   return roles;
 }
 function renderPrBody(input) {
+  return prBody(input, new Set());
+}
+function fitPrBody(input) {
+  const whole = renderPrBody(input);
+  if (whole.length <= GH_BODY_LIMIT) return { body: whole, comments: [] };
+  const moving = MOVABLE_SECTIONS.filter((m) => m.lines(input).length > 0);
+  const closing = closingIssues(input.landed);
+  return {
+    body: prBody(input, new Set(moving)),
+    comments: moving.map((m) => ({
+      file: m.file,
+      text: neutralText(section(m.heading, m.lines(input)).join('\n'), closing),
+    })),
+  };
+}
+function prBody(input, moved) {
   const body = [
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
@@ -2470,7 +2488,7 @@ function renderPrBody(input) {
     ...section('Issues', issueListLines(input)),
     ...perIssueSection('Salvage', input.landed, salvageItems, 2),
     ...perIssueSection('Recorded', input.landed, recordedItems, 2),
-    ...reportBlock(input),
+    ...reportBlock(input, moved),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
 }
@@ -2525,15 +2543,15 @@ function perIssueSection(heading, landed, itemsOf, depth) {
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
-function reportBlock(input) {
-  const report = runReportLines(input);
+function reportBlock(input, moved) {
+  const report = runReportLines(input, moved);
   if (input.writer === null) return report;
   return foldedReport('Run report', report);
 }
 function foldedReport(summary, lines) {
   return [`<details><summary>${summary}</summary>`, '', ...lines, '</details>', ''];
 }
-function runReportLines(input) {
+function runReportLines(input, moved = new Set()) {
   return [
     '## Landed issues',
     '',
@@ -2547,11 +2565,35 @@ function runReportLines(input) {
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
-    ...section('Overlap edges', input.overlap.added.map(overlapLine)),
-    ...section('Schedule', input.schedule.map(scheduleLine)),
+    ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
+    ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
-    ...section('Retro findings', retroLines(input.retro)),
+    ...movableSection(input, RETRO_FINDINGS_SECTION, moved),
   ];
+}
+const OVERLAP_EDGES_SECTION = {
+  heading: 'Overlap edges',
+  file: 'pr-comment-overlap-edges.md',
+  lines: (input) => overlapLines(input.overlap.added),
+};
+const SCHEDULE_SECTION = {
+  heading: 'Schedule',
+  file: 'pr-comment-schedule.md',
+  lines: (input) => input.schedule.map(scheduleLine),
+};
+const RETRO_FINDINGS_SECTION = {
+  heading: 'Retro findings',
+  file: 'pr-comment-retro-findings.md',
+  lines: (input) => retroLines(input.retro),
+};
+const MOVABLE_SECTIONS = [OVERLAP_EDGES_SECTION, SCHEDULE_SECTION, RETRO_FINDINGS_SECTION];
+function movableSection(input, movable, moved) {
+  if (!moved.has(movable)) return section(movable.heading, movable.lines(input));
+  const limit = String(GH_BODY_LIMIT);
+  const path = codeSpan(`${input.reportDir}/${movable.file}`);
+  return section(movable.heading, [
+    `Moved to a PR comment: the body was over GitHub's ${limit}-character limit. Also in ${path}.`,
+  ]);
 }
 function issueListLines(input) {
   return [epicLine(input.epic), ...issueRefLines(input)];
@@ -2587,8 +2629,19 @@ function criticLines(critic) {
     ),
   ];
 }
-function overlapLine(edge) {
-  return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
+function overlapLines(edges) {
+  const groups = new Map();
+  for (const edge of edges) {
+    const key = JSON.stringify([edge.blocker, edge.confidence, edge.reason]);
+    const dependent = `#${String(edge.dependent)}`;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
+    else group.dependents.push(dependent);
+  }
+  return [...groups.values()].map(
+    ({ edge, dependents }) =>
+      `- #${String(edge.blocker)} → ${dependents.join(', ')} (${edge.confidence}): ${edge.reason}`,
+  );
 }
 function scheduleLine(entry) {
   const blockers =
@@ -3329,7 +3382,7 @@ function publishedPr(out) {
 }
 async function openPr(input, found, checked) {
   const { hooks, entry } = input;
-  const body = renderPrBody({
+  const fitted = fitPrBody({
     ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
@@ -3343,9 +3396,16 @@ async function openPr(input, found, checked) {
     '--log',
     `${entry.reportDir}/publish.log`,
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  return publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const failures = [];
+  for (const moved of fitted.comments) {
+    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
+    if ('failure' in posted) failures.push(posted.failure);
+  }
+  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
 }
 function bodyInput(input, found, checked) {
   const { entry } = input;
