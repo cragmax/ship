@@ -1,28 +1,17 @@
 /**
- * The `ship` workflow's texts that land in git and on GitHub: each landed
- * issue's commit message, each epic's pull request title and body
- * ({@link renderPrBody}), and each attached run's section, appended to the
- * open PR's body after the run's push ({@link renderAttachedSection}), and
- * its run report, posted as a PR comment ({@link renderAttachedReport}).
+ * The `ship` workflow's texts that land in git and on GitHub: commit messages, an epic's pull
+ * request title and body, and an attached run's PR-body section and run report.
  *
- * **Closing keywords are the workflow's own.** GitHub closes an issue for a
- * closing keyword (`fixes`, `closes`, `resolves`, …) before its reference
- * anywhere in a merged commit message or PR body. So only this file writes
- * one — `fixes #N`, for a landed issue whose plan card says so: in its
- * commit message, and once in a PR body — in the Issues list
- * ({@link landedLine}), or in the Issues list of the attached run's section
- * that landed the issue — never in a run report. Every other issue is cited
- * `see #N`, the epic container included, and every text carrying agent- or
- * tool-written words passes through {@link neutralText}, which turns
- * `fixed #12` into `fixed (see #12)`: a commit's subject line and each
- * salvage line, a PR body as a whole, sparing only its landed `fixes`
- * issues, and an attached run's section as a whole, sparing only that run's
- * landed `fixes` issues.
- * The body a section is appended to is never neutralised again.
+ * **Closing keywords are the workflow's own.** GitHub closes an issue for a closing keyword
+ * (`fixes`, `closes`, `resolves`, …) before its reference anywhere in a merged commit message or PR
+ * body, so only this file writes one: `fixes #N`, for a landed issue whose plan card says so, in
+ * its commit message and once in a PR body's or attached section's Issues list
+ * ({@link landedLine}), never in a run report. Every other issue, the epic container included, is
+ * `see #N`, and every text carrying agent- or tool-written words passes through
+ * {@link neutralText}; the body a section is appended to is never neutralised again.
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect. Lease lines are parsed by
- * `tooling/lib/lease-timings.ts`, which joins the render closure here.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, joins the closure.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
@@ -193,11 +182,8 @@ export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
 }
 
 /**
- * A text with every closing keyword defused, but for the issues it may close.
- *
- * @param text - The text.
- * @param closing - The issues whose bare `<keyword> #N` stays; none by default.
- * @returns It with each other `<keyword> <ref>` spelled `<keyword> (see <ref>)`.
+ * A text with every closing keyword defused: each `<keyword> <ref>` becomes
+ * `<keyword> (see <ref>)`, but for the bare `#N` form of the `closing` issues (none by default).
  */
 export function neutralText(text: string, closing: ReadonlySet<number> = new Set()): string {
   return CLOSING_REFS.reduce(
@@ -262,15 +248,10 @@ export function subjectLine(commit: CommitSpec): string {
 }
 
 /**
- * A landed issue's commit message.
- *
- * @param issue - The issue.
- * @param card - Its plan card's commit and closing choice.
- * @param salvage - The claims its slice salvaged; none by default.
- * @returns The subject line, a blank line, `fixes #N` (or `see #N`), a
- *   blank line; with salvage, `Salvage:`, one `- ` line per item per
- *   {@link salvageText} with every closing keyword defused, and a blank line;
- *   then {@link CO_AUTHOR_TRAILER}, newline-terminated.
+ * A landed issue's commit message, newline-terminated: the subject line, a blank line, `fixes #N`
+ * or `see #N` per its plan card, a blank line; with salvage, `Salvage:`, one `- ` line per item per
+ * {@link salvageText} with every closing keyword defused, and a blank line; then
+ * {@link CO_AUTHOR_TRAILER}.
  */
 export function commitMessage(
   issue: number,
@@ -362,22 +343,15 @@ export function renderPrBody(input: PrBodyInput): string {
 }
 
 /**
- * An attached run's section of the open PR's body, appended after the body
- * already there.
- *
- * @param input - The attached run's report.
- * @returns Markdown, neutralised whole but for this run's landed `fixes`
- *   issues: `## Attached run <R>`, a blank line; `### Evidence`, one bullet
- *   per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- *   container line; `### Salvage` per {@link salvageItems} and
- *   `### Recorded` per {@link recordedItems}, each per
- *   {@link perIssueSection}; then one
- *   run-report line and a blank line — `Run report: [PR comment](<url>)`
- *   with a `reportComment`, else
- *   `Run report: not posted to this PR; it is in <reportDir>.`, the report
- *   dir in a code span. No run report, no Summary and no Merge Danger: the
- *   report is posted as its own PR comment ({@link renderAttachedReport}),
- *   and an attached run has no PR writer.
+ * An attached run's section of the open PR's body, appended after the body already there:
+ * markdown, neutralised whole but for this run's landed `fixes` issues. `## Attached run <R>`, a
+ * blank line; `### Evidence` per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
+ * container line; `### Salvage` per {@link salvageItems} and `### Recorded` per
+ * {@link recordedItems}, each per {@link perIssueSection}; then one run-report line and a blank
+ * line — `Run report: [PR comment](<url>)` with a `reportComment`, else
+ * `Run report: not posted to this PR; it is in <reportDir>.`, the report dir in a code span.
+ * No run report, no Summary and no Merge Danger: the report is posted as its own PR comment
+ * ({@link renderAttachedReport}), and an attached run has no PR writer.
  */
 export function renderAttachedSection(input: AttachedSectionInput): string {
   const report =
@@ -414,13 +388,7 @@ export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportCo
   return neutralText(text);
 }
 
-/**
- * The Evidence section's lines.
- *
- * @param landed - The landed issues.
- * @returns One bullet per landed issue in landing order, per
- *   {@link evidenceBullet}.
- */
+/** The Evidence section's lines: one bullet per landed issue, in landing order. */
 function evidenceList(landed: readonly LandedIssue[]): string[] {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
@@ -469,52 +437,26 @@ function perIssueSection(
   return lines.length === 0 ? [] : section(heading, lines, depth);
 }
 
-/**
- * The issues a text may close.
- *
- * @param landed - The landed issues.
- * @returns Each landed issue whose plan card says `fixes`.
- */
+/** The issues a text may close: each landed issue whose plan card says `fixes`. */
 function closingIssues(landed: readonly LandedIssue[]): ReadonlySet<number> {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
 
-/**
- * The run report as the body carries it.
- *
- * @param input - The epic's report.
- * @returns The lines of {@link runReportLines}, unfolded when the PR writer
- *   returned nothing; otherwise folded per {@link foldedReport}, summary
- *   `Run report`.
- */
+/** The run report as the body carries it: folded, unless the PR writer returned nothing. */
 function reportBlock(input: PrBodyInput): string[] {
   const report = runReportLines(input);
   if (input.writer === null) return report;
   return foldedReport('Run report', report);
 }
 
-/**
- * A run report folded in `<details>`.
- *
- * @param summary - The fold's summary text.
- * @param lines - The report's lines.
- * @returns The opening `<details>` line, `summary` in its `<summary>`
- *   element; a blank line; the lines; `</details>` and a blank line.
- */
+/** A run report folded in `<details>`, `summary` its `<summary>` text. */
 function foldedReport(summary: string, lines: readonly string[]): string[] {
   return [`<details><summary>${summary}</summary>`, '', ...lines, '</details>', ''];
 }
 
 /**
- * The run report, folded or not per {@link reportBlock}; always folded in an
- * attached run's report comment ({@link renderAttachedReport}).
- *
- * @param input - The epic's report; the PR writer's answer is not read.
- * @returns `## Landed issues` and one section per landed issue per
- *   {@link issueSection}; the epic end (master sync, version bump, master
- *   check, main checkout, report dir); then the critic, the overlap edges,
- *   the schedule, the lease timings and the retro findings, an empty one
- *   `None.` — blank-line terminated.
+ * The run report, folded or not per {@link reportBlock}; always folded in an attached run's report
+ * comment ({@link renderAttachedReport}).
  */
 function runReportLines(input: Omit<PrBodyInput, 'writer'>): string[] {
   return [
@@ -547,13 +489,7 @@ function issueListLines(input: Pick<PrBodyInput, 'epic' | 'landed' | 'unlanded'>
   return [epicLine(input.epic), ...issueRefLines(input)];
 }
 
-/**
- * The Issues list's issue lines.
- *
- * @param input - The landed and unlanded issues.
- * @returns A {@link landedLine} per landed issue in landing order, then an
- *   {@link unlandedLine} per unlanded issue in input order.
- */
+/** The Issues list's issue lines: the landed in landing order, then the unlanded in input order. */
 function issueRefLines(input: Pick<PrBodyInput, 'landed' | 'unlanded'>): string[] {
   return [...input.landed.map(landedLine), ...input.unlanded.map(unlandedLine)];
 }
@@ -569,12 +505,8 @@ function epicLine(epic: number | null): string {
 }
 
 /**
- * One landed issue's Issues-list line.
- *
- * @param landed - The issue.
- * @returns `- fixes #N — <subject>` when its card says `fixes`, else
- *   `- see #N — <subject> (its acceptance needs a human)`; the subject is
- *   the card's bare commit subject, not its `type(scope):` line.
+ * One landed issue's Issues-list line: `fixes #N` only when its card says so, else `see #N` with
+ * `(its acceptance needs a human)`; the subject is the card's bare one, not `type(scope):`.
  */
 function landedLine(landed: LandedIssue): string {
   const ref = `#${String(landed.issue)}`;
@@ -584,25 +516,12 @@ function landedLine(landed: LandedIssue): string {
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
 
-/**
- * One body section.
- *
- * @param heading - Its heading text.
- * @param lines - Its lines; none renders `None.`.
- * @param depth - The heading's level: `##` (2, the default) or `###` (3, an
- *   attached run's section).
- * @returns The heading, a blank line, the lines and a blank line.
- */
+/** One body section, its heading at `depth` (3 in an attached run's); an empty one says `None.`. */
 function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): string[] {
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 
-/**
- * The critic's lines.
- *
- * @param critic - Its part of the epic end.
- * @returns `- Outcome: …`, then one line per finding.
- */
+/** The critic's outcome line, then one line per finding. */
 function criticLines(critic: CriticReport): string[] {
   const outcome = {
     clean: 'no changes',
@@ -619,25 +538,11 @@ function criticLines(critic: CriticReport): string[] {
   ];
 }
 
-/**
- * One overlap edge's line.
- *
- * @param edge - The edge.
- * @returns `- #B → #D (<confidence>): <reason>`.
- */
 function overlapLine(edge: OverlapEdge): string {
   return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
 }
 
-/**
- * One issue's schedule line.
- *
- * @param entry - Its schedule.
- * @returns `- #N: blockers …; started …; committed …; attempts K; size …`:
- *   each blocker per {@link blockerText}, `, `-joined, `none` for none;
- *   `never` for a missing instant; the size `<files> files, <lines> lines`,
- *   or `none` unless it landed.
- */
+/** One issue's schedule line: `never` for a missing instant, `none` for no blockers or size. */
 function scheduleLine(entry: ScheduleEntry): string {
   const blockers =
     entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
@@ -651,23 +556,12 @@ function scheduleLine(entry: ScheduleEntry): string {
   );
 }
 
-/**
- * One schedule blocker as a phrase.
- *
- * @param blocker - The blocker.
- * @returns `#B (declared)`, or `#B (overlap, <confidence>)`.
- */
 function blockerText(blocker: ScheduleBlocker): string {
   const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
   return `#${String(blocker.issue)} (${source})`;
 }
 
-/**
- * The lease totals' lines: per engine, per issue, then each unparsed line.
- *
- * @param leases - The totals.
- * @returns The lines.
- */
+/** The lease totals' lines: per engine, per issue, then each unparsed line. */
 function leaseLines(leases: LeaseAggregate): string[] {
   return [
     ...leases.engines.map(
@@ -685,27 +579,13 @@ function leaseLines(leases: LeaseAggregate): string[] {
   ];
 }
 
-/**
- * The retro's lines.
- *
- * @param retro - Its findings; `null` when it returned none.
- * @returns One line per finding; a note line when it returned nothing.
- */
+/** One line per retro finding; a note line when the retro returned nothing. */
 function retroLines(retro: readonly RetroFinding[] | null): string[] {
   if (retro === null) return ['- The retro returned nothing.'];
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 
-/**
- * One landed issue's section.
- *
- * @param landed - The issue.
- * @returns The section's lines, blank-line terminated: the heading, then the
- *   issue (`- Issue: #N, landed as <sha>`, no closing keyword), plan, diff
- *   review (`- Diff review: <rules> rules, <plan> plan findings`), review,
- *   test review, lease and probe lines; its lease line per
- *   {@link sliceLeaseText}, its probe lines per {@link probeLines}.
- */
+/** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   const diff = landed.diffReview;
   const test = landed.testReview;
@@ -725,14 +605,7 @@ function issueSection(landed: LandedIssue): string[] {
   ];
 }
 
-/**
- * A slice's probe lines: the planner's plan-time records, then the tdd's.
- *
- * @param work - The slice's plan card and tdd answer.
- * @returns `- Probes: no probe needed` when neither has a record; else
- *   `- Probes:`, then one nested line per record, the card's first, each per
- *   {@link probeLine}.
- */
+/** A slice's probe lines: the planner's plan-time records, then the tdd's. */
 function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
   const records = [
     ...work.card.probes.map((p) => probeLine('plan', p)),
@@ -742,26 +615,13 @@ function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
   return ['- Probes:', ...records];
 }
 
-/**
- * One probe record's nested line.
- *
- * @param stage - The stage that ran it.
- * @param probe - The record.
- * @returns `  - <stage>: <claim>: <verdict> in <dur>`, `<dur>` per
- *   {@link durationText}, with `; follow-up: <followUp>` when it has one.
- */
+/** One probe record's nested line, tagged with the stage that ran it. */
 function probeLine(stage: 'plan' | 'tdd', probe: ProbeRecord): string {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
   return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
 }
 
-/**
- * A probe's measured duration as a phrase.
- *
- * @param seconds - Its whole seconds.
- * @returns `<s>s` below 60 (`42s`); from 60 up, `<m>m <ss>s`, the seconds
- *   zero-padded to two digits (`11m 04s`).
- */
+/** A probe's measured duration in whole seconds as a phrase: `42s` below 60, `11m 04s` from 60. */
 function durationText(seconds: number): string {
   if (seconds < 60) return `${String(seconds)}s`;
   const rest = String(seconds % 60).padStart(2, '0');
@@ -769,13 +629,8 @@ function durationText(seconds: number): string {
 }
 
 /**
- * A slice's lease timings as one phrase.
- *
- * @param work - The slice's tdd, review and test-review answers.
- * @returns `<role>: <leases>` for each role with at least one release line,
- *   in {@link sliceLeaseLines} order, `; `-joined, each role's leases per
- *   {@link leaseText}; a role with none is omitted; `none` when no role has
- *   one.
+ * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
+ * release line is omitted, and the phrase is `none` when no role has one.
  */
 function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
@@ -785,14 +640,7 @@ function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>):
   return parts.length === 0 ? 'none' : parts.join('; ');
 }
 
-/**
- * Lease timings as one phrase.
- *
- * @param timings - The parsed release lines, at least one.
- * @returns Each as `<type>@<endpoint> waited <W>s, held <H>s` — with
- *   ` on <waitedOn>` after `waited <W>s` when the line names the holder
- *   waited on — `; `-joined.
- */
+/** At least one parsed release line as one phrase, naming the holder waited on when a line does. */
 function leaseText(timings: readonly LeaseTiming[]): string {
   return timings
     .map((t) => {
@@ -802,34 +650,16 @@ function leaseText(timings: readonly LeaseTiming[]): string {
     .join('; ');
 }
 
-/**
- * One unlanded issue's Issues-list line.
- *
- * @param issue - The issue.
- * @returns `- see #N — not landed: <outcome>[: <reason>]`.
- */
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
   return `- see #${String(issue.issue)} — not landed: ${issue.outcome}${reason}`;
 }
 
-/**
- * The passed master check as one phrase.
- *
- * @param check - The check.
- * @returns `passed — local <move>; origin <move>`, each per {@link forwardText}.
- */
 function masterCheckText(check: PassedMasterCheck): string {
   return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
 }
 
-/**
- * One ref's passing move as a phrase.
- *
- * @param move - The move.
- * @returns `equal at <current>`, or `forward, <launch> → <current>`; then,
- *   for a move carrying a synced sha (`origin`), `, checked against synced <sha>`.
- */
+/** One ref's passing move as a phrase; a move carrying a synced sha (`origin`) names it. */
 function forwardText(move: ForwardMove): string {
   const text =
     move.move === 'equal'
@@ -838,14 +668,7 @@ function forwardText(move: ForwardMove): string {
   return move.synced === null ? text : `${text}, checked against synced ${move.synced}`;
 }
 
-/**
- * The main-checkout comparison as a phrase.
- *
- * @param untouched - The comparison; `null` when a read failed.
- * @returns `untouched since pre-flight` for `true`; for `false`, touched
- *   since pre-flight, naming `HEAD` or dirtiness; for `null`, not compared,
- *   a snapshot unread.
- */
+/** The main-checkout comparison as a phrase; `null` means a snapshot read failed. */
 function mainCheckoutText(untouched: boolean | null): string {
   if (untouched === null) return 'not compared (a snapshot could not be read)';
   return untouched
@@ -853,14 +676,7 @@ function mainCheckoutText(untouched: boolean | null): string {
     : 'touched since pre-flight (HEAD or dirtiness changed)';
 }
 
-/**
- * The bump as one phrase.
- *
- * @param bump - `bump`'s output.
- * @returns `<kind>, <from> → <to>`; `<kind>, already at <to> — no commit`
- *   when it found the version already at its target (`ok`, `commit`
- *   `null`); the outcome when it did not land.
- */
+/** The bump as one phrase; an `ok` with a `null` commit found the version already at its target. */
 function bumpText(bump: BumpOutput | null): string {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
   if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;

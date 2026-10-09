@@ -37,7 +37,10 @@ export interface SyncStepResult {
   readonly upstream: string | null;
   /** One line on what happened. */
   readonly message: string;
-  /** The start's classified conflicts — what landed each code conflict included; `[]` when it named none. */
+  /**
+   * The start's classified conflicts — what landed each code conflict included; `[]` when it named
+   * none.
+   */
   readonly conflicts: readonly ConflictPath[];
   /** The versions the start's merge saw and ended on; `null` when it named none. */
   readonly version: VersionLine | null;
@@ -79,9 +82,6 @@ export async function syncMasterStep(
 /**
  * Run the resolver over the pending doc indexes, then finish the merge.
  *
- * @param hooks - The workflow hooks.
- * @param ctx - The batch and its report directory.
- * @param pending - The unmerged doc-index paths.
  * @returns Resolves to `resolved`, or `failed` naming what stopped it.
  */
 async function resolveAndContinue(
@@ -110,14 +110,8 @@ async function resolveAndContinue(
 }
 
 /**
- * A `sync-master` output's verdict.
- *
- * @param out - The output; `null` when the runner returned none.
- * @param merged - The verdict of a merge commit: `merged`, or `resolved` after the resolver.
- * @returns `up-to-date`; `merged` / `resolved` for an `ok` merge carrying
- *   its commit; `code-conflict` for that refusal; `failed` otherwise. The
- *   first two carry the output's `upstream` (`null` when it named none —
- *   the master check then fails, not the sync); the rest carry `null`.
+ * A `sync-master` output's verdict. A merge whose output named no `upstream` carries `null`: the
+ * master check then fails, not the sync.
  */
 function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'): SyncOutcome {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
