@@ -1,24 +1,15 @@
 /**
- * Emit a zod schema as the JSON Schema a saved workflow hands the workflow
- * runtime (`AgentOptions.schema`): zod's own draft-07 output, rewritten
- * into the construct set the runtime has been seen to accept — `type`
- * (a name, or a name plus `'null'`), `properties`, `required`, `items` and
- * `enum`, nothing else (#1047). What that runtime does with any other
- * keyword is unobserved, so anything outside the set fails the emit rather
- * than reaching it.
+ * Emit a zod schema as the JSON Schema a saved workflow hands the workflow runtime
+ * (`AgentOptions.schema`): zod's draft-07 output, rewritten into the construct set the runtime
+ * has been seen to accept — `type` (a name, or a name plus `'null'`), `properties`, `required`,
+ * `items` and `enum`. Anything else fails the emit rather than reaching the runtime, whose
+ * handling of it is unobserved (#1047). Pure: no filesystem access.
  *
- * Rewrites, each exactly as zod 4 writes the construct:
- *
- * - the root `$schema` is dropped;
- * - `additionalProperties: false` (every `z.object`) is dropped;
- * - `readOnly: true` (`.readonly()`) is dropped;
- * - on an `integer`, `minimum` / `maximum` at the safe-integer bounds
- *   (`z.int()`'s own) are dropped;
- * - a nullable — `anyOf: [X, { type: 'null' }]` and no other key, X naming
- *   one `type` — becomes X with `type` widened to `[X.type, 'null']` and
- *   `null` appended to X's `enum` when it has one.
- *
- * Pure: no filesystem access.
+ * Rewrites, each exactly as zod 4 writes the construct: the root `$schema`,
+ * `additionalProperties: false` (every `z.object`), `readOnly: true` (`.readonly()`) and an
+ * `integer`'s `minimum` / `maximum` at the safe-integer bounds (`z.int()`'s own) are dropped; a
+ * nullable — `anyOf: [X, { type: 'null' }]` and no other key, X naming one `type` — becomes X
+ * with `type` widened to `[X.type, 'null']` and `null` appended to X's `enum` when it has one.
  */
 
 import { z } from 'zod';
@@ -40,7 +31,6 @@ const SAFE_BOUNDS: Readonly<Record<string, number>> = {
 /**
  * Emit a zod schema in the runtime's construct set.
  *
- * @param schema - The schema.
  * @returns Its JSON Schema, rewritten as the file header lists.
  * @throws {@link Error} `schema emit: unsupported construct '<key>' at <path>`
  *   for the first key outside the construct set that no rewrite removes —
@@ -56,9 +46,6 @@ export function emitJsonSchema(schema: z.ZodType): JsonSchema {
 /**
  * Rewrite one node and every node under it.
  *
- * @param node - The node.
- * @param path - Its path from the root.
- * @returns The rewritten node.
  * @throws {@link Error} on a key outside the construct set.
  */
 function normaliseNode(node: Node, path: readonly string[]): JsonSchema {
@@ -75,12 +62,8 @@ function normaliseNode(node: Node, path: readonly string[]): JsonSchema {
 }
 
 /**
- * The inner node of a nullable as zod writes it.
- *
- * @param node - The node.
- * @returns X for `{ anyOf: [X, { type: 'null' }] }` with no other key,
- *   when X names exactly one `type`; `undefined` for anything else, whose
- *   `anyOf` the emit then refuses.
+ * X for a nullable `{ anyOf: [X, { type: 'null' }] }` with no other key, when X names exactly one
+ * `type`; `undefined` for anything else, whose `anyOf` the emit then refuses.
  */
 function nullableInner(node: Node): Node | undefined {
   const anyOf = node['anyOf'];
@@ -93,11 +76,8 @@ function nullableInner(node: Node): Node | undefined {
 }
 
 /**
- * A rewritten node that also admits `null`.
- *
- * @param node - The rewritten inner node.
- * @returns It, `type` widened by `'null'` and `null` appended to its `enum`
- *   when it has one.
+ * A rewritten node that also admits `null`: `type` widened by `'null'`, and `null` appended to its
+ * `enum` when it has one.
  */
 function withNull(node: JsonSchema): JsonSchema {
   const values = node['enum'];
@@ -109,13 +89,8 @@ function withNull(node: JsonSchema): JsonSchema {
 }
 
 /**
- * Whether a key is one zod adds that the emit drops.
- *
- * @param node - The node holding it.
- * @param key - The key.
- * @param value - Its value.
- * @returns `true` for `additionalProperties: false`, `readOnly: true`, and a
- *   safe-integer bound on an `integer`.
+ * Whether `key` on `node` is one zod adds that the emit drops: `additionalProperties: false`,
+ * `readOnly: true`, or a safe-integer bound on an `integer`.
  */
 function isDropped(node: Node, key: string, value: unknown): boolean {
   if (key === 'additionalProperties') return value === false;
@@ -128,8 +103,6 @@ function isDropped(node: Node, key: string, value: unknown): boolean {
 /**
  * Refuse a key outside the construct set.
  *
- * @param key - The key.
- * @param path - Its node's path.
  * @throws {@link Error} naming the key and the path, unless it is kept.
  */
 function assertKept(key: string, path: readonly string[]): void {
@@ -139,12 +112,8 @@ function assertKept(key: string, path: readonly string[]): void {
 }
 
 /**
- * Rewrite a kept key's value: the nodes under `properties` and `items`.
- *
- * @param key - The key.
- * @param value - Its value.
- * @param path - Its node's path.
- * @returns The rewritten value; `type`, `required` and `enum` as they are.
+ * Rewrite a kept key's value: the nodes under `properties` and `items`; `type`, `required` and
+ * `enum` pass as they are.
  */
 function normaliseChild(key: string, value: unknown, path: readonly string[]): unknown {
   if (key === 'items' && isNode(value)) return normaliseNode(value, [...path, 'items']);
@@ -157,12 +126,7 @@ function normaliseChild(key: string, value: unknown, path: readonly string[]): u
   );
 }
 
-/**
- * Whether a value is a schema node (a plain object).
- *
- * @param value - The value.
- * @returns `true` for a non-array object.
- */
+/** Whether a value is a schema node: a non-null, non-array object. */
 function isNode(value: unknown): value is Node {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

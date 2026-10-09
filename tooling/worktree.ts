@@ -1,68 +1,18 @@
 /**
- * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears
- * down the batch and slice worktrees of an unattended run, and lists the
- * live runs (ADR-0045). Each command prints exactly one JSON object on one
- * stdout line — the envelope whose schema is in `worktree/schemas.ts` or
- * `worktree/schemas-run.ts` — and nothing else.
+ * Worktree lifecycle CLI — checks, cuts, provisions, lands into and tears down the batch and slice
+ * worktrees of an unattended run, and lists the live runs (ADR-0045); `COMMANDS` holds each
+ * command's flags and arity. A command prints one JSON object on one stdout line and nothing else:
+ * the envelope whose schema is in `worktree/schemas.ts` or `worktree/schemas-run.ts`, checked
+ * before printing ({@link runWorktreeCli}). No npm script wraps it, as `npm run` prints a banner.
  *
- * Usage (square brackets = optional, `...` = one or more, `a | b` = exactly one):
+ * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
+ * (`assertNotSelfHosted`, `worktree/git.ts`) when the CLI lies inside its target — except
+ * `cut-batch`, which writes only `.git` and a sibling directory. Target paths and path flags
+ * resolve against the starting cwd; every other argument is kept as given.
  *
- * ```
- * npx tsx <main-checkout>/tooling/worktree.ts preflight MAIN [--attach ship/SLUG]
- * npx tsx <main-checkout>/tooling/worktree.ts cut-batch MAIN (--epic E | --issues N,... | --attach ship/SLUG [--attached-run])
- * npx tsx <main-checkout>/tooling/worktree.ts cut-slice BATCH (--issue N --attempt K | --critic) [--attached-run R]
- * npx tsx <main-checkout>/tooling/worktree.ts provision SLICE --batch BATCH [--server]
- * npx tsx <main-checkout>/tooling/worktree.ts provision-batch BATCH --report-dir DIR
- * npx tsx <main-checkout>/tooling/worktree.ts teardown WORKTREE
- * npx tsx <main-checkout>/tooling/worktree.ts land BATCH SLICE-SHA --base CUT-SHA --message-file F --log L
- * npx tsx <main-checkout>/tooling/worktree.ts harvest BATCH SLICE-SHA
- * npx tsx <main-checkout>/tooling/worktree.ts staged-guard WORKTREE FILE...
- * npx tsx <main-checkout>/tooling/worktree.ts live-runs MAIN
- * npx tsx <main-checkout>/tooling/worktree.ts sync-master BATCH [--continue]
- * npx tsx <main-checkout>/tooling/worktree.ts bump BATCH
- * npx tsx <main-checkout>/tooling/worktree.ts check-master MAIN --local SHA --remote SHA [--synced SHA]
- * npx tsx <main-checkout>/tooling/worktree.ts publish BATCH (--title T --body-file F | --push-only) --log L
- * npx tsx <main-checkout>/tooling/worktree.ts append-pr-body BATCH --pr N --section-file F
- * npx tsx <main-checkout>/tooling/worktree.ts post-pr-comment BATCH --pr N --comment-file F
- * npx tsx <main-checkout>/tooling/worktree.ts post-issue-comment MAIN --issue N --comment-file F
- * ```
- *
- * The commit queue runs `land` once per slice: it harvests, checks the
- * staged set as `staged-guard` does, builds when needed, then commits. The
- * epic end runs `sync-master`, `bump`, `check-master` and `publish`, in
- * that order, then `post-issue-comment` once per issue the run blocked. A
- * resync runs `cut-batch --attach`, `sync-master` and
- * `publish --push-only`. An attached run runs `preflight --attach`,
- * `cut-batch --attach --attached-run`, `cut-slice --attached-run`,
- * `publish --push-only`, `post-pr-comment` and `append-pr-body`.
- * `publish --push-only` reads `PH_WORKTREE_POLL_MS` ({@link pollMsFromEnv}).
- *
- * Always run it from a checkout other than the one it mutates — normally
- * the main checkout: every command that mutates a worktree (cut-slice,
- * provision, provision-batch, teardown, harvest, land, sync-master, bump,
- * publish) refuses (`self-hosted`, see `assertNotSelfHosted` in
- * `worktree/git.ts`) when the CLI lies inside its target. The one exception
- * is `cut-batch`, whose target is the main checkout the CLI runs from: it
- * writes only `.git` and a sibling directory, never that checkout's working
- * tree (`worktree/cut.ts`, `worktree/cut-attach.ts`). Target paths and the
- * path flags (`--batch`, `--report-dir`, `--message-file`, `--log`,
- * `--body-file`, `--section-file`, `--comment-file`) come only from argv,
- * resolved against the starting cwd; every other argument — a sha,
- * repo-relative paths, a number, a title, the `--attach` branch — is kept
- * as given.
- *
- * Every envelope carries `at`, the instant the command finished, and is
- * checked against its command's schema before it is printed: one that
- * fails it is printed as `failed` at step `envelope` instead, so an
- * unchecked envelope is never printed ({@link runWorktreeCli}).
- *
- * Exit codes: `0` ok, `1` failed, refused or conflict (the envelope's
- * `status` tells which), `2` usage error ({@link UsageError}). The runner
- * rule shared with `tooling/run-gate.ts`: on `0` / `1` parse stdout; `2` is
- * a tool or usage error whose human message is on stderr
- * (`worktree: <reason>`). Here the `usage` envelope is on stdout too, where
- * `run-gate.ts` leaves stdout empty. No npm script wraps this CLI: `npm run`
- * prints a banner on stdout, which would break the one-object contract.
+ * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
+ * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout) — the runner
+ * rule shared with `tooling/run-gate.ts`, which leaves stdout empty on `2`.
  */
 
 import { resolve } from 'node:path';
@@ -159,13 +109,7 @@ function toTarget(path: string): string {
   return toPosix(resolve(path));
 }
 
-/**
- * Read a required value flag.
- *
- * @param args - Parsed argv.
- * @param flag - Flag name.
- * @returns The flag's value, resolved as a path.
- */
+/** Read a required value flag, resolved as a path ({@link toTarget}). */
 function pathFlag(args: ParsedArgs, flag: string): string {
   return toTarget(args.values.get(flag) ?? '');
 }
@@ -371,9 +315,6 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
 /**
  * Parse one subcommand's arguments against its spec.
  *
- * @param argv - Arguments after the subcommand name.
- * @param spec - The subcommand's flags and positional arity.
- * @returns The parsed arguments.
  * @throws UsageError on an unknown flag, a flag missing its value, a missing
  *   required flag, or a positional count outside the spec's range.
  */
@@ -400,8 +341,6 @@ function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
  * Check the positional count: one target path plus `rest.min`..`rest.max`
  * further arguments.
  *
- * @param count - Positionals given.
- * @param rest - The spec's arity after the target.
  * @throws UsageError naming the expectation and the count.
  */
 function assertArity(count: number, rest: CommandSpec['rest']): void {
@@ -416,9 +355,6 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
 /**
  * Read a positive-integer value (an issue, epic or attempt number).
  *
- * @param text - The value as given.
- * @param flag - The flag it belongs to.
- * @returns The number.
  * @throws UsageError unless `text` is a positive integer in decimal.
  */
 function positiveInt(text: string, flag: string): number {
@@ -429,15 +365,10 @@ function positiveInt(text: string, flag: string): number {
 }
 
 /**
- * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…`
- * and `--attach ship/<slug>` (a branch name, kept as given), the last
- * optionally with `--attached-run`.
+ * Read `cut-batch`'s selection: exactly one of `--epic E`, `--issues N,…` and
+ * `--attach ship/<slug>` (a branch name, kept as given), the last optionally with `--attached-run`.
  *
- * @param args - Parsed argv.
- * @returns The run selection, or the branch to attach and whether the
- *   attach is an attached run's.
- * @throws UsageError when more or fewer than one is given, a number is bad,
- *   or `--attached-run` comes without `--attach`.
+ * @throws UsageError for other than one, a bad number, or `--attached-run` without `--attach`.
  */
 function batchSelection(
   args: ParsedArgs,
@@ -457,11 +388,8 @@ function batchSelection(
 }
 
 /**
- * Read `cut-slice`'s slice: exactly one of `--critic` and
- * `--issue N --attempt K`.
+ * Read `cut-slice`'s slice: exactly one of `--critic` and `--issue N --attempt K`.
  *
- * @param args - Parsed argv.
- * @returns The critic slice, or the issue attempt.
  * @throws UsageError when both or neither is given, when one of `--issue`
  *   and `--attempt` comes without the other, or a number is bad.
  */
@@ -480,13 +408,10 @@ function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
 }
 
 /**
- * Read `publish`'s mode: `--push-only` alone, or both `--title` and
- * `--body-file`.
+ * Read `publish`'s mode: `push-only` for `--push-only` alone, `create` for `--title` and
+ * `--body-file` together.
  *
- * @param args - Parsed argv.
- * @returns `push-only` or `create`.
- * @throws UsageError when `--push-only` comes with `--title` or
- *   `--body-file`, or, without it, either is missing.
+ * @throws UsageError when `--push-only` comes with either, or, without it, either is missing.
  */
 function publishMode(args: ParsedArgs): 'push-only' | 'create' {
   const given = ['--title', '--body-file'].filter((flag) => args.values.has(flag));
@@ -500,12 +425,8 @@ function publishMode(args: ParsedArgs): 'push-only' | 'create' {
 }
 
 /**
- * The wait between `publish --push-only`'s mergeable reads, from
- * `PH_WORKTREE_POLL_MS` — a test-only seam, so a fixture run need not wait
- * the production interval.
- *
- * @returns The variable's value when it is a positive integer in decimal;
- *   otherwise `undefined` (the command's default).
+ * The wait between `publish --push-only`'s mergeable reads from `PH_WORKTREE_POLL_MS`, a test-only
+ * seam: its value when a positive decimal integer, else `undefined` (the command's default).
  */
 function pollMsFromEnv(): number | undefined {
   const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
@@ -515,9 +436,6 @@ function pollMsFromEnv(): number | undefined {
 /**
  * Check a value flag was followed by a value.
  *
- * @param value - The next argv entry.
- * @param flag - The flag it belongs to.
- * @returns The value.
  * @throws UsageError when the value is absent or is itself a flag.
  */
 function requireValue(value: string | undefined, flag: string): string {
@@ -548,12 +466,9 @@ export async function runWorktreeCli(
 }
 
 /**
- * Dispatch one invocation to its command.
- *
- * @param argv - `process.argv.slice(2)`.
- * @returns Resolves to the unstamped envelope, the exit code and the schema
- *   the envelope must satisfy — the command's for its own result,
- *   `ResultBaseSchema` for a usage error or a throw; never rejects.
+ * Dispatch one invocation to its command; never rejects. Resolves the unstamped envelope, the exit
+ * code and the schema the envelope must satisfy — the command's for its own result,
+ * `ResultBaseSchema` for a usage error or a throw.
  */
 async function dispatch(
   argv: readonly string[],
