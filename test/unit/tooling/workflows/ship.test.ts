@@ -1507,6 +1507,94 @@ describe('runShip — what an attempt hands on', () => {
     expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
   });
 
+  it('skips the test review for a slice proven comment-only, landing the reviewer’s commit', async () => {
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files: ['src/a.ts', 'eslint-suppressions.json'] },
+      'runner:comment-only': {
+        exitCode: 0,
+        envelopePath: 'e.json',
+        notCompared: ['eslint-suppressions.json'],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(reviewer|runner:comment-only|testReview):/.test(l)),
+    ).toEqual(['reviewer:7-1', 'runner:comment-only:7-1']);
+    expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
+      'tooling/comment-only.ts',
+      '--json',
+      'cut1..slice2',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
+    const lines = promptOf(run, 'runner:publish:list').split('\n');
+    expect(lines).toContain('- Test review: skipped — comment-only');
+    expect(lines).not.toContain('- Test review: skipped — trivial surface');
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+  });
+
+  it.each<[string, string[], unknown, boolean, boolean]>([
+    [
+      'a test/ path',
+      ['src/a.ts', 'test/unit/a.test.ts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
+      false,
+      false,
+    ],
+    [
+      'a not-compared tooling/x.cts',
+      ['src/a.ts', 'tooling/x.cts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/x.cts'] },
+      true,
+      false,
+    ],
+    [
+      'a not-compared src/b.js',
+      ['src/a.ts', 'src/b.js'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['src/b.js'] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 1',
+      ['src/a.ts'],
+      { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 2',
+      ['src/a.ts'],
+      {
+        exitCode: 2,
+        envelopePath: 'e.json',
+        stderrTail: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
+      },
+      true,
+      true,
+    ],
+    ['a runner that returned nothing', ['src/a.ts'], null, true, false],
+  ])(
+    'runs the test review on a slice with %s',
+    async (_name, files, proof, proofCalled, offSchema) => {
+      const run = fakeHooks(
+        { tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof },
+        { offSchema },
+      );
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run).filter((l) => /^(runner:comment-only|testReview):/.test(l))).toEqual(
+        proofCalled ? ['runner:comment-only:7-1', 'testReview:7-1'] : ['testReview:7-1'],
+      );
+      expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice3');
+      expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+        '- Test review: hardened, 0 surviving mutants — pinned a bound',
+      );
+    },
+  );
+
   it('runs the diff review on a slice that changes no code, though test review is skipped', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
 

@@ -91,6 +91,7 @@ describe('consumed fields are required', () => {
       'run-gate': ['excluded[].blockers', 'failures[].issue', 'stderrTail'],
       'live-runs': WORKTREE_OPTIONAL,
       check: ['stderrTail'],
+      'comment-only': ['stderrTail'],
       'cut-batch': WORKTREE_OPTIONAL,
       'provision-batch': WORKTREE_OPTIONAL,
       'cut-slice': WORKTREE_OPTIONAL,

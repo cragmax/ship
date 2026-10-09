@@ -1592,6 +1592,7 @@ const TOOL_COMMANDS = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
+  'comment-only': ['tooling/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
@@ -1683,6 +1684,10 @@ const TOOL_SCHEMAS = {
       },
     },
     required: ['ready', 'failures'],
+  }),
+  'comment-only': toolSchema({
+    properties: { notCompared: { type: 'array', items: STRING } },
+    required: ['notCompared'],
   }),
   'cut-batch': envelopeSchema('cut-batch'),
   'provision-batch': envelopeSchema('provision-batch'),

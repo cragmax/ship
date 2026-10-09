@@ -499,4 +499,43 @@ describe('comment-only CLI', () => {
       all: 'comment-only: mojibake at a.ts:2: `\u00e2\u20ac`',
     });
   });
+
+  it('prints one JSON object for --json on a pass and on a code difference', () => {
+    const dir = makeGitRepo(root, { 'a.ts': BASE });
+    const base = headSha(dir);
+    const head = commitChanges(
+      dir,
+      { write: { 'a.ts': BASE.replace('Header line one', 'Header one'), 'notes.md': 'n\n' } },
+      'comments',
+    );
+    const run = (range: string) =>
+      runIn(process.execPath, ['--import', TSX_LOADER_URL, CLI, '--json', range], dir);
+
+    const pass = run(`${base}..${head}`);
+    expect(pass.exitCode).toBe(0);
+    expect(JSON.parse(pass.stdout)).toEqual({ compared: 1, notCompared: ['notes.md'] });
+
+    const code = commitChanges(
+      dir,
+      { write: { 'a.ts': BASE.replace("'a // not comment'", "'b // not comment'") } },
+      'code',
+    );
+    // From `base`, so the range still carries `head`'s notes.md alongside the code difference.
+    const differs = run(`${base}..${code}`);
+    expect(differs.exitCode).toBe(1);
+    expect(JSON.parse(differs.stdout)).toEqual({ compared: 1, notCompared: ['notes.md'] });
+    expect(differs.all.split('\n').filter((l) => l !== differs.stdout)).toEqual([
+      "comment-only: code differs in a.ts: base line 10 `'a // not comment'`, head line 10 `'b // not comment'`",
+    ]);
+  });
+
+  it('prints nothing to stdout for --json on a usage error, its stderr unchanged', () => {
+    const dir = makeGitRepo(root, { 'a.ts': BASE });
+    const r = runIn(process.execPath, ['--import', TSX_LOADER_URL, CLI, '--json', 'a...b'], dir);
+    expect(r).toMatchObject({
+      exitCode: 2,
+      stdout: '',
+      all: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
+    });
+  });
 });

@@ -124,7 +124,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
-    testReview: null,
+    testReview: 'trivial surface',
   }),
 };
 
@@ -553,6 +553,23 @@ describe('renderPrBody', () => {
     );
   });
 
+  it('renders a comment-only test-review skip apart from a trivial-surface one', () => {
+    const twelve: LandedIssue = {
+      issue: 12,
+      commit: 'c12',
+      ...work({ subject: 'trim x', closes: 'fixes', testReview: 'comment-only' }),
+    };
+
+    const lines = renderPrBody({ ...INPUT, landed: [EIGHT, twelve] })
+      .split('\n')
+      .filter((l) => l.startsWith('- Test review: '));
+
+    expect(lines).toEqual([
+      '- Test review: skipped — trivial surface',
+      '- Test review: skipped — comment-only',
+    ]);
+  });
+
   it.each<[string, string[], SliceWork['testReview'], string]>([
     [
       'the tdd alone',
@@ -576,7 +593,7 @@ describe('renderPrBody', () => {
     [
       'a skipped test review',
       [TDD_LEASE],
-      null,
+      'trivial surface',
       '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
     ],
     [
@@ -626,7 +643,7 @@ describe('renderPrBody', () => {
       'a review before a skipped test review',
       [TDD_LEASE],
       [REVIEWER_LEASE],
-      null,
+      'trivial surface',
       '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ],
   ])('renders the review’s lease timings for %s', (_name, tdd, review, testReview, line) => {

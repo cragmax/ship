@@ -25,6 +25,7 @@ import {
   type SliceWork,
   type TddOutput,
   type TestReviewOutput,
+  type TestReviewSkip,
 } from './agent-calls.js';
 import {
   landingEvent,
@@ -196,9 +197,9 @@ interface ReviewedSlice extends DiffReviewedSlice {
   readonly review: ReviewOutput;
 }
 
-/** An authored slice: the test reviewer's answer, `null` when skipped; `sha` the last amend. */
+/** An authored slice: the test reviewer's answer, or why it was skipped; `sha` the last amend. */
 interface AuthoredSlice extends ReviewedSlice {
-  readonly testReview: TestReviewOutput | null;
+  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
 /**
@@ -403,10 +404,14 @@ async function reviewStage(s: DiffReviewedSlice): Promise<Step<ReviewedSlice>> {
   return { next: { ...s, review, sha: review.sha } };
 }
 
-/** Harden the tests on the slice's final shape, unless it changes no code; `sha` its amend. */
+/**
+ * Harden the tests on the slice's final shape, unless {@link testReviewSkip} names a reason; `sha`
+ * its amend.
+ */
 async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
-  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
+  const skip = await testReviewSkip(s);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
@@ -415,6 +420,24 @@ async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
   return { next: { ...s, testReview: out, sha: out.sha } };
+}
+
+/**
+ * Why the test review is skipped, `null` when it runs: `'trivial surface'` when the tdd's files
+ * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
+ * `base..sha` comment-only, leaving no code path uncompared. A failed proof runs it.
+ */
+async function testReviewSkip(s: ReviewedSlice): Promise<TestReviewSkip | null> {
+  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
+  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
+  const { at } = s;
+  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
 }
 
 /**

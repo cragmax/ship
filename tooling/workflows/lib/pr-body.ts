@@ -303,7 +303,7 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  *
  * @param work - The slice's tdd, review and test-review answers.
  * @returns The tdd's, then the review's, then the test review's; no
- *   test-review entry when it was skipped (`null`); lines unparsed and
+ *   test-review entry when it was skipped (a `TestReviewSkip` reason); lines unparsed and
  *   unfiltered.
  */
 export function sliceLeaseLines(
@@ -313,7 +313,7 @@ export function sliceLeaseLines(
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'review', lines: work.review.leaseLines },
   ];
-  if (work.testReview !== null) {
+  if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
   return roles;
@@ -713,8 +713,8 @@ function issueSection(landed: LandedIssue): string[] {
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
-    test === null
-      ? '- Test review: skipped — trivial surface'
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed),

@@ -2021,6 +2021,7 @@ const TOOL_COMMANDS = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
+  'comment-only': ['tooling/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
@@ -2112,6 +2113,10 @@ const TOOL_SCHEMAS = {
       },
     },
     required: ['ready', 'failures'],
+  }),
+  'comment-only': toolSchema({
+    properties: { notCompared: { type: 'array', items: STRING } },
+    required: ['notCompared'],
   }),
   'cut-batch': envelopeSchema('cut-batch'),
   'provision-batch': envelopeSchema('provision-batch'),
@@ -2540,7 +2545,7 @@ function sliceLeaseLines(work) {
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'review', lines: work.review.leaseLines },
   ];
-  if (work.testReview !== null) {
+  if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
   return roles;
@@ -2770,8 +2775,8 @@ function issueSection(landed) {
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
-    test === null
-      ? '- Test review: skipped — trivial surface'
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed),
@@ -2982,7 +2987,8 @@ async function reviewStage(s) {
 }
 async function testReviewStage(s) {
   const { at } = s;
-  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
+  const skip = await testReviewSkip(s);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
@@ -2991,6 +2997,18 @@ async function testReviewStage(s) {
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
   return { next: { ...s, testReview: out, sha: out.sha } };
+}
+async function testReviewSkip(s) {
+  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
+  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
+  const { at } = s;
+  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
 }
 async function landSlice(s) {
   const { at } = s;
