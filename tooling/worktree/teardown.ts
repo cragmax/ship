@@ -7,6 +7,10 @@
  * no external link target has lost entries since teardown started. After
  * any outcome `registered` is re-read from git, so a caller sees a half
  * state (deregistered but not deleted) for what it is.
+ *
+ * An absent worktree path counts as torn down: nothing at the path is
+ * touched, its repository is taken from the cwd, and one
+ * `git worktree prune` drops a still-registered entry.
  */
 
 import { existsSync } from 'node:fs';
@@ -45,8 +49,9 @@ const DEFAULT_DEPS: TeardownDeps = { unlink: unlinkLink, selfPath: import.meta.f
  * @param deps - Seams; each defaults to production. `unlink` lets a test
  *   simulate a followed link or a surviving one; `selfPath` lets it
  *   exercise the self-hosted guard.
- * @returns The envelope: `ok` with `removed: true`; `refused` with `reason`
- *   and the worktree left registered; or `failed` with the step.
+ * @returns The envelope: `ok` with `removed: true`, or with `removed: false`
+ *   when the path was already absent; `refused` with `reason` and the
+ *   worktree left registered; or `failed` with the step.
  */
 export function teardownWorktree(
   worktree: string,
@@ -65,23 +70,52 @@ export function teardownWorktree(
   };
   let main = '';
   try {
-    main = requireWorktreeRoot(worktree, 'preconditions').main;
-    assertGuards(worktree, main, selfPath);
-    escapeCwd(worktree, main);
-    const links = findLinks(worktree);
-    baselineSources(worktree, links, result);
-    unlinkAll(links, unlink, result);
-    assertNoLinksRemain(worktree);
-    assertSourcesIntact(result, 'gate');
-    git(main, ['worktree', 'remove', '--force', worktree], 'remove');
-    assertGone(worktree);
-    result.removed = true;
-    assertSourcesIntact(result, 'post-remove-recount');
+    if (existsSync(worktree)) {
+      main = requireWorktreeRoot(worktree, 'preconditions').main;
+      removeWorktree(worktree, main, { unlink, selfPath }, result);
+    } else {
+      main = pruneGoneWorktree();
+    }
   } catch (err) {
     recordFailure(result, err);
   }
   result.registered = main !== '' && listWorktrees(main).some((w) => samePath(w.path, worktree));
   return result;
+}
+
+/**
+ * The guarded removal of an existing worktree, in the order the file header's invariant fixes;
+ * sets `result.removed` once git has removed it.
+ */
+function removeWorktree(
+  worktree: string,
+  main: string,
+  { unlink, selfPath }: TeardownDeps,
+  result: TeardownResult,
+): void {
+  assertGuards(worktree, main, selfPath);
+  escapeCwd(worktree, main);
+  const links = findLinks(worktree);
+  baselineSources(worktree, links, result);
+  unlinkAll(links, unlink, result);
+  assertNoLinksRemain(worktree);
+  assertSourcesIntact(result, 'gate');
+  git(main, ['worktree', 'remove', '--force', worktree], 'remove');
+  assertGone(worktree);
+  result.removed = true;
+  assertSourcesIntact(result, 'post-remove-recount');
+}
+
+/**
+ * Prune the cwd's repository: `git -C` cannot enter a missing directory.
+ *
+ * @returns The repository's main checkout, as git lists it first.
+ * @throws StepFailure `preconditions` when the cwd is in no repository; `prune` if the prune fails.
+ */
+function pruneGoneWorktree(): string {
+  const main = listWorktrees(process.cwd(), 'preconditions')[0]?.path ?? process.cwd();
+  git(main, ['worktree', 'prune'], 'prune');
+  return main;
 }
 
 /**

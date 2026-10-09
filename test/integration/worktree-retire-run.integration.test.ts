@@ -1,7 +1,7 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots) with a bare `origin`: the fixture main checkout
  * sits at `<root>/main`, so the run `cut-batch` cuts lands under `<root>/ph-ship/7`, inside the
- * temp root.
+ * temp root. Teardown's gone-batch cases live here too, for that cut batch.
  *
  * @integrationTier standalone
  */
@@ -17,7 +17,7 @@ import { createJunction } from '../../tooling/worktree/links.js';
 import type { RetireRunResult, TeardownResult } from '../../tooling/worktree/types.js';
 import type { CutBatchResult } from '../../tooling/worktree/types-run.js';
 import { commitChanges, makeBareOrigin, makeGitRepo } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, mustRun, runCli, runIn } from '../helpers/worktree-fixture.js';
+import { addWorktree, isRegistered, mustRun, runCli, runIn } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 
@@ -209,5 +209,33 @@ describe('retire-run', () => {
     expect(existsSync(runRoot)).toBe(true);
     if (reason === 'links-remain')
       expect(readFileSync(`${root}/outside/keep.txt`, 'utf8')).toBe('k');
+  });
+});
+
+describe('teardown — gone worktree', () => {
+  it.each([
+    { name: 'still registered', prune: false, listedBefore: true },
+    { name: 'already pruned', prune: true, listedBefore: false },
+  ])('counts a $name gone batch as torn down', TIMEOUT, ({ prune, listedBefore }) => {
+    cutRun();
+    rmSync(batch, { recursive: true, force: true });
+    if (prune) mustRun('git', ['worktree', 'prune'], main);
+    expect(isRegistered(main, batch)).toBe(listedBefore);
+
+    const down = runCli<TeardownResult>(['teardown', batch], { cwd: main });
+
+    expect(down.code, JSON.stringify(down.json)).toBe(0);
+    expect(down.json).toMatchObject({
+      command: 'teardown',
+      status: 'ok',
+      worktree: batch,
+      removed: false,
+      registered: false,
+      errors: [],
+      unlinked: [],
+      sources: [],
+    });
+    expect(isRegistered(main, batch)).toBe(false);
+    expect(branchResolves()).toBe(true);
   });
 });
