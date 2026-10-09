@@ -9,14 +9,17 @@ import type { RunEdge, RunGraph, RunSet } from './run-set.js';
 
 /** What `createScheduler` takes: the gate's run graph plus the authoring cap. */
 export type SchedulerInput = RunGraph & {
-  /** The most issues in `authoring` at once; an integer, 1 or more. `landing` is uncapped. */
+  /**
+   * The most issues in `authoring` at once; an integer, 1 or more. The cap bounds `authoring`
+   * only: `slot-free`, settlement, requeue and retry release a slot, and `landing` (authored,
+   * waiting in the commit queue) holds none and is uncapped.
+   */
   readonly maxSlices: number;
 };
 
 /**
  * Something the workflow observed about one issue — or, for `epic-halt`,
- * one entry — fed to `advance`. Which phases accept which kind is the
- * lifecycle table in `run-scheduler.ts`.
+ * one entry — fed to `advance`. Which phases accept which kind: {@link IssuePhase}.
  */
 export type SchedulerEvent =
   | {
@@ -26,7 +29,10 @@ export type SchedulerEvent =
       readonly issue: number;
     }
   | {
-      /** The issue cannot land; its dependents are skipped. */
+      /**
+       * The issue cannot land; its dependents are skipped. No action comes back: record the
+       * issue as `see #N` when feeding it.
+       */
       readonly kind: 'blocked';
       /** The issue. */
       readonly issue: number;
@@ -40,7 +46,10 @@ export type SchedulerEvent =
       readonly issue: number;
     }
   | {
-      /** The issue left the run (label removed, or closed); its dependents are skipped. */
+      /**
+       * The issue left the run (label removed, or closed); its dependents are skipped. No action
+       * comes back: record the issue as `see #N` when feeding it.
+       */
       readonly kind: 'label-removed';
       /** The issue. */
       readonly issue: number;
@@ -52,15 +61,21 @@ export type SchedulerEvent =
       readonly issue: number;
     }
   | {
-      /** Authoring finished; the issue waits to land and releases its slot. */
+      /**
+       * Authoring finished; the issue waits to land and releases its slot. Optional: a workflow
+       * that never sends it bounds everything in flight, not only authoring.
+       */
       readonly kind: 'slot-free';
       /** The issue. */
       readonly issue: number;
     }
   | {
       /**
-       * A landing left the entry's batch unverified: stop the entry — no more
-       * starts or landings, and no epic end. Keyed by entry, not issue.
+       * A landing left the entry's batch unverified (the landing → halt mapping is the commit
+       * queue's `settleEvents`): stop the entry — no more starts or landings, and no epic end; its
+       * in-flight issues keep their phase and slot. Keyed by entry, not issue. After feeding it,
+       * feed `blocked` for the halting issue and for each other in-flight issue of the entry,
+       * each slice torn down before its `blocked` is fed.
        */
       readonly kind: 'epic-halt';
       /** The entry's `epic` key (`null` for an explicit list). */
@@ -83,13 +98,17 @@ export interface SkipCause {
 /** Something the workflow must do, returned by a transition. */
 export type SchedulerAction =
   | {
-      /** Cut a slice from the epic head, plan and author the issue. */
+      /**
+       * Cut a slice from the epic head, re-check readiness with `tooling/run-gate.ts check` —
+       * feed a not-ready result (a missing label, a closed issue) as `label-removed` — then plan
+       * and author the issue.
+       */
       readonly kind: 'start';
       /** The issue. */
       readonly issue: number;
     }
   | {
-      /** Never run the issue: a transitive blocker went bad. */
+      /** Never run the issue: a transitive blocker went bad. Record the issue as `see #N`. */
       readonly kind: 'skip';
       /** The issue. */
       readonly issue: number;
@@ -109,7 +128,10 @@ export type SchedulerAction =
       readonly issue: number;
     }
   | {
-      /** The issue is blocked: its agent died a second time. */
+      /**
+       * The issue is blocked: its agent died a second time. Tear its slice down and record the
+       * issue as `see #N`.
+       */
       readonly kind: 'block';
       /** The issue. */
       readonly issue: number;
@@ -123,13 +145,29 @@ export type SchedulerAction =
       readonly epic: number | null;
     }
   | {
-      /** Every issue of the halted entry has settled: skip the epic end. */
+      /**
+       * Every issue of the halted entry has settled: skip the epic end — no PR — and record the
+       * entry's unlanded issues as `see #N`.
+       */
       readonly kind: 'epic-halted';
       /** The entry's `epic` key (`null` for an explicit list). */
       readonly epic: number | null;
     };
 
-/** Where one issue is in its lifecycle. The last five are terminal (settled). */
+/**
+ * Where one issue is in its lifecycle. `waiting` → `ready` once every blocker is committed;
+ * `ready` → `authoring` on a free slot (`start`); `authoring` → `landing` on `slot-free`. From
+ * `authoring` / `landing`: `committed` → `committed`; `blocked` → `blocked`, dependents skipped;
+ * `harvest-conflict` (`requeue`) or a first `agent-died` (`retry`) → the ready-queue front; a
+ * second `agent-died` → `blocked` (`block`, dependents skipped). `label-removed` takes `waiting` /
+ * `ready` / `authoring` / `landing` → `removed`, dependents skipped. `waiting` → `skipped`
+ * (`skip`) when a transitive blocker is blocked or removed. An entry's `epic-halt` takes its
+ * `waiting` / `ready` issues → `halted`; in a halted entry an in-flight issue's `blocked`,
+ * `harvest-conflict` or `agent-died` settles it `halted` (no retry, requeue or skips),
+ * `committed` throws, and `slot-free` / `label-removed` behave as in any entry. The last five
+ * phases are terminal (settled) and accept no event; `ACCEPTED_PHASES` in `run-scheduler.ts` is
+ * the code home of which phase accepts which event.
+ */
 export type IssuePhase =
   | 'waiting'
   | 'ready'
@@ -161,7 +199,11 @@ export interface SchedulerState {
   readonly phase: Readonly<Record<number, IssuePhase>>;
   /** Issues whose one retry is spent. */
   readonly retried: Readonly<Record<number, true>>;
-  /** The ready queue, head first. */
+  /**
+   * The ready queue, head first: FIFO by when an issue became ready, ties by input order (entry
+   * index, then position); a restarted issue goes to the front. After every transition the queue
+   * is empty or the `authoring` count equals `maxSlices`.
+   */
   readonly ready: readonly number[];
   /**
    * Per entry (by index): whether its end action was emitted — `epic-done`,
@@ -176,6 +218,11 @@ export interface SchedulerState {
 export interface Transition {
   /** The next state. */
   readonly state: SchedulerState;
-  /** The actions, in execution order (the fixed order is stated in `run-scheduler.ts`). */
+  /**
+   * The actions, in execution order: the direct response (`requeue` / `retry` / `block`), then
+   * `skip`s ascending by issue, then `start`s in queue order, then `epic-done` / `epic-halted` in
+   * input order. Each entry gets exactly one end action, in the transition where its last issue
+   * settles (for a halt with nothing in flight, the halt's own transition).
+   */
   readonly actions: readonly SchedulerAction[];
 }

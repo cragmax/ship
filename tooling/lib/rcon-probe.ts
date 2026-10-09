@@ -1,18 +1,15 @@
 /**
- * One RCON round trip that never throws — the readiness probe the tooling CLIs
- * share.
+ * One RCON round trip that never throws — the readiness probe the tooling CLIs share.
  *
- * The rcon-client (4.2) behaviours it is built around, one home for all
- * callers ({@link AUTH_FAILED_MESSAGE} holds the password-rejection one):
- * - After the TCP connect phase, rcon-client re-emits socket errors on the
- *   `Rcon` instance, and an `error` emit with no listener crashes the process.
- *   A port that accepts and then resets (docker-proxy while the server behind
- *   it is not listening yet) lands in exactly that window, so the listener is
- *   attached before `connect()`: the crash becomes a failed probe. The pending
- *   packet promise still settles — the socket close rejects it, and the
- *   client's own packet timeout backstops it.
- * - A packet timeout, during the auth exchange or on the command, leaves the
- *   client's socket open, so a failed probe destroys it rather than leak it.
+ * The rcon-client (4.2) behaviours it is built around ({@link AUTH_FAILED_MESSAGE} holds the
+ * password-rejection one):
+ * - After the TCP connect phase, rcon-client re-emits socket errors on the `Rcon` instance, and
+ *   an `error` emit with no listener crashes the process. A port that accepts and then resets
+ *   (docker-proxy while the server behind it is not listening yet) lands in exactly that window,
+ *   so the listener is attached before `connect()`: the crash becomes a failed probe. The pending
+ *   packet promise still settles — the socket close rejects it, the packet timeout backstops it.
+ * - A packet timeout, during the auth exchange or on the command, leaves the client's socket
+ *   open, so a failed probe destroys it rather than leak it.
  */
 
 import { Rcon } from 'rcon-client';
@@ -47,8 +44,6 @@ const AUTH_FAILED_MESSAGE = 'Authentication failed';
  * Connect, authenticate, send one command and close. The command's response
  * body is ignored — the round trip itself is the signal.
  *
- * @param target - Where to probe.
- * @param command - The RCON command to send.
  * @returns Resolves to `ok`, or to how far the probe got and why it failed —
  *   the socket-level error when there was one, since the rejection is often a
  *   generic "Connection closed" derived from it.
@@ -79,7 +74,6 @@ export async function probeRcon(
 /**
  * Whether a `connect()` rejection is the server refusing the password.
  *
- * @param error - The rejection.
  * @returns `true` for rcon-client's authentication failure.
  */
 function isAuthFailure(error: unknown): boolean {

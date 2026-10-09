@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 /** The scout's verdict on one run-set issue. */
 const ScoutIssueSchema = z.object({
-  /** The issue. */
+  /** The run-set issue's number. */
   issue: z.int(),
   /** Whether the current tree has overtaken it. */
   stale: z.boolean(),
@@ -24,7 +24,7 @@ const ScoutIssueSchema = z.object({
 
 /** A run-set issue whose change would touch a live run's files. */
 const ScoutOverlapSchema = z.object({
-  /** The issue. */
+  /** The run-set issue's number. */
   issue: z.int(),
   /** The live run's branch. */
   branch: z.string(),
@@ -82,7 +82,10 @@ export const CommitSpecSchema = z.object({
   subject: z.string(),
 });
 
-/** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
+/**
+ * One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the
+ * tdd's.
+ */
 export const ProbeRecordSchema = z.object({
   /** The claim probed. */
   claim: z.string(),
@@ -90,7 +93,10 @@ export const ProbeRecordSchema = z.object({
   verdict: z.enum(['confirmed', 'falsified', 'inconclusive', 'cap-hit']),
   /** The follow-up to file, for an inconclusive probe or a cap hit; empty otherwise. */
   followUp: z.string(),
-  /** Measured wallclock seconds summed across every run of the claim, a killed run counted up to the kill. */
+  /**
+   * Measured wallclock seconds summed across every run of the claim, a killed run counted up to
+   * the kill.
+   */
   seconds: z.int(),
 });
 
@@ -110,7 +116,10 @@ export const PlanCardSchema = z.object({
   closes: z.enum(['fixes', 'see']),
   /** What backs the verdict. */
   evidence: z.string(),
-  /** Each plan-time probe its plan records a verdict for, carried-forward ones included; never a `pending — tdd` entry. */
+  /**
+   * Each plan-time probe its plan records a verdict for, carried-forward ones included; never a
+   * `pending — tdd` entry.
+   */
   probes: z.array(ProbeRecordSchema),
 });
 

@@ -1,12 +1,10 @@
 /**
- * The saved workflows' spent-run cleanup, run by `/ship`'s launch and
- * `/resync`'s pre-flight: tear down each live run whose PR is over and
- * whose tip is in that PR's head (`live-runs`' `spent`), guarded — only a
- * batch known clean, with no worktree nested inside it.
+ * The saved workflows' spent-run cleanup, run by `/ship`'s launch and `/resync`'s pre-flight: tear
+ * down each live run whose PR is over and whose tip is in that PR's head (`live-runs`' `spent`),
+ * guarded — only a batch known clean, with no worktree nested inside it.
  *
  * - **Unknown is not none**: a `live-runs` that failed, or answered without
- *   its runs, blocks the cleanup — no teardown at all — and the caller goes
- *   on.
+ *   its runs, blocks the cleanup — no teardown at all — and the caller goes on.
  * - **Unverified is not spent**: a run whose PR head cannot be checked
  *   (`spentUnverified`) is skipped and reported, never torn down.
  * - **A shrunk link target stops the caller** (teardown's `source-shrank`
@@ -81,8 +79,6 @@ export async function cleanupSpent(
  * Clean up one run: leave a live one, skip a spent one it must leave, tear
  * the rest down.
  *
- * @param hooks - The workflow hooks.
- * @param run - The run, as `live-runs` reported it.
  * @param report - The report; records what happened.
  */
 async function cleanupRun(
@@ -99,8 +95,6 @@ async function cleanupRun(
 /**
  * Tear one spent run down, recording the outcome.
  *
- * @param hooks - The workflow hooks.
- * @param path - The run's worktree.
  * @param report - The report; gains the path in `tornDown`, a `residue`
  *   line, or `stop` for a `source-shrank` refusal.
  */
@@ -121,14 +115,9 @@ async function tearDownSpent(
 }
 
 /**
- * What the cleanup does with one run. Reads `path` and `nested` unguarded:
- * the `live-runs` row schema requires both, and the runner's answer is held
- * to it.
- *
- * @param run - The run, as `live-runs` reported it.
- * @returns `null` for a live run; a {@link SkippedRun} for a spent run it
- *   must leave (unverified, dirty or of unknown dirtiness, or with nested
- *   worktrees); otherwise the path to tear down.
+ * What the cleanup does with one run; it leaves a spent run that is unverified, dirty or of unknown
+ * dirtiness, or has nested worktrees. Reads `path` and `nested` unguarded: the `live-runs` row
+ * schema requires both, and the runner's answer is held to it.
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
   if (run.spentUnverified) {

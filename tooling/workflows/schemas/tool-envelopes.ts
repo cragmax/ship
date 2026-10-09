@@ -1,20 +1,15 @@
 /**
- * The zod source of each worktree tool's output schema (#1047): the fields
- * of the command's envelope the saved workflows consume, `.pick`ed from the
- * envelope schemas in `tooling/worktree/schemas*.ts`, so a renamed or
- * dropped envelope field breaks the pick at compile time. Every consumed
- * field is required: a runner answer that lacks one fails its schema, and
- * the workflow reads a missing answer as a failure. The one exception is
- * `reason`, which the envelope carries only when `refused`; `at`, optional
- * on an in-process envelope, is required where it is consumed, since the
- * CLI stamps every envelope it prints.
+ * The zod source of each worktree tool's output schema: the envelope fields the saved workflows
+ * consume, `.pick`ed from the envelope schemas in `tooling/worktree/schemas*.ts`, so a renamed or
+ * dropped envelope field breaks the pick at compile time (#1047). Every consumed field is
+ * required — a runner answer that lacks one fails its schema, and the workflow reads a missing
+ * answer as a failure — except `reason`, which the envelope carries only when `refused`; `at`,
+ * optional on an in-process envelope, is required where consumed, since the CLI stamps every
+ * envelope it prints.
  *
- * Every row carries `status`, `reason` and `errors` (each error's `step`
- * and `message`) besides its own fields.
- *
- * Emitted, never rendered: `tooling/emit-workflow-schemas.ts` writes it as
- * JSON Schema into `tooling/workflows/lib/schemas.generated.ts`, which the
- * render inlines. No file in a render closure may value-import this one.
+ * Emitted, never rendered: `tooling/emit-workflow-schemas.ts` writes it as JSON Schema into
+ * `tooling/workflows/lib/schemas.generated.ts`, which the render inlines. No file in a render
+ * closure may value-import this one.
  */
 
 import { z } from 'zod';

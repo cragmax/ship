@@ -1,53 +1,19 @@
 /**
- * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose
- * issues have all settled with at least one landed ({@link epicEnd}): the
- * critic (`critic-step.ts`), the master sync, the version bump, then the
- * retro and the PR writer concurrently (the hooks' `parallel`), then one
- * repo-lock task: the main-checkout look, the master check and the pull
- * request. An entry that halted or landed nothing gets the retro alone
- * ({@link unshippedEpicEnd}).
+ * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
+ * at least one landed ({@link epicEnd}): the critic, the master sync, the version bump, then the
+ * retro and the PR writer concurrently, then the publish task; an entry that halted or landed
+ * nothing gets the retro alone ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
  *
- * - **No server-tier step here** — the publish's push runs it: the pre-push
- *   hook's `server-tier` job runs both engines across the local pool, and a
- *   red tier refuses the push (ADR-0045 decision 6, amended 2026-10-08).
- * - **A critic landing that leaves the batch unverified halts the epic**:
- *   no master sync, no push.
- * - **A code conflict or a failed sync stops the epic**: no bump, no push.
- *   So does a failed bump, and so does a step that throws. A bump finding
- *   the version already at its target commits nothing (status `ok`, `commit`
- *   `null`), and the epic end goes on to the retro and the publish.
- * - **The retro runs exactly once per entry**, whatever path the entry
- *   ends on, before the PR on the shipping path.
- * - **The PR writer runs on the shipping path only**, after the bump. One
- *   that returns nothing or rejects never blocks the PR; the body falls back
- *   ({@link renderPrBody}).
- * - **An attached run** (the entry's `attachedRun` set) has no PR writer and
- *   opens no PR: its publish is `publish --push-only` onto the open PR, then
- *   its run report posted as one PR comment, then a section appended to the
- *   PR's body ({@link pushOntoPr}). A PR no longer open stops the epic
- *   (`publish refused (no-open-pr): …`); its landed issues stay landed on
- *   the branch.
- * - **The repo lock** ({@link EpicEndInput.repoLock}): the master sync and
- *   the publish task (the main-checkout look, the master check, the push and
- *   PR, and an attached run's report comment and body edit) each run as one
- *   task of the run's one lock, so no two epic ends talk to `origin` or read
- *   the main checkout at once; the critic, the bump, the retro and the PR
- *   writer run outside it.
- * - **Main untouched**: the main checkout's `HEAD` and dirtiness are read
- *   again with `worktree.ts preflight` and compared with pre-flight's — read
- *   in the publish task before the push on the shipping path (so the PR body
- *   shows it), after the epic end on every other path; the run never works
- *   in the main checkout, so a difference is reported.
- * - **Master only moved forward**: {@link checkMasterStep}, `origin` also
- *   against the `origin/master` the epic end's own sync merged or found
- *   merged. A deleted, rewound or undecidable ref, a check that gives no
- *   verdict, a missing launch snapshot, or a sync naming no `origin/master`
- *   sha stops the epic before the push: no push, no PR, the stop message
- *   naming the ref, its shas and the sha to restore from — for `origin`,
- *   that synced sha.
+ * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
+ * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
+ * the epic; a bump finding the version already at its target commits nothing, and the end goes on.
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * The master sync and the publish task each run as one task of the run's repo lock
+ * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
+ * at once; the critic, the bump, the retro and the PR writer run outside it.
+ *
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
@@ -218,7 +184,6 @@ type Published = Pick<EpicReport, 'outcome' | 'pr' | 'message' | 'prBodyEdit' | 
 /**
  * Run the epic end.
  *
- * @param input - The entry, its issues and the launch snapshot.
  * @returns Resolves to the entry's report; a step that throws stops the
  *   epic (`the epic end threw: …`), the retro still run.
  */
@@ -249,13 +214,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
   };
 }
 
-/**
- * The epic end of an entry that halted or landed nothing: the retro alone.
- *
- * @param input - The entry, its issues, schedule and residue.
- * @param outcome - How the entry ended.
- * @returns Resolves to the entry's report.
- */
+/** The epic end of an entry that halted or landed nothing: the retro alone. */
 export async function unshippedEpicEnd(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues' | 'schedule' | 'residue'>,
   outcome: 'halted' | 'nothing-landed',
@@ -274,18 +233,9 @@ export async function unshippedEpicEnd(
 }
 
 /**
- * Tell each issue the run blocked why, as one comment each
- * (`post-issue-comment`, `gh` run from the main checkout), the comment
- * written first to `<reportDir>/issue-comment-<N>.md` per
- * {@link renderBlockedComment}. The run changes no label.
- *
- * @param input - The entry and its issues.
- * @param pr - The run's pull request, when it opened one.
- * @returns Resolves to one record per `blocked` issue, in the entry's order:
- *   its `url`, or `url: null` with the `problem` — the envelope's per
- *   `envelopeProblem`, `post-issue-comment ok without a url`, or
- *   `post-issue-comment threw: …`. Never rejects, so a failed post never
- *   fails the run; `[]` when no issue was blocked.
+ * Tell each issue the run blocked why, one comment each ({@link renderBlockedComment}), changing no
+ * label: one record per `blocked` issue, its `url` or `url: null` with the `problem`. Never
+ * rejects, so a failed post never fails the run.
  */
 async function commentBlockedStep(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues'>,
@@ -310,15 +260,7 @@ async function commentBlockedStep(
   return comments;
 }
 
-/**
- * One `post-issue-comment` call, its outcome as the report records it.
- *
- * @param hooks - The workflow hooks.
- * @param issue - The issue.
- * @param argv - The command's arguments after its name.
- * @param place - Where its envelope goes, with the comment to write first.
- * @returns Resolves to the record per {@link commentBlockedStep}; never rejects.
- */
+/** One `post-issue-comment` call, its outcome as the report records it; never rejects. */
 async function postIssueComment(
   hooks: WorkflowHooks,
   issue: number,
@@ -340,14 +282,8 @@ async function postIssueComment(
 }
 
 /**
- * The shipping path, up to the pull request: critic, sync, bump, the retro
- * and (unattached runs only) the PR writer concurrently, then the publish
- * task.
- *
- * @param input - The epic end's inputs.
- * @param state - Filled in as each step reports.
- * @returns Resolves to `pr`, `halted` (the critic) or `stopped` (sync, bump,
- *   master check or publish).
+ * The shipping path up to the pull request — critic, sync, bump, the retro and (unattached runs
+ * only) the PR writer concurrently, then the publish task — filling in `state` as steps report.
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
@@ -362,9 +298,9 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  // No thunk rejects (each step catches), so the runtime's unobserved
-  // `null`-for-a-throw is never read. An attached run runs no PR writer: its
-  // section is appended after the push (`pushOntoPr`).
+  // No thunk rejects (each step catches), so `parallel`'s `null` for a throw (`hooks.types.ts`)
+  // is never read. An attached run runs no PR writer: its section is appended after the push
+  // (`pushOntoPr`).
   await hooks.parallel([
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
@@ -384,16 +320,9 @@ interface EndFindings {
 }
 
 /**
- * The publish task — one repo-lock task: read the main checkout, check
- * `master`, then, only when the check passed, push and open the PR — or,
- * for an attached run, push onto its open PR and then append its section to
- * the PR's body ({@link pushOntoPr}).
- *
- * @param input - The epic end's inputs.
- * @param found - The steps' results; its state gains the main-checkout
- *   comparison and the master check.
- * @returns Resolves to `pr` with its number, or `stopped` naming the master
- *   check or the publish — an attached run's per {@link pushOntoPr}.
+ * The publish task, one repo-lock task: read the main checkout, check `master`, then, only when
+ * the check passed, push and open the PR — or push onto an attached run's open PR
+ * ({@link pushOntoPr}).
  */
 async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
   return input.repoLock.enqueue(async (): Promise<Published> => {
@@ -423,22 +352,9 @@ interface Checked {
 }
 
 /**
- * Push an attached run's branch onto its open PR (`publish --push-only`),
- * then, only when the push ended `pr`, post the run's report as a PR
- * comment ({@link postReportStep}) and append the run's section to the PR's
- * body ({@link appendSectionStep}) — linking the comment when it was
- * posted, naming the report dir when not. Runs inside the publish task, as
- * {@link openPr} does.
- *
- * @param input - The epic end's inputs.
- * @param found - The steps' results, for the section.
- * @param checked - The passed master check and the main-checkout
- *   comparison, for the section.
- * @param run - The attached run's number R.
- * @returns Resolves to `pr` with the open PR's number — with
- *   `prReportComment` naming a failed post and `prBodyEdit` a failed section
- *   edit, the outcome still `pr` — or `stopped` naming the publish, a PR no
- *   longer open included, with no post and no edit made.
+ * Push an attached run's branch onto its open PR, then post its report and append its section: a
+ * failed post or edit keeps the outcome `pr`, named in `prReportComment` / `prBodyEdit`; a failed
+ * push, a PR no longer open included, stops the epic with nothing posted.
  */
 async function pushOntoPr(
   input: EpicEndInput,
@@ -464,18 +380,8 @@ async function pushOntoPr(
 }
 
 /**
- * Post an attached run's report as one comment on its open PR
- * (`post-pr-comment`), the report written first to
- * `<reportDir>/pr-report-comment.md`.
- *
- * @param input - The epic end's inputs.
- * @param pr - The open PR's number.
- * @param report - The report, per {@link renderAttachedReport}.
- * @returns Resolves to the posted comment's `url` when the post came back
- *   `ok` with one; otherwise to the `failure` — the envelope's problem per
- *   `envelopeProblem`, `post-pr-comment ok without a url`, or
- *   `post-pr-comment threw: …` — and never rejects, so a failed post never
- *   fails the run.
+ * Post an attached run's report as one comment on its open PR: the comment's `url`, or the
+ * `failure`. Never rejects, so a failed post never fails the run.
  */
 async function postReportStep(
   input: EpicEndInput,
@@ -491,17 +397,8 @@ async function postReportStep(
 }
 
 /**
- * Append an attached run's section to its open PR's body
- * (`append-pr-body`), the section written first to
- * `<reportDir>/pr-section.md`.
- *
- * @param input - The epic end's inputs.
- * @param pr - The open PR's number.
- * @param section - The section, per {@link renderAttachedSection}.
- * @returns Resolves to `null` when the edit came back `ok`; otherwise to the
- *   problem — the envelope's per `envelopeProblem`, or
- *   `append-pr-body threw: …` — and never rejects, so a failed edit never
- *   fails the run.
+ * Append an attached run's section to its open PR's body: `null`, or the problem. Never rejects,
+ * so a failed edit never fails the run.
  */
 async function appendSectionStep(
   input: EpicEndInput,
@@ -514,16 +411,8 @@ async function appendSectionStep(
 }
 
 /**
- * Run one of the open PR's file-fed tools on the batch, with `--pr N` and
- * the file's flag, the file written first to `<reportDir>/<name>`.
- *
- * @param input - The epic end's inputs.
- * @param tool - The tool.
- * @param pr - The open PR's number.
- * @param file - The file's name in the report dir, its flag and its content.
- * @returns Resolves to the `ok` output; otherwise to the `failure` — the
- *   envelope's problem per `envelopeProblem`, or `<tool> threw: …` — and
- *   never rejects.
+ * Run one of the open PR's file-fed tools on the batch, the file written first to
+ * `<reportDir>/<name>`: the `ok` output, or the `failure`. Never rejects.
  */
 async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
   input: EpicEndInput,
@@ -543,13 +432,6 @@ async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
   }
 }
 
-/**
- * How a publish ended.
- *
- * @param out - `publish`'s output.
- * @returns `pr` with its number for an `ok` naming the PR; otherwise
- *   `stopped` naming the publish.
- */
 function publishedPr(out: PublishOutput | null): Published {
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
@@ -559,15 +441,8 @@ function publishedPr(out: PublishOutput | null): Published {
 }
 
 /**
- * Push the branch and open the PR. Runs inside the publish task, so it calls
- * the runner directly: a nested `enqueue` on the same lock would wait for
- * the task it is part of.
- *
- * @param input - The epic end's inputs.
- * @param found - The steps' results.
- * @param checked - The passed master check and the main-checkout
- *   comparison, both for the body.
- * @returns Resolves to `pr` with its number, or `stopped` naming the publish.
+ * Push the branch and open the PR. Runs inside the publish task, so it calls the runner directly:
+ * a nested `enqueue` on the same lock would wait for the task it is part of.
  */
 async function openPr(
   input: EpicEndInput,
@@ -594,17 +469,7 @@ async function openPr(
   return publishedPr(out);
 }
 
-/**
- * What a PR body and an attached run's section report, but the PR writer's
- * answer.
- *
- * @param input - The epic end's inputs.
- * @param found - The steps' results.
- * @param checked - The passed master check and the main-checkout comparison.
- * @returns The entry's report: every issue not `landed` as unlanded; a
- *   missing critic as `not-run`, missing lease totals recomputed, a missing
- *   retro as `null`.
- */
+/** What a PR body and an attached run's section report, but the PR writer's answer. */
 function bodyInput(
   input: EpicEndInput,
   found: EndFindings,
@@ -633,9 +498,6 @@ function bodyInput(
  * The entry's lease totals: every landed slice's release lines, the tdd's, the
  * review's and the test review's alike ({@link sliceLeaseLines}), each counted
  * in its engine's and its issue's totals with no role breakdown.
- *
- * @param landed - The landed issues.
- * @returns The totals.
  */
 function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
   return aggregateLeaseTimings(
@@ -645,13 +507,7 @@ function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
   );
 }
 
-/**
- * Run the retro over the entry's report.
- *
- * @param input - The entry and the hooks.
- * @param report - The report so far, as the retro reads it.
- * @returns Resolves to its findings; `null` when it returned none or threw.
- */
+/** Run the retro over the entry's report: its findings, `null` when it returned none or threw. */
 async function retroStep(
   input: Pick<EpicEndInput, 'hooks' | 'entry'>,
   report: unknown,
@@ -663,14 +519,9 @@ async function retroStep(
 }
 
 /**
- * Run the PR writer over the PR's net diff.
- *
- * @param input - The entry, its landed issues and the hooks.
- * @param upstream - The `origin/master` sha the master sync left the batch
- *   holding; `null` when it named none. The writer reads `<upstream>...HEAD`,
- *   or `<batch base>...HEAD` when `upstream` is `null`.
- * @returns Resolves to its answer; `null` when it returned none or threw —
- *   never rejects.
+ * Run the PR writer over `<upstream>...HEAD`, or `<batch base>...HEAD` when the sync named no
+ * `upstream`. Never rejects: `null` when it returned none or threw, and the PR body falls back
+ * ({@link renderPrBody}).
  */
 async function prWriterStep(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'landed'>,
@@ -692,13 +543,7 @@ async function prWriterStep(
   return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 
-/**
- * The report the retro reads on the shipping path.
- *
- * @param input - The epic end's inputs.
- * @param published - How the path ended, or `pr` before the pull request.
- * @returns The entry's outcome, issues, schedule and residue.
- */
+/** The report the retro reads on the shipping path; `published` is `pr` before the PR opens. */
 function retroReport(input: EpicEndInput, published: Published): EpicReport {
   return {
     epic: input.entry.epic,
@@ -711,12 +556,8 @@ function retroReport(input: EpicEndInput, published: Published): EpicReport {
 }
 
 /**
- * The main-checkout comparison the report carries.
- *
- * @param input - The epic end's inputs.
- * @param state - What the epic end learnt.
- * @returns Resolves to the publish task's comparison when it ran; otherwise
- *   to a fresh one, read as one repo-lock task.
+ * The main-checkout comparison the report carries: the publish task's when it ran, else a fresh
+ * one read as one repo-lock task.
  */
 async function mainAtEnd(input: EpicEndInput, state: EndState): Promise<boolean | null> {
   if (state.mainUntouched !== undefined) return state.mainUntouched;
@@ -724,11 +565,8 @@ async function mainAtEnd(input: EpicEndInput, state: EndState): Promise<boolean 
 }
 
 /**
- * Read the main checkout again and compare it with the launch.
- *
- * @param input - The epic end's inputs.
- * @returns Resolves to whether `HEAD` and dirtiness are unchanged; `null`
- *   when either snapshot is missing.
+ * Read the main checkout again: whether its `HEAD` and dirtiness equal the launch's; `null` when
+ * either snapshot is missing.
  */
 async function mainUntouched(input: EpicEndInput): Promise<boolean | null> {
   const { entry, launch } = input;
