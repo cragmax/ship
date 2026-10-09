@@ -285,6 +285,11 @@ describe('workflow agents', () => {
     ).toEqual([]);
   });
 
+  // regression: #1295 — a tdd edit round-tripped through Windows-1252 garbled UTF-8 comments.
+  it('ship-tdd states the UTF-8 without a BOM write rule under its ## Discipline', () => {
+    expect(section(agentText('ship-tdd'), '## Discipline')).toContain('UTF-8 without a BOM');
+  });
+
   it('planner routes a commit-body acceptance request to the tdd’s recorded', () => {
     const plan = section(agentText('planner'), '## Plan mode');
 

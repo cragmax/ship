@@ -1,20 +1,24 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  findMojibake,
   firstDifference,
   formatDifference,
+  formatMojibake,
   parseNameStatus,
   parseRevisions,
   proveCommentOnly,
 } from '../../../tooling/lib/comment-only.js';
 import { StepFailure } from '../../../tooling/worktree/types.js';
 import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
-import { mustRun } from '../../helpers/worktree-fixture.js';
+import { mustRun, runIn } from '../../helpers/worktree-fixture.js';
 
 const BASE = [
   '/**',
@@ -118,6 +122,48 @@ describe('firstDifference', () => {
   });
 });
 
+describe('findMojibake', () => {
+  it.each([
+    ['\u00e2\u20ac\u201d', '\u00e2\u20ac'],
+    ['\u00e2\u2020\u2019', '\u00e2\u2020'],
+    ['\u00e2\u201d\u20ac', '\u00e2\u201d'],
+    ['\u00e2\u2030\u00a5', '\u00e2\u2030'],
+    ['\u00e2\u0153\u201c', '\u00e2\u0153'],
+    // U+2FF0: its second byte, 0xBF, is the last UTF-8 continuation byte.
+    ['\u00e2\u00bf\u00b0', '\u00e2\u00bf'],
+    ['\u00c2\u00a7', '\u00c2\u00a7'],
+    ['\u00c2\u00b0', '\u00c2\u00b0'],
+    ['\u00c3\u00a9', '\u00c3'],
+  ])('flags %s', (moji, sequence) => {
+    expect(findMojibake('', '// x ' + moji + '\n')).toEqual([{ line: 1, sequence }]);
+  });
+
+  it.each(['\u2014', '\u2192', '\u2500', '\u00a7', '\u2019', '\u00e9', '\u00e2t', '\u00c2A'])(
+    'passes a clean %s',
+    (ch) => {
+      expect(findMojibake('', '// a ' + ch + ' b\n')).toEqual([]);
+    },
+  );
+
+  it('passes a mojibake sequence the base already holds', () => {
+    expect(
+      findMojibake(
+        '// see \u00c2\u00a7 1\nexport const x = 1;\n',
+        '// see \u00c2\u00a7 2\nexport const x = 1;\n',
+      ),
+    ).toEqual([]);
+  });
+
+  it('reports one entry per line, its first new sequence', () => {
+    expect(
+      findMojibake(
+        '// \u00c2\u00a7\n',
+        '// a\r\n// \u00c2\u00a7 \u00e2\u20ac\u201d \u00c3\u00a9\r\n',
+      ),
+    ).toEqual([{ line: 2, sequence: '\u00e2\u20ac' }]);
+  });
+});
+
 describe('parseNameStatus', () => {
   it('reads two paths for a rename or copy and one for every other status', () => {
     expect(
@@ -198,6 +244,21 @@ describe('proveCommentOnly', () => {
       compared: 2,
       notCompared: ['n.md'],
       difference: null,
+      mojibake: [],
+    });
+  });
+
+  it('reports a mojibake sequence a comment edit adds, by file and line', () => {
+    const dir = makeRepo();
+    writeFileSync(
+      join(dir, 'a.ts'),
+      BASE.replace('Header line one', 'Header \u00e2\u20ac\u201d one'),
+    );
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toEqual({
+      compared: 1,
+      notCompared: [],
+      difference: null,
+      mojibake: [{ path: 'a.ts', line: 2, sequence: '\u00e2\u20ac' }],
     });
   });
 
@@ -264,8 +325,42 @@ describe('proveCommentOnly', () => {
         compared: 1,
         notCompared: [],
         difference: null,
+        mojibake: [],
       },
     );
+  });
+
+  it('reports mojibake in a renamed file under its head path in a revision range', () => {
+    const dir = makeRepo();
+    const first = headSha(dir);
+    const second = commitChanges(
+      dir,
+      {
+        rename: [['b.ts', 'lib-b.ts']],
+        write: { 'lib-b.ts': B_TS.replace('// bee', '// bee \u00e2\u2020\u2019') },
+      },
+      'garble',
+    );
+    expect(proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } })).toEqual(
+      {
+        compared: 1,
+        notCompared: [],
+        difference: null,
+        mojibake: [{ path: 'lib-b.ts', line: 2, sequence: '\u00e2\u2020' }],
+      },
+    );
+  });
+
+  // git lists a.ts before b.ts, so a.ts's hit is collected before b.ts's code difference.
+  it('carries the mojibake found before the first code difference', () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, 'a.ts'), BASE.replace('Header line one', 'Header \u00c3\u00a9 one'));
+    writeFileSync(join(dir, 'b.ts'), B_TS.replace('= 2', '= 4'));
+    expect(proveCommentOnly(dir, { base: 'HEAD', head: WORKTREE })).toMatchObject({
+      compared: 2,
+      difference: { change: { headPath: 'b.ts' } },
+      mojibake: [{ path: 'a.ts', line: 2, sequence: '\u00c3' }],
+    });
   });
 
   it('compares an untracked TypeScript file as added', () => {
@@ -288,6 +383,7 @@ describe('proveCommentOnly', () => {
         base: { kind: ts.SyntaxKind.ExportKeyword, text: 'export', line: 1 },
         head: { kind: ts.SyntaxKind.EndOfFileToken, text: '', line: 1 },
       },
+      mojibake: [],
     });
   });
 
@@ -299,6 +395,7 @@ describe('proveCommentOnly', () => {
       compared: 0,
       notCompared: [],
       difference: null,
+      mojibake: [],
     });
   });
 
@@ -316,6 +413,7 @@ describe('proveCommentOnly', () => {
       compared: 2,
       notCompared: [],
       difference: null,
+      mojibake: [],
     });
   });
 });
@@ -359,5 +457,46 @@ describe('formatDifference', () => {
         head: { kind: ts.SyntaxKind.ExportKeyword, text: 'export', line: 1 },
       }),
     ).toBe('code differs in n.ts: base line 1 <end of file>, head line 1 `export`');
+  });
+});
+
+describe('formatMojibake', () => {
+  it('names the file, line and sequence', () => {
+    expect(formatMojibake({ path: 'src/a.ts', line: 3, sequence: '\u00e2\u20ac' })).toBe(
+      'mojibake at src/a.ts:3: `\u00e2\u20ac`',
+    );
+  });
+});
+
+describe('comment-only CLI', () => {
+  const CLI = fileURLToPath(new URL('../../../tooling/comment-only.ts', import.meta.url));
+  // An absolute loader URL, so the child resolves tsx from any cwd.
+  const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'comment-only-cli-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('exits 0 on a clean em dash and 1 naming the line of a double-encoded one', () => {
+    const dir = makeGitRepo(root, { 'a.ts': BASE });
+    const run = () => runIn(process.execPath, ['--import', TSX_LOADER_URL, CLI], dir);
+    writeFileSync(join(dir, 'a.ts'), BASE.replace('Header line one', 'Header \u2014 one'));
+    expect(run()).toMatchObject({
+      exitCode: 0,
+      all: 'comment-only: 1 TypeScript files token-identical',
+    });
+    writeFileSync(
+      join(dir, 'a.ts'),
+      BASE.replace('Header line one', 'Header \u00e2\u20ac\u201d one'),
+    );
+    expect(run()).toMatchObject({
+      exitCode: 1,
+      all: 'comment-only: mojibake at a.ts:2: `\u00e2\u20ac`',
+    });
   });
 });
