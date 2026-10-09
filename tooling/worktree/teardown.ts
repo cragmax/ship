@@ -85,15 +85,9 @@ export function teardownWorktree(
 }
 
 /**
- * Refusal guards that run before any mutation (after the worktree-root
- * check, so `main` is known and `registered` can be reported).
- *
- * @param worktree - The worktree to remove.
- * @param main - The repository's main worktree.
- * @param selfPath - The running CLI's file.
- * @throws Refusal `self-hosted` when the CLI runs from inside the worktree;
- *   Refusal `main-worktree` when it is the main worktree; Refusal
- *   `nested-worktree` from {@link assertNoNestedWorktrees}.
+ * The refusal guards, run before any mutation and after the worktree-root check (so `main` is known
+ * and `registered` can be reported): Refusal `self-hosted` when the CLI runs inside the worktree,
+ * `main-worktree` when it is the main one, `nested-worktree` from {@link assertNoNestedWorktrees}.
  */
 function assertGuards(worktree: string, main: string, selfPath: string): void {
   assertNotSelfHosted(worktree, selfPath);
@@ -104,16 +98,9 @@ function assertGuards(worktree: string, main: string, selfPath: string): void {
 }
 
 /**
- * Refuse when another registered worktree lies inside the target:
- * `git worktree remove --force` deletes the whole directory, nested
- * worktrees and their uncommitted files included, leaving them listed as prunable
- * (git 2.55, probe 2026-09-28). Containment is {@link isInside} — path
- * boundary respected, so a sibling whose name merely starts with the
- * target's does not count.
- *
- * @param worktree - The worktree to remove.
- * @param main - The repository's main worktree.
- * @throws Refusal `nested-worktree` naming every nested worktree.
+ * Refuse `nested-worktree`, naming each registered worktree inside the target ({@link isInside}):
+ * `git worktree remove --force` deletes the whole directory, nested worktrees and their uncommitted
+ * files included, leaving them listed as prunable (git 2.55).
  */
 function assertNoNestedWorktrees(worktree: string, main: string): void {
   const nested = listWorktrees(main, 'preconditions')
@@ -128,13 +115,7 @@ function assertNoNestedWorktrees(worktree: string, main: string): void {
   }
 }
 
-/**
- * Remove every link, recording each.
- *
- * @param links - The worktree's links.
- * @param unlink - The link remover.
- * @param result - Envelope; `unlinked` gains each link.
- */
+/** Remove every link, recording each on `result.unlinked`. */
 function unlinkAll(
   links: readonly LinkRecord[],
   unlink: (path: string) => void,
@@ -147,27 +128,15 @@ function unlinkAll(
 }
 
 /**
- * Move this process out of the worktree when its cwd is inside it: on
- * Windows `git worktree remove` cannot delete a directory that is a live
- * process's cwd, and fails only after deregistering the worktree (probe
- * 2026-09-28). A parent shell homed inside still blocks the removal; that
- * surfaces as a `remove` failure.
- *
- * @param worktree - The worktree being removed.
- * @param main - The main worktree to move to.
+ * Leave the worktree when cwd is inside it: on Windows `git worktree remove` cannot delete a live
+ * process's cwd, and fails only after deregistering the worktree. A parent shell homed inside still
+ * blocks the removal, surfacing as a `remove` failure.
  */
 function escapeCwd(worktree: string, main: string): void {
   if (isInside(process.cwd(), worktree)) process.chdir(main);
 }
 
-/**
- * Baseline-count each link target that {@link TeardownResult.sources}
- * records, before any unlink.
- *
- * @param worktree - The worktree being removed.
- * @param links - Its links.
- * @param result - Envelope; gains one `sources` entry per recorded target.
- */
+/** Baseline-count each link target {@link TeardownResult.sources} records, before any unlink. */
 function baselineSources(
   worktree: string,
   links: readonly LinkRecord[],
@@ -182,11 +151,8 @@ function baselineSources(
 }
 
 /**
- * Re-walk the worktree after the unlink step; no link may remain, since
- * `git worktree remove` leaves the directory behind holding a live link
- * (git 2.55, probe 2026-09-28), which a later recursive delete could follow.
- *
- * @param worktree - The worktree being removed.
+ * No link may remain after the unlink step: `git worktree remove` leaves the directory behind
+ * holding a live link (git 2.55), which a later recursive delete could follow.
  * @throws Refusal `links-remain` naming every surviving link.
  */
 function assertNoLinksRemain(worktree: string): void {
@@ -201,16 +167,9 @@ function assertNoLinksRemain(worktree: string): void {
 }
 
 /**
- * Recount every gated source against its baseline; none may have shrunk.
- *
- * @param result - Envelope; each source's `after` is updated.
- * @param stage - `gate` (after unlink, before git runs) or
- *   `post-remove-recount` (after `git worktree remove`).
- * @throws Refusal `source-shrank` at the `gate` stage, naming every source
- *   that lost entries — nothing has been removed yet. StepFailure
- *   `post-remove-recount` at the later stage: the damage is done, but a git
- *   version that follows a live link is reported rather than silent. No
- *   fixture can make git 2.55 follow a link, so this stage is untested.
+ * Recount every gated source against its baseline; none may have shrunk. Throws Refusal
+ * `source-shrank` at `gate` (nothing removed yet); StepFailure `post-remove-recount` later: the
+ * damage is done, but a git that follows a live link is reported rather than silent.
  */
 function assertSourcesIntact(result: TeardownResult, stage: 'gate' | 'post-remove-recount'): void {
   for (const source of result.sources) source.after = countSource(source.path);
@@ -226,7 +185,6 @@ function assertSourcesIntact(result: TeardownResult, stage: 'gate' | 'post-remov
 /**
  * Check the worktree directory is gone after `git worktree remove`.
  *
- * @param worktree - The removed worktree.
  * @throws StepFailure `remnants` when the directory still exists.
  */
 function assertGone(worktree: string): void {

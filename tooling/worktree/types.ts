@@ -1,26 +1,17 @@
 /**
- * Result envelope types of the worktree CLI (`tooling/worktree.ts`): the
- * single JSON object every command prints on one stdout line, plus the
- * error classes a step throws to end its command early. Each envelope type
- * is the `z.infer` of its schema in `schemas.ts` — the canonical home of the
- * envelope shapes, their field docs and the path spelling; the run-branch
- * and epic-end envelopes (`cut-batch`, `cut-slice`, `preflight`, `land`,
- * `sync-master`, `bump`, `check-master`, `publish`) are in `types-run.ts` /
- * `schemas-run.ts`.
+ * Result envelope types of the worktree CLI (`tooling/worktree.ts`) — the single JSON object every
+ * command prints on one stdout line — plus the error classes a step throws to end its command
+ * early. Each type is the `z.infer` of its schema in `schemas.ts`, the canonical home of shapes,
+ * field docs and path spelling; the run-branch and epic-end envelopes are in `types-run.ts`.
  *
- * Status semantics (the envelope's `status`):
- *
- * - `ok` — every step ran and every check held.
- * - `refused` — a safety guard fired before, or instead of, mutating the
- *   thing it protects; `reason` names the guard. Thrown as {@link Refusal}.
- * - `failed` — a step failed; `errors[0].step` names it. Thrown as
- *   {@link StepFailure}; any other throw is step `internal`, a bad command
- *   line is step `usage`, and an envelope that fails its schema is step
- *   `envelope` (`schemas.ts` `guardEnvelope`).
- * - `conflict` — `harvest` and `land`: the change cannot apply to the
- *   batch's current head; the batch is back at a verified-clean `HEAD`.
- *   `sync-master`: the merge stopped on doc-index conflicts a resolver must
- *   edit, its merge kept in progress. Thrown as {@link Conflict}.
+ * Status (the envelope's `status`): `ok` — every step ran and every check held. `refused` — a
+ * safety guard fired before, or instead of, mutating the thing it protects; `reason` names the
+ * guard ({@link Refusal}). `failed` — a step failed; `errors[0].step` names it
+ * ({@link StepFailure}); any other throw is step `internal`, a bad command line step `usage`, and
+ * an envelope that fails its schema step `envelope` (`schemas.ts` `guardEnvelope`). `conflict` —
+ * `harvest` and `land`: the change cannot apply to the batch's current head, the batch back at a
+ * verified-clean `HEAD`; `sync-master`: the merge stopped on doc-index conflicts a resolver must
+ * edit, its merge kept in progress ({@link Conflict}).
  */
 
 import type { z } from 'zod';
