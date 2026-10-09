@@ -1,19 +1,15 @@
 /**
- * The `ship` workflow's commit queue (ADR-0045 decision 6): one promise
- * chain per epic, so the epic's landings run one at a time, plus the pure
- * mappings from a landing's and a teardown's envelope to the scheduler
- * events an issue attempt ends with.
+ * The `ship` workflow's commit queue: one promise chain per epic, so the epic's landings run one
+ * at a time, plus the pure mappings from a landing's and a teardown's envelope to the scheduler
+ * events an issue attempt ends with (ADR-0045 decision 6).
  *
- * **The settle rule** (the scheduler's consumer protocol, step 7): every
- * attempt's slice is torn down before its final events are fed, and
- * {@link settleEvents} turns the attempt's primary event and the halt it
- * called for into those events and the entry's next halt state. A halt —
- * from the landing or from a teardown that found a link target shrunk —
- * feeds `epic-halt` for the entry, then `blocked` for the halting issue
- * itself, so the issue settles as halted and the entry can drain.
+ * **The settle rule** (the scheduler's consumer protocol, step 7): every attempt's slice is torn
+ * down before its final events are fed. A halt — from the landing or from a teardown that found
+ * a link target shrunk — feeds `epic-halt` for the entry, then `blocked` for the halting issue
+ * itself, so the issue settles as halted and the entry can drain ({@link settleEvents}).
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
@@ -61,11 +57,7 @@ export interface EventSubject {
   readonly epic: number | null;
 }
 
-/**
- * Create an epic's commit queue.
- *
- * @returns An empty queue.
- */
+/** Create an empty commit queue. */
 export function createCommitQueue(): CommitQueue {
   let tail: Promise<unknown> = Promise.resolve();
   return {
@@ -84,9 +76,8 @@ export function createCommitQueue(): CommitQueue {
 export type LandingClass = 'committed' | 'conflict' | 'blocked' | 'halt';
 
 /**
- * Classify a landing.
+ * Classify a landing; `land` is `null` when the runner returned none.
  *
- * @param land - `land`'s output; `null` when the runner returned none.
  * @returns `committed` for an `ok` carrying its commit; with the batch
  *   verified clean, `conflict` for a conflict and `blocked` for a refused
  *   `slice-not-single-commit` or a failed `commit` or `build` step that
@@ -110,8 +101,6 @@ export function classifyLanding(land: LandOutput | null): LandingClass {
 /**
  * The event a landing ends its attempt with, by {@link classifyLanding}.
  *
- * @param land - `land`'s output; `null` when the runner returned none.
- * @param at - The issue and its entry.
  * @returns `committed`, `harvest-conflict`, `blocked` (naming the landing)
  *   or `epic-halt` (naming it) for the class.
  */
@@ -130,10 +119,8 @@ export function landingEvent(land: LandOutput | null, at: EventSubject): Schedul
 }
 
 /**
- * The halt a teardown calls for.
+ * The halt a teardown calls for; `teardown` is `null` when none ran or the runner returned none.
  *
- * @param teardown - `teardown`'s output; `null` when none ran or the runner returned none.
- * @param epic - The entry's `epic` key.
  * @returns `epic-halt` for a refused `source-shrank` (a link was followed into
  *   its target); `null` otherwise.
  */
@@ -148,7 +135,6 @@ export function teardownEvent(
 /**
  * What a teardown left behind, for the run report.
  *
- * @param teardown - `teardown`'s output; `null` when the runner returned none.
  * @returns `null` for an `ok` teardown; otherwise one line naming the outcome.
  */
 export function teardownResidue(teardown: TeardownOutput | null): string | null {
@@ -164,7 +150,6 @@ export function teardownResidue(teardown: TeardownOutput | null): string | null 
  *   when it stopped for its halting entry).
  * @param halt - The halt the attempt called for — `primary` itself when it is
  *   an `epic-halt`; `null` for none.
- * @param at - The issue, its entry, and the entry's halt state before settling.
  * @returns With a halt, `[epic-halt, blocked]` — `[blocked]` alone in an entry
  *   already halted — and the entry `halted`; for a `committed` in an entry
  *   already halted, which the scheduler refuses, `[blocked]`; otherwise

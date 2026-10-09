@@ -1,25 +1,19 @@
 /**
- * The `ship` workflow's launch arguments. `args` is whatever the launching
- * Workflow call passed, verbatim — and the main-loop model writes that call,
- * not the user (a string in the pilot: observed 2026-09-29, #1035). Two
- * shapes are accepted — the object (also as its JSON text) and the string,
- * its numbers space- or comma-separated, each with an optional leading `#`:
+ * The `ship` workflow's launch arguments. `args` is whatever the launching Workflow call passed,
+ * verbatim, and the main-loop model writes that call, not the user — a string in the pilot
+ * (#1035). Two shapes are accepted — the object (also as its JSON text) and the string, its
+ * numbers space- or comma-separated, each with an optional leading `#`:
  *
  * ```
  * { epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }
  * epics|issues N... [--exclude] [--preflight-only] [--max-slices K] [--attach ship/<slug>]
  * ```
  *
- * Bare numbers are refused — epic or issue would be a guess — and so is
- * any unknown key or flag: a typo must never launch a full run. A usage
- * error is returned as a refusal, never thrown.
+ * Bare numbers (epic or issue would be a guess) and unknown keys or flags are refused: a typo must
+ * never launch a full run. `--attach` (`attach`), an open PR's run branch, takes `issues` only.
  *
- * `--attach` (`attach`) names an attached run's target: an open PR's run
- * branch, of the `/resync` shape ({@link RUN_BRANCH_SHAPE}). It takes
- * `issues` only — `epics` with it is refused.
- *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import type { ShipRefusal } from './preflight.js';
@@ -57,9 +51,8 @@ const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'a
 class ArgsError extends Error {}
 
 /**
- * Parse the launch arguments.
+ * Parse the launch arguments; a usage error is returned as a refusal, never thrown.
  *
- * @param raw - `args` as the runtime passed it.
  * @returns The arguments, or a `usage` refusal naming the problem.
  */
 export function parseShipArgs(raw: unknown): ArgsOutcome {
@@ -79,9 +72,7 @@ export function parseShipArgs(raw: unknown): ArgsOutcome {
 /**
  * Parse the string shape, or the object shape's JSON text.
  *
- * @param text - The launch text.
- * @returns The arguments.
- * @throws {@link ArgsError}on a usage error.
+ * @throws {@link ArgsError} on a usage error.
  */
 function parseText(text: string): ShipArgs {
   const trimmed = text.trim();
@@ -91,11 +82,9 @@ function parseText(text: string): ShipArgs {
 }
 
 /**
- * The string shape's first word.
+ * The string shape's first word; `undefined` or empty for no arguments.
  *
- * @param word - The word; `undefined` or empty for no arguments.
- * @returns The selection.
- * @throws {@link ArgsError}when it is neither `epics` nor `issues`.
+ * @throws {@link ArgsError} when it is neither `epics` nor `issues`.
  */
 function selectionWord(word: string | undefined): Selection {
   if (word === 'epics' || word === 'issues') return word;
@@ -109,9 +98,7 @@ function selectionWord(word: string | undefined): Selection {
 /**
  * The string shape's words after the selection: numbers and flags.
  *
- * @param tokens - The words.
- * @returns Everything but the selection.
- * @throws {@link ArgsError}on an unknown flag or a bad number.
+ * @throws {@link ArgsError} on an unknown flag or a bad number.
  */
 function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
   const numbers: number[] = [];
@@ -147,9 +134,7 @@ function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
 /**
  * Parse the object shape.
  *
- * @param raw - The object.
- * @returns The arguments.
- * @throws {@link ArgsError}on a usage error.
+ * @throws {@link ArgsError} on a usage error.
  */
 function parseObject(raw: unknown): ShipArgs {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -175,15 +160,7 @@ function parseObject(raw: unknown): ShipArgs {
   });
 }
 
-/**
- * An optional key, read when present.
- *
- * @param record - The object.
- * @param key - The key, also the name `read` reports.
- * @param read - Reads a present value; throws on a bad one.
- * @param absent - The value when the key is absent.
- * @returns `read`'s value, or `absent`.
- */
+/** An optional key: `read`'s value when present (it throws on a bad one), else `absent`. */
 function optionalKey<T>(
   record: Readonly<Record<string, unknown>>,
   key: string,
@@ -197,9 +174,7 @@ function optionalKey<T>(
 /**
  * Parse JSON text.
  *
- * @param text - The text.
- * @returns The value.
- * @throws {@link ArgsError}when it is not JSON.
+ * @throws {@link ArgsError} when it is not JSON.
  */
 function parseJson(text: string): unknown {
   try {
@@ -212,10 +187,8 @@ function parseJson(text: string): unknown {
 /**
  * One token's numbers: comma-separated, each with an optional leading `#`.
  *
- * @param token - The token.
- * @returns The numbers.
- * @throws {@link ArgsError}on a `--` flag (every known flag is handled before), or
- *   on a piece that is not a positive integer.
+ * @throws {@link ArgsError} on a `--` flag (every known flag is handled before) or a piece
+ *   that is not a positive integer.
  */
 function numberList(token: string): number[] {
   if (token.startsWith('--')) throw new ArgsError(`unknown flag '${token}'`);
@@ -228,10 +201,7 @@ function numberList(token: string): number[] {
 /**
  * A positive integer, from a number or its decimal text.
  *
- * @param value - The value.
- * @param what - What it is, for the message.
- * @returns The integer.
- * @throws {@link ArgsError}when it is not one.
+ * @throws {@link ArgsError} when it is not one.
  */
 function positiveInteger(value: unknown, what: string): number {
   const n = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
@@ -244,10 +214,7 @@ function positiveInteger(value: unknown, what: string): number {
 /**
  * An attached run's target branch.
  *
- * @param value - The value given.
- * @param what - The flag or key, for the message.
- * @returns The branch.
- * @throws {@link ArgsError}when it is not a `ship/` run branch.
+ * @throws {@link ArgsError} when it is not a `ship/` run branch ({@link RUN_BRANCH_SHAPE}).
  */
 function attachTarget(value: unknown, what: string): string {
   if (typeof value !== 'string' || !RUN_BRANCH_SHAPE.test(value)) {
@@ -257,12 +224,9 @@ function attachTarget(value: unknown, what: string): string {
 }
 
 /**
- * An optional boolean key.
+ * An optional boolean key; `false` when absent.
  *
- * @param record - The object.
- * @param key - The key.
- * @returns Its value; `false` when absent.
- * @throws {@link ArgsError}when present and not a boolean.
+ * @throws {@link ArgsError} when present and not a boolean.
  */
 function flag(record: Readonly<Record<string, unknown>>, key: string): boolean {
   const value = record[key];
@@ -272,12 +236,9 @@ function flag(record: Readonly<Record<string, unknown>>, key: string): boolean {
 }
 
 /**
- * Check the run-wide rules: at least one number, none twice, and an
- * attached run ships issues, never epics.
+ * Check the run-wide rules: at least one number, none twice, and the header's `--attach` rule.
  *
- * @param args - The parsed arguments.
- * @returns `args`.
- * @throws {@link ArgsError}when a rule fails.
+ * @throws {@link ArgsError} when a rule fails.
  */
 function validated(args: ShipArgs): ShipArgs {
   if (args.numbers.length === 0) throw new ArgsError(`no ${args.selection} numbers`);

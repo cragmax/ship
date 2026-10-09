@@ -1,42 +1,18 @@
 /**
- * The `ship` workflow's entry (ADR-0045): ships epics or explicit issue
- * lists unattended, one pull request per epic. Rendered into
- * `.claude/workflows/ship.js` by `tooling/render-workflows.ts` — edit this
- * source and run `npm run fix`, never the rendered file.
+ * The `ship` workflow's entry (ADR-0045): ships epics or explicit issue lists unattended, one pull
+ * request per epic. Rendered into `.claude/workflows/ship.js` by `tooling/render-workflows.ts` —
+ * edit this source and run `npm run fix`, never the rendered file.
  *
- * {@link runShip} parses the launch arguments and runs the pre-flight
- * phase; any refusal ends the run before anything is cut, and a
- * `preflightOnly` launch stops after a clean pre-flight with the graph it
- * would schedule. A full run then tears down the spent runs pre-flight's
- * `live-runs` reported (`lib/spent-cleanup.ts`) before cutting anything: a
- * `source-shrank` teardown refuses the launch with nothing cut, and any
- * other failed teardown is residue in the report's `cleanup`. It then cuts
- * and provisions each entry's batch worktree (an entry whose cut fails is
- * reported `stopped`, its issues and their dependents dropped from the
- * graph and cited `see`), drives the scheduler over the rest
- * (`lib/drive.ts`), and returns the run report.
+ * Every refusal — the arguments, pre-flight, or a `source-shrank` spent-run teardown — ends the run
+ * before anything is cut. The epic end never tears down its own batch: while its PR is open, that
+ * worktree is how `live-runs`, and so the next launch's collision check, sees the run. An attached
+ * run (`--attach ship/<slug>`, issues only, so one entry) lands on an open PR's existing branch
+ * instead of cutting one. Resume (`resumeFromRunId`) is safe only for a single-entry run at
+ * `maxSlices: 1`; any other run is recovered by hand once cut (`lib/drive.ts` § Concurrency;
+ * ADR-0045 decision 10).
  *
- * The epic end never tears down its own batch: while its PR is open, that
- * worktree is how `live-runs` — and so the next launch's collision check —
- * sees the run.
- *
- * **An attached run** (`--attach ship/<slug>`, issues only, so one entry)
- * lands on an open PR's existing branch instead of cutting one:
- * `cut-batch --attach --attached-run` reuses the branch's batch, or checks
- * it out anew and provisions it; the entry's `base` is the attached tip, its
- * report dir the run's own `reports/attach-<R>/`, and its slices are named
- * by the run number R. A reused batch whose trimmed pool registry is gone
- * stops the entry. The epic end pushes onto the open PR, posts its run
- * report as a PR comment, then appends its section to the PR's body
- * (`lib/epic-end.ts`).
- *
- * **Resume** (`resumeFromRunId`) is safe only for a single-entry run at
- * `maxSlices: 1` (why: `lib/drive.ts` § Concurrency). Any other run is
- * recovered by hand once cut. ADR-0045 decision 10 holds the boundary and
- * the procedure.
- *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import type { RunGraph, RunSetEntry } from '../lib/run-set.js';
@@ -92,13 +68,7 @@ type EntryCut =
   | { readonly setup: EntrySetup }
   | { readonly stopped: EpicReport; readonly issues: readonly number[] };
 
-/**
- * Run the `ship` workflow.
- *
- * @param hooks - The workflow hooks.
- * @param rawArgs - `args` as the runtime passed it.
- * @returns Resolves to the run report.
- */
+/** Run the `ship` workflow. */
 export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<ShipReport> {
   const parsed = parseShipArgs(rawArgs);
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
@@ -129,16 +99,9 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
 }
 
 /**
- * Cut every entry, then drive what survives the failed cuts: the entries
- * of the graph with every issue of a failed cut and its dependents dropped,
- * each paired with its setup by `epic` key — so an entry the drop emptied
- * is never driven, and drive's entry `i` is always the graph's.
- *
- * @param hooks - The workflow hooks.
- * @param graph - Pre-flight's graph, overlap edges merged.
- * @param opts - The in-flight cap, the launch snapshot and the overlap record.
- * @param attach - An attached run's target branch; `null` for an unattached run.
- * @returns Resolves to every entry's report, in run-set order.
+ * Cut every entry, then drive the graph less every issue of a failed cut and its dependents, each
+ * entry paired with its setup by `epic` key — so an entry the drop emptied is never driven, and
+ * drive's entry `i` is always the graph's.
  */
 async function runEntries(
   hooks: WorkflowHooks,
@@ -168,15 +131,8 @@ async function runEntries(
 }
 
 /**
- * Cut and provision one entry's batch worktree — or, for an attached run,
- * attach the open PR's branch's batch, provisioning it only when it was
- * checked out anew.
- *
- * @param hooks - The workflow hooks.
- * @param entry - The run-set entry.
- * @param attach - An attached run's target branch; `null` for an unattached run.
- * @returns Resolves to the entry's setup, or a `stopped` report naming the
- *   failed command.
+ * Cut and provision one entry's batch worktree — or, for an attached run, attach the open PR's
+ * branch's batch; a failed command yields a `stopped` report naming it.
  */
 async function cutEntry(
   hooks: WorkflowHooks,
@@ -219,14 +175,6 @@ async function cutEntry(
   };
 }
 
-/**
- * `cut-batch`'s selection words.
- *
- * @param entry - The run-set entry.
- * @param attach - An attached run's target branch; `null` for an unattached run.
- * @returns `--attach <branch> --attached-run` for an attached run; otherwise
- *   `--issues N,…` or `--epic E`.
- */
 function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
   if (attach !== null) return ['--attach', attach, '--attached-run'];
   return entry.epic === null
@@ -235,15 +183,9 @@ function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
 }
 
 /**
- * The batch's trimmed pool registry: a reused attached batch's, as
- * `cut-batch --attach` found it; otherwise `provision-batch`'s, provisioning
- * the batch cut or checked out anew.
- *
- * @param hooks - The workflow hooks.
- * @param attached - `cut-batch`'s `attach`; `null` for a cut.
- * @param at - The batch, the report dir and the entry's tag.
- * @returns Resolves to the registry, or what stopped the setup: a reused
- *   batch with no registry, or a failed provision.
+ * The batch's trimmed pool registry: a reused attached batch's, as `cut-batch --attach` found it —
+ * none stops the entry — otherwise `provision-batch`'s, provisioning a batch cut or checked out
+ * anew.
  */
 async function batchRegistry(
   hooks: WorkflowHooks,
@@ -263,24 +205,13 @@ async function batchRegistry(
   return { registry: prov.registry };
 }
 
-/**
- * Whether a consumed field is present as a string.
- *
- * @param value - The field.
- * @returns `true` for a string.
- */
 function isText(value: string | null | undefined): value is string {
   return typeof value === 'string';
 }
 
 /**
- * The report of an entry whose batch could not be set up.
- *
- * @param entry - The entry.
- * @param branch - Its branch, when the cut named one.
- * @param message - What failed.
- * @returns A `stopped` report, every issue `blocked` (its schedule filled in
- *   by the caller, which holds the graph), and the issues lost.
+ * The `stopped` report of an entry whose batch could not be set up: every issue `blocked`, cited
+ * `see`; the caller, which holds the graph, fills in its schedule.
  */
 function stoppedEntry(entry: RunSetEntry, branch: string, message: string): EntryCut {
   const stopped: EpicReport = {
@@ -301,17 +232,9 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
 }
 
 /**
- * The report of an entry that was cut: its drive report, every issue a
- * failed cut elsewhere dropped cited `see` as skipped and scheduled as
- * never started — `nothing-landed` when the drop emptied the entry.
- *
- * @param setup - The entry's setup.
- * @param graph - Pre-flight's graph.
- * @param k - The entry's index in it.
- * @param driven - The driven entries' reports.
- * @param overlap - Pre-flight's overlap record, for each never-started
- *   blocker's source.
- * @returns The report, its issues and schedule in the planned order.
+ * The report of an entry that was cut: its drive report, every issue a failed cut elsewhere
+ * dropped cited `see` as skipped and scheduled as never started — `nothing-landed` when the drop
+ * emptied the entry.
  */
 function cutReport(
   setup: EntrySetup,
@@ -345,13 +268,6 @@ function cutReport(
   return { ...report, issues, schedule };
 }
 
-/**
- * A `refused` report.
- *
- * @param refusals - Every refusal.
- * @param dropped - Every drop.
- * @returns The report.
- */
 function refusedReport(
   refusals: readonly ShipRefusal[],
   dropped: readonly DroppedIssue[],
