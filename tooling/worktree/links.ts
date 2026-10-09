@@ -29,7 +29,6 @@ export function createJunction(link: string, target: string): void {
 /**
  * The absolute target of `path` when it is a link.
  *
- * @param path - Path to inspect.
  * @returns The link's target, or `null` when `path` is missing or not a link.
  */
 export function linkTarget(path: string): string | null {
@@ -41,7 +40,6 @@ export function linkTarget(path: string): string | null {
 /**
  * Whether `path` is a real (non-link) directory.
  *
- * @param path - Path to inspect.
  * @returns `true` for an existing directory that is not a link.
  */
 export function isRealDir(path: string): boolean {
@@ -49,13 +47,7 @@ export function isRealDir(path: string): boolean {
   return stat !== undefined && stat.isDirectory() && !stat.isSymbolicLink();
 }
 
-/**
- * Collect the links under `dir` into `out`, descending into real
- * directories only.
- *
- * @param dir - Directory being walked.
- * @param out - Accumulator.
- */
+/** Collect the links under `dir` into `out`, descending into real directories only. */
 function collectLinks(dir: string, out: LinkRecord[]): void {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
@@ -71,7 +63,6 @@ function collectLinks(dir: string, out: LinkRecord[]): void {
 /**
  * Find every link under `root` without following any of them.
  *
- * @param root - Directory to walk.
  * @returns Each link with its absolute target, in walk order.
  */
 export function findLinks(root: string): LinkRecord[] {
@@ -81,12 +72,8 @@ export function findLinks(root: string): LinkRecord[] {
 }
 
 /**
- * Count the entries beneath `dir`, counting a link as one entry without
- * descending into it.
- *
- * @param dir - A real directory.
- * @param skipDir - Excludes a real subdirectory of `dir` (not deeper), subtree included.
- * @returns Entries at every depth below `dir`.
+ * Count the entries at every depth beneath real directory `dir`, a link as one entry, never
+ * descended. `skipDir` excludes a real direct subdirectory of `dir`, subtree included.
  */
 function countEntries(dir: string, skipDir: (name: string) => boolean = () => false): number {
   let count = 0;
@@ -106,7 +93,6 @@ function countEntries(dir: string, skipDir: (name: string) => boolean = () => fa
  * the tree create and delete, so counting them would trip the gate falsely,
  * while a followed link wipes packages, which are counted.
  *
- * @param dir - The link target.
  * @returns The count, or `null` when `dir` is not a real directory.
  */
 export function countSource(dir: string): number | null {
@@ -117,8 +103,6 @@ export function countSource(dir: string): number | null {
 /**
  * Remove a link itself; its target is never touched (`unlinkSync` removes a
  * junction or directory symlink only — probe 2026-09-28).
- *
- * @param path - The link to remove.
  */
 export function unlinkLink(path: string): void {
   unlinkSync(path);

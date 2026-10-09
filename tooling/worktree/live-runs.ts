@@ -1,25 +1,14 @@
 /**
- * `live-runs <main>` — every live unattended run of the repository: each
- * registered worktree on a run branch (`RUN_BRANCH_PREFIX`, `run-layout.ts`),
- * with its commits and files ahead of
- * the base branch, whether it is dirty, its pull request (via `gh`), and
- * the worktrees nested inside it. Read-only, so there is no self-hosted
- * guard.
+ * `live-runs <main>` — every live unattended run: each registered worktree on a run branch
+ * (`RUN_BRANCH_PREFIX`, `run-layout.ts`) with its commits and files ahead of `RUN_BASE_BRANCH`,
+ * its dirtiness, its PR (via `gh`) and its nested worktrees. Read-only: no self-hosted guard.
  *
- * `ahead` and `landed` count against `RUN_BASE_BRANCH` and are exact only
- * while local `master` is level with `origin/master` — true at pre-flight,
- * which requires it, but not guaranteed at a later resync or spent-run
- * cleanup, where a stale local `master` overcounts `ahead` (a merged PR's
- * commits still look unlanded) and moves the merge-base back.
+ * Accepted residual: `ahead`/`landed` are exact only while local `master` is level with `origin`'s.
  *
- * A PR that `gh` cannot report makes the envelope `failed` with one
- * `pr-state` error per affected branch while every run is still reported in
- * full — "could not ask" must never read as "no PR" at pre-flight. Any git
- * failure fails the whole command.
- *
- * `spent` keys on the run's tip, not only the branch name: a `ship/<slug>`
- * re-cut after its PR merged has commits beyond the old PR's head, so a run
- * is spent only when its tip is contained in that head ({@link spentOf}).
+ * A PR `gh` cannot report makes the envelope `failed` with one `pr-state` error per branch while
+ * every run is still reported in full: "could not ask" never reads as "no PR". Any git failure
+ * fails the whole command. `spent` keys on the run's tip, not only its branch: a `ship/<slug>`
+ * re-cut after its PR merged has commits beyond the old PR's head ({@link spentOf}).
  */
 
 import { existsSync } from 'node:fs';
@@ -69,7 +58,6 @@ interface PrLookup {
 /**
  * List the live runs of the repository whose main checkout is `main`.
  *
- * @param input - `main`: the repository's main checkout.
  * @returns The envelope: `ok` with every run sorted by branch; `failed`
  *   `pr-state` (runs still listed) when any PR lookup failed; or `failed`
  *   `preconditions` / `runs` when `main` is not the main checkout or git
@@ -101,9 +89,7 @@ export function liveRuns(input: { readonly main: string }): LiveRunsResult {
 /**
  * Require `main` to be the repository's main checkout root.
  *
- * @param main - The path given.
- * @throws StepFailure `preconditions` when it is not a worktree root, or
- *   is a linked worktree.
+ * @throws StepFailure `preconditions` when it is not a worktree root, or is a linked worktree.
  */
 function requireMainCheckout(main: string): void {
   const identity = requireWorktreeRoot(main, 'preconditions');
@@ -116,14 +102,9 @@ function requireMainCheckout(main: string): void {
 }
 
 /**
- * Describe one run; a failed PR lookup is recorded on the envelope.
+ * Describe one run, every git and `gh` query run in `main`; a failed PR lookup sets `result`
+ * `failed` with a `pr-state` error naming the branch.
  *
- * @param main - The main checkout, where every git and `gh` query runs.
- * @param entry - The run's worktree entry (branch under the run prefix).
- * @param worktrees - Every registered worktree, for `nested`.
- * @param result - Envelope; a failed PR lookup sets `failed` and adds a
- *   `pr-state` error naming the branch.
- * @returns The run.
  * @throws StepFailure `runs` when git fails.
  */
 function describeRun(
@@ -160,17 +141,10 @@ function describeRun(
 }
 
 /**
- * Whether a run is spent: its PR merged or closed, and its tip contained in
- * the PR's head.
+ * Spent: tip `ref` is an ancestor of (or is) its merged or closed PR's head. Both `false` while the
+ * PR is open, absent or unknown; `unverified` when its head is unnamed or not a commit here.
  *
- * @param main - The main checkout.
- * @param ref - The run branch's full ref.
- * @param info - Its PR.
- * @returns `spent` and `unverified` both `false` while the PR is open,
- *   absent or unknown; `unverified` when the PR is over but its head is
- *   unnamed or not a commit here; otherwise `spent` when the tip is an
- *   ancestor of (or equal to) the head.
- * @throws StepFailure `runs` when `git merge-base --is-ancestor` fails.
+ * @throws StepFailure `runs` when `git merge-base --is-ancestor` exits other than 0 or 1.
  */
 function spentOf(
   main: string,
@@ -195,11 +169,8 @@ function spentOf(
 }
 
 /**
- * Whether a commit id names a commit in the repository.
- *
- * @param main - The main checkout.
- * @param oid - The id `gh` gave; anything but a full hex id is not one.
- * @returns `true` when `git cat-file -e <oid>^{commit}` succeeds.
+ * Whether `oid` names a commit here: only a full hex id can, checked with
+ * `git cat-file -e <oid>^{commit}`.
  */
 function isCommit(main: string, oid: string): boolean {
   if (!COMMIT_ID.test(oid)) return false;
@@ -210,11 +181,9 @@ function isCommit(main: string, oid: string): boolean {
 }
 
 /**
- * Whether a run's worktree has uncommitted changes; git never runs in a
- * missing directory.
+ * Whether a run's worktree has uncommitted changes: `null` when git marks it prunable or its
+ * directory is missing, where git never runs.
  *
- * @param entry - The run's worktree entry.
- * @returns `null` when git marks it prunable or its directory is missing.
  * @throws StepFailure `runs` when git fails.
  */
 function isDirty(entry: WorktreeEntry): boolean | null {
@@ -264,12 +233,6 @@ export function lookupPr(dir: string, branch: string): PrLookup {
   return unknownPr(`gh pr list reported unrecognised states: ${r.stdout}`);
 }
 
-/**
- * An `unknown` lookup.
- *
- * @param error - Why.
- * @returns The lookup.
- */
 function unknownPr(error: string): PrLookup {
   return { info: { state: 'unknown', number: null, headOid: null }, error };
 }
@@ -277,7 +240,6 @@ function unknownPr(error: string): PrLookup {
 /**
  * Parse `gh pr list --json number,state,headRefOid` output.
  *
- * @param stdout - `gh`'s stdout.
  * @returns The entries, or `null` unless it is JSON matching {@link PrListSchema}.
  */
 function parsePrList(stdout: string): z.infer<typeof PrListSchema> | null {
