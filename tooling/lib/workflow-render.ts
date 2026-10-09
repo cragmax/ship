@@ -1,39 +1,17 @@
 /**
- * The saved-workflow renderer (ADR-0045 decision 1): turns a workflow's
- * typed sources under `tooling/workflows/` into the one plain-JS file the
- * workflow runtime loads, and checks a committed copy against a fresh
- * render. A workflow script can load no module of any kind (#1026), so the
- * render inlines everything it runs.
+ * Renders a workflow's typed sources into the one plain-JS file the runtime loads (it loads no
+ * module, #1026) and checks a committed copy against a fresh render (ADR-0045 decision 1).
  *
- * **Render contract.** The closure is the entry plus the transitive
- * closure of its relative value imports — type-only imports are erased and
- * never followed, and a non-relative value import is an error. Each file is
- * transpiled (`typescript.transpileModule`, ES2022, comments removed) with
- * its import declarations and `export` modifiers dropped by AST transform,
- * and the files are concatenated in dependency post-order. The output is
- * the `export const meta` literal (nothing precedes it), a generated-by
- * comment line, the closure, then a tail returning `run<Name>`'s result for
- * the hooks object and `args` — all formatted by prettier under the
- * repository's config. The closure shares one scope with the runtime's
- * globals, so a top-level name must be unique across the closure and never
- * a {@link HOOK_NAMES} member; and the output may use no
- * {@link FORBIDDEN_TOKENS} / {@link FORBIDDEN_WORDS} member.
- * Every guard throws an `Error` prefixed `workflow render:` naming the
- * files involved.
- *
- * **Runtime wrapper.** The runtime accepts the leading `export` and runs the
- * file as the body of an async function, the hooks and `args` bound as
- * globals — which is what lets the tail `return` at top level; the ES2022
- * built-in `Object.hasOwn` ran too (observed 2026-09-29, #1035).
- *
- * **Line endings.** The runtime refuses a script containing CR — a launch by
- * name fails in the permission layer with "script contains control
- * characters that would be hidden in the approval dialog" (observed
- * 2026-09-29, #1035) — so `.gitattributes` checks `.claude/workflows/*.js`
- * out LF whatever `core.autocrlf` says. The drift check compares with line
- * endings normalised, so a CRLF copy left by a checkout that predates the
- * `.gitattributes` still passes it; the writer always writes LF, so a
- * re-render repairs that copy.
+ * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
+ * ones erased, never followed; a non-relative value import an error), each transpiled (ES2022,
+ * comments removed, module syntax dropped), concatenated in dependency post-order into one scope: a
+ * top-level name is unique across it and never a {@link HOOK_NAMES} member, and no
+ * {@link FORBIDDEN_TOKENS} / {@link FORBIDDEN_WORDS} member appears. Every guard throws an `Error`
+ * prefixed `workflow render:` naming the files. The runtime runs the file as an async function
+ * body, hooks and `args` as globals (so the tail `return` works at top level; the ES2022 built-in
+ * `Object.hasOwn` runs too), and refuses a script containing CR ("script contains control
+ * characters that would be hidden in the approval dialog"): the writer writes LF, `.gitattributes`
+ * checks `.claude/workflows/*.js` out LF, the drift check normalises line endings (#1035).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -117,7 +95,6 @@ interface ClosureFile {
 /**
  * The render closure of `entry`, in render (dependency post-order) order.
  *
- * @param root - The repository root.
  * @param entry - The entry source, relative to `root` (or absolute).
  * @param read - The source reader (default: the filesystem).
  * @returns Each closure file, repository-relative with forward slashes.
@@ -132,9 +109,11 @@ export function workflowClosure(
 }
 
 /**
- * Render one workflow.
+ * Render one workflow: the `export const meta` literal first (nothing precedes it; the runtime
+ * accepts the leading `export`), a generated-by comment line, the closure, then a tail returning
+ * `run<Name>`'s result for the hooks object and `args` — formatted by prettier under the
+ * repository's config.
  *
- * @param spec - The workflow.
  * @param root - The repository root; `spec`'s paths resolve against it.
  * @param read - The source reader (default: the filesystem).
  * @returns Resolves to the rendered file's content, LF line endings whatever
@@ -167,8 +146,6 @@ export async function renderWorkflow(
  * The drift check: re-render each workflow and compare with its on-disk
  * copy, line endings normalised. Writes nothing.
  *
- * @param workflows - The workflows.
- * @param root - The repository root.
  * @returns Resolves to one result per workflow, in order; rejects when a
  *   render violates the render contract.
  */
@@ -192,8 +169,6 @@ export async function checkRenderedWorkflows(
 /**
  * Render each workflow and write it LF, replacing any existing file.
  *
- * @param workflows - The workflows.
- * @param root - The repository root.
  * @returns Resolves to each written file, as its spec names it; rejects
  *   when a render violates the render contract, writing nothing for that
  *   workflow.
@@ -213,25 +188,12 @@ export async function writeRenderedWorkflows(
   );
 }
 
-/**
- * Read a source file from disk.
- *
- * @param path - Absolute path.
- * @returns Its UTF-8 content.
- */
+/** Read a source file from disk by absolute path, as UTF-8. */
 function readSource(path: string): string {
   return readFileSync(path, 'utf8');
 }
 
-/**
- * Collect the closure from `entry`, depth-first, each file after the files
- * it imports.
- *
- * @param root - The repository root.
- * @param entry - The entry, absolute.
- * @param read - The source reader.
- * @returns The closure files in post-order.
- */
+/** Collect the closure from the absolute `entry`, depth-first, each file after its imports. */
 function closureOf(root: string, entry: string, read: SourceReader): ClosureFile[] {
   const seen = new Set<string>();
   const order: ClosureFile[] = [];
@@ -247,10 +209,8 @@ function closureOf(root: string, entry: string, read: SourceReader): ClosureFile
 }
 
 /**
- * The files a closure file value-imports.
+ * The absolute paths a closure file value-imports, in import order.
  *
- * @param file - The file.
- * @returns Their absolute paths, in import order.
  * @throws {@link Error} on a non-relative value import.
  */
 function valueImports(file: ClosureFile): string[] {
@@ -266,11 +226,8 @@ function valueImports(file: ClosureFile): string[] {
 }
 
 /**
- * Whether an import declaration binds types only (`import type`, or every
- * named binding marked `type`), so the render never follows it.
- *
- * @param decl - The declaration.
- * @returns `true` for a type-only import.
+ * Whether an import declaration binds types only (`import type`, or every named binding marked
+ * `type`), so the render never follows it.
  */
 function isTypeOnly(decl: ts.ImportDeclaration): boolean {
   const clause = decl.importClause;
@@ -286,12 +243,7 @@ function isTypeOnly(decl: ts.ImportDeclaration): boolean {
   );
 }
 
-/**
- * Transpile one closure file to plain JS with its module syntax dropped.
- *
- * @param source - The TypeScript source.
- * @returns The JS.
- */
+/** Transpile one closure file to plain JS with its module syntax dropped. */
 function transpile(source: string): string {
   return ts.transpileModule(source, {
     compilerOptions: {
@@ -303,12 +255,7 @@ function transpile(source: string): string {
   }).outputText;
 }
 
-/**
- * Drop import and export declarations, and every `export` / `default`
- * modifier, from a source file.
- *
- * @returns The transformer.
- */
+/** Drop import and export declarations, and every `export` / `default` modifier, from a file. */
 function dropModuleSyntax(): ts.Transformer<ts.SourceFile> {
   return (sf) =>
     ts.factory.updateSourceFile(
@@ -323,12 +270,7 @@ function dropModuleSyntax(): ts.Transformer<ts.SourceFile> {
     );
 }
 
-/**
- * Drop the `export {};` the emitter appends to a module left without
- * imports or exports.
- *
- * @returns The transformer.
- */
+/** Drop the `export {};` the emitter appends to a module left without imports or exports. */
 function dropExportDeclarations(): ts.Transformer<ts.SourceFile> {
   return (sf) =>
     ts.factory.updateSourceFile(
@@ -337,12 +279,7 @@ function dropExportDeclarations(): ts.Transformer<ts.SourceFile> {
     );
 }
 
-/**
- * Whether a modifier is `export` or `default`.
- *
- * @param m - The modifier.
- * @returns `true` for either.
- */
+/** Whether a modifier is `export` or `default`. */
 function isExportModifier(m: ts.ModifierLike): boolean {
   return m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DefaultKeyword;
 }
@@ -363,10 +300,8 @@ function assertNoForbidden(chunk: { readonly file: string; readonly js: string }
 }
 
 /**
- * Reject a top-level name that another closure file declares too, or that
- * a hook takes.
+ * Reject a top-level name another of the closure `chunks` declares too, or that a hook takes.
  *
- * @param chunks - The transpiled closure files, in render order.
  * @throws {@link Error} naming the name and the files.
  */
 function assertNames(chunks: readonly { readonly file: string; readonly js: string }[]): void {
@@ -388,9 +323,7 @@ function assertNames(chunks: readonly { readonly file: string; readonly js: stri
 /**
  * Reject a top-level name a hook takes.
  *
- * @param name - The name.
- * @param file - The closure file declaring it.
- * @throws {@link Error} naming the name and the file.
+ * @throws {@link Error} naming the name and the closure file declaring it.
  */
 function assertNotHook(name: string, file: string): void {
   if (HOOK_NAMES.includes(name)) {
@@ -399,10 +332,8 @@ function assertNotHook(name: string, file: string): void {
 }
 
 /**
- * The names a JS chunk declares at top level.
- *
- * @param js - The chunk.
- * @returns Function, class and variable names, destructured bindings included.
+ * The names a JS chunk declares at top level: function, class and variable names, destructured
+ * bindings included.
  */
 function topLevelNames(js: string): string[] {
   const sf = ts.createSourceFile('chunk.js', js, ts.ScriptTarget.ES2022, false, ts.ScriptKind.JS);
@@ -415,12 +346,7 @@ function topLevelNames(js: string): string[] {
   });
 }
 
-/**
- * Every identifier a binding introduces.
- *
- * @param name - The binding.
- * @returns Its identifiers.
- */
+/** Every identifier a binding introduces. */
 function bindingNames(name: ts.BindingName): string[] {
   if (ts.isIdentifier(name)) return [name.text];
   return name.elements.flatMap((e) => (ts.isOmittedExpression(e) ? [] : bindingNames(e.name)));

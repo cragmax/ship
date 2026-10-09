@@ -3,10 +3,11 @@
  * at a time, plus the pure mappings from a landing's and a teardown's envelope to the scheduler
  * events an issue attempt ends with (ADR-0045 decision 6).
  *
- * **The settle rule** (the scheduler's consumer protocol, step 7): every attempt's slice is torn
- * down before its final events are fed. A halt — from the landing or from a teardown that found
- * a link target shrunk — feeds `epic-halt` for the entry, then `blocked` for the halting issue
- * itself, so the issue settles as halted and the entry can drain ({@link settleEvents}).
+ * **The settle rule** (the `epic-halt` event's doc, `run-scheduler.types.ts`): every attempt's
+ * slice is torn down before its final events are fed. A halt — from the landing or from a
+ * teardown that found a link target shrunk — feeds `epic-halt` for the entry, then `blocked` for
+ * the halting issue itself, so the issue settles as halted and the entry can drain
+ * ({@link settleEvents}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.

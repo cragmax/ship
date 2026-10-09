@@ -71,7 +71,6 @@ type GhConnection = z.infer<typeof ConnectionSchema>;
 /**
  * Normalise a parsed facts answer into the core's {@link IssueFacts}.
  *
- * @param raw - The parsed gh answer.
  * @returns The facts; `blockedBy` is the body's `## Blocked by` section ∪ the
  *   native link numbers, deduped, ascending.
  */
@@ -93,10 +92,6 @@ export function toIssueFacts(raw: GhFacts): IssueFacts {
  * sub-issues → run-set facts → out-of-set blocker states → the core's
  * verdict. Each phase's fetches run concurrently; output order is the core's.
  *
- * @param spec - The launch spec.
- * @param mode - The gate mode.
- * @param gh - The `gh` port.
- * @returns The verdict.
  * @throws When an answer fails its schema or a list is truncated (the message
  *   names the issue), or when a {@link GhJson} call rejects.
  */
@@ -122,72 +117,40 @@ export async function gatherAndEvaluate(
 /**
  * Check one issue from a single facts fetch. Its blockers are never fetched.
  *
- * @param issue - The issue.
- * @param gh - The `gh` port.
- * @returns The check.
  * @throws As {@link gatherAndEvaluate}.
  */
 export async function gatherCheck(issue: number, gh: GhJson): Promise<IssueCheck> {
   return checkIssue(await fetchFacts(issue, gh));
 }
 
-/**
- * Fetch an epic's sub-issues.
- *
- * @param epic - The epic.
- * @param gh - The `gh` port.
- * @returns Every sub-issue, open and closed.
- */
+/** Fetch every sub-issue of an epic, open and closed. */
 async function fetchEpicChildren(epic: number, gh: GhJson): Promise<readonly EpicChild[]> {
   const raw = parseAnswer(EpicSchema, await ghView(gh, epic, EPIC_FIELDS), epic);
   return complete(raw.subIssues, epic, 'subIssues').nodes;
 }
 
-/**
- * Fetch and normalise one run-set issue's facts.
- *
- * @param issue - The issue.
- * @param gh - The `gh` port.
- * @returns Its facts.
- */
+/** Fetch and normalise one run-set issue's facts. */
 async function fetchFacts(issue: number, gh: GhJson): Promise<IssueFacts> {
   const raw = parseAnswer(FactsSchema, await ghView(gh, issue, FACTS_FIELDS), issue);
   complete(raw.blockedBy, issue, 'blockedBy');
   return toIssueFacts(raw);
 }
 
-/**
- * Fetch an out-of-set blocker's state.
- *
- * @param blocker - The blocker.
- * @param gh - The `gh` port.
- * @returns Its state.
- */
+/** Fetch an out-of-set blocker's state. */
 async function fetchState(blocker: number, gh: GhJson): Promise<IssueState> {
   return parseAnswer(StateOnlySchema, await ghView(gh, blocker, STATE_FIELDS), blocker).state;
 }
 
-/**
- * Run `gh issue view N --json FIELDS`.
- *
- * @param gh - The `gh` port.
- * @param issue - The issue.
- * @param fields - The `--json` field list.
- * @returns The raw answer.
- */
+/** Run `gh issue view N --json FIELDS`: the raw answer. */
 function ghView(gh: GhJson, issue: number, fields: string): Promise<unknown> {
   return gh(['issue', 'view', String(issue), '--json', fields]);
 }
 
 /**
- * Validate a gh answer against its schema.
+ * Validate a gh answer about `issue` against its schema.
  *
- * @param schema - The answer's schema.
- * @param raw - The raw answer.
- * @param issue - The issue asked about, for the diagnostic.
- * @returns The parsed answer.
- * @throws When the answer fails the schema; the message names the issue and
- *   each failing field path.
+ * @throws When the answer fails the schema; the message names the issue and each failing field
+ *   path.
  */
 function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number): z.infer<S> {
   const result = schema.safeParse(raw);
@@ -200,12 +163,8 @@ function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number
 }
 
 /**
- * The truncation guard.
+ * The truncation guard over a parsed `subIssues` / `blockedBy` connection, returned unchanged.
  *
- * @param connection - A parsed `subIssues` / `blockedBy` connection.
- * @param issue - The issue it belongs to.
- * @param field - The connection's field name, for the diagnostic.
- * @returns The connection, unchanged.
  * @throws When `totalCount` exceeds `nodes.length` — gh returned only a page.
  */
 function complete(connection: GhConnection, issue: number, field: string): GhConnection {

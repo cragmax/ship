@@ -1,23 +1,17 @@
 /**
- * Overlap edges (#1036, ADR-0045 decision 3): the scheduler edges pre-flight
- * adds between two issues of one entry that are likely to touch the same
- * files, so they land one after the other instead of racing to a harvest
- * conflict. The estimator agent names the pairs, unordered;
- * {@link mergeOverlapEdges} directs each one and merges it into the run graph.
+ * Overlap edges: the scheduler edges pre-flight adds between two issues of one entry likely to
+ * touch the same files, so they land in turn instead of racing to a harvest conflict (#1036,
+ * ADR-0045 decision 3). The estimator names the pairs, unordered; {@link mergeOverlapEdges} directs
+ * each one and merges it into the run graph.
  *
- * **Direction rule.** The declared edges are ordered topologically (Kahn's
- * algorithm; among ready issues the earliest in run-set order — entry index,
- * then position — goes first), and each pair runs earlier → later. Every
- * added edge follows that one linear extension of the declared edges, so
- * the union stays acyclic. "The lower number blocks" does not: entry
- * `[10, 15, 20]` declaring `20 → 10`, with pairs `{10, 15}` and `{15, 20}`,
- * gives `10 → 15 → 20 → 10`.
+ * **Direction rule.** The declared edges are ordered topologically (Kahn's algorithm; among ready
+ * issues the earliest in run-set order goes first), and each pair runs earlier → later: one linear
+ * extension, so the union stays acyclic. "The lower number blocks" does not: entry `[10, 15, 20]`
+ * declaring `20 → 10`, with pairs `{10, 15}` and `{15, 20}`, gives `10 → 15 → 20 → 10`.
  *
- * **Render-ready — a contract, not a style.** This file joins the `ship`
- * workflow's render closure (`tooling/lib/workflow-render.ts`): exactly one
- * value import (`./run-set.js`); ECMAScript built-ins only; no top-level side
- * effect; and every top-level name is prefixed `overlap` / `Overlap`, since
- * the closure shares one scope and a repeated name silently replaces another.
+ * **Render-ready — a contract.** One value import (`./run-set.js`); ECMAScript built-ins only; no
+ * top-level side effect; every top-level name prefixed `overlap` / `Overlap`, since the `ship`
+ * render closure shares one scope and the renderer refuses a repeated top-level name.
  */
 
 import {
@@ -49,7 +43,7 @@ export type OverlapMerge =
   | {
       /** Every pair sits inside one entry. */
       readonly kind: 'ok';
-      /** The run graph with the added edges merged in, its edges sorted by (`blocker`, `dependent`). */
+      /** The run graph with the added edges merged in, edges sorted by (`blocker`, `dependent`). */
       readonly graph: RunGraph;
       /** The edges the pairs added, sorted by (`blocker`, `dependent`). */
       readonly added: readonly RunEdge[];
@@ -102,13 +96,7 @@ export function mergeOverlapEdges(graph: RunGraph, pairs: readonly OverlapPair[]
   return overlapDirect(graph, unique);
 }
 
-/**
- * Direct each in-entry pair and merge it in.
- *
- * @param graph - The run graph.
- * @param pairs - Distinct pairs, `a` smaller than `b`, each inside one entry.
- * @returns The `ok` outcome.
- */
+/** Direct each in-entry pair (distinct, `a` smaller than `b`) and merge it in: the `ok` outcome. */
 function overlapDirect(graph: RunGraph, pairs: readonly OverlapPair[]): OverlapMerge {
   const rank = overlapTopoRank(graph);
   const added: RunEdge[] = [];
@@ -159,11 +147,8 @@ function overlapTopoRank(graph: RunGraph): ReadonlyMap<number, number> {
 }
 
 /**
- * Shift the in-degree of each edge's dependent.
- *
- * @param indegree - Issue number to in-degree; mutated.
- * @param edges - The edges.
- * @param by - `1` to count an edge in, `-1` to release it.
+ * Shift the in-degree of each edge's dependent in `indegree` (mutated): `by` is `1` to count an
+ * edge in, `-1` to release it.
  */
 function overlapShiftIndegree(
   indegree: Map<number, number>,
@@ -173,12 +158,7 @@ function overlapShiftIndegree(
   for (const e of edges) indegree.set(e.dependent, (indegree.get(e.dependent) ?? 0) + by);
 }
 
-/**
- * Reject a pair naming an issue outside the run set, then a pair naming one issue twice.
- *
- * @param issues - The run set's issues.
- * @param pairs - The pairs.
- */
+/** Reject a pair naming an issue outside the run set, then a pair naming one issue twice. */
 function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPair[]): void {
   for (const p of pairs) {
     const outside = [p.a, p.b].find((n) => !issues.includes(n));
@@ -193,12 +173,7 @@ function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPa
   }
 }
 
-/**
- * The distinct pairs, each `a` smaller than `b`, sorted.
- *
- * @param pairs - The pairs.
- * @returns Each unordered pair once.
- */
+/** Each unordered pair once, `a` smaller than `b`, sorted. */
 function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
   const seen = new Map<string, OverlapPair>();
   for (const p of pairs) {
@@ -208,12 +183,7 @@ function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
   return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
 }
 
-/**
- * Each issue's entry index.
- *
- * @param graph - The run graph.
- * @returns Issue number to entry index.
- */
+/** Each issue's entry index. */
 function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
   const entryOf = new Map<number, number>();
   graph.runSet.forEach((entry, i) => {
@@ -222,12 +192,7 @@ function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
   return entryOf;
 }
 
-/**
- * The distinct edges, first occurrences kept.
- *
- * @param edges - The edges.
- * @returns Each edge once.
- */
+/** Each edge once, first occurrences kept. */
 function overlapDistinctEdges(edges: readonly RunEdge[]): RunEdge[] {
   const seen = new Map<string, RunEdge>();
   for (const e of edges) {
@@ -237,42 +202,22 @@ function overlapDistinctEdges(edges: readonly RunEdge[]): RunEdge[] {
   return [...seen.values()];
 }
 
-/**
- * Edges sorted by (`blocker`, `dependent`), as the `RunGraph` contract requires.
- *
- * @param edges - The edges.
- * @returns A sorted copy.
- */
+/** A copy of `edges` sorted by (`blocker`, `dependent`), as the `RunGraph` contract requires. */
 function overlapSortEdges(edges: readonly RunEdge[]): RunEdge[] {
   return [...edges].sort((x, y) => x.blocker - y.blocker || x.dependent - y.dependent);
 }
 
-/**
- * An issue as messages spell it.
- *
- * @param issue - The issue.
- * @returns `#N`.
- */
+/** An issue as messages spell it: `#N`. */
 function overlapRef(issue: number): string {
   return `#${String(issue)}`;
 }
 
-/**
- * A pair as messages spell it.
- *
- * @param pair - The pair.
- * @returns `{#a, #b}`.
- */
+/** A pair as messages spell it: `{#a, #b}`. */
 function overlapPairLabel(pair: OverlapPair): string {
   return `{${overlapRef(pair.a)}, ${overlapRef(pair.b)}}`;
 }
 
-/**
- * Throw a `run overlap:`-prefixed error.
- *
- * @param message - What went wrong.
- * @returns Never.
- */
+/** Throw a `run overlap:`-prefixed error. */
 function overlapFail(message: string): never {
   throw new Error(`run overlap: ${message}`);
 }
