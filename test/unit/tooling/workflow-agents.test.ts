@@ -298,6 +298,34 @@ describe('workflow agents', () => {
     ).toEqual([]);
   });
 
+  // regression: #1296 — a plan narrowed an "in each owned file" pass to lint-hit files,
+  // and the slice blocked at review.
+  it.each<[string, string, string[]]>([
+    ['planner', '## Plan mode', ['names each owned file it leaves out with its reason']],
+    [
+      'ship-plan-reviewer',
+      '## Checks',
+      [
+        'names each one it leaves out with its reason',
+        'a plan that drops an owned file without one is a finding',
+      ],
+    ],
+  ])(
+    '%s states the owned-file rule for a per-file pass under its %s',
+    (agentType, heading, ownTokens) => {
+      const text = section(agentText(agentType), heading);
+
+      expect(
+        [
+          'per-file pass',
+          'File scope lists every owned file the pass applies to',
+          '"no lint hit" is no reason unless the bullet itself is scoped to lint hits',
+          ...ownTokens,
+        ].filter((token) => !text.includes(token)),
+      ).toEqual([]);
+    },
+  );
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
