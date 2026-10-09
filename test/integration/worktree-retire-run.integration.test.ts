@@ -67,8 +67,14 @@ function spentRun(): void {
   mkdirSync(`${runRoot}/slice-1-1`);
 }
 
-function branchResolves(): boolean {
-  return runIn('git', ['rev-parse', '-q', '--verify', 'refs/heads/ship/7'], main).exitCode === 0;
+function branchResolves(branch = 'ship/7'): boolean {
+  return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], main).exitCode === 0;
+}
+
+/** Create `name` on a new commit off main's HEAD, so it is in no other branch. */
+function sliceBranch(name: string): void {
+  const sha = mustRun('git', ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', name], main).trim();
+  mustRun('git', ['branch', name, sha], main);
 }
 
 describe('retire-run', () => {
@@ -90,12 +96,75 @@ describe('retire-run', () => {
     expect(runCli<CutBatchResult>(['cut-batch', main, '--issues', '7']).json.status).toBe('ok');
   });
 
+  it("deletes the run's slice branches, none of them in origin/master", TIMEOUT, () => {
+    spentRun();
+    sliceBranch('slice/7/1-1');
+    sliceBranch('slice/7/critic');
+    for (const b of ['slice/7/1-1', 'slice/7/critic']) {
+      expect(
+        runIn(
+          'git',
+          ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'refs/remotes/origin/master'],
+          main,
+        ).exitCode,
+      ).toBe(1);
+    }
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    expect(r.code, JSON.stringify(r.json)).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      errors: [],
+      branchDeleted: true,
+      rootRemoved: true,
+    });
+    expect(r.json.sliceBranches).toEqual(['slice/7/1-1', 'slice/7/critic']);
+    expect(branchResolves('slice/7/1-1')).toBe(false);
+    expect(branchResolves('slice/7/critic')).toBe(false);
+  });
+
+  it("leaves another run's slice branches, a longer slug's included", TIMEOUT, () => {
+    spentRun();
+    sliceBranch('slice/7/1-1');
+    sliceBranch('slice/8/1-1');
+    sliceBranch('slice/72/1-1');
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    expect(r.code, JSON.stringify(r.json)).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok' });
+    expect(r.json.sliceBranches).toEqual(['slice/7/1-1']);
+    expect(branchResolves('slice/7/1-1')).toBe(false);
+    expect(branchResolves('slice/8/1-1')).toBe(true);
+    expect(branchResolves('slice/72/1-1')).toBe(true);
+  });
+
+  it('stops at delete-slice-branch with the run branch and run root kept', TIMEOUT, () => {
+    spentRun();
+    sliceBranch('slice/7/1-1');
+    sliceBranch('slice/7/critic');
+    mustRun('git', ['worktree', 'add', '-q', `${root}/elsewhere`, 'slice/7/critic'], main);
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    expect(r.code, JSON.stringify(r.json)).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', branchDeleted: false, rootRemoved: false });
+    expect(r.json.errors[0]?.step).toBe('delete-slice-branch');
+    expect(r.json.sliceBranches).toEqual(['slice/7/1-1']);
+    expect(branchResolves('slice/7/1-1')).toBe(false);
+    expect(branchResolves('slice/7/critic')).toBe(true);
+    expect(branchResolves()).toBe(true);
+    expect(existsSync(runRoot)).toBe(true);
+  });
+
   it('refuses branch-unmerged for a branch merged only to its own upstream', TIMEOUT, () => {
     cutRun();
     commitChanges(batch, {}, 'ahead');
     // `-u`: origin/ship/7 holds the commit, origin/master does not.
     mustRun('git', ['push', '-q', '-u', 'origin', 'ship/7'], batch);
     tearDown();
+    sliceBranch('slice/7/1-1');
 
     const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
 
@@ -109,6 +178,8 @@ describe('retire-run', () => {
     expect(r.json.errors[0]?.step).toBe('branch-guard');
     expect(branchResolves()).toBe(true);
     expect(existsSync(`${runRoot}/reports`)).toBe(true);
+    expect(r.json.sliceBranches).toEqual([]);
+    expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 
   it.each([
@@ -193,6 +264,7 @@ describe('retire-run', () => {
     },
   ])('refuses $reason for $name in the run root', TIMEOUT, ({ reason, add }) => {
     spentRun();
+    sliceBranch('slice/7/1-1');
     add();
 
     const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
@@ -209,6 +281,8 @@ describe('retire-run', () => {
     expect(existsSync(runRoot)).toBe(true);
     if (reason === 'links-remain')
       expect(readFileSync(`${root}/outside/keep.txt`, 'utf8')).toBe('k');
+    expect(r.json.sliceBranches).toEqual([]);
+    expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 });
 

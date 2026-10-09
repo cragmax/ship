@@ -2,7 +2,7 @@
  * The saved workflows' spent-run cleanup, run by `/ship`'s launch and `/resync`'s pre-flight: tear
  * down each live run whose PR is over and whose tip is in that PR's head (`live-runs`' `spent`),
  * guarded — only a batch known clean, with no worktree nested inside it — then, after an `ok`
- * teardown, retire the run: its branch and run root (`retire-run`).
+ * teardown, retire the run (`retire-run`).
  *
  * - **Unknown is not none**: a `live-runs` that failed, or answered without its runs, blocks the
  *   cleanup — no teardown at all — and the caller goes on.

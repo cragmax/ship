@@ -1,21 +1,24 @@
 /**
- * `retire-run <main> --branch ship/<slug>` — retire a merged run: remove its run root
- * (`ph-ship/<slug>/`) and delete its run branch, once its batch is torn down.
+ * `retire-run <main> --branch ship/<slug>` — retire a merged run: delete its slice branches
+ * (`slice/<slug>/…`), remove its run root (`ph-ship/<slug>/`) and delete its run branch, once its
+ * batch is torn down.
  *
  * Invariant: every guard runs before any mutation — the branch guard ({@link assertMerged}), then
  * the folder guard: emptiness ({@link assertOnlyRunRecord}), nested worktrees, links
- * ({@link assertNothingLive}). The run root is removed before the branch is deleted.
+ * ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed and the
+ * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
  * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream (#1297).
  */
 
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { compareStrings } from '../shared.js';
 import { attachSlug } from './cut-attach.js';
 import { runCaptured } from './exec.js';
 import { assertMainWorktree, git, isInside, listWorktrees } from './git.js';
 import { findLinks, isRealDir } from './links.js';
-import { runLayout, RUN_UPSTREAM } from './run-layout.js';
+import { runLayout, RUN_UPSTREAM, sliceBranchPrefix } from './run-layout.js';
 import { Refusal, recordFailure, StepFailure, type RetireRunResult } from './types.js';
 
 /** Inputs of {@link retireRun}. */
@@ -29,10 +32,10 @@ export interface RetireRunInput {
 /**
  * Retire the run on `branch`.
  *
- * @returns The envelope: `ok` with `rootRemoved` and `branchDeleted`; `refused`
+ * @returns The envelope: `ok` with `rootRemoved`, `branchDeleted` and `sliceBranches`; `refused`
  *   (`not-main-worktree`, `not-run-batch`, `branch-unmerged`, `root-not-empty`, `nested-worktree`,
- *   `links-remain`) with nothing mutated; or `failed` with the step, each flag saying what was done
- *   before it.
+ *   `links-remain`) with nothing mutated and `sliceBranches` empty; or `failed` with the step, each
+ *   flag and `sliceBranches` saying what was done before it.
  */
 export function retireRun(input: RetireRunInput): RetireRunResult {
   const { main, branch } = input;
@@ -43,13 +46,16 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     errors: [],
     branchDeleted: false,
     rootRemoved: false,
+    sliceBranches: [],
   };
   try {
     assertMainWorktree(main, 'preconditions');
-    const { root } = runLayout(main, attachSlug(branch));
+    const slug = attachSlug(branch);
+    const { root } = runLayout(main, slug);
     assertMerged(main, branch);
     assertOnlyRunRecord(root);
     assertNothingLive(main, root);
+    deleteSliceBranches(main, slug, result.sliceBranches);
     rmSync(root, { recursive: true, force: true });
     result.rootRemoved = true;
     git(main, ['branch', '-D', branch], 'delete-branch');
@@ -58,6 +64,28 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     recordFailure(result, err);
   }
   return result;
+}
+
+/**
+ * `git branch -D` each branch under {@link sliceBranchPrefix}, appending it to `deleted`. No
+ * ancestry guard: slice branches reach the batch by cherry-pick, so none is ever in master.
+ *
+ * @throws StepFailure `slice-branches` (listing) or `delete-slice-branch` (one checked out).
+ */
+function deleteSliceBranches(main: string, slug: string, deleted: string[]): void {
+  const prefix = `refs/heads/${sliceBranchPrefix(slug)}`;
+  const names = git(
+    main,
+    ['for-each-ref', '--format=%(refname:lstrip=2)', prefix],
+    'slice-branches',
+  )
+    .split(/\r?\n/u)
+    .filter((name) => name !== '')
+    .sort(compareStrings);
+  for (const name of names) {
+    git(main, ['branch', '-D', name], 'delete-slice-branch');
+    deleted.push(name);
+  }
 }
 
 /**

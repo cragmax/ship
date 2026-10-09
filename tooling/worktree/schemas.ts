@@ -199,6 +199,8 @@ export const RetireRunResultSchema = ResultBaseSchema.extend({
   branchDeleted: z.boolean(),
   /** Whether the run root was removed. */
   rootRemoved: z.boolean(),
+  /** The slice branches (`slice/<slug>/…`) deleted, sorted; empty unless every guard passed. */
+  sliceBranches: z.array(z.string()),
 });
 
 /** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */
