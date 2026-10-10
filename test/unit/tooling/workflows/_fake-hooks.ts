@@ -310,6 +310,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
+  'runner:retire-run': OK,
   'runner:sync-master': {
     ...OK,
     outcome: 'up-to-date',

@@ -20,6 +20,7 @@ import {
   PrInfoSchema,
   ProvisionBatchResultSchema,
   ProvisionResultSchema,
+  RetireRunResultSchema,
   StepErrorSchema,
   TeardownResultSchema,
 } from '../../worktree/schemas.js';
@@ -107,6 +108,7 @@ export const TOOL_ENVELOPES = {
   teardown: TeardownResultSchema.pick({ ...STATUS, removed: true, registered: true }).extend({
     errors: ERRORS,
   }),
+  'retire-run': RetireRunResultSchema.pick(STATUS).extend({ errors: ERRORS }),
   'sync-master': SyncMasterResultSchema.pick({
     ...STATUS,
     outcome: true,

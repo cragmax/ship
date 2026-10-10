@@ -17,6 +17,7 @@
 
 import type { z } from 'zod';
 
+import type { CommentOnlyReport } from '../../lib/comment-only.js';
 import type { GateVerdict, IssueCheck } from '../../lib/run-gate.js';
 import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
@@ -31,12 +32,14 @@ export type ToolName =
   | 'run-gate'
   | 'live-runs'
   | 'check'
+  | 'comment-only'
   | 'cut-batch'
   | 'provision-batch'
   | 'cut-slice'
   | 'provision'
   | 'land'
   | 'teardown'
+  | 'retire-run'
   | 'sync-master'
   | 'bump'
   | 'check-master'
@@ -45,8 +48,8 @@ export type ToolName =
   | 'post-pr-comment'
   | 'post-issue-comment';
 
-/** A worktree-CLI command the workflow runs: every tool but the run gate's. */
-export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check'>;
+/** A worktree-CLI command the workflow runs: every tool but the run gate's and comment-only's. */
+export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check' | 'comment-only'>;
 
 /** Where the runner writes pre-cut envelopes, relative to the main checkout (gitignored). */
 export const TOOL_ENVELOPE_DIR = 'reports/tool';
@@ -112,6 +115,9 @@ export type LiveRunOutput = NonNullable<LiveRunsOutput['runs']>[number];
 /** `run-gate check N`'s consumed fields. */
 export type CheckOutput = ToolBase & Partial<Pick<IssueCheck, 'ready' | 'failures'>>;
 
+/** `comment-only --json`'s consumed fields. */
+export type CommentOnlyOutput = ToolBase & Partial<Pick<CommentOnlyReport, 'notCompared'>>;
+
 /** `cut-batch`'s consumed fields. */
 export type CutBatchOutput = EnvelopeOutput<'cut-batch'>;
 
@@ -129,6 +135,9 @@ export type LandOutput = EnvelopeOutput<'land'>;
 
 /** `teardown`'s consumed fields. */
 export type TeardownOutput = EnvelopeOutput<'teardown'>;
+
+/** `retire-run`'s consumed fields. */
+export type RetireRunOutput = EnvelopeOutput<'retire-run'>;
 
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = EnvelopeOutput<'sync-master'>;
@@ -157,12 +166,14 @@ export interface ToolOutputs {
   'run-gate': GateOutput;
   'live-runs': LiveRunsOutput;
   check: CheckOutput;
+  'comment-only': CommentOnlyOutput;
   'cut-batch': CutBatchOutput;
   'provision-batch': ProvisionBatchOutput;
   'cut-slice': CutSliceOutput;
   provision: ProvisionOutput;
   land: LandOutput;
   teardown: TeardownOutput;
+  'retire-run': RetireRunOutput;
   'sync-master': SyncMasterOutput;
   bump: BumpOutput;
   'check-master': CheckMasterOutput;
@@ -184,12 +195,14 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
+  'comment-only': ['tooling/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
+  'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
@@ -260,7 +273,8 @@ function envelopeSchema(name: WorktreeToolName): JsonSchema {
  * the one source of the consumed fields, their schema and their type, and of which are required —
  * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
  * hand-written from `tooling/lib/run-gate.ts`' types: every consumed field required, save those a
- * failure or exclusion kind may lack.
+ * failure or exclusion kind may lack. The `comment-only` row is hand-written from
+ * `tooling/lib/comment-only.ts`' `CommentOnlyReport`, its consumed field required.
  */
 export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   preflight: envelopeSchema('preflight'),
@@ -303,12 +317,17 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     },
     required: ['ready', 'failures'],
   }),
+  'comment-only': toolSchema({
+    properties: { notCompared: { type: 'array', items: STRING } },
+    required: ['notCompared'],
+  }),
   'cut-batch': envelopeSchema('cut-batch'),
   'provision-batch': envelopeSchema('provision-batch'),
   'cut-slice': envelopeSchema('cut-slice'),
   provision: envelopeSchema('provision'),
   land: envelopeSchema('land'),
   teardown: envelopeSchema('teardown'),
+  'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),

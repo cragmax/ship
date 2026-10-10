@@ -49,7 +49,7 @@ Your envelope files and the `Write first` file are deliverables the workflow rea
    `<command> > D/<name>.json 2> D/<name>.err; echo $? > D/<name>.exit`
 4. Poll in the foreground, chaining calls until the exit file exists (each call stays under the Bash tool's 10-minute cap):
    `timeout 570 bash -c 'until [ -f D/<name>.exit ]; do sleep 5; done'; ls D/<name>.exit`
-5. Read `D/<name>.exit` (the exit code) and `D/<name>.json` (one JSON object for the worktree CLI; pretty-printed JSON for the run gate; empty when the run gate exits 2).
+5. Read `D/<name>.exit` (the exit code) and `D/<name>.json` (one JSON object for the worktree CLI and for `comment-only --json`, empty when it exits 2; pretty-printed JSON for the run gate; empty when the run gate exits 2).
 6. Return, per your output schema:
    - `exitCode` — the exit code;
    - `envelopePath` — `D/<name>.json`, absolute;

@@ -1,20 +1,22 @@
 /**
  * The `ship` workflow's texts that land in git and on GitHub: commit messages, an epic's pull
- * request title and body, and an attached run's PR-body section and run report.
+ * request title and body, fitted to GitHub's limit by moving run-report sections into PR comments
+ * ({@link fitPrBody}), and an attached run's PR-body section and run report.
  *
  * **Closing keywords are the workflow's own.** GitHub closes an issue for a closing keyword
  * (`fixes`, `closes`, `resolves`, …) before its reference anywhere in a merged commit message or PR
  * body, so only this file writes one: `fixes #N`, for a landed issue whose plan card says so, in
  * its commit message and once in a PR body's or attached section's Issues list
  * ({@link landedLine}), never in a run report. Every other issue, the epic container included, is
- * `see #N`, and every text carrying agent- or tool-written words passes through
- * {@link neutralText}; the body a section is appended to is never neutralised again.
+ * `see #N`, and every text carrying agent- or tool-written words, each moved section included,
+ * passes through {@link neutralText}; the body a section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, joins the closure.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
+import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
 
 import type {
@@ -301,7 +303,7 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  *
  * @param work - The slice's tdd, review and test-review answers.
  * @returns The tdd's, then the review's, then the test review's; no
- *   test-review entry when it was skipped (`null`); lines unparsed and
+ *   test-review entry when it was skipped (a `TestReviewSkip` reason); lines unparsed and
  *   unfiltered.
  */
 export function sliceLeaseLines(
@@ -311,7 +313,7 @@ export function sliceLeaseLines(
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'review', lines: work.review.leaseLines },
   ];
-  if (work.testReview !== null) {
+  if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
   return roles;
@@ -330,6 +332,53 @@ export function sliceLeaseLines(
  *   Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
+  return prBody(input, new Set());
+}
+
+/** A run-report section moved out of an over-limit PR body, to be posted as its own PR comment. */
+export interface MovedSection {
+  /** The comment file's name in the report dir (`pr-comment-<section>.md`). */
+  readonly file: string;
+  /** The section as the whole body renders it, its `## <heading>` line first. */
+  readonly text: string;
+}
+
+/** A PR body fitted to GitHub's limit, with the sections it moved out. */
+export interface FittedPrBody {
+  /** The body to publish. */
+  readonly body: string;
+  /** The moved sections, in moving order; none when the body fit whole. */
+  readonly comments: readonly MovedSection[];
+}
+
+/**
+ * An epic's pull request body within GitHub's body limit, as far as moving
+ * the run report's bulky sections out reaches.
+ *
+ * @param input - The epic's report.
+ * @returns The {@link renderPrBody} body and no comment when it is within
+ *   {@link GH_BODY_LIMIT}. Otherwise every movable section with at least one
+ *   line moves out — `Overlap edges`, `Schedule`, `Retro findings`, in that
+ *   order; an empty one stays in the body as `None.` — its lines in the body
+ *   replaced by one line naming the limit and the comment's report-dir file.
+ *   A body still over the limit after the move is returned as it is:
+ *   `publish` refuses it before the push.
+ */
+export function fitPrBody(input: PrBodyInput): FittedPrBody {
+  const whole = renderPrBody(input);
+  if (whole.length <= GH_BODY_LIMIT) return { body: whole, comments: [] };
+  const moving = MOVABLE_SECTIONS.filter((m) => m.lines(input).length > 0);
+  const closing = closingIssues(input.landed);
+  return {
+    body: prBody(input, new Set(moving)),
+    comments: moving.map((m) => ({
+      file: m.file,
+      text: neutralText(section(m.heading, m.lines(input)).join('\n'), closing),
+    })),
+  };
+}
+
+function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string {
   const body = [
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
@@ -337,7 +386,7 @@ export function renderPrBody(input: PrBodyInput): string {
     ...section('Issues', issueListLines(input)),
     ...perIssueSection('Salvage', input.landed, salvageItems, 2),
     ...perIssueSection('Recorded', input.landed, recordedItems, 2),
-    ...reportBlock(input),
+    ...reportBlock(input, moved),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
 }
@@ -442,9 +491,12 @@ function closingIssues(landed: readonly LandedIssue[]): ReadonlySet<number> {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
 
-/** The run report as the body carries it: folded, unless the PR writer returned nothing. */
-function reportBlock(input: PrBodyInput): string[] {
-  const report = runReportLines(input);
+/**
+ * The run report as the body carries it, less the sections {@link fitPrBody} moved out: folded,
+ * unless the PR writer returned nothing.
+ */
+function reportBlock(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string[] {
+  const report = runReportLines(input, moved);
   if (input.writer === null) return report;
   return foldedReport('Run report', report);
 }
@@ -456,9 +508,13 @@ function foldedReport(summary: string, lines: readonly string[]): string[] {
 
 /**
  * The run report, folded or not per {@link reportBlock}; always folded in an attached run's report
- * comment ({@link renderAttachedReport}).
+ * comment ({@link renderAttachedReport}). A section in `moved` keeps only its pointer line
+ * ({@link movableSection}).
  */
-function runReportLines(input: Omit<PrBodyInput, 'writer'>): string[] {
+function runReportLines(
+  input: Omit<PrBodyInput, 'writer'>,
+  moved: ReadonlySet<MovableSection> = new Set(),
+): string[] {
   return [
     '## Landed issues',
     '',
@@ -472,11 +528,57 @@ function runReportLines(input: Omit<PrBodyInput, 'writer'>): string[] {
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
-    ...section('Overlap edges', input.overlap.added.map(overlapLine)),
-    ...section('Schedule', input.schedule.map(scheduleLine)),
+    ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
+    ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
-    ...section('Retro findings', retroLines(input.retro)),
+    ...movableSection(input, RETRO_FINDINGS_SECTION, moved),
   ];
+}
+
+/** A run-report section {@link fitPrBody} may move to a PR comment. */
+interface MovableSection {
+  readonly heading: string;
+  /** Its comment file's name in the report dir. */
+  readonly file: string;
+  readonly lines: (input: Omit<PrBodyInput, 'writer'>) => string[];
+}
+
+const OVERLAP_EDGES_SECTION: MovableSection = {
+  heading: 'Overlap edges',
+  file: 'pr-comment-overlap-edges.md',
+  lines: (input) => overlapLines(input.overlap.added),
+};
+
+const SCHEDULE_SECTION: MovableSection = {
+  heading: 'Schedule',
+  file: 'pr-comment-schedule.md',
+  lines: (input) => input.schedule.map(scheduleLine),
+};
+
+const RETRO_FINDINGS_SECTION: MovableSection = {
+  heading: 'Retro findings',
+  file: 'pr-comment-retro-findings.md',
+  lines: (input) => retroLines(input.retro),
+};
+
+/** The movable sections, in the order {@link fitPrBody} moves them. */
+const MOVABLE_SECTIONS: readonly MovableSection[] = [
+  OVERLAP_EDGES_SECTION,
+  SCHEDULE_SECTION,
+  RETRO_FINDINGS_SECTION,
+];
+
+function movableSection(
+  input: Omit<PrBodyInput, 'writer'>,
+  movable: MovableSection,
+  moved: ReadonlySet<MovableSection>,
+): string[] {
+  if (!moved.has(movable)) return section(movable.heading, movable.lines(input));
+  const limit = String(GH_BODY_LIMIT);
+  const path = codeSpan(`${input.reportDir}/${movable.file}`);
+  return section(movable.heading, [
+    `Moved to a PR comment: the body was over GitHub's ${limit}-character limit. Also in ${path}.`,
+  ]);
 }
 
 /**
@@ -538,8 +640,23 @@ function criticLines(critic: CriticReport): string[] {
   ];
 }
 
-function overlapLine(edge: OverlapEdge): string {
-  return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
+/**
+ * One `- #B → #D1, #D2 (<confidence>): <reason>` line per group of edges sharing
+ * blocker, confidence and reason; groups and dependents in edge order.
+ */
+function overlapLines(edges: readonly OverlapEdge[]): string[] {
+  const groups = new Map<string, { readonly edge: OverlapEdge; readonly dependents: string[] }>();
+  for (const edge of edges) {
+    const key = JSON.stringify([edge.blocker, edge.confidence, edge.reason]);
+    const dependent = `#${String(edge.dependent)}`;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
+    else group.dependents.push(dependent);
+  }
+  return [...groups.values()].map(
+    ({ edge, dependents }) =>
+      `- #${String(edge.blocker)} → ${dependents.join(', ')} (${edge.confidence}): ${edge.reason}`,
+  );
 }
 
 /** One issue's schedule line: `never` for a missing instant, `none` for no blockers or size. */
@@ -596,8 +713,8 @@ function issueSection(landed: LandedIssue): string[] {
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
-    test === null
-      ? '- Test review: skipped — trivial surface'
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed),

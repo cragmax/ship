@@ -179,6 +179,18 @@ export function refExists(dir: string, ref: string): boolean {
 }
 
 /**
+ * The local branches under `prefix` (`git for-each-ref refs/heads/<prefix>`), short form, in ref
+ * order; a `prefix` ending `/` keeps a longer sibling (`slice/<slug>2/…`) out.
+ *
+ * @throws StepFailure for `step` when git cannot list them.
+ */
+export function branchesUnder(dir: string, prefix: string, step: string): string[] {
+  return git(dir, ['for-each-ref', '--format=%(refname:lstrip=2)', `refs/heads/${prefix}`], step)
+    .split(/\r?\n/u)
+    .filter((name) => name !== '');
+}
+
+/**
  * The lines of `git status --porcelain` for a checkout.
  *
  * @returns One entry per changed, untracked or deleted path (`''`-free).

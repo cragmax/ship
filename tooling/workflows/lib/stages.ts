@@ -125,7 +125,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
+      'and the overlap estimate; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {

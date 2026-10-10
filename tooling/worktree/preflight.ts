@@ -1,7 +1,8 @@
 /**
- * `preflight <main> [--attach ship/<slug>]` — the checks an unattended run holds before it cuts
- * anything (ADR-0045): local `master` level with `origin/master` after a fetch, `gh` logged in,
- * every warm-set server answering RCON; with `--attach`, the target branch's checks
+ * `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]` — the checks an unattended run holds
+ * before it cuts anything (ADR-0045): local `master` level with `origin/master` after a fetch, `gh`
+ * logged in, every warm-set server answering RCON; with `--slug`, no leftover slice branch of each
+ * run slug ({@link checkSliceBranches}); with `--attach`, the target branch's checks
  * ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and the
  * launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref) — the
  * epic end's master-check baseline. A dirty main checkout is recorded, never a problem.
@@ -19,6 +20,7 @@ import { assertPublished, attachSlug, openPr } from './cut-attach.js';
 import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import {
   assertMainWorktree,
+  branchesUnder,
   fetchOrigin,
   git,
   lsRemoteRef,
@@ -26,7 +28,7 @@ import {
   statusEntries,
 } from './git.js';
 import { isMember, memberLabel, WARM_SET } from './pool-registry-trim.js';
-import { RUN_BASE_BRANCH, runLayout } from './run-layout.js';
+import { RUN_BASE_BRANCH, runLayout, sliceBranchPrefix } from './run-layout.js';
 import { assertNoLiveSlices } from './sync-master.js';
 import type { PreflightCheck, PreflightProblem, PreflightResult } from './types-run.js';
 import { Refusal, recordFailure, StepFailure, type WarmMember } from './types.js';
@@ -40,6 +42,8 @@ export interface PreflightInput {
   readonly main: string;
   /** An attached run's target branch (`ship/<slug>`, short form); absent for an unattached run. */
   readonly attach?: string;
+  /** The run slugs whose leftover slice branches refuse; absent for none. */
+  readonly slugs?: readonly string[];
   /** The warm-set probe (production: `probeRcon` with `list`). */
   readonly probe?: WarmProbe;
 }
@@ -55,10 +59,10 @@ const REGISTRY_PATH = 'src/server-pool/registry/pool-registry.json';
  *   `no-open-pr`, `slices-live` and `unpublished-commits` among them;
  *   `refused` `not-main-worktree`, or `not-run-batch` for an `attach` outside
  *   `ship/`; or `failed` with the step (`preconditions`, `fetch`, `master`,
- *   `snapshot`, `registry`, `unpublished`).
+ *   `snapshot`, `registry`, `slice-branches`, `unpublished`).
  */
 export async function preflight(input: PreflightInput): Promise<PreflightResult> {
-  const { main, attach, probe = (target) => probeRcon(target, 'list') } = input;
+  const { main, attach, slugs = [], probe = (target) => probeRcon(target, 'list') } = input;
   const result: PreflightResult = {
     command: 'preflight',
     status: 'ok',
@@ -82,6 +86,7 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
       },
     };
     result.problems.push(...checkGhAuth(main), ...(await checkWarmSet(main, probe)));
+    result.problems.push(...checkSliceBranches(main, slugs));
     if (attach !== undefined) result.problems.push(...checkAttachTarget(main, attach));
     assertNoProblems(result.problems);
   } catch (err) {
@@ -174,6 +179,22 @@ async function probeMember(
   const r = await probe({ host: entry.host, port: entry.rconPort, password: entry.rconPassword });
   if (r.ok) return null;
   return `RCON ${r.stage} failed: ${r.error instanceof Error ? r.error.message : String(r.error)}`;
+}
+
+/**
+ * One `stale-slice-branch` problem per branch under each slug's {@link sliceBranchPrefix}
+ * ({@link branchesUnder}), slug by slug, in ref order (#1302).
+ *
+ * @throws StepFailure `slice-branches` when git cannot list them.
+ */
+function checkSliceBranches(main: string, slugs: readonly string[]): PreflightProblem[] {
+  return slugs.flatMap((slug) => {
+    const { branch } = runLayout(main, slug);
+    return branchesUnder(main, sliceBranchPrefix(slug), 'slice-branches').map((name) => ({
+      check: 'stale-slice-branch' as const,
+      message: `${name} is left over from a run of ${branch}`,
+    }));
+  });
 }
 
 /**

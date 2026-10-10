@@ -845,3 +845,224 @@ describe('runShip — recorded', () => {
     ]);
   });
 });
+
+describe('runShip — the PR body limit', () => {
+  const OVER_LIMIT = {
+    retro: {
+      findings: [{ title: 'big', evidence: 'e'.repeat(66_000), kind: 'genuine', suggestion: 's' }],
+    },
+  };
+  const pointer = (file: string): string =>
+    `Moved to a PR comment: the body was over GitHub's 65536-character limit. Also in \`${REPORT_DIR}/${file}\`.`;
+
+  it('publishes the body with the bulky sections moved out, then posts each as a PR comment', async () => {
+    const run = fakeHooks(OVER_LIMIT);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const body = bodyOf(run);
+    expect(body).toContain(pointer('pr-comment-schedule.md'));
+    expect(body).toContain(pointer('pr-comment-retro-findings.md'));
+    expect(body.filter((l) => l.startsWith('- big (genuine)'))).toEqual([]);
+    const posts = run.calls.filter((c) => c.label === 'runner:post-pr-comment:list');
+    expect(posts.map((c) => c.argv)).toEqual(
+      ['pr-comment-schedule.md', 'pr-comment-retro-findings.md'].map((file) => [
+        'tooling/worktree.ts',
+        'post-pr-comment',
+        BATCH,
+        '--pr',
+        '42',
+        '--comment-file',
+        `${REPORT_DIR}/${file}`,
+      ]),
+    );
+    const [schedule, retro] = posts.map((c) => {
+      const lines = c.prompt.split('\n');
+      return lines.slice(
+        lines.indexOf('----- BEGIN FILE -----') + 1,
+        lines.indexOf('----- END FILE -----'),
+      );
+    });
+    expect(schedule?.slice(0, 2)).toEqual(['## Schedule', '']);
+    expect(schedule?.[2]).toMatch(/^- #7: blockers none; /);
+    expect(retro).toEqual(['## Retro findings', '', `- big (genuine): ${'e'.repeat(66_000)} — s`]);
+    const all = labels(run);
+    expect(all.indexOf('runner:post-pr-comment:list')).toBeGreaterThan(
+      all.indexOf('runner:publish:list'),
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
+  });
+
+  it('posts no comment for a body within the limit', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
+    expect(bodyOf(run).filter((l) => l.startsWith('Moved to a PR comment'))).toEqual([]);
+  });
+
+  it('reports each failed post, every post still made and the PR standing', async () => {
+    const run = fakeHooks({
+      ...OVER_LIMIT,
+      'runner:post-pr-comment': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'body-too-long', message: 'm' }],
+        url: null,
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l === 'runner:post-pr-comment:list')).toHaveLength(2);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      pr: 42,
+      prReportComment: 'post-pr-comment failed: m; post-pr-comment failed: m',
+    });
+  });
+
+  it('posts nothing when the publish opens no PR', async () => {
+    const run = fakeHooks({ ...OVER_LIMIT, 'runner:publish': null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
+    expect(report.epics[0]?.outcome).toBe('stopped');
+    expect(report.epics[0]).not.toHaveProperty('prReportComment');
+  });
+});
+
+describe('runShip — a nothing-landed run cleans up after itself', () => {
+  // #7 planned stale: blocked, so the entry lands nothing.
+  const PLANNER_STALE = { planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' } };
+
+  it('tears its batch down after the retro, then retires its branch from the main checkout', async () => {
+    const run = fakeHooks(PLANNER_STALE);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(retro|runner:(teardown|retire-run)):list$/.test(l)),
+    ).toEqual(['retro:list', 'runner:teardown:list', 'runner:retire-run:list']);
+    expect(run.calls.find((c) => c.label === 'runner:teardown:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'teardown',
+      BATCH,
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:retire-run:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'retire-run',
+      '.',
+      '--branch',
+      'ship/7',
+    ]);
+    expect(promptOf(run, 'runner:teardown:list').split('\n')).toContain(
+      `Envelope dir: ${REPORT_DIR}/tool`,
+    );
+    expect(promptOf(run, 'runner:retire-run:list').split('\n')).toContain(
+      'Envelope dir: reports/tool',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'nothing-landed', residue: [], retro: [] });
+  });
+
+  it.each([
+    {
+      name: 'failed',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'remove', message: 'busy' }],
+        removed: false,
+        registered: true,
+      },
+      residue: `${BATCH}: teardown failed: busy`,
+    },
+    {
+      name: 'thrown',
+      answer: () => {
+        throw new Error('runner crashed');
+      },
+      residue: `${BATCH}: the runner returned nothing for teardown`,
+    },
+  ])('records a $name batch teardown as residue and retires nothing', async (c) => {
+    const run = fakeHooks({ ...PLANNER_STALE, 'runner:teardown:list': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:retire-run'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [c.residue],
+      retro: [],
+    });
+  });
+
+  it.each([
+    {
+      name: 'refused',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'branch-unmerged',
+        errors: [{ step: 'branch-guard', message: 'ship/7 is not in origin/master' }],
+      },
+      residue: 'ship/7: retire-run refused (branch-unmerged): ship/7 is not in origin/master',
+    },
+    {
+      name: 'thrown',
+      answer: () => {
+        throw new Error('runner crashed');
+      },
+      residue: 'ship/7: the runner returned nothing for retire-run',
+    },
+  ])('records a $name retire-run as residue and still ends the entry', async (c) => {
+    const run = fakeHooks({ ...PLANNER_STALE, 'runner:retire-run:list': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [c.residue],
+      retro: [],
+    });
+  });
+
+  it('keeps a slice teardown’s residue ahead of its own cleanup’s', async () => {
+    const run = fakeHooks({
+      ...PLANNER_STALE,
+      'runner:teardown:7-1': () => {
+        throw new Error('runner crashed');
+      },
+      'runner:retire-run:list': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [
+        'the runner returned nothing for teardown',
+        'ship/7: the runner returned nothing for retire-run',
+      ],
+      retro: [],
+    });
+  });
+
+  it('cleans nothing up for a halted entry', async () => {
+    const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run)).not.toContain('runner:teardown:list');
+    expect(labels(run).filter((l) => l.startsWith('runner:retire-run'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'halted' });
+  });
+});

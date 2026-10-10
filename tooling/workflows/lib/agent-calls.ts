@@ -99,6 +99,12 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 /** The test reviewer's answer. */
 export type TestReviewOutput = z.infer<typeof TestReviewOutputSchema>;
 
+/**
+ * Why a slice's test review was skipped: no code changed, or every code change proven
+ * comment-only.
+ */
+export type TestReviewSkip = 'trivial surface' | 'comment-only';
+
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
   /** The plan card the slice was authored from (the applier's, when it ran). */
@@ -109,8 +115,8 @@ export interface SliceWork {
   readonly diffReview: DiffReviewOutput;
   /** The reviewer's answer. */
   readonly review: ReviewOutput;
-  /** The test reviewer's answer; `null` when skipped for a trivial surface. */
-  readonly testReview: TestReviewOutput | null;
+  /** The test reviewer's answer, or why it was skipped. */
+  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
 /** One finding of the critic. */

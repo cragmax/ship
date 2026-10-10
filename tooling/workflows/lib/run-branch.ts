@@ -1,6 +1,7 @@
 /**
- * The shape of a run branch, shared by the launch arguments that name one:
- * `/resync`'s branch and `/ship`'s `--attach` target.
+ * The shape of a run branch, shared by the arguments that name one:
+ * `/resync`'s branch, `/ship`'s `--attach` target and, as `ship/<slug>`, each
+ * slug of `worktree.ts preflight --slug`.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.

@@ -15,6 +15,8 @@
  * Known limitation: a force-added path the batch holds ignored is overwritten; rollback deletes it.
  */
 
+import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+
 import { runCaptured } from './exec.js';
 import {
   assertNotSelfHosted,
@@ -26,6 +28,7 @@ import {
   samePath,
   statusEntries,
 } from './git.js';
+import { regenerateSuppressions } from './regenerate-suppressions.js';
 import { compareSets, formatDifference, sortedSet, stagedPaths } from './staged-set.js';
 import {
   Conflict,
@@ -190,9 +193,8 @@ function sliceFiles(batch: string, sha: string): string[] {
 
 /**
  * Apply the slice commit to the batch's index and tree, uncommitted.
- *
- * @throws Conflict `cherry-pick` naming the unmerged paths; StepFailure `cherry-pick` on a non-zero
- *   exit with none — an environment failure, such as a held `index.lock`, a requeue won't fix.
+ * @throws Conflict naming the unmerged paths, unless only `eslint-suppressions.json` conflicts
+ *   ({@link regenerateSuppressions}); StepFailure on a non-zero exit with none (e.g. `index.lock`).
  */
 function cherryPick(batch: string, sha: string): void {
   const r = runCaptured('git', ['-C', batch, 'cherry-pick', '--no-commit', sha], {
@@ -201,6 +203,10 @@ function cherryPick(batch: string, sha: string): void {
   if (r.exitCode === 0) return;
   const unmerged = gitPaths(batch, ['diff', '--name-only', '--diff-filter=U'], 'cherry-pick');
   const message = `git cherry-pick --no-commit ${sha} exited ${String(r.exitCode)} in ${batch}`;
+  if (unmerged.length > 0 && unmerged.every((p) => p === ESLINT_SUPPRESSIONS)) {
+    regenerateSuppressions(batch);
+    return;
+  }
   if (unmerged.length > 0) {
     throw new Conflict('cherry-pick', message, sortedSet(unmerged), r.tail);
   }

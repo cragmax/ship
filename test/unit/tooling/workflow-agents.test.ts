@@ -285,6 +285,11 @@ describe('workflow agents', () => {
     ).toEqual([]);
   });
 
+  // regression: #1295 — a tdd edit round-tripped through Windows-1252 garbled UTF-8 comments.
+  it('ship-tdd states the UTF-8 without a BOM write rule under its ## Discipline', () => {
+    expect(section(agentText('ship-tdd'), '## Discipline')).toContain('UTF-8 without a BOM');
+  });
+
   it('planner routes a commit-body acceptance request to the tdd’s recorded', () => {
     const plan = section(agentText('planner'), '## Plan mode');
 
@@ -292,6 +297,34 @@ describe('workflow agents', () => {
       ['`recorded`', 'commit body', 'ship-tdd.md'].filter((token) => !plan.includes(token)),
     ).toEqual([]);
   });
+
+  // regression: #1296 — a plan narrowed an "in each owned file" pass to lint-hit files,
+  // and the slice blocked at review.
+  it.each<[string, string, string[]]>([
+    ['planner', '## Plan mode', ['names each owned file it leaves out with its reason']],
+    [
+      'ship-plan-reviewer',
+      '## Checks',
+      [
+        'names each one it leaves out with its reason',
+        'a plan that drops an owned file without one is a finding',
+      ],
+    ],
+  ])(
+    '%s states the owned-file rule for a per-file pass under its %s',
+    (agentType, heading, ownTokens) => {
+      const text = section(agentText(agentType), heading);
+
+      expect(
+        [
+          'per-file pass',
+          'File scope lists every owned file the pass applies to',
+          '"no lint hit" is no reason unless the bullet itself is scoped to lint hits',
+          ...ownTokens,
+        ].filter((token) => !text.includes(token)),
+      ).toEqual([]);
+    },
+  );
 
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([

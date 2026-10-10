@@ -1,6 +1,7 @@
 /**
- * The run layout of an unattended run (ADR-0045) — the one home of its naming rules. Every tool
- * that names a run's branch or directory derives it here, never by re-spelling the rule.
+ * The run layout of an unattended run (ADR-0045) — the one home of its naming rules but the slug's
+ * (`tooling/lib/run-slug.ts`, render-safe for the workflow). Every tool that names a run's branch
+ * or directory derives it here, never by re-spelling the rule.
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
  * check keys on, and nothing else may use it: slice branches (`slice/<slug>/…`) never sit under it.
@@ -13,6 +14,7 @@
 
 import { posix } from 'node:path';
 
+import { EPIC_SLUG_PREFIX } from '../lib/run-slug.js';
 import { toPosix } from '../shared.js';
 
 /**
@@ -31,9 +33,6 @@ export const RUN_BASE_BRANCH = 'master';
 
 /** The remote-tracking branch of {@link RUN_BASE_BRANCH}, as `git merge` / `git log` name it. */
 export const RUN_UPSTREAM = `origin/${RUN_BASE_BRANCH}`;
-
-/** What a run ships: one epic, or an explicit list of issues. */
-export type RunSelection = { readonly epic: number } | { readonly issues: readonly number[] };
 
 /** Where a run lives; paths absolute with forward slashes. */
 export interface RunLayout {
@@ -55,27 +54,9 @@ export interface SliceLayout {
   readonly branch: string;
 }
 
-/** The prefix of an epic run's slug. */
-const EPIC_SLUG_PREFIX = 'epic-';
-
-/**
- * The slug of a run.
- *
- * @param selection - The epic, or the explicit issue list (any order; the
- *   caller has checked each is a positive integer).
- * @returns `epic-<E>`, or the numbers ascending joined with `-`.
- */
-export function runSlug(selection: RunSelection): string {
-  if ('epic' in selection) return `${EPIC_SLUG_PREFIX}${String(selection.epic)}`;
-  return [...selection.issues]
-    .sort((a, b) => a - b)
-    .map(String)
-    .join('-');
-}
-
 /**
  * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
- * issue: {@link runSlug} sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
+ * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
  * branch. Not `ship-<slug>`: its `node_modules` paths near Windows' 260-character limit (#1079).
  */
 function runHead(slug: string): string {
@@ -89,7 +70,7 @@ function runHead(slug: string): string {
  * is `main`.
  *
  * @param main - The main checkout, either slash direction.
- * @param slug - From {@link runSlug}.
+ * @param slug - From `runSlug`.
  * @returns The run root `<dirname(main)>/ph-ship/<slug>`, its batch
  *   worktree `<root>/ship-<head>` (head per {@link runHead}), its report
  *   directory `<root>/reports`, and the feature branch `ship/<slug>`.

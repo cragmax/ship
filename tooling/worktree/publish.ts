@@ -3,9 +3,10 @@
  * feature branch and open its pull request (`.claude/rules/git.md`
  * § Unattended workflow runs: the PR is the sole human gate).
  *
- * Order: the guards (a linked run batch, no open PR for the branch), then
- * `npm run build` — so the pre-push gate's `manifest-coverage` reads a
- * current `dist/api-manifest.json` — then the push, then `gh pr create`.
+ * Order: the guards (a linked run batch, no open PR for the branch, a body
+ * file within {@link GH_BODY_LIMIT}), then `npm run build` — so the
+ * pre-push gate's `manifest-coverage` reads a current
+ * `dist/api-manifest.json` — then the push, then `gh pr create`.
  * A failed push opens no PR. The PR number is read from the PR URL that
  * `gh pr create` prints on stdout on success (its `--help`, observed
  * 2026-09-28); no URL is a `pr` failure with `pushed` true.
@@ -13,6 +14,10 @@
  * `publish --push-only` — the push to an open PR's branch — is
  * `publish-push.ts`'s; both push through {@link pushBranch}.
  */
+
+import { readFileSync } from 'node:fs';
+
+import { GH_BODY_LIMIT } from '../lib/gh-body-limit.js';
 
 import { assertRunBatch } from './cut.js';
 import { GH_TIMEOUT_MS, NPM_TIMEOUT_MS, PUSH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
@@ -42,7 +47,8 @@ export interface PublishInput {
  *
  * @returns The envelope: `ok` with `pushed` and `pr`; `refused` before any
  *   mutation (harvest's linked-worktree reasons, `not-run-batch`,
- *   `pr-exists`); or `failed` with the step — `pr-state` or `build` before
+ *   `pr-exists`); or `failed` with the step — `pr-state`, `body-too-long`
+ *   (the body file over {@link GH_BODY_LIMIT} characters) or `build` before
  *   the push, `push` (`pushed` false), or `pr` (`pushed` true, `pr` null).
  */
 export function publish(input: PublishInput): PublishResult {
@@ -61,6 +67,7 @@ export function publish(input: PublishInput): PublishResult {
     assertRunBatch(batch);
     const branch = git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
     assertNoOpenPr(batch, branch);
+    assertBodyWithinLimit(input.bodyFile);
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
     pushBranch(batch, branch, input.logFile);
     result.pushed = true;
@@ -85,6 +92,21 @@ function assertNoOpenPr(batch: string, branch: string): void {
       'pr-exists',
       'pr-state',
       `${branch} already has open PR #${String(info.number)}`,
+    );
+  }
+}
+
+/**
+ * Refuse, before the push, a PR body `gh pr create` would fail on after it.
+ *
+ * @throws StepFailure `body-too-long` naming the file and its length.
+ */
+function assertBodyWithinLimit(bodyFile: string): void {
+  const length = readFileSync(bodyFile, 'utf8').length;
+  if (length > GH_BODY_LIMIT) {
+    throw new StepFailure(
+      'body-too-long',
+      `body file ${bodyFile} is ${String(length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit`,
     );
   }
 }

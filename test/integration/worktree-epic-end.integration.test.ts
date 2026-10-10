@@ -351,9 +351,10 @@ describe('publish', () => {
   function publish(
     batch: string,
     gh: { responses?: Record<string, FakeGhResponse>; create?: FakePrCreate } = {},
+    body = BODY,
   ): { r: ReturnType<typeof runCli<PublishResult>>; bin: string } {
     const bin = writeFakeGh(root, gh.responses ?? {}, 0, gh.create ?? { number: 42 });
-    writeFileSync(`${root}/body.md`, BODY);
+    writeFileSync(`${root}/body.md`, body);
     const r = runCli<PublishResult>(
       [
         'publish',
@@ -456,6 +457,32 @@ describe('publish', () => {
     expect(readFileSync(`${root}/push.log`, 'utf8')).toContain('origin says no');
     expect(onOrigin(run.bare, 'ship/r')).toBe(false);
     expect(readFakePrCreated(bin)).toBeNull();
+  });
+
+  it('refuses a body over the limit before the push, opening no PR', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+
+    const { r, bin } = publish(run.batch, {}, 'x'.repeat(65_537));
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', pushed: false, pr: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['body-too-long']);
+    expect(r.json.errors[0]?.message).toContain('65537 characters');
+    expect(existsSync(`${run.batch}/dist/index.js`)).toBe(false);
+    expect(onOrigin(run.bare, 'ship/r')).toBe(false);
+    expect(readFakePrCreated(bin)).toBeNull();
+  });
+
+  it('opens the PR with a body of exactly the limit', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    const body = 'x'.repeat(65_536);
+
+    const { r, bin } = publish(run.batch, {}, body);
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, pr: { number: 42 } });
+    expect(readFakePrCreated(bin)?.body).toBe(body);
   });
 });
 

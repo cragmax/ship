@@ -28,7 +28,8 @@ export const RefusalReasonSchema = z.enum([
   'report-dir-inside-worktree',
   'links-remain',
   'source-shrank',
-  // Teardown: another registered worktree lies inside the target; the message names each.
+  // Teardown, retire-run: another registered worktree lies inside the target; the message names
+  // each.
   'nested-worktree',
   // Harvest, land, sync-master, bump: the batch has uncommitted changes, or
   // a merge, cherry-pick or revert in progress.
@@ -77,6 +78,11 @@ export const RefusalReasonSchema = z.enum([
   // Publish `--push-only`, cut-batch `--attach`: the branch has no open PR;
   // the message names the state and the number.
   'no-open-pr',
+  // Retire-run: the run branch is not in origin/master.
+  'branch-unmerged',
+  // Retire-run: the run root holds something besides reports/ and empty slice-* folders; the
+  // message names each entry.
+  'root-not-empty',
   // Check-master: a master ref was deleted or rewound since the launch, or its move could not be
   // decided; local / remote name each.
   'master-not-forward',
@@ -185,6 +191,16 @@ export const TeardownResultSchema = ResultBaseSchema.extend({
   removed: z.boolean(),
   /** Whether git still lists the worktree after the command. */
   registered: z.boolean(),
+});
+
+/** Envelope of `retire-run <main> --branch ship/<slug>`. */
+export const RetireRunResultSchema = ResultBaseSchema.extend({
+  /** Whether the run branch was deleted. */
+  branchDeleted: z.boolean(),
+  /** Whether the run root was removed. */
+  rootRemoved: z.boolean(),
+  /** The slice branches (`slice/<slug>/…`) deleted, sorted; empty unless every guard passed. */
+  sliceBranches: z.array(z.string()),
 });
 
 /** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */

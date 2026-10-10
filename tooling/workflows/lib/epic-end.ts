@@ -2,7 +2,7 @@
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
  * at least one landed ({@link epicEnd}): the critic, the master sync, the version bump, then the
  * retro and the PR writer concurrently, then the publish task; an entry that halted or landed
- * nothing gets the retro alone ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
+ * nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
  *
  * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
  * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
@@ -24,11 +24,11 @@ import { criticStep } from './critic-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
+  fitPrBody,
   prTitle,
   renderAttachedReport,
   renderAttachedSection,
   renderBlockedComment,
-  renderPrBody,
   sliceLeaseLines,
   type CriticReport,
   type LandedIssue,
@@ -40,6 +40,7 @@ import type { EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
 import {
   envelopeProblem,
+  PRE_CUT,
   runPlace,
   runTool,
   type BumpOutput,
@@ -92,8 +93,8 @@ export interface EpicReport {
   /**
    * `pr`: opened; `halted`: a landing (the critic's included) or a slice
    * teardown left the batch unverified; `nothing-landed`: no issue landed,
-   * so no epic end but the retro; `stopped`: its cut or its epic end failed
-   * ({@link EpicReport.message}).
+   * so no epic end but the retro and, unattached, its own cleanup; `stopped`:
+   * its cut or its epic end failed ({@link EpicReport.message}).
    */
   readonly outcome: 'pr' | 'halted' | 'nothing-landed' | 'stopped';
   /** The pull request opened. */
@@ -111,9 +112,10 @@ export interface EpicReport {
    */
   readonly prBodyEdit?: string;
   /**
-   * Why an attached run's report comment was not posted to its PR — the
-   * `post-pr-comment` problem, or the call's throw — while the push stood;
-   * absent when it was posted or no post was due.
+   * Why a run-report comment — an attached run's report, or a PR body's
+   * moved sections — was not posted to its PR: the `post-pr-comment`
+   * problem, or the call's throw, one per failed post, `; `-joined, while the
+   * push stood; absent when every post was made or none was due.
    */
   readonly prReportComment?: string;
   /**
@@ -127,7 +129,10 @@ export interface EpicReport {
    * push; absent when the epic end stopped before it or the check threw.
    */
   readonly masterCheck?: MasterCheck;
-  /** What each slice teardown left behind, one line each. */
+  /**
+   * What each slice teardown, and a nothing-landed run's batch teardown or
+   * retire-run, left behind, one line each.
+   */
   readonly residue: readonly string[];
   /** The critic's part; absent without an epic end. */
   readonly critic?: CriticReport;
@@ -214,7 +219,16 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
   };
 }
 
-/** The epic end of an entry that halted or landed nothing: the retro alone. */
+/**
+ * The epic end of an entry that halted or landed nothing: the blocked-issue comments and the retro;
+ * then, for an unattached run that landed nothing only, tear its batch down and, after an `ok`
+ * teardown, retire it (`retire-run`: run branch, slice branches, run root and report dir). `halted`
+ * cleans up nothing — its batch is unverified — and an attached run's batch and branch are the open
+ * PR's.
+ *
+ * @returns Resolves to the entry's report; a non-`ok` teardown or retire-run is one `residue` line,
+ *   never a rejection.
+ */
 export async function unshippedEpicEnd(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues' | 'schedule' | 'residue'>,
   outcome: 'halted' | 'nothing-landed',
@@ -229,7 +243,30 @@ export async function unshippedEpicEnd(
     residue: input.residue,
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
-  return { ...report, retro: await retroStep(input, report) };
+  const retro = await retroStep(input, report);
+  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
+}
+
+/**
+ * Tear an unshipped entry's batch down, then retire its run: the residue lines, `[]` when both were
+ * `ok`. Never rejects: a throw is the runner returning nothing. retire-run's envelope goes under
+ * `PRE_CUT`, since it removes the run's report dir.
+ */
+async function retireStep(input: Pick<EpicEndInput, 'hooks' | 'entry'>): Promise<string[]> {
+  const { hooks, entry } = input;
+  const down = await runTool(
+    hooks,
+    'teardown',
+    [entry.batch],
+    runPlace(entry.reportDir, entry.tag),
+  ).catch(() => null);
+  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
+  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
+    ...PRE_CUT,
+    tag: entry.tag,
+  }).catch(() => null);
+  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 
 /**
@@ -441,8 +478,9 @@ function publishedPr(out: PublishOutput | null): Published {
 }
 
 /**
- * Push the branch and open the PR. Runs inside the publish task, so it calls the runner directly:
- * a nested `enqueue` on the same lock would wait for the task it is part of.
+ * Push, open the PR with {@link fitPrBody}'s body, then post each moved section as a PR comment (a
+ * failed post goes in `prReportComment`, never a stop). Runs inside the publish task, so it calls
+ * the runner directly: a nested `enqueue` on the same lock would wait for its own task.
  */
 async function openPr(
   input: EpicEndInput,
@@ -450,7 +488,7 @@ async function openPr(
   checked: Checked,
 ): Promise<Published> {
   const { hooks, entry } = input;
-  const body = renderPrBody({
+  const fitted = fitPrBody({
     ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
@@ -464,9 +502,16 @@ async function openPr(
     '--log',
     `${entry.reportDir}/publish.log`,
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  return publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const failures: string[] = [];
+  for (const moved of fitted.comments) {
+    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
+    if ('failure' in posted) failures.push(posted.failure);
+  }
+  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
 }
 
 /** What a PR body and an attached run's section report, but the PR writer's answer. */

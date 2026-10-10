@@ -7,14 +7,15 @@
  * **Every refusal is collected**: no check stops the phase early but the scout's need for a run
  * set. No verdict, or a verdict missing its backing fields, is a refusal, as is a run-set issue the
  * scout returns no verdict for — never a pass. **Exclude mode** drops a stale issue with its
- * dependents through {@link dropWithDependents}; a code overlap with a live run, and any estimator
- * overlap across two epics, `unsure` included, still refuses. **An attached run**'s `no-open-pr`,
+ * dependents ({@link dropWithDependents}); a live-run code overlap, and any overlap
+ * {@link settleOverlap} keeps across two epics, still refuses. **An attached run**'s `no-open-pr`,
  * `slices-live` and `unpublished-commits` refuse like any check; {@link runScout} owns the target.
+ * **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
 
+import { GENERATED_FILES } from '../../lib/generated-files.js';
 import type { GateFailure } from '../../lib/run-gate.js';
 import {
   mergeOverlapEdges,
@@ -28,6 +29,7 @@ import {
   type RunEdge,
   type RunGraph,
 } from '../../lib/run-set.js';
+import { runSlug } from '../../lib/run-slug.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
 import {
@@ -163,19 +165,16 @@ export async function runPreflight(
   hooks: WorkflowHooks,
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
-  const checks = await runTool(
-    hooks,
-    'preflight',
-    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
-  );
+  const checks = await runTool(hooks, 'preflight', preflightArgv(args));
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
-  const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(checks);
+  const kept = exemptSpentSlices(checks, live);
+  const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
+  const main = mainSnapshot(kept);
   if (gate?.runSet === undefined) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
@@ -186,9 +185,44 @@ export async function runPreflight(
 }
 
 /**
- * Merge the overlap estimate's pairs, `likely` and `unsure` alike, into the graph; one
- * `overlap-cross-epic` refusal per cross-entry pair, one `overlap-estimate-failed` for no answer or
- * a throwing merge. A graph of fewer than two issues needs no estimate.
+ * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
+ * or the list's.
+ */
+function preflightArgv(args: ShipArgs): string[] {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+
+/**
+ * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
+ * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
+ * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
+ */
+function exemptSpentSlices(
+  checks: PreflightOutput | null,
+  live: LiveRunsOutput | null,
+): PreflightOutput | null {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok: PreflightOutput = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
+}
+
+/**
+ * Merge the estimate's pairs, `likely` and `unsure` alike, into a graph of two or more issues,
+ * first dropping a pair that shares only generated files (#1294); one `overlap-cross-epic` refusal
+ * per cross-entry pair, one `overlap-estimate-failed` for no answer or a throwing merge.
  */
 async function settleOverlap(
   hooks: WorkflowHooks,
@@ -204,9 +238,10 @@ async function settleOverlap(
       { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
     ]);
   }
+  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged: OverlapMerge;
   try {
-    merged = mergeOverlapEdges(graph, estimate.pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
@@ -214,15 +249,19 @@ async function settleOverlap(
   if (merged.kind === 'cross-entry') {
     return withRefusals(
       found,
-      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
     );
   }
   const overlap: OverlapRecord = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+
+function generatedOnly(pair: EstimatedPair): boolean {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
 }
 
 /** The outcome with more refusals, its `overlap` set to `null`. */

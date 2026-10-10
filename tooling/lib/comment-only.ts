@@ -51,6 +51,49 @@ export interface CommentOnlyReport {
   /** Every changed non-TypeScript file, by head path (base path when deleted). */
   readonly notCompared: readonly string[];
   readonly difference: FileDifference | null;
+  /** Every head line, across the files compared, holding a mojibake sequence its base lacks. */
+  readonly mojibake: readonly Mojibake[];
+}
+
+/** A head line holding a mojibake sequence its base lacks. */
+export interface MojibakeLine {
+  /** 1-based head line. */
+  readonly line: number;
+  /** The first such sequence on the line, as matched. */
+  readonly sequence: string;
+}
+
+/** A {@link MojibakeLine} located in one changed file, by head path. */
+export interface Mojibake extends MojibakeLine {
+  readonly path: string;
+}
+
+/** Windows-1252's images of the UTF-8 continuation bytes; any one after U+00E2 is mojibake. */
+const CONTINUATION = new TextDecoder('windows-1252').decode(
+  Uint8Array.from({ length: 64 }, (_, i) => 0x80 + i),
+);
+
+const MOJIBAKE = new RegExp(`\u00e2[${CONTINUATION}]|\u00c3|\u00c2[\\p{P}\\p{S}]`, 'gu');
+
+/**
+ * Find the head lines holding a mojibake sequence — UTF-8 read as Windows-1252,
+ * so an em dash or an arrow comes back as two or three Latin-1 characters —
+ * that the base lacks.
+ *
+ * @param base - The base side's text; a sequence it holds anywhere is never flagged.
+ * @param head - The head side's text, split into lines on LF.
+ * @returns One entry per head line, its first sequence the base lacks, in line order.
+ */
+export function findMojibake(base: string, head: string): MojibakeLine[] {
+  const hits: MojibakeLine[] = [];
+  for (const [i, text] of head.split('\n').entries()) {
+    for (const match of text.matchAll(MOJIBAKE)) {
+      if (base.includes(match[0])) continue;
+      hits.push({ line: i + 1, sequence: match[0] });
+      break;
+    }
+  }
+  return hits;
 }
 
 const USAGE = 'usage: comment-only [--cached] [<base>] | <base>..<head>';
@@ -170,7 +213,9 @@ const isCompared = (c: FileChange): boolean =>
  * A file counts as TypeScript when either path ends `.ts` or `.mts`. Files are
  * compared in git's order and comparison stops at the first difference. In
  * working-tree mode a tracked file moved without `git mv` is a deletion plus
- * an added file, so it fails when it holds code.
+ * an added file, so it fails when it holds code. Every compared file's head
+ * lines are also scanned for a mojibake sequence its base lacks
+ * ({@link findMojibake}), collected in `mojibake` up to the first token difference.
  *
  * @param cwd - Any directory inside the repository.
  * @throws {@link StepFailure} when a git command fails, an unknown revision included.
@@ -180,16 +225,19 @@ export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnly
   const changes = changedFiles(top, revisions);
   const notCompared = changes.filter((c) => !isCompared(c)).map(displayPath);
   let compared = 0;
+  const mojibake: Mojibake[] = [];
   for (const change of changes.filter(isCompared)) {
     compared++;
-    const d = firstDifference(
-      displayPath(change),
-      readSide(top, { kind: 'revision', rev: revisions.base }, change.basePath),
-      readSide(top, revisions.head, change.headPath),
-    );
-    if (d !== null) return { compared, notCompared, difference: { change, ...d } };
+    const base = readSide(top, { kind: 'revision', rev: revisions.base }, change.basePath);
+    const head = readSide(top, revisions.head, change.headPath);
+    const { headPath } = change;
+    if (headPath !== null) {
+      mojibake.push(...findMojibake(base, head).map((hit) => ({ path: headPath, ...hit })));
+    }
+    const d = firstDifference(displayPath(change), base, head);
+    if (d !== null) return { compared, notCompared, difference: { change, ...d }, mojibake };
   }
-  return { compared, notCompared, difference: null };
+  return { compared, notCompared, difference: null, mojibake };
 }
 
 // --end-of-options: a revision starting `-` is never read as an option.
@@ -236,4 +284,13 @@ export function formatDifference(d: FileDifference): string {
   const same = d.base.kind === d.head.kind && d.base.text === d.head.text;
   const tokens = `base ${renderToken(d.base)}, head ${renderToken(d.head)}`;
   return `code differs in ${label}: ${tokens}${same ? ' (parsed differently)' : ''}`;
+}
+
+/**
+ * Render a mojibake hit as one line naming its file, line and sequence.
+ *
+ * @returns The line, `mojibake at <path>:<line>: ` then the sequence in backticks.
+ */
+export function formatMojibake(m: Mojibake): string {
+  return `mojibake at ${m.path}:${String(m.line)}: \`${m.sequence}\``;
 }

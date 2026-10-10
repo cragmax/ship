@@ -27,6 +27,7 @@ import type {
   ProvisionResultSchema,
   RefusalReasonSchema,
   ResultBaseSchema,
+  RetireRunResultSchema,
   SourceCountSchema,
   StagedGuardResultSchema,
   StepErrorSchema,
@@ -63,6 +64,9 @@ export type SourceCount = z.infer<typeof SourceCountSchema>;
 
 /** Envelope of `teardown <worktree>`. */
 export type TeardownResult = z.infer<typeof TeardownResultSchema>;
+
+/** Envelope of `retire-run <main> --branch ship/<slug>`. */
+export type RetireRunResult = z.infer<typeof RetireRunResultSchema>;
 
 /** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */
 export type HarvestResult = z.infer<typeof HarvestResultSchema>;
