@@ -3,8 +3,7 @@ name: retro
 description: >
   Reads one entry's run reports after an unattended run's epic end — shipped,
   halted, stopped or with nothing landed — and names what the next run should
-  learn, each finding cited to a report file and marked genuine or first-time.
-  Read-only; files nothing.
+  learn, each finding cited to a report file. Read-only.
 tools: Read, Glob, Grep
 ---
 

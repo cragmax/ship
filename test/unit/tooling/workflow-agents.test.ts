@@ -28,6 +28,8 @@ const BARE_VITEST = /\bnpx vitest (?:run|related)\b(?! --config vitest\.worktree
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
+const words = (s: string): number => s.split(/\s+/).filter((w) => w !== '').length;
+
 const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType))];
 
 const agentText = (agentType: string): string =>
@@ -42,6 +44,17 @@ const toolsOf = (agentType: string): string[] => {
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '');
+};
+
+// The `description:` value, folded or inline: its first line plus each indented or blank line.
+const descriptionOf = (agentType: string): string => {
+  const lines = frontmatter(agentText(agentType)).split('\n');
+  const start = lines.findIndex((l) => l.startsWith('description:'));
+  if (start === -1) return '';
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => l !== '' && !l.startsWith(' '));
+  const head = lines[start].slice('description:'.length).replace(/^\s*[>|][-+]?/, '');
+  return [head, ...rest.slice(0, end === -1 ? rest.length : end)].join(' ');
 };
 
 // From the heading line up to the next `## ` heading; '' when the heading is absent.
@@ -326,6 +339,47 @@ describe('workflow agents', () => {
     },
   );
 
+  // Hand-written: the scoped-rules line a reader that never Reads a matching file carries (#1243).
+  const SCOPED_RULES_TOKENS = [
+    'each `.claude/rules/*.md` whose `paths:` match a changed or planned file',
+  ];
+
+  it.each(['planner', 'critic', 'ship-plan-reviewer'])(
+    '%s reads the path-scoped rules matching its files from its worktree, under its ## Discipline',
+    (agentType) => {
+      const text = section(agentText(agentType), '## Discipline');
+      const tokens = [...SCOPED_RULES_TOKENS, 'by absolute path in your worktree'];
+
+      expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+    },
+  );
+
+  it('diff-review reads the unscoped rules and the path-scoped rules matching the diff, under its ## Rules check', () => {
+    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
+    const text = section(skill.replaceAll('\r\n', '\n'), '## Rules check');
+    const tokens = [
+      ...SCOPED_RULES_TOKENS,
+      'every `.claude/rules/*.md` without `paths:` frontmatter',
+    ];
+
+    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+  });
+
+  it('ship-tdd never pushes and never bumps the version, under its ## Discipline', () => {
+    const text = section(agentText('ship-tdd'), '## Discipline');
+
+    expect(
+      [
+        '**Never push.**',
+        'The slice branch is scratch',
+        'ADR-0045 decision 6',
+        '**Never bump the version.**',
+        'Issue commits never bump',
+        'ADR-0045 decision 7',
+      ].filter((token) => !text.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
@@ -372,6 +426,82 @@ describe('workflow agents', () => {
       expect((cited ?? []).filter((path) => !existsSync(join(REPO_ROOT, path)))).toEqual([]);
     },
   );
+
+  it.each(readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')))(
+    '%s keeps its description at 40 words or fewer',
+    (file) => {
+      const n = words(descriptionOf(file.replace(/\.md$/, '')));
+
+      expect(n).toBeGreaterThan(0);
+      expect(n).toBeLessThanOrEqual(40);
+    },
+  );
+
+  // Hand-written: the mechanics #1255 cut from each description, which the body carries.
+  it.each<[string, string[]]>([
+    [
+      'reviewer',
+      [
+        '.claude/skills/manifest-tsdoc/SKILL.md',
+        '`git commit --amend --no-edit` under the hooks',
+        'Edit only the pending paths.',
+      ],
+    ],
+    [
+      'diff-reviewer',
+      [
+        "the rules check (the repo's rules plus a code-smell baseline)",
+        'the plan check (the issue and its plan)',
+      ],
+    ],
+    [
+      'planner',
+      [
+        'The claims it rests on that a cheap local probe can settle, you settle before plan review.',
+      ],
+    ],
+    [
+      'ship-plan-reviewer',
+      [
+        '**Codebase verification — the highest-value check.**',
+        '**Completeness**',
+        '**Decomposition**',
+        '**Buildability**',
+      ],
+    ],
+    ['pr-writer', ['one view of what the epic changed', 'how hard the merge is to walk back']],
+    [
+      'overlap-estimator',
+      [
+        'The workflow turns every pair you name into a scheduler edge',
+        'A missed overlap costs a harvest conflict',
+      ],
+    ],
+    [
+      'ship-test-review',
+      [
+        '§§ 6–7 (Apply fixes, Re-verify)',
+        'confirm the hardened test now fails',
+        '`git commit --amend --no-edit` under the hooks',
+      ],
+    ],
+    [
+      'retro',
+      ['Mark a finding `genuine` when', '`first-time` when it is', 'You never file an issue'],
+    ],
+    [
+      'ship-tdd',
+      [
+        '**Server-tier runs go through the lease command only**',
+        '**Probes** follow `.claude/rules/probing.md` within the caps',
+      ],
+    ],
+    ['scout', ['**Named symbols**', '**Cited behaviour**', '**Cited SHAs**']],
+  ])('%s carries the mechanics cut from its description in its body', (agentType, tokens) => {
+    const body = agentText(agentType).replace(/^---\n[\s\S]*?\n---\n/, '');
+
+    expect(tokens.filter((t) => !body.includes(t))).toEqual([]);
+  });
 
   // Hand-written: each agent that runs a repo skill reads it by path (#1039).
   it.each([
