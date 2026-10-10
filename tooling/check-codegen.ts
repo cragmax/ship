@@ -1,6 +1,6 @@
 /**
  * Drift gate: each generated target must equal a fresh in-memory render — the
- * `helpers-readme.md` markers block, `schemas.generated.ts` ({@link checkSchemaModule}) and
+ * `helpers-readme.md` markers blocks, `schemas.generated.ts` ({@link checkSchemaModule}) and
  * each saved workflow in {@link WORKFLOWS} ({@link checkRenderedWorkflows}), the latter two
  * with line endings normalised.
  *
@@ -13,10 +13,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import {
-  renderReservedNamesMarkdown,
-  replaceBetweenMarkers,
-} from './generate-reserved-names-targets.js';
+import { renderHelpersReadme } from './generate-reserved-names-targets.js';
 import { checkRenderedWorkflows } from './lib/workflow-render.js';
 import { checkSchemaModule } from './lib/workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
@@ -32,7 +29,7 @@ type CheckResult = { target: string; ok: boolean; reason?: string };
 
 async function checkMarkersFile(absPath: string, displayPath: string): Promise<CheckResult> {
   const onDisk = await readFile(absPath, 'utf-8');
-  const expected = replaceBetweenMarkers(onDisk, renderReservedNamesMarkdown());
+  const expected = renderHelpersReadme(onDisk);
   if (expected === onDisk) {
     return { target: displayPath, ok: true };
   }
