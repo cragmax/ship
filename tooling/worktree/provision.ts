@@ -70,7 +70,7 @@ interface Run {
   readonly created: Created[];
 }
 
-/** Render a merged vitest config: the base plus a top-level `cacheDir`, the non-deprecated key. */
+/** Render a merged vitest config: the base plus a top-level `cacheDir`. */
 function renderConfig(spec: VitestConfigSpec): string {
   return [
     "import { defineConfig, mergeConfig } from 'vitest/config';",

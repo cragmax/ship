@@ -3,7 +3,7 @@
  * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs;
  * `COMMANDS` holds each command's flags and arity. A command prints one JSON object on one stdout
  * line and nothing else: its envelope, checked against its schema (`worktree/schemas*.ts`) before
- * printing ({@link runWorktreeCli}). No npm script wraps it, as `npm run` prints a banner.
+ * printing ({@link runWorktreeCli}).
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
  * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and a sibling

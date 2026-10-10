@@ -155,7 +155,7 @@ function knownPair(main: string, launch: string, current: string): [string, stri
 
 /**
  * Resolve a sha, never read as an option, to a full commit sha; `null` when no such commit is in
- * the object store (the `^{commit}` peel is what makes an absent full sha fail).
+ * the object store.
  */
 function knownCommit(main: string, sha: string): string | null {
   const r = runCaptured(

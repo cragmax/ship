@@ -73,8 +73,7 @@ function codeFence(pseudocode: string): string {
  * @param text - The text, verbatim.
  * @returns The text between single backticks when it holds none. Else
  *   between runs one longer than its longest backtick run, padded one space
- *   each side (a span strips one space each side, and a text that starts or
- *   ends with a backtick needs the space to keep it off the delimiter).
+ *   each side.
  */
 export function codeSpan(text: string): string {
   const longest = longestBacktickRun(text);

@@ -1,8 +1,7 @@
 /**
  * `append-pr-body <batch> --pr N --section-file F` — append an attached run's section to its
- * open PR's body (ADR-0045 decision 12). `gh` sets a body only whole (`gh pr edit --body-file`;
- * it has no text-append flag), so the command reads the body and sets it back with the section
- * after it; the first failed step ends the command `failed` ({@link appendPrBody}).
+ * open PR's body (ADR-0045 decision 12). The command reads the body and sets it back with the
+ * section after it; the first failed step ends the command `failed` ({@link appendPrBody}).
  *
  * The body as `gh` read it is the new body's prefix byte for byte ({@link appendSection}), so a
  * body neutralised when it was written is never touched again. It mutates no worktree — the

@@ -70,9 +70,7 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
 }
 
 /**
- * Run a path-listing git command with `-z` and split its output: without
- * `-z` git C-quotes a non-ASCII or otherwise unusual path, which would then
- * never equal the caller's spelling of it.
+ * Run a path-listing git command with `-z` and split its output.
  *
  * @param args - Git subcommand first, then its options (`-z` is inserted
  *   right after the subcommand).
@@ -117,7 +115,7 @@ export function fetchOrigin(dir: string): void {
  * @param dir - The checkout whose `origin` is asked.
  * @param ref - The full ref name, e.g. `refs/heads/master`.
  * @returns The sha `origin` names for exactly `ref`; `null` when `origin`
- *   has no such ref (`ls-remote` then prints nothing and exits 0).
+ *   has no such ref.
  * @throws StepFailure for `step` carrying the output tail, on a non-zero
  *   exit, spawn failure or budget kill.
  */

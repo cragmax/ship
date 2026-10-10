@@ -31,7 +31,6 @@ export const MERGEABLE_READS = 10;
 /** The wait between two mergeable reads. */
 const MERGEABLE_POLL_MS = 15_000;
 
-/** The one mergeable value that means GitHub has not computed it yet (#1046). */
 const UNCOMPUTED = 'UNKNOWN';
 
 /** `gh pr view --json mergeable,url` output; unknown keys are tolerated. */

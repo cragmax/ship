@@ -7,8 +7,8 @@
  * halt never touches another entry.
  *
  * **Fail loud, pure.** Every throw an `Error` prefixed `run scheduler:` naming the offender; no
- * I/O, clock or randomness; input never mutated; issue-keyed records never iterated (integer-like
- * keys enumerate numerically, breaking input order). **Render-ready, a contract** (the `ship`
+ * I/O, clock or randomness; input never mutated; issue-keyed records never iterated (input order
+ * decides). **Render-ready, a contract** (the `ship`
  * workflow loads no module, #1026): one value import (`./run-set.js`), the rest type-only;
  * built-ins only (the renderer's `FORBIDDEN_TOKENS`); no top-level side effect or name `run-set.ts`
  * declares (the renderer refuses a repeat); erasable syntax only. A text guard test enforces it.

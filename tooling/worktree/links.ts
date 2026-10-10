@@ -100,10 +100,7 @@ export function countSource(dir: string): number | null {
   return countEntries(dir, (name) => name.startsWith('.') && name !== '.bin');
 }
 
-/**
- * Remove a link itself; its target is never touched (`unlinkSync` removes a
- * junction or directory symlink only — probe 2026-09-28).
- */
+/** Remove a link itself; its target is never touched. */
 export function unlinkLink(path: string): void {
   unlinkSync(path);
 }

@@ -79,7 +79,7 @@ export function publish(input: PublishInput): PublishResult {
 }
 
 /**
- * Refuse a branch with an open PR: a second `gh pr create` fails; a push would update it silently.
+ * Refuse a branch with an open PR.
  *
  * @throws StepFailure `pr-state` when `gh` fails or answers unreadably (never read as "no PR");
  *   Refusal `pr-exists` naming the open PR.
@@ -117,9 +117,7 @@ function assertBodyWithinLimit(bodyFile: string): void {
  * with force. `publish` and `publish --push-only` both push through here.
  *
  * @remarks
- * The refspec names both sides, unforced: a bare `<branch>` refspec takes its destination and force
- * from config — under `push.default=upstream` a branch tracking `origin/master` pushes to
- * `master`, and a `+` mapping in `remote.origin.push` forces it (git 2.55).
+ * The refspec names both sides, unforced, so push configuration cannot redirect or force it.
  *
  * @param branch - The run branch, short form.
  * @throws StepFailure `push` on a non-zero exit — a non-fast-forward included — spawn failure or

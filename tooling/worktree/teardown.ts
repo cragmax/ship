@@ -132,9 +132,7 @@ function assertGuards(worktree: string, main: string, selfPath: string): void {
 }
 
 /**
- * Refuse `nested-worktree`, naming each registered worktree inside the target ({@link isInside}):
- * `git worktree remove --force` deletes the whole directory, nested worktrees and their uncommitted
- * files included, leaving them listed as prunable (git 2.55).
+ * Refuse `nested-worktree`, naming each registered worktree inside the target ({@link isInside}).
  */
 function assertNoNestedWorktrees(worktree: string, main: string): void {
   const nested = listWorktrees(main, 'preconditions')
@@ -161,11 +159,7 @@ function unlinkAll(
   }
 }
 
-/**
- * Leave the worktree when cwd is inside it: on Windows `git worktree remove` cannot delete a live
- * process's cwd, and fails only after deregistering the worktree. A parent shell homed inside still
- * blocks the removal, surfacing as a `remove` failure.
- */
+/** Leave the worktree when cwd is inside it. */
 function escapeCwd(worktree: string, main: string): void {
   if (isInside(process.cwd(), worktree)) process.chdir(main);
 }
