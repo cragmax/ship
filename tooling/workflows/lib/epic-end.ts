@@ -2,7 +2,7 @@
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
  * at least one landed ({@link epicEnd}): the critic, the master sync, the version bump, then the
  * retro and the PR writer concurrently, then the publish task; an entry that halted or landed
- * nothing gets the retro alone ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
+ * nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
  *
  * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
  * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
@@ -40,6 +40,7 @@ import type { EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
 import {
   envelopeProblem,
+  PRE_CUT,
   runPlace,
   runTool,
   type BumpOutput,
@@ -92,8 +93,8 @@ export interface EpicReport {
   /**
    * `pr`: opened; `halted`: a landing (the critic's included) or a slice
    * teardown left the batch unverified; `nothing-landed`: no issue landed,
-   * so no epic end but the retro; `stopped`: its cut or its epic end failed
-   * ({@link EpicReport.message}).
+   * so no epic end but the retro and, unattached, its own cleanup; `stopped`:
+   * its cut or its epic end failed ({@link EpicReport.message}).
    */
   readonly outcome: 'pr' | 'halted' | 'nothing-landed' | 'stopped';
   /** The pull request opened. */
@@ -128,7 +129,10 @@ export interface EpicReport {
    * push; absent when the epic end stopped before it or the check threw.
    */
   readonly masterCheck?: MasterCheck;
-  /** What each slice teardown left behind, one line each. */
+  /**
+   * What each slice teardown, and a nothing-landed run's batch teardown or
+   * retire-run, left behind, one line each.
+   */
   readonly residue: readonly string[];
   /** The critic's part; absent without an epic end. */
   readonly critic?: CriticReport;
@@ -215,7 +219,16 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
   };
 }
 
-/** The epic end of an entry that halted or landed nothing: the retro alone. */
+/**
+ * The epic end of an entry that halted or landed nothing: the blocked-issue comments and the retro;
+ * then, for an unattached run that landed nothing only, tear its batch down and, after an `ok`
+ * teardown, retire it (`retire-run`: run branch, slice branches, run root and report dir). `halted`
+ * cleans up nothing — its batch is unverified — and an attached run's batch and branch are the open
+ * PR's.
+ *
+ * @returns Resolves to the entry's report; a non-`ok` teardown or retire-run is one `residue` line,
+ *   never a rejection.
+ */
 export async function unshippedEpicEnd(
   input: Pick<EpicEndInput, 'hooks' | 'entry' | 'issues' | 'schedule' | 'residue'>,
   outcome: 'halted' | 'nothing-landed',
@@ -230,7 +243,30 @@ export async function unshippedEpicEnd(
     residue: input.residue,
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
-  return { ...report, retro: await retroStep(input, report) };
+  const retro = await retroStep(input, report);
+  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
+}
+
+/**
+ * Tear an unshipped entry's batch down, then retire its run: the residue lines, `[]` when both were
+ * `ok`. Never rejects: a throw is the runner returning nothing. retire-run's envelope goes under
+ * `PRE_CUT`, since it removes the run's report dir.
+ */
+async function retireStep(input: Pick<EpicEndInput, 'hooks' | 'entry'>): Promise<string[]> {
+  const { hooks, entry } = input;
+  const down = await runTool(
+    hooks,
+    'teardown',
+    [entry.batch],
+    runPlace(entry.reportDir, entry.tag),
+  ).catch(() => null);
+  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
+  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
+    ...PRE_CUT,
+    tag: entry.tag,
+  }).catch(() => null);
+  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 
 /**

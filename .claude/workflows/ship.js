@@ -3354,7 +3354,24 @@ async function unshippedEpicEnd(input, outcome) {
     residue: input.residue,
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
-  return { ...report, retro: await retroStep(input, report) };
+  const retro = await retroStep(input, report);
+  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
+}
+async function retireStep(input) {
+  const { hooks, entry } = input;
+  const down = await runTool(
+    hooks,
+    'teardown',
+    [entry.batch],
+    runPlace(entry.reportDir, entry.tag),
+  ).catch(() => null);
+  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
+  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
+    ...PRE_CUT,
+    tag: entry.tag,
+  }).catch(() => null);
+  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 async function commentBlockedStep(input, pr) {
   const { entry } = input;

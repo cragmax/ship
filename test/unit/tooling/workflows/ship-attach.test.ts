@@ -9,6 +9,7 @@ import {
   GATE_OK,
   liveRuns,
   OK,
+  PLAN_CARD,
   PREFLIGHT_OK,
   REPORT_DIR,
   SCOUT_FRESH,
@@ -652,5 +653,20 @@ describe('runShip --attach — the PR body section', () => {
       issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
     });
     expect(report.epics[0]?.message).toBeUndefined();
+  });
+});
+
+describe('runShip --attach — an attached run that landed nothing', () => {
+  it('leaves its batch and the open PR’s branch alone', async () => {
+    const run = fakeHooks({
+      ...ATTACHED,
+      planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+    });
+
+    const report = await runShip(run.hooks, ARGS);
+
+    expect(labels(run)).not.toContain('runner:teardown:list');
+    expect(labels(run).filter((l) => l.startsWith('runner:retire-run'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'nothing-landed', branch: TARGET });
   });
 });

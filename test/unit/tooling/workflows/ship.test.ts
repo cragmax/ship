@@ -950,7 +950,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(tdd|runner:teardown)/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(tdd|runner:teardown):\d/.test(l))).toEqual([
       'tdd:7-1',
       'runner:teardown:7-1',
       'tdd:7-2',
@@ -968,7 +968,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):\d/.test(l))).toEqual([
       'diffReview:7-1',
       'runner:teardown:7-1',
       'diffReview:7-2',
@@ -991,7 +991,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):\d/.test(l))).toEqual([
       'diffReview:7-1',
       'runner:teardown:7-1',
     ]);
@@ -1081,7 +1081,7 @@ const UP_TO_PLAN = [
   'planner:7-1',
 ];
 const BUILD_CALL =
-  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):/;
+  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):\d/;
 const BUILD_ENDINGS: [
   string,
   Readonly<Record<string, unknown>>,
@@ -1185,7 +1185,7 @@ describe('runShip — an attempt through the build', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(
-      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):/.test(l)),
+      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):\d/.test(l)),
     ).toEqual([
       'runner:cut-slice:7-1',
       'planReviewer:7-1',
@@ -1204,7 +1204,7 @@ describe('runShip — an attempt through the build', () => {
   });
 });
 
-const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):/;
+const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):\d/;
 const UP_TO_REVIEW = ['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1'];
 const UP_TO_LAND = [...UP_TO_REVIEW, 'testReview:7-1', 'runner:land:7-1'];
 const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
@@ -1309,7 +1309,7 @@ describe('runShip — an attempt after the build', () => {
 
       expect(
         labels(run).filter((l) =>
-          new RegExp(`^(runner:(cut-slice|land|teardown)|${agent}):`).test(l),
+          new RegExp(`^(runner:(cut-slice|land|teardown)|${agent}):\\d`).test(l),
         ),
       ).toEqual([
         'runner:cut-slice:7-1',

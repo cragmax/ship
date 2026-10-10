@@ -935,3 +935,134 @@ describe('runShip — the PR body limit', () => {
     expect(report.epics[0]).not.toHaveProperty('prReportComment');
   });
 });
+
+describe('runShip — a nothing-landed run cleans up after itself', () => {
+  // #7 planned stale: blocked, so the entry lands nothing.
+  const PLANNER_STALE = { planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' } };
+
+  it('tears its batch down after the retro, then retires its branch from the main checkout', async () => {
+    const run = fakeHooks(PLANNER_STALE);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(retro|runner:(teardown|retire-run)):list$/.test(l)),
+    ).toEqual(['retro:list', 'runner:teardown:list', 'runner:retire-run:list']);
+    expect(run.calls.find((c) => c.label === 'runner:teardown:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'teardown',
+      BATCH,
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:retire-run:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'retire-run',
+      '.',
+      '--branch',
+      'ship/7',
+    ]);
+    expect(promptOf(run, 'runner:teardown:list').split('\n')).toContain(
+      `Envelope dir: ${REPORT_DIR}/tool`,
+    );
+    expect(promptOf(run, 'runner:retire-run:list').split('\n')).toContain(
+      'Envelope dir: reports/tool',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'nothing-landed', residue: [], retro: [] });
+  });
+
+  it.each([
+    {
+      name: 'failed',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'remove', message: 'busy' }],
+        removed: false,
+        registered: true,
+      },
+      residue: `${BATCH}: teardown failed: busy`,
+    },
+    {
+      name: 'thrown',
+      answer: () => {
+        throw new Error('runner crashed');
+      },
+      residue: `${BATCH}: the runner returned nothing for teardown`,
+    },
+  ])('records a $name batch teardown as residue and retires nothing', async (c) => {
+    const run = fakeHooks({ ...PLANNER_STALE, 'runner:teardown:list': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:retire-run'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [c.residue],
+      retro: [],
+    });
+  });
+
+  it.each([
+    {
+      name: 'refused',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'branch-unmerged',
+        errors: [{ step: 'branch-guard', message: 'ship/7 is not in origin/master' }],
+      },
+      residue: 'ship/7: retire-run refused (branch-unmerged): ship/7 is not in origin/master',
+    },
+    {
+      name: 'thrown',
+      answer: () => {
+        throw new Error('runner crashed');
+      },
+      residue: 'ship/7: the runner returned nothing for retire-run',
+    },
+  ])('records a $name retire-run as residue and still ends the entry', async (c) => {
+    const run = fakeHooks({ ...PLANNER_STALE, 'runner:retire-run:list': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [c.residue],
+      retro: [],
+    });
+  });
+
+  it('keeps a slice teardown’s residue ahead of its own cleanup’s', async () => {
+    const run = fakeHooks({
+      ...PLANNER_STALE,
+      'runner:teardown:7-1': () => {
+        throw new Error('runner crashed');
+      },
+      'runner:retire-run:list': () => {
+        throw new Error('runner crashed');
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'nothing-landed',
+      residue: [
+        'the runner returned nothing for teardown',
+        'ship/7: the runner returned nothing for retire-run',
+      ],
+      retro: [],
+    });
+  });
+
+  it('cleans nothing up for a halted entry', async () => {
+    const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run)).not.toContain('runner:teardown:list');
+    expect(labels(run).filter((l) => l.startsWith('runner:retire-run'))).toEqual([]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'halted' });
+  });
+});

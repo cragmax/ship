@@ -323,9 +323,9 @@ function startAttempt(d: Drive, issue: number): void {
 }
 
 /**
- * Start an entry's epic end as a flight, or its retro alone when nothing landed. An epic end that
- * rejects reports its entry `stopped` with the throw's message — it never rejects the drive, so
- * the other entries still report.
+ * Start an entry's epic end as a flight, or its unshipped end ({@link unshippedEpicEnd}) when
+ * nothing landed. An epic end that rejects reports its entry `stopped` with the throw's message —
+ * it never rejects the drive, so the other entries still report.
  */
 function endEpic(d: Drive, i: number): void {
   const landed = d.landed.get(i) ?? [];
@@ -362,7 +362,7 @@ function endEpic(d: Drive, i: number): void {
 }
 
 /**
- * Start the retro-only end of an entry that halted or landed nothing; one that rejects reports
+ * Start the unshipped end of an entry that halted or landed nothing; one that rejects reports
  * the entry without retro findings.
  */
 function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed'): void {
