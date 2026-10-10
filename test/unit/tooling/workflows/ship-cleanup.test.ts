@@ -21,12 +21,13 @@ describe('runShip — spent-run cleanup at launch', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).slice(0, 6)).toEqual([
+    expect(labels(run).slice(0, 7)).toEqual([
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
       'scout',
       'runner:teardown:spent-1',
+      'runner:retire-run:spent-1',
       'runner:cut-batch:list',
     ]);
     expect(run.calls.find((c) => c.label === 'runner:teardown:spent-1')?.argv).toEqual([
@@ -34,9 +35,17 @@ describe('runShip — spent-run cleanup at launch', () => {
       'teardown',
       SPENT_BATCH,
     ]);
+    expect(run.calls.find((c) => c.label === 'runner:retire-run:spent-1')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'retire-run',
+      '.',
+      '--branch',
+      'ship/old-0',
+    ]);
     expect(report.status).toBe('done');
     expect(report.cleanup).toEqual({
       tornDown: [SPENT_BATCH],
+      retired: ['ship/old-0'],
       skipped: [],
       residue: [],
       blocked: null,
@@ -44,7 +53,51 @@ describe('runShip — spent-run cleanup at launch', () => {
     });
   });
 
-  it("names only the spent run's batch, never its branch or its run record", async () => {
+  it.each([
+    {
+      name: 'refused',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'refused',
+        reason: 'branch-unmerged',
+        errors: [{ step: 'branch-guard', message: 'ship/old-0 is not in origin/master' }],
+      },
+      residue:
+        'ship/old-0: retire-run refused (branch-unmerged): ship/old-0 is not in origin/master',
+    },
+    {
+      name: 'failed',
+      answer: {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'delete-branch', message: 'in use' }],
+      },
+      residue: 'ship/old-0: retire-run failed: in use',
+    },
+    {
+      name: 'dead',
+      answer: null,
+      residue: 'ship/old-0: the runner returned nothing for retire-run',
+    },
+  ])('records a $name retire-run as residue and still ships', async (c) => {
+    const run = fakeHooks({ ...liveRuns({}), 'runner:retire-run:spent-1': c.answer });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('done');
+    expect(report.cleanup).toEqual({
+      tornDown: [SPENT_BATCH],
+      retired: [],
+      skipped: [],
+      residue: [c.residue],
+      blocked: null,
+      stop: null,
+    });
+  });
+
+  it("names the spent run's batch to teardown and its branch to retire-run, never its run root", async () => {
     const run = fakeHooks(liveRuns({}));
 
     await runShip(run.hooks, 'issues 7');
@@ -55,7 +108,9 @@ describe('runShip — spent-run cleanup at launch', () => {
     expect(touching.map((c) => [c.label, c.argv.slice(2)])).toEqual([
       ['runner:teardown:spent-1', [SPENT_BATCH]],
     ]);
-    expect(run.calls.filter((c) => c.argv.includes('ship/old-0'))).toEqual([]);
+    expect(run.calls.filter((c) => c.argv.includes('ship/old-0')).map((c) => c.label)).toEqual([
+      'runner:retire-run:spent-1',
+    ]);
   });
 
   it('leaves a run whose PR is still open untouched', async () => {
@@ -66,6 +121,7 @@ describe('runShip — spent-run cleanup at launch', () => {
     expect(labels(run).filter((l) => l.startsWith('runner:teardown:spent'))).toEqual([]);
     expect(report.cleanup).toEqual({
       tornDown: [],
+      retired: [],
       skipped: [],
       residue: [],
       blocked: null,
@@ -137,6 +193,8 @@ describe('runShip — spent-run cleanup at launch', () => {
 
     expect(report.cleanup?.residue).toEqual([c.residue]);
     expect(report.cleanup?.tornDown).toEqual(['C:/src/ph-runs/old-1/batch']);
+    expect(report.cleanup?.retired).toEqual(['ship/old-1']);
+    expect(labels(run)).not.toContain('runner:retire-run:spent-1');
     expect(report.cleanup?.stop).toBeNull();
     expect(labels(run)).toContain('runner:cut-batch:list');
     expect(report.status).toBe('done');
@@ -171,7 +229,7 @@ describe('runShip — spent-run cleanup at launch', () => {
       status: 'refused',
       refusals: [{ kind: 'source-shrank', message: stop }],
       dropped: [{ issue: 8, cause: 'gate', message: '#8 lacks ready-for-agent' }],
-      cleanup: { tornDown: [], skipped: [], residue: [], blocked: null, stop },
+      cleanup: { tornDown: [], retired: [], skipped: [], residue: [], blocked: null, stop },
       epics: [],
     });
     expect(labels(run).filter((l) => /cut-batch|provision|land|cut-slice/.test(l))).toEqual([]);

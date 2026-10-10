@@ -37,10 +37,8 @@ const VERSION_LINE = /^ {2}"version": "([^"]*)"(,?)(\r?)$/gmu;
 const PLAIN_VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
 
 /**
- * The three components of a plain version.
+ * The three components of a plain version: `[major, minor, patch]`.
  *
- * @param version - The version text.
- * @returns `[major, minor, patch]`.
  * @throws StepFailure `version` unless it is a plain `x.y.z`.
  */
 function components(version: string): [number, number, number] {
@@ -54,8 +52,6 @@ function components(version: string): [number, number, number] {
 /**
  * Which component moved from `from` to `to`.
  *
- * @param from - The earlier version.
- * @param to - The later version.
  * @returns The first differing component, `major` first; `none` when equal.
  * @throws StepFailure `version` unless both are plain `x.y.z`.
  */
@@ -70,9 +66,7 @@ export function versionDelta(from: string, to: string): VersionDelta {
 /**
  * Bump a version by one step of `delta`, resetting the lower components.
  *
- * @param version - The version to bump.
  * @param delta - The step; `none` returns `version` unchanged.
- * @returns The bumped version.
  * @throws StepFailure `version` unless `version` is a plain `x.y.z`.
  */
 export function bumpVersion(version: string, delta: VersionDelta): string {
@@ -93,7 +87,6 @@ export function bumpVersion(version: string, delta: VersionDelta): string {
  * Whether both sides moved the version since the merge-base — the one case
  * the rule intervenes in.
  *
- * @param v - The three versions.
  * @returns `true` when `ours` and `theirs` both differ from `base`.
  */
 export function bothMoved(v: VersionTriple): boolean {
@@ -103,7 +96,6 @@ export function bothMoved(v: VersionTriple): boolean {
 /**
  * The version the merge ends on.
  *
- * @param v - The three versions.
  * @returns `theirs` when only master moved, `ours` when only the batch
  *   did; when both moved, `theirs` bumped by the batch's own bump
  *   ({@link versionDelta} of `base` → `ours`).
@@ -119,7 +111,6 @@ export function targetVersion(v: VersionTriple): string {
 /**
  * Read the top-level version line of a `package.json` text.
  *
- * @param text - The file's text.
  * @returns The first top-level version; `null` when there is none.
  */
 export function readVersionLine(text: string): string | null {
@@ -131,9 +122,6 @@ export function readVersionLine(text: string): string | null {
  * Rewrite the top-level version line of a `package.json` text, keeping its
  * trailing comma and line ending; every other line is untouched.
  *
- * @param text - The file's text.
- * @param version - The new version.
- * @returns The rewritten text.
  * @throws StepFailure `version` unless the text has exactly one top-level
  *   version line.
  */

@@ -56,7 +56,6 @@ const MERGE_FILE_MAX_CONFLICTS = 127;
  * only when both sides moved the version, and the `package.json` copies
  * merge once their version lines agree.
  *
- * @param batch - The batch worktree.
  * @param mergeBase - The merge-base of `HEAD` and `origin/master`.
  * @returns `version` for the envelope — `null` when a copy is missing or
  *   has no top-level version line — and `rule`, `null` when the rule stays
@@ -78,13 +77,8 @@ export function planVersionRule(
 }
 
 /**
- * Read `package.json` at the merge-base, the batch's `HEAD` and
- * `origin/master`.
- *
- * @param batch - The batch worktree.
- * @param mergeBase - The merge-base of `HEAD` and `origin/master`.
- * @returns The copies and their versions; `null` when any copy is missing
- *   (or git cannot show it) or has no top-level version line — never a throw.
+ * `package.json` at the merge-base, the batch's `HEAD` and `origin/master`; `null` when a copy is
+ * missing (or git cannot show it) or has no top-level version line — never a throw.
  */
 function readVersions(batch: string, mergeBase: string): PackageCopies | null {
   const base = showPackageJson(batch, mergeBase);
@@ -98,13 +92,7 @@ function readVersions(batch: string, mergeBase: string): PackageCopies | null {
   return { versions: { base: b, ours: o, theirs: t }, texts: { base, ours, theirs } };
 }
 
-/**
- * One `package.json` copy.
- *
- * @param batch - The batch worktree.
- * @param rev - The revision.
- * @returns Its text with one final newline; `null` when git cannot show it.
- */
+/** One `package.json` copy's text with one final newline; `null` when git cannot show it. */
 function showPackageJson(batch: string, rev: string): string | null {
   const r = runCaptured('git', ['-C', batch, 'show', `${rev}:${PACKAGE_JSON}`], {
     cwd: process.cwd(),
@@ -113,16 +101,9 @@ function showPackageJson(batch: string, rev: string): string | null {
 }
 
 /**
- * Merge the three copies with every version line set to the base's, so a
- * version-only difference never conflicts, then set the version line to
- * {@link targetVersion}'s.
- *
- * @param batch - The batch worktree (`git`'s directory).
- * @param copies - The three copies from {@link readVersions}.
- * @returns The merged text; `null` when the copies conflict beyond the
- *   version line.
- * @throws StepFailure `version` when a copy has not exactly one top-level
- *   version line, a version is not plain `x.y.z`, or `git merge-file` fails.
+ * Merge the copies, every version line set to the base's so a version-only change never conflicts,
+ * then set {@link targetVersion}'s; `null` on a conflict beyond the version line. Throws
+ * StepFailure `version` from {@link setVersionLine}, {@link targetVersion} or `git merge-file`.
  */
 function mergedPackageJson(batch: string, copies: PackageCopies): string | null {
   const { versions, texts } = copies;
@@ -191,13 +172,7 @@ export function regenerateLockfile(batch: string, conflicted: boolean): void {
   git(batch, ['add', '--', LOCKFILE], 'lockfile');
 }
 
-/**
- * Whether `HEAD` tracks a path.
- *
- * @param batch - The batch worktree.
- * @param path - Repository-relative path.
- * @returns `true` when `git cat-file -e HEAD:<path>` succeeds.
- */
+/** Whether `HEAD` tracks repository-relative `path`: `git cat-file -e HEAD:<path>` succeeds. */
 function trackedAtHead(batch: string, path: string): boolean {
   return (
     runCaptured('git', ['-C', batch, 'cat-file', '-e', `HEAD:${path}`], { cwd: process.cwd() })
@@ -206,10 +181,8 @@ function trackedAtHead(batch: string, path: string): boolean {
 }
 
 /**
- * Require the regenerated lockfile to carry the target version.
+ * Require the regenerated lockfile's `version` and `packages[""].version` to be `target`.
  *
- * @param batch - The batch worktree.
- * @param target - The version.
  * @throws StepFailure `lockfile` naming what it carries instead.
  */
 function assertLockVersion(batch: string, target: string): void {

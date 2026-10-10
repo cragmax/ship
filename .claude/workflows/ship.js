@@ -8,7 +8,7 @@ export const meta = {
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
+        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -66,7 +66,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
+      'and the overlap estimate; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -794,6 +795,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -834,6 +837,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
                 'no-open-pr',
                 'slices-live',
                 'unpublished-commits',
+                'stale-slice-branch',
               ],
             },
             message: { type: 'string' },
@@ -877,6 +881,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -957,6 +963,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1020,6 +1028,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1073,6 +1083,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1124,6 +1136,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1176,6 +1190,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1240,6 +1256,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1255,6 +1273,55 @@ const TOOL_ENVELOPE_SCHEMAS = {
       registered: { type: 'boolean' },
     },
     required: ['status', 'errors', 'removed', 'registered'],
+  },
+  'retire-run': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+    },
+    required: ['status', 'errors'],
   },
   'sync-master': {
     type: 'object',
@@ -1289,6 +1356,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1374,6 +1443,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1425,6 +1496,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1479,6 +1552,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1546,6 +1621,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1593,6 +1670,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1641,6 +1720,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
+          'branch-unmerged',
+          'root-not-empty',
           'master-not-forward',
         ],
       },
@@ -1942,12 +2023,14 @@ const TOOL_COMMANDS = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
+  'comment-only': ['tooling/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
+  'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
@@ -2033,12 +2116,17 @@ const TOOL_SCHEMAS = {
     },
     required: ['ready', 'failures'],
   }),
+  'comment-only': toolSchema({
+    properties: { notCompared: { type: 'array', items: STRING } },
+    required: ['notCompared'],
+  }),
   'cut-batch': envelopeSchema('cut-batch'),
   'provision-batch': envelopeSchema('provision-batch'),
   'cut-slice': envelopeSchema('cut-slice'),
   provision: envelopeSchema('provision'),
   land: envelopeSchema('land'),
   teardown: envelopeSchema('teardown'),
+  'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
@@ -2322,6 +2410,8 @@ const AGENT_CALLS = {
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
+const GH_BODY_LIMIT = 65_536;
+
 function evidenceBullet(issue, evidence) {
   const ref = `#${String(issue)}`;
   if (evidence.kind === 'none') {
@@ -2457,12 +2547,28 @@ function sliceLeaseLines(work) {
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'review', lines: work.review.leaseLines },
   ];
-  if (work.testReview !== null) {
+  if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
   }
   return roles;
 }
 function renderPrBody(input) {
+  return prBody(input, new Set());
+}
+function fitPrBody(input) {
+  const whole = renderPrBody(input);
+  if (whole.length <= GH_BODY_LIMIT) return { body: whole, comments: [] };
+  const moving = MOVABLE_SECTIONS.filter((m) => m.lines(input).length > 0);
+  const closing = closingIssues(input.landed);
+  return {
+    body: prBody(input, new Set(moving)),
+    comments: moving.map((m) => ({
+      file: m.file,
+      text: neutralText(section(m.heading, m.lines(input)).join('\n'), closing),
+    })),
+  };
+}
+function prBody(input, moved) {
   const body = [
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
@@ -2470,7 +2576,7 @@ function renderPrBody(input) {
     ...section('Issues', issueListLines(input)),
     ...perIssueSection('Salvage', input.landed, salvageItems, 2),
     ...perIssueSection('Recorded', input.landed, recordedItems, 2),
-    ...reportBlock(input),
+    ...reportBlock(input, moved),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
 }
@@ -2525,15 +2631,15 @@ function perIssueSection(heading, landed, itemsOf, depth) {
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
 }
-function reportBlock(input) {
-  const report = runReportLines(input);
+function reportBlock(input, moved) {
+  const report = runReportLines(input, moved);
   if (input.writer === null) return report;
   return foldedReport('Run report', report);
 }
 function foldedReport(summary, lines) {
   return [`<details><summary>${summary}</summary>`, '', ...lines, '</details>', ''];
 }
-function runReportLines(input) {
+function runReportLines(input, moved = new Set()) {
   return [
     '## Landed issues',
     '',
@@ -2547,11 +2653,35 @@ function runReportLines(input) {
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Critic', criticLines(input.critic)),
-    ...section('Overlap edges', input.overlap.added.map(overlapLine)),
-    ...section('Schedule', input.schedule.map(scheduleLine)),
+    ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
+    ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
-    ...section('Retro findings', retroLines(input.retro)),
+    ...movableSection(input, RETRO_FINDINGS_SECTION, moved),
   ];
+}
+const OVERLAP_EDGES_SECTION = {
+  heading: 'Overlap edges',
+  file: 'pr-comment-overlap-edges.md',
+  lines: (input) => overlapLines(input.overlap.added),
+};
+const SCHEDULE_SECTION = {
+  heading: 'Schedule',
+  file: 'pr-comment-schedule.md',
+  lines: (input) => input.schedule.map(scheduleLine),
+};
+const RETRO_FINDINGS_SECTION = {
+  heading: 'Retro findings',
+  file: 'pr-comment-retro-findings.md',
+  lines: (input) => retroLines(input.retro),
+};
+const MOVABLE_SECTIONS = [OVERLAP_EDGES_SECTION, SCHEDULE_SECTION, RETRO_FINDINGS_SECTION];
+function movableSection(input, movable, moved) {
+  if (!moved.has(movable)) return section(movable.heading, movable.lines(input));
+  const limit = String(GH_BODY_LIMIT);
+  const path = codeSpan(`${input.reportDir}/${movable.file}`);
+  return section(movable.heading, [
+    `Moved to a PR comment: the body was over GitHub's ${limit}-character limit. Also in ${path}.`,
+  ]);
 }
 function issueListLines(input) {
   return [epicLine(input.epic), ...issueRefLines(input)];
@@ -2587,8 +2717,19 @@ function criticLines(critic) {
     ),
   ];
 }
-function overlapLine(edge) {
-  return `- #${String(edge.blocker)} → #${String(edge.dependent)} (${edge.confidence}): ${edge.reason}`;
+function overlapLines(edges) {
+  const groups = new Map();
+  for (const edge of edges) {
+    const key = JSON.stringify([edge.blocker, edge.confidence, edge.reason]);
+    const dependent = `#${String(edge.dependent)}`;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
+    else group.dependents.push(dependent);
+  }
+  return [...groups.values()].map(
+    ({ edge, dependents }) =>
+      `- #${String(edge.blocker)} → ${dependents.join(', ')} (${edge.confidence}): ${edge.reason}`,
+  );
 }
 function scheduleLine(entry) {
   const blockers =
@@ -2636,8 +2777,8 @@ function issueSection(landed) {
     `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
-    test === null
-      ? '- Test review: skipped — trivial surface'
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed),
@@ -2848,7 +2989,8 @@ async function reviewStage(s) {
 }
 async function testReviewStage(s) {
   const { at } = s;
-  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
+  const skip = await testReviewSkip(s);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
@@ -2857,6 +2999,18 @@ async function testReviewStage(s) {
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
   return { next: { ...s, testReview: out, sha: out.sha } };
+}
+async function testReviewSkip(s) {
+  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
+  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
+  const { at } = s;
+  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
 }
 async function landSlice(s) {
   const { at } = s;
@@ -3200,7 +3354,24 @@ async function unshippedEpicEnd(input, outcome) {
     residue: input.residue,
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
-  return { ...report, retro: await retroStep(input, report) };
+  const retro = await retroStep(input, report);
+  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
+}
+async function retireStep(input) {
+  const { hooks, entry } = input;
+  const down = await runTool(
+    hooks,
+    'teardown',
+    [entry.batch],
+    runPlace(entry.reportDir, entry.tag),
+  ).catch(() => null);
+  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
+  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
+    ...PRE_CUT,
+    tag: entry.tag,
+  }).catch(() => null);
+  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 async function commentBlockedStep(input, pr) {
   const { entry } = input;
@@ -3329,7 +3500,7 @@ function publishedPr(out) {
 }
 async function openPr(input, found, checked) {
   const { hooks, entry } = input;
-  const body = renderPrBody({
+  const fitted = fitPrBody({
     ...bodyInput(input, found, checked),
     writer: found.state.writer ?? null,
   });
@@ -3343,9 +3514,16 @@ async function openPr(input, found, checked) {
     '--log',
     `${entry.reportDir}/publish.log`,
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: body });
-  const out = await runTool(hooks, 'publish', argv, place);
-  return publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const failures = [];
+  for (const moved of fitted.comments) {
+    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
+    if ('failure' in posted) failures.push(posted.failure);
+  }
+  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
 }
 function bodyInput(input, found, checked) {
   const { entry } = input;
@@ -3720,6 +3898,9 @@ function eventSubject(event) {
   return event.epic === null ? 'the issue list' : `epic #${String(event.epic)}`;
 }
 
+const ESLINT_SUPPRESSIONS = 'eslint-suppressions.json';
+const GENERATED_FILES = [ESLINT_SUPPRESSIONS];
+
 function mergeOverlapEdges(graph, pairs) {
   const issues = runSetIssues(graph.runSet);
   overlapAssertPairs(issues, pairs);
@@ -3836,20 +4017,26 @@ function overlapFail(message) {
   throw new Error(`run overlap: ${message}`);
 }
 
+const EPIC_SLUG_PREFIX = 'epic-';
+function runSlug(selection) {
+  if ('epic' in selection) return `${EPIC_SLUG_PREFIX}${String(selection.epic)}`;
+  return [...selection.issues]
+    .sort((a, b) => a - b)
+    .map(String)
+    .join('-');
+}
+
 async function runPreflight(hooks, args) {
-  const checks = await runTool(
-    hooks,
-    'preflight',
-    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
-  );
+  const checks = await runTool(hooks, 'preflight', preflightArgv(args));
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
-  const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(checks);
+  const kept = exemptSpentSlices(checks, live);
+  const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
+  const main = mainSnapshot(kept);
   if (gate?.runSet === undefined) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
@@ -3857,6 +4044,27 @@ async function runPreflight(hooks, args) {
   const scout = await runScout(hooks, graph, live, args.attach);
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
   return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+}
+function preflightArgv(args) {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+function exemptSpentSlices(checks, live) {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
 }
 async function settleOverlap(hooks, found) {
   const { graph } = found;
@@ -3869,9 +4077,10 @@ async function settleOverlap(hooks, found) {
       { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
     ]);
   }
+  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged;
   try {
-    merged = mergeOverlapEdges(graph, estimate.pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
@@ -3879,15 +4088,18 @@ async function settleOverlap(hooks, found) {
   if (merged.kind === 'cross-entry') {
     return withRefusals(
       found,
-      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
     );
   }
   const overlap = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+function generatedOnly(pair) {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
 }
 function withRefusals(found, refusals) {
   return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
@@ -4035,6 +4247,7 @@ function toolError(out, what) {
 async function cleanupSpent(hooks, live) {
   const report = {
     tornDown: [],
+    retired: [],
     skipped: [],
     residue: [],
     blocked: null,
@@ -4054,13 +4267,19 @@ async function cleanupRun(hooks, run, report) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, report);
+  else await tearDownSpent(hooks, target.path, run.branch, report);
 }
-async function tearDownSpent(hooks, path, report) {
+async function tearDownSpent(hooks, path, branch, report) {
   const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
   const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
   if (out?.status === 'ok') {
     report.tornDown.push(path);
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
+      ...PRE_CUT,
+      tag,
+    });
+    if (retired?.status === 'ok') report.retired.push(branch);
+    else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
     report.stop = envelopeProblem('teardown', out);
   } else {

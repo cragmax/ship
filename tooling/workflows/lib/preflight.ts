@@ -1,36 +1,21 @@
 /**
- * The `ship` workflow's pre-flight phase (ADR-0045): everything a run must
- * hold before it cuts anything. It runs, in order, `worktree.ts preflight`
- * (master level with `origin/master`, `gh` logged in, the warm set
- * answering — the warm set is always checked, since a slice's server-tier
- * tdd runs lease it), the run gate, `worktree.ts live-runs`, then the scout
- * once, over the gate's run set and the changed files of every unspent live
- * run (a spent run's PR is merged or closed, so it can no longer collide),
- * then the overlap estimate once over what the scout left
- * ({@link PreflightOutcome.overlap}).
+ * The `ship` workflow's pre-flight phase (ADR-0045): everything a run must hold before it cuts
+ * anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set — always
+ * checked, since server-tier tdd runs lease it), the run gate, `live-runs`, the scout once over the
+ * run set and the unspent live runs' files, then the overlap estimate once over what it left.
  *
- * **Every refusal is collected.** No check stops the phase early — one
- * report names every problem found, so a maintainer fixes them in one
- * pass — except that the scout needs a run set, so a gate output without
- * one skips it. A tool that returns no verdict, or a verdict without the
- * fields that back it (a refusal naming no problem, an `ok` without its
- * graph or runs list), is itself a refusal, and so is a run-set issue the
- * scout returns no verdict for: never read as a pass.
+ * **Every refusal is collected**: no check stops the phase early but the scout's need for a run
+ * set. No verdict, or a verdict missing its backing fields, is a refusal, as is a run-set issue the
+ * scout returns no verdict for — never a pass. **Exclude mode** drops a stale issue with its
+ * dependents ({@link dropWithDependents}); a live-run code overlap, and any overlap
+ * {@link settleOverlap} keeps across two epics, still refuses. **An attached run**'s `no-open-pr`,
+ * `slices-live` and `unpublished-commits` refuse like any check; {@link runScout} owns the target.
+ * **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
- * **Exclude mode** drops a stale issue with its dependents through
- * {@link dropWithDependents}, as the gate drops a failing one; a code
- * overlap with a live run always refuses, and so does any overlap the
- * estimator names between two epics of the run, `unsure` included.
- *
- * **An attached run** (`args.attach`) runs `preflight --attach <branch>`,
- * whose `no-open-pr`, `slices-live` and `unpublished-commits` problems on
- * the target refuse like any failed check; the scout treats the target as
- * {@link runScout} states.
- *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
 
+import { GENERATED_FILES } from '../../lib/generated-files.js';
 import type { GateFailure } from '../../lib/run-gate.js';
 import {
   mergeOverlapEdges,
@@ -44,6 +29,7 @@ import {
   type RunEdge,
   type RunGraph,
 } from '../../lib/run-set.js';
+import { runSlug } from '../../lib/run-slug.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
 import {
@@ -99,7 +85,10 @@ export interface ShipRefusal {
 export interface DroppedIssue {
   /** The issue. */
   readonly issue: number;
-  /** `gate`: the gate dropped it; `stale`: the scout found it stale; `dependent`: a dropped issue blocks it. */
+  /**
+   * `gate`: the gate dropped it; `stale`: the scout found it stale; `dependent`: a dropped issue
+   * blocks it.
+   */
   readonly cause: 'gate' | 'stale' | 'dependent';
   /** Why, from the gate or the scout. */
   readonly message: string;
@@ -150,7 +139,10 @@ export interface OverlapRecord {
 export interface MainSnapshot {
   /** The main checkout, absolute. */
   readonly worktree: string;
-  /** Its `HEAD`, whether it had uncommitted changes, and the launch shas of local and `origin`'s `master`. */
+  /**
+   * Its `HEAD`, whether it had uncommitted changes, and the launch shas of local and `origin`'s
+   * `master`.
+   */
   readonly snapshot: NonNullable<PreflightResult['snapshot']>;
 }
 
@@ -173,19 +165,16 @@ export async function runPreflight(
   hooks: WorkflowHooks,
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
-  const checks = await runTool(
-    hooks,
-    'preflight',
-    args.attach === null ? ['.'] : ['.', '--attach', args.attach],
-  );
+  const checks = await runTool(hooks, 'preflight', preflightArgv(args));
   const gate = await runTool(hooks, 'run-gate', [
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
   ]);
   const live = await runTool(hooks, 'live-runs', ['.']);
-  const refusals = [...checkRefusals(checks), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(checks);
+  const kept = exemptSpentSlices(checks, live);
+  const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
+  const main = mainSnapshot(kept);
   if (gate?.runSet === undefined) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
@@ -196,17 +185,44 @@ export async function runPreflight(
 }
 
 /**
- * Run the overlap estimate over the settled graph and merge its pairs —
- * every pair, `likely` and `unsure` alike — into the graph
- * (`tooling/lib/run-overlap.ts`). A graph of fewer than two issues needs no
- * estimate.
- *
- * @param hooks - The workflow hooks.
- * @param found - The outcome so far; its refusals are kept.
- * @returns The outcome with the merged graph and its overlap record; or with
- *   one `overlap-cross-epic` refusal per pair across entries, or one
- *   `overlap-estimate-failed` refusal when the estimator returned nothing or
- *   the merge threw.
+ * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
+ * or the list's.
+ */
+function preflightArgv(args: ShipArgs): string[] {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+
+/**
+ * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
+ * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
+ * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
+ */
+function exemptSpentSlices(
+  checks: PreflightOutput | null,
+  live: LiveRunsOutput | null,
+): PreflightOutput | null {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok: PreflightOutput = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
+}
+
+/**
+ * Merge the estimate's pairs, `likely` and `unsure` alike, into a graph of two or more issues,
+ * first dropping a pair that shares only generated files (#1294); one `overlap-cross-epic` refusal
+ * per cross-entry pair, one `overlap-estimate-failed` for no answer or a throwing merge.
  */
 async function settleOverlap(
   hooks: WorkflowHooks,
@@ -222,9 +238,10 @@ async function settleOverlap(
       { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
     ]);
   }
+  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged: OverlapMerge;
   try {
-    merged = mergeOverlapEdges(graph, estimate.pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
@@ -232,35 +249,29 @@ async function settleOverlap(
   if (merged.kind === 'cross-entry') {
     return withRefusals(
       found,
-      merged.pairs.map((p) => crossEpicRefusal(p, estimate.pairs)),
+      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
     );
   }
   const overlap: OverlapRecord = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, estimate.pairs) })),
+    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
 }
 
-/**
- * The outcome with more refusals.
- *
- * @param found - The outcome.
- * @param refusals - The refusals to add.
- * @returns The outcome, `overlap` `null`.
- */
+function generatedOnly(pair: EstimatedPair): boolean {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
+}
+
+/** The outcome with more refusals, its `overlap` set to `null`. */
 function withRefusals(found: PreflightOutcome, refusals: readonly ShipRefusal[]): PreflightOutcome {
   return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
 }
 
 /**
- * The refusal of a pair across epics — any confidence: epics in one run
- * must be code-disjoint.
- *
- * @param pair - The pair and both entries' `epic` keys.
- * @param pairs - The estimator's pairs, for its word on this one.
- * @returns The refusal, on the pair's first issue.
+ * The refusal of a pair across epics, on its first issue — any confidence: epics in one run must
+ * be code-disjoint.
  */
 function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[]): ShipRefusal {
   const word = pairs.find((p) => samePair(p, pair.a, pair.b));
@@ -277,14 +288,7 @@ function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[
   };
 }
 
-/**
- * The estimator's confidence and reason for one unordered pair.
- *
- * @param a - One issue.
- * @param b - The other.
- * @param pairs - The estimator's pairs.
- * @returns The first matching pair's word.
- */
+/** The estimator's confidence and reason for one unordered pair: its first matching pair's. */
 function pairWord(
   a: number,
   b: number,
@@ -294,24 +298,14 @@ function pairWord(
   return { confidence: word?.confidence ?? 'unsure', reason: word?.reason ?? '' };
 }
 
-/**
- * Whether an estimated pair is the unordered pair `{a, b}`.
- *
- * @param p - The estimated pair.
- * @param a - One issue.
- * @param b - The other.
- * @returns `true` for either order.
- */
+/** Whether an estimated pair is the unordered pair `{a, b}`, in either order. */
 function samePair(p: OverlapPair, a: number, b: number): boolean {
   return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 
 /**
- * The main checkout's snapshot from a pre-flight output.
- *
- * @param checks - `preflight`'s output.
- * @returns The checkout and its snapshot; `null` unless the checks passed
- *   and carry both.
+ * The main checkout and its snapshot from `preflight`'s output; `null` unless the checks passed and
+ * carry both.
  */
 function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
@@ -322,13 +316,9 @@ function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
 }
 
 /**
- * Drop `issues` from a graph together with their transitive dependents,
- * every edge with a dropped endpoint, and every entry left empty — so the
- * result is a valid scheduler input whenever `graph` is.
- *
- * @param graph - The graph.
- * @param issues - The issues to drop; one not in the graph is ignored.
- * @returns The remaining graph and the dependents dropped along.
+ * Drop `issues` from a graph together with their transitive dependents, every edge with a dropped
+ * endpoint, and every entry left empty — so the result is a valid scheduler input whenever `graph`
+ * is. An issue not in the graph is ignored.
  */
 export function dropWithDependents(graph: RunGraph, issues: readonly number[]): DropResult {
   const inGraph = new Set(runSetIssues(graph.runSet));
@@ -347,11 +337,8 @@ export function dropWithDependents(graph: RunGraph, issues: readonly number[]): 
 }
 
 /**
- * The pre-flight checks' refusals.
- *
- * @param checks - `preflight`'s output.
- * @returns One refusal per failed check; one `preflight-error` when the
- *   command itself failed, or refused `preflight-failed` naming no problem.
+ * The pre-flight checks' refusals: one per failed check; one `preflight-error` when the command
+ * itself failed, or refused `preflight-failed` naming no problem.
  */
 function checkRefusals(checks: PreflightOutput | null): ShipRefusal[] {
   if (checks?.status === 'ok') return [];
@@ -364,12 +351,8 @@ function checkRefusals(checks: PreflightOutput | null): ShipRefusal[] {
 }
 
 /**
- * The gate's refusals.
- *
- * @param gate - The gate's output.
- * @returns None for an `ok` verdict carrying its `runSet` and `edges`; one
- *   refusal per failure of a refused verdict; otherwise one `gate-error` —
- *   no verdict, an `ok` without its graph, or a refusal naming no failure.
+ * The gate's refusals: none only for an `ok` carrying its `runSet` and `edges`; no verdict, an `ok`
+ * without its graph, or a refusal naming no failure is one `gate-error`.
  */
 function gateRefusals(gate: GateOutput | null): ShipRefusal[] {
   if (gate?.verdict === 'ok' && gate.runSet !== undefined && gate.edges !== undefined) return [];
@@ -402,12 +385,8 @@ function gateDrops(gate: GateOutput): DroppedIssue[] {
 }
 
 /**
- * The live-runs refusal: the command failed, an `ok` came without its
- * `runs` list, or a run's PR state is unknown — "could not ask" is never
- * read as "no PR".
- *
- * @param live - `live-runs`' output.
- * @returns One `live-runs-failed` refusal, or none.
+ * The live-runs refusal: the command failed, an `ok` came without its `runs` list, or a run's PR
+ * state is unknown — "could not ask" is never read as "no PR".
  */
 function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
   if (live?.status !== 'ok' || live.runs === undefined) {
@@ -420,15 +399,8 @@ function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
 }
 
 /**
- * Run the scout over the gate's run set and the unspent live runs' files —
- * for an attached run, every such run but its target, judged against the
- * target's PR head.
- *
- * @param hooks - The workflow hooks.
- * @param graph - The gate's graph.
- * @param live - `live-runs`' output.
- * @param attach - An attached run's target branch; `null` for an unattached run.
- * @returns Resolves to the scout's verdict; `null` when it returned none.
+ * Run the scout over the gate's run set and the unspent live runs' files — for an attached run,
+ * every such run but its target, judged against the target's PR head.
  */
 async function runScout(
   hooks: WorkflowHooks,
@@ -448,13 +420,8 @@ async function runScout(
 }
 
 /**
- * Fold the scout's verdict in: overlaps and (outside exclude mode) stale
- * issues refuse; in exclude mode stale issues drop with their dependents.
- *
- * @param found - The refusals, drops and graph so far.
- * @param scout - The scout's verdict.
- * @param exclude - Whether exclude mode is on.
- * @returns The final outcome.
+ * Fold the scout's verdict in: overlaps and (outside exclude mode) stale issues refuse; in exclude
+ * mode stale issues drop with their dependents.
  */
 function settleScout(
   found: PreflightOutcome & { readonly graph: RunGraph },
@@ -496,14 +463,7 @@ function settleScout(
   return { ...found, refusals, dropped, graph };
 }
 
-/**
- * Why a tool gave no usable verdict.
- *
- * @param out - The tool's output.
- * @param what - The tool, for the message.
- * @returns Its stderr tail, first error or refusal reason; a fallback line
- *   when it returned nothing.
- */
+/** Why a tool gave no usable verdict: its stderr tail, first error or refusal reason. */
 function toolError(
   out: {
     readonly stderrTail?: string;

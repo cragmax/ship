@@ -1,40 +1,17 @@
 /**
- * `sync-master <batch> [--continue]` — the epic-end merge step (ADR-0045
- * decision 6): merge `origin/master` into the run's batch worktree.
+ * `sync-master <batch> [--continue]` merges `origin/master` into the batch (ADR-0045 decision 6). A
+ * `git merge-tree` probe refuses a code conflict before merging; a doc-index conflict stops,
+ * `MERGE_HEAD` kept, for a resolver who edits, never stages: `--continue` stages and commits in
+ * `.claude/rules/git.md` § Direct commits' merge-commit order, never resetting. Only when both
+ * sides moved the version does the version rule ({@link planVersionRule}) hold the merge
+ * `--no-ff --no-commit`: an identical bump, which git merges clean, stops before its commit.
  *
- * Start mode probes the merge first (`git merge-tree`, which touches
- * neither index nor worktree) and refuses a code conflict before merging.
- * A conflict in a doc index stops the merge for a resolver, its
- * `MERGE_HEAD` kept; `--continue` then finishes it ({@link finish}) in
- * `.claude/rules/git.md` § Direct commits' merge-commit order, never
- * resetting. The resolver edits and never stages: `--continue` stages.
- *
- * Invariant: a `failed` envelope never leaves a merge this call started or
- * continued in progress — it is aborted (`git merge --abort`), and a failed
- * abort adds an `abort` error. A `refused` or `conflict` envelope leaves the
- * merge state as it found it or as the resolver needs it. Nothing is
- * mutated — not even the fetch's remote-tracking refs — before the batch is
- * verified a clean linked worktree with no slice linked into it.
- *
- * The batch is refreshed (`npm ci`, `npm run build`) on the merged tree
- * before the envelope reports it: after a clean merge's own commit, or
- * before `needs-resolution` or the finishing commit. A refresh failing
- * after a clean merge leaves that merge commit — `outcome` `merged` with
- * `commit` and `upstream` set, status `failed` step `install` or `build`;
- * the refreshed `node_modules` and `dist` are never rolled back.
- * `--continue` refreshes nothing: the resolver edits only doc indexes.
- *
- * The version-line rule (`package-version.ts`; its I/O in
- * `sync-master-version.ts`) intervenes only when both the batch and
- * `origin/master` moved the `package.json` version since the merge-base:
- * a `package.json` conflict confined to the top-level version line is then
- * kind `package`, not code, and the merge runs `--no-ff --no-commit` — so
- * an identical bump, which git merges clean, still stops before its commit.
- * The rule writes and stages `package.json` at master's version bumped by
- * the branch's own, regenerates and stages the lockfile, and the merge
- * commit is made through the hooks as a resolver-free `--continue` would
- * make it. A `package.json` conflict beyond the version line stays code.
- * `--continue` finishes a merge whose `package.json` is already staged.
+ * Invariant: a `failed` envelope never leaves a merge this call started or continued in progress:
+ * it is aborted; a failed abort adds an `abort` error. `refused` / `conflict` leave the merge as
+ * found or as the resolver needs. Nothing is mutated, not even the fetch's remote-tracking refs,
+ * before the batch is verified a clean linked worktree, no slice linked in. Start mode refreshes
+ * the merged tree before reporting, `--continue` never; a refresh failing after a clean merge keeps
+ * that commit (`merged`, `commit` / `upstream` set, `install` / `build` failed), no rollback.
  */
 
 import { readFileSync } from 'node:fs';
@@ -103,7 +80,6 @@ interface Run {
  * Merge `origin/master` into the batch, or finish a merge stopped for a
  * resolver, keeping the file header's invariant.
  *
- * @param input - The batch, the mode and the self-hosted seam.
  * @returns The envelope: `ok` with `outcome` `up-to-date` or `merged`,
  *   `upstream` naming the `origin/master` sha the batch then contains;
  *   `conflict` with `needs-resolution` and `pending`; `refused` (harvest's
@@ -145,11 +121,8 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
 /**
  * Start mode: fetch, probe, merge.
  *
- * @param run - Call state.
- * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; Conflict
- *   `merge` when doc-index paths await a resolver; StepFailure for a failed
- *   step — `version` when both sides moved the version and one is not a
- *   plain `x.y.z`, before anything merges.
+ * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; Conflict `merge` when doc-index
+ *   paths await a resolver; StepFailure per failed step, {@link planVersionRule}'s before merging.
  */
 function start(run: Run): void {
   const { batch, result } = run;
@@ -192,14 +165,9 @@ function start(run: Run): void {
 }
 
 /**
- * Settle what a stopped merge left that needs no resolver: the version
- * rule's `package.json` and lockfile, or a conflicted lockfile regenerated.
- *
- * @param batch - The batch worktree, `MERGE_HEAD` set.
- * @param rule - The version rule's intervention, or `null`.
- * @returns The doc-index paths left for a resolver, sorted.
- * @throws StepFailure `merge` when an unmerged path is neither settled here
- *   nor a doc index; `version` or `lockfile` when settling fails.
+ * Settle what needs no resolver: the version rule's `package.json` and lockfile, or a conflicted
+ * lockfile regenerated; returns the doc-index paths left, sorted. Throws StepFailure `merge` for an
+ * unmerged path neither settled here nor a doc index; `version` or `lockfile` when settling fails.
  */
 function settleStoppedMerge(batch: string, rule: VersionRule | null): string[] {
   const unmerged = unmergedPaths(batch, 'merge');
@@ -215,16 +183,9 @@ function settleStoppedMerge(batch: string, rule: VersionRule | null): string[] {
 }
 
 /**
- * `--continue`, and start mode's own finish: stage the resolved doc
- * indexes by name, then commit the merge through the hooks.
- *
- * @param run - Call state; `result.pending` is the recomputed pending list.
- * @throws Refusal `no-merge-in-progress` without `MERGE_HEAD`; Refusal
- *   `unresolved` when a pending path is outside the doc indexes, still
- *   holds a conflict-marker line (nothing staged then), or is still
- *   unmerged after staging; StepFailure `continue` when reading
- *   `MERGE_HEAD`, listing or staging the pending paths fails; StepFailure
- *   `commit` when the commit fails.
+ * `--continue`, and start mode's own finish: stage the resolved doc indexes by name, then commit
+ * through the hooks. Throws Refusal `no-merge-in-progress`; `unresolved` per {@link assertResolved}
+ * (nothing staged then) or when still unmerged after staging; StepFailure `continue` or `commit`.
  */
 function finish(run: Run): void {
   const { batch, result } = run;
@@ -275,10 +236,8 @@ export function assertNoLiveSlices(dir: string, batch: string): void {
 }
 
 /**
- * Whether `origin/master` is already contained in the batch's `HEAD`.
+ * `true` when `origin/master`, freshly fetched, is an ancestor of the batch's `HEAD`.
  *
- * @param batch - The batch worktree, freshly fetched.
- * @returns `true` when it is an ancestor of `HEAD`.
  * @throws StepFailure `up-to-date` when git cannot tell.
  */
 function isMerged(batch: string): boolean {
@@ -291,12 +250,10 @@ function isMerged(batch: string): boolean {
 }
 
 /**
- * The paths a merge of `origin/master` into `HEAD` would conflict on,
- * computed without touching the index or the worktree.
+ * The paths a merge of `origin/master` into `HEAD` would conflict on, sorted, empty for a clean
+ * merge; computed without touching the index or the worktree.
  *
- * @param batch - The batch worktree.
- * @returns The conflicted paths, sorted; empty for a clean merge.
- * @throws StepFailure `probe` when `git merge-tree` fails (exit other than 0 or 1).
+ * @throws StepFailure `probe` when `git merge-tree` exits other than 0 or 1.
  */
 function probeConflicts(batch: string): string[] {
   const r = runCaptured(
@@ -323,15 +280,7 @@ function probeConflicts(batch: string): string[] {
   );
 }
 
-/**
- * Classify a conflicted path.
- *
- * @param path - Repository-relative path.
- * @param packageResolved - Whether the version rule resolves `package.json`.
- * @returns `lockfile` for {@link LOCKFILE}, `doc-index` for a
- *   {@link DOC_INDEX_PATHS} member, `package` for {@link PACKAGE_JSON} when
- *   `packageResolved`, `code` for anything else.
- */
+/** A conflicted path's kind; a `package.json` conflict the version rule can't resolve is `code`. */
 function conflictKind(path: string, packageResolved: boolean): ConflictKind {
   if (path === LOCKFILE) return 'lockfile';
   if (path === PACKAGE_JSON && packageResolved) return 'package';
@@ -339,15 +288,9 @@ function conflictKind(path: string, packageResolved: boolean): ConflictKind {
 }
 
 /**
- * The `origin/master` commits since the merge-base that touched a path,
- * along the first-parent line — so a PR that landed by merge commit is
- * named by that commit (`Merge pull request #N …`), never its inner commits.
- *
- * @param batch - The batch worktree.
- * @param mergeBase - The merge-base of `HEAD` and `origin/master`.
- * @param path - Repository-relative path.
- * @returns Up to {@link LANDED_BY_LIMIT} subjects, newest first.
- * @throws StepFailure `probe` when git fails.
+ * Up to {@link LANDED_BY_LIMIT} subjects, newest first, of `origin/master` commits since the
+ * merge-base touching `path`, first-parent only so a PR landed by merge commit is named by that
+ * commit, never its inner commits. Throws StepFailure `probe` when git fails.
  */
 function landedBy(batch: string, mergeBase: string, path: string): string[] {
   return git(
@@ -384,14 +327,7 @@ function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
   );
 }
 
-/**
- * A log file in this call's `freshLogDir` directory, recorded on the
- * envelope's `logs`.
- *
- * @param run - Call state.
- * @param name - The file name.
- * @returns The log file's path.
- */
+/** A log file in this call's `freshLogDir` directory, recorded on the envelope's `logs`. */
 function logFile(run: Run, name: string): string {
   run.logDir ??= freshLogDir('sync-master');
   const path = `${run.logDir}/${name}`;
@@ -400,16 +336,9 @@ function logFile(run: Run, name: string): string {
 }
 
 /**
- * Run the merge, its output to a log. A clean merge commits itself, unless
- * `stop` holds it before its commit.
- *
- * @param run - Call state.
- * @param stop - Merge `--no-ff --no-commit`, for the version rule to edit
- *   the merged tree first.
- * @returns `true` when the merge committed; `false` when it stopped —
- *   on conflicts or by `stop` — with `MERGE_HEAD` set.
- * @throws StepFailure `merge` when it ends without a commit and without a
- *   merge in progress.
+ * Merge, output logged; a clean merge commits unless `stop` holds it (`--no-ff --no-commit`, for
+ * the version rule to edit the tree): `true` when it committed, `false` when it stopped with
+ * `MERGE_HEAD` set. Throws StepFailure `merge` when it ends uncommitted, no merge in progress.
  */
 function merge(run: Run, stop: boolean): boolean {
   const hold = stop ? ['--no-ff', '--no-commit'] : [];
@@ -424,14 +353,9 @@ function merge(run: Run, stop: boolean): boolean {
 }
 
 /**
- * Refresh the batch for what `origin/master` changed since the merge-base,
- * once the merged tree is final: `npm ci` when the lockfile changed, then
- * `npm run build` when a path `dist/` is built from changed or `npm ci` ran.
- *
- * @param run - Call state; `result.refreshed` records each refresh that ran.
- * @param mergeBase - The merge-base of the pre-merge `HEAD` and `origin/master`.
- * @throws StepFailure `refresh` when git fails; `install` or `build` when
- *   npm does.
+ * Once the merged tree is final: `npm ci` when `origin/master` changed the lockfile since the
+ * merge-base, then `npm run build` when a path `dist/` is built from changed or `npm ci` ran.
+ * Throws StepFailure `refresh` when git fails, `install` or `build` when npm does.
  */
 function refresh(run: Run, mergeBase: string): void {
   const { batch, result } = run;
@@ -454,11 +378,8 @@ function refresh(run: Run, mergeBase: string): void {
 }
 
 /**
- * The batch's unmerged paths.
+ * The batch's unmerged paths, sorted.
  *
- * @param batch - The batch worktree.
- * @param step - Step name reported on failure.
- * @returns The paths, sorted.
  * @throws StepFailure for `step` when git fails.
  */
 function unmergedPaths(batch: string, step: string): string[] {
@@ -466,11 +387,9 @@ function unmergedPaths(batch: string, step: string): string[] {
 }
 
 /**
- * Require the merge to have stopped only on doc indexes — what the probe
- * promised; anything else fails the merge, which the caller then aborts.
+ * Require the merge to have stopped only on doc indexes, as the probe promised.
  *
- * @param pending - The unmerged paths.
- * @throws StepFailure `merge` naming the paths outside the doc indexes.
+ * @throws StepFailure `merge` naming the paths outside them; the caller then aborts.
  */
 function assertOnlyDocIndexes(pending: readonly string[]): void {
   const other = pending.filter((path) => !DOC_INDEX_PATHS.includes(path));
@@ -482,8 +401,6 @@ function assertOnlyDocIndexes(pending: readonly string[]): void {
 /**
  * Refuse unless every pending path is a doc index free of conflict markers.
  *
- * @param batch - The batch worktree.
- * @param pending - The unmerged paths.
  * @throws Refusal `unresolved` naming the offending paths.
  */
 function assertResolved(batch: string, pending: readonly string[]): void {
@@ -502,7 +419,6 @@ function assertResolved(batch: string, pending: readonly string[]): void {
 /**
  * Commit the merge with its hooks, the output to a log.
  *
- * @param run - Call state.
  * @throws StepFailure `commit` on a non-zero exit, spawn failure or budget kill.
  */
 function commitMerge(run: Run): void {

@@ -1,18 +1,15 @@
 /**
- * The saved workflows' emitted schema module (#1047): the zod sources under
- * `tooling/workflows/schemas/` written as JSON Schema literals into
- * {@link SCHEMA_MODULE}, which the workflow sources import and the render
- * inlines — the render can inline no `zod`, so the schemas reach it as data.
- * The module is committed and never hand-edited; {@link checkSchemaModule}
- * is its drift check (`tooling/check-codegen.ts`), and
- * `tooling/emit-workflow-schemas.ts` writes it (`npm run codegen`, before
- * the render).
+ * The saved workflows' emitted schema module: the zod sources under `tooling/workflows/schemas/`
+ * written as JSON Schema literals into {@link SCHEMA_MODULE} (#1047), which the workflow sources
+ * import and the render inlines — the render can inline no `zod`, so the schemas reach it as data.
+ * The module is committed and never hand-edited; {@link checkSchemaModule} is its drift check
+ * (`tooling/check-codegen.ts`), and `tooling/emit-workflow-schemas.ts` writes it
+ * (`npm run codegen`, before the render).
  *
- * The emitted text is a zero-import TypeScript module — a header comment,
- * then `TOOL_ENVELOPE_SCHEMAS` and `AGENT_OUTPUT_SCHEMAS`, each an `as const`
- * object literal of {@link emitJsonSchema} outputs in the sources' key
- * order — formatted by prettier under the repository's config, with LF line
- * endings whatever the checkout's.
+ * The emitted text is a zero-import TypeScript module — a header comment, then
+ * `TOOL_ENVELOPE_SCHEMAS` and `AGENT_OUTPUT_SCHEMAS`, each an `as const` object literal of
+ * {@link emitJsonSchema} outputs in the sources' key order — formatted by prettier under the
+ * repository's config, with LF line endings whatever the checkout's.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -72,7 +69,6 @@ export async function renderSchemaModule(root: string): Promise<string> {
  * The drift check: compare the on-disk module with a fresh emission, line
  * endings normalised. Writes nothing.
  *
- * @param root - The repository root.
  * @param read - The module reader (default: the filesystem).
  * @returns Resolves to the check: `ok`, or not with a reason — the module
  *   is `missing — never emitted`, or it `differs from the emitted output`.
@@ -94,7 +90,6 @@ export async function checkSchemaModule(
 /**
  * Emit the module and write it LF, replacing any existing file.
  *
- * @param root - The repository root.
  * @returns Resolves to {@link SCHEMA_MODULE}; rejects as
  *   {@link renderSchemaModule} does, writing nothing.
  */
@@ -107,10 +102,8 @@ export async function writeSchemaModule(root: string): Promise<string> {
 }
 
 /**
- * A record of zod schemas as one JSON object literal.
- *
- * @param schemas - The schemas by key.
- * @returns The JSON text, each value {@link emitJsonSchema}'s output, in key order.
+ * A record of zod schemas as one JSON object literal, each value {@link emitJsonSchema}'s output,
+ * in key order.
  */
 function emitAll(schemas: Readonly<Record<string, z.ZodType>>): string {
   return JSON.stringify(
@@ -118,12 +111,7 @@ function emitAll(schemas: Readonly<Record<string, z.ZodType>>): string {
   );
 }
 
-/**
- * Read a file when it exists.
- *
- * @param path - Absolute path.
- * @returns Its UTF-8 content; `undefined` when there is no such file.
- */
+/** Read a file by absolute path as UTF-8; `undefined` when there is no such file. */
 function readIfPresent(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
 }

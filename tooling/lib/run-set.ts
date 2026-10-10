@@ -1,23 +1,17 @@
 /**
- * The run-set vocabulary — the single declaration of an unattended run's
- * issue set and its dependency edges (#1031 / #1032, ADR-0045). The run gate
- * (`tooling/lib/run-gate.ts`) produces a {@link RunGraph}; the run scheduler
- * consumes it. Neither re-declares these shapes.
+ * The run-set vocabulary — the single declaration of an unattended run's issue set and its
+ * dependency edges (#1031 / #1032, ADR-0045). The run gate (`tooling/lib/run-gate.ts`) produces a
+ * {@link RunGraph}; the run scheduler consumes it. Neither re-declares these shapes.
  *
- * **Edge semantics.** A {@link RunEdge} `{ blocker, dependent }` means
- * `dependent` waits for `blocker`'s commit. Edges run blocker → dependent, so a
- * walk along them reaches everything a blocker holds up.
+ * **Edge semantics.** A {@link RunEdge} `{ blocker, dependent }` means `dependent` waits for
+ * `blocker`'s commit, so a walk along edges reaches everything a blocker holds up.
  *
- * **Zero imports, pure — a contract, not a style.** This module may be
- * rendered verbatim into the workflow script together with the scheduler, and
- * that script permits no module system and no ambient runtime. So the file
- * carries no `import` of any kind (value, type-only or `node:*`) and no
- * `export … from` re-export, and uses no `eval` / `new Function`, no clock or
- * randomness (`Date.now`, argless `new Date()`, `Math.random`), no Node
- * globals (`process`, `Buffer`,
- * `require`, `__dirname`, timers, `globalThis` lookups) and no I/O. Erasable
- * syntax only. Never pull a helper in from elsewhere — sort numbers inline with
- * `(a, b) => a - b`. A text guard test enforces the forbidden-token list.
+ * **Zero imports, pure — a contract, not a style.** This module is rendered into the workflow
+ * script with the scheduler, and that script permits no module system and no ambient runtime. So
+ * it carries no `import` of any kind and no `export … from` re-export, and uses no `eval` /
+ * `new Function`, no clock or randomness, no Node globals and no I/O (the renderer's
+ * `FORBIDDEN_TOKENS` lists the names); erasable syntax only. Never pull a helper in from
+ * elsewhere — sort numbers inline with `(a, b) => a - b`. A text guard test enforces it.
  */
 
 /** One entry of a run set: one epic's issues, or an explicit issue list (`epic: null`). */
@@ -47,12 +41,7 @@ export interface RunGraph {
   readonly edges: readonly RunEdge[];
 }
 
-/**
- * Every issue of a run set, flattened across entries.
- *
- * @param runSet - The run set.
- * @returns Each issue number once, ascending.
- */
+/** Every issue of a run set, flattened across entries: each issue number once, ascending. */
 export function runSetIssues(runSet: RunSet): number[] {
   const all = new Set<number>();
   for (const entry of runSet) {
@@ -68,8 +57,6 @@ export function runSetIssues(runSet: RunSet): number[] {
  * An edge with an endpoint outside `issues` is ignored. `[]` means the graph
  * is acyclic — the scheduler's construction-time check.
  *
- * @param issues - The graph's nodes.
- * @param edges - The graph's blocker → dependent edges.
  * @returns The cycles, each ascending, ordered by first member.
  */
 export function findCycles(issues: readonly number[], edges: readonly RunEdge[]): number[][] {
@@ -86,8 +73,6 @@ export function findCycles(issues: readonly number[], edges: readonly RunEdge[])
  * Every issue reachable from `roots` along blocker → dependent edges — what
  * dropping the roots would hold up.
  *
- * @param roots - The starting issues.
- * @param edges - The blocker → dependent edges.
  * @returns The reached issues, roots excluded, each once, ascending.
  */
 export function transitiveDependents(
@@ -114,13 +99,7 @@ export function transitiveDependents(
   return reached.sort((a, b) => a - b);
 }
 
-/**
- * Adjacency lists over `issues`, dropping any edge with an endpoint outside.
- *
- * @param issues - The graph's nodes.
- * @param edges - The graph's edges.
- * @returns Each issue mapped to its dependents.
- */
+/** Each of `issues` mapped to its dependents, dropping any edge with an endpoint outside. */
 function adjacency(
   issues: readonly number[],
   edges: readonly RunEdge[],

@@ -18,6 +18,7 @@ import {
   inTurn,
   LAND_OK,
   LIVE_RUNS_NONE,
+  liveRuns,
   PLAN_CARD,
   PREFLIGHT_OK,
   REPORT_DIR,
@@ -242,13 +243,32 @@ describe('runShip — pre-flight only', () => {
       'overlapEstimator',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
-      ['tooling/worktree.ts', 'preflight', '.'],
+      ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
       ['tooling/run-gate.ts', 'epics', '1025'],
       ['tooling/worktree.ts', 'live-runs', '.'],
       [],
       [],
     ]);
     expect(run.phases).toEqual(['Pre-flight']);
+  });
+
+  it.each([
+    {
+      args: 'issues 9 7 8 --preflight-only',
+      slugs: '7-8-9',
+      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', '7-8-9'],
+    },
+    {
+      args: 'epics 1025 1030 --preflight-only',
+      slugs: 'epic-1025,epic-1030',
+      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025,epic-1030'],
+    },
+  ])('passes --slug $slugs for $args', async ({ args, argv }) => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, args);
+
+    expect(run.calls.find((c) => c.label === 'runner:preflight')?.argv).toEqual(argv);
   });
 });
 
@@ -269,6 +289,99 @@ describe('runShip — pre-flight refusals', () => {
       epics: [],
     });
     expect(run.calls.filter(isCutOrLand)).toEqual([]);
+  });
+});
+
+const STALE_7 = {
+  check: 'stale-slice-branch',
+  message: 'slice/7/1212-1 is left over from a run of ship/7',
+};
+
+const STALE_PREFLIGHT = {
+  ...PREFLIGHT_OK,
+  exitCode: 1,
+  status: 'refused',
+  reason: 'preflight-failed',
+  problems: [STALE_7],
+};
+
+describe('runShip — leftover slice branches', () => {
+  it('refuses a stale-slice-branch problem though the scout finds #7 fresh, cutting nothing', async () => {
+    const run = fakeHooks({ 'runner:preflight': STALE_PREFLIGHT });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('refused');
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: STALE_7.message }]);
+    expect(run.calls.map((c) => c.label)).toContain('scout');
+    expect(run.calls.filter(isCutOrLand)).toEqual([]);
+  });
+
+  it.each([
+    { name: 'a spent run of a longer slug', live: { branch: 'ship/77' } },
+    {
+      name: 'an open run of the same slug',
+      live: { branch: 'ship/7', spent: false, pr: { state: 'open', number: 100 } },
+    },
+  ])('still refuses for $name', async ({ live }) => {
+    const run = fakeHooks({ 'runner:preflight': STALE_PREFLIGHT, ...liveRuns(live) });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: STALE_7.message }]);
+    expect(run.calls.map((c) => c.label)).not.toContain('runner:teardown:spent-1');
+  });
+
+  it('still refuses a slice branch of ship/77 beside a spent ship/7', async () => {
+    const stale77 = {
+      check: 'stale-slice-branch',
+      message: 'slice/77/1-1 is left over from a run of ship/77',
+    };
+    const run = fakeHooks({
+      'runner:preflight': { ...STALE_PREFLIGHT, problems: [stale77] },
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 77 --preflight-only');
+
+    expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: stale77.message }]);
+  });
+
+  it('drops the problem of a spent ship/7 and retires that run before cutting', async () => {
+    const run = fakeHooks({
+      'runner:preflight': STALE_PREFLIGHT,
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.status).toBe('done');
+    expect(report.refusals).toBeUndefined();
+    expect(report.cleanup).toEqual({
+      tornDown: ['C:/src/ph-runs/old-0/batch'],
+      retired: ['ship/7'],
+      skipped: [],
+      residue: [],
+      blocked: null,
+      stop: null,
+    });
+    expect(report.epics[0]?.mainUntouched).toBe(true);
+  });
+
+  it('keeps master-ahead when it drops the spent run’s problem', async () => {
+    const run = fakeHooks({
+      'runner:preflight': {
+        ...STALE_PREFLIGHT,
+        problems: [{ check: 'master-ahead', message: 'local master is 2 commits ahead' }, STALE_7],
+      },
+      ...liveRuns({ branch: 'ship/7' }),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 --preflight-only');
+
+    expect(report.refusals).toEqual([
+      { kind: 'master-ahead', message: 'local master is 2 commits ahead' },
+    ]);
   });
 });
 
@@ -837,7 +950,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(tdd|runner:teardown)/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(tdd|runner:teardown):\d/.test(l))).toEqual([
       'tdd:7-1',
       'runner:teardown:7-1',
       'tdd:7-2',
@@ -855,7 +968,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):\d/.test(l))).toEqual([
       'diffReview:7-1',
       'runner:teardown:7-1',
       'diffReview:7-2',
@@ -878,7 +991,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^(diffReview|reviewer|runner:teardown):\d/.test(l))).toEqual([
       'diffReview:7-1',
       'runner:teardown:7-1',
     ]);
@@ -968,7 +1081,7 @@ const UP_TO_PLAN = [
   'planner:7-1',
 ];
 const BUILD_CALL =
-  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):/;
+  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):\d/;
 const BUILD_ENDINGS: [
   string,
   Readonly<Record<string, unknown>>,
@@ -1072,7 +1185,7 @@ describe('runShip — an attempt through the build', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(
-      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):/.test(l)),
+      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):\d/.test(l)),
     ).toEqual([
       'runner:cut-slice:7-1',
       'planReviewer:7-1',
@@ -1091,7 +1204,7 @@ describe('runShip — an attempt through the build', () => {
   });
 });
 
-const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):/;
+const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):\d/;
 const UP_TO_REVIEW = ['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1'];
 const UP_TO_LAND = [...UP_TO_REVIEW, 'testReview:7-1', 'runner:land:7-1'];
 const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
@@ -1196,7 +1309,7 @@ describe('runShip — an attempt after the build', () => {
 
       expect(
         labels(run).filter((l) =>
-          new RegExp(`^(runner:(cut-slice|land|teardown)|${agent}):`).test(l),
+          new RegExp(`^(runner:(cut-slice|land|teardown)|${agent}):\\d`).test(l),
         ),
       ).toEqual([
         'runner:cut-slice:7-1',
@@ -1506,6 +1619,94 @@ describe('runShip — what an attempt hands on', () => {
     );
     expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
   });
+
+  it('skips the test review for a slice proven comment-only, landing the reviewer’s commit', async () => {
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files: ['src/a.ts', 'eslint-suppressions.json'] },
+      'runner:comment-only': {
+        exitCode: 0,
+        envelopePath: 'e.json',
+        notCompared: ['eslint-suppressions.json'],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(reviewer|runner:comment-only|testReview):/.test(l)),
+    ).toEqual(['reviewer:7-1', 'runner:comment-only:7-1']);
+    expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
+      'tooling/comment-only.ts',
+      '--json',
+      'cut1..slice2',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
+    const lines = promptOf(run, 'runner:publish:list').split('\n');
+    expect(lines).toContain('- Test review: skipped — comment-only');
+    expect(lines).not.toContain('- Test review: skipped — trivial surface');
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+  });
+
+  it.each<[string, string[], unknown, boolean, boolean]>([
+    [
+      'a test/ path',
+      ['src/a.ts', 'test/unit/a.test.ts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
+      false,
+      false,
+    ],
+    [
+      'a not-compared tooling/x.cts',
+      ['src/a.ts', 'tooling/x.cts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/x.cts'] },
+      true,
+      false,
+    ],
+    [
+      'a not-compared src/b.js',
+      ['src/a.ts', 'src/b.js'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['src/b.js'] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 1',
+      ['src/a.ts'],
+      { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 2',
+      ['src/a.ts'],
+      {
+        exitCode: 2,
+        envelopePath: 'e.json',
+        stderrTail: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
+      },
+      true,
+      true,
+    ],
+    ['a runner that returned nothing', ['src/a.ts'], null, true, false],
+  ])(
+    'runs the test review on a slice with %s',
+    async (_name, files, proof, proofCalled, offSchema) => {
+      const run = fakeHooks(
+        { tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof },
+        { offSchema },
+      );
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run).filter((l) => /^(runner:comment-only|testReview):/.test(l))).toEqual(
+        proofCalled ? ['runner:comment-only:7-1', 'testReview:7-1'] : ['testReview:7-1'],
+      );
+      expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice3');
+      expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+        '- Test review: hardened, 0 surviving mutants — pinned a bound',
+      );
+    },
+  );
 
   it('runs the diff review on a slice that changes no code, though test review is skipped', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });

@@ -1,38 +1,23 @@
 /**
- * The saved workflows' tooling calls: each runs one repo CLI command
- * through the `runner` agent, which writes the full envelope into a fresh
- * directory of its own under the call's {@link ToolPlace} and returns only
- * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS}
- * row.
+ * The saved workflows' tooling calls: each runs one repo CLI command through the `runner` agent,
+ * which writes the full envelope into a fresh directory of its own under the call's
+ * {@link ToolPlace} — so concurrent launches and repeated calls never share one — and returns only
+ * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS} row.
  *
- * **Schemas.** A worktree tool's row is `schemas.generated.ts`'s emission
- * of its pick in `tooling/workflows/schemas/tool-envelopes.ts` — the one
- * source of the consumed fields, their schema and their type, and of which
- * are required — plus the runner's own fields ({@link toolSchema}). The run
- * gate's `run-gate` and `check` rows are hand-written from
- * `tooling/lib/run-gate.ts`'s types: every consumed field required, save
- * those a failure or exclusion kind may lack.
- *
- * **Types.** Each output type is shallow-`Partial` all the same: a command
+ * **Types.** Each output type is shallow-`Partial`, required fields included: a command
  * that exits 2 prints no verdict, one that threw or failed its envelope
  * schema prints only the base fields (`tooling/worktree.ts`
  * `runWorktreeCli`), and the runtime enforces nothing beyond `required`
  * that anyone has observed, so a reader treats a missing field as a
  * failure, never as a pass.
  *
- * **Envelope places.** A call before the run is cut writes under
- * {@link TOOL_ENVELOPE_DIR} in the main checkout ({@link PRE_CUT}); every
- * later call writes under its run's report directory. Either way the runner
- * makes each call's directory unique, so concurrent launches and repeated
- * calls never share an envelope file.
- *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect; the zod sources are imported for their types
- * only.
+ * no top-level side effect; the zod sources are imported for types only.
  */
 
 import type { z } from 'zod';
 
+import type { CommentOnlyReport } from '../../lib/comment-only.js';
 import type { GateVerdict, IssueCheck } from '../../lib/run-gate.js';
 import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
@@ -47,12 +32,14 @@ export type ToolName =
   | 'run-gate'
   | 'live-runs'
   | 'check'
+  | 'comment-only'
   | 'cut-batch'
   | 'provision-batch'
   | 'cut-slice'
   | 'provision'
   | 'land'
   | 'teardown'
+  | 'retire-run'
   | 'sync-master'
   | 'bump'
   | 'check-master'
@@ -61,8 +48,8 @@ export type ToolName =
   | 'post-pr-comment'
   | 'post-issue-comment';
 
-/** A worktree-CLI command the workflow runs: every tool but the run gate's. */
-export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check'>;
+/** A worktree-CLI command the workflow runs: every tool but the run gate's and comment-only's. */
+export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check' | 'comment-only'>;
 
 /** Where the runner writes pre-cut envelopes, relative to the main checkout (gitignored). */
 export const TOOL_ENVELOPE_DIR = 'reports/tool';
@@ -80,7 +67,10 @@ export interface ToolPlace {
   readonly write?: FileToWrite;
 }
 
-/** The place of every call before the run is cut. */
+/**
+ * The place of every call before the run is cut: under {@link TOOL_ENVELOPE_DIR} in the main
+ * checkout.
+ */
 export const PRE_CUT: ToolPlace = { dir: TOOL_ENVELOPE_DIR };
 
 /**
@@ -105,7 +95,7 @@ interface ToolBase {
   readonly stderrTail?: string;
 }
 
-/** A worktree-CLI tool's output: the base, and its envelope's consumed fields, each possibly absent. */
+/** A worktree tool's output: the base and its envelope's consumed fields, each possibly absent. */
 type EnvelopeOutput<N extends WorktreeToolName> = ToolBase &
   Partial<z.infer<(typeof TOOL_ENVELOPES)[N]>>;
 
@@ -125,6 +115,9 @@ export type LiveRunOutput = NonNullable<LiveRunsOutput['runs']>[number];
 /** `run-gate check N`'s consumed fields. */
 export type CheckOutput = ToolBase & Partial<Pick<IssueCheck, 'ready' | 'failures'>>;
 
+/** `comment-only --json`'s consumed fields. */
+export type CommentOnlyOutput = ToolBase & Partial<Pick<CommentOnlyReport, 'notCompared'>>;
+
 /** `cut-batch`'s consumed fields. */
 export type CutBatchOutput = EnvelopeOutput<'cut-batch'>;
 
@@ -142,6 +135,9 @@ export type LandOutput = EnvelopeOutput<'land'>;
 
 /** `teardown`'s consumed fields. */
 export type TeardownOutput = EnvelopeOutput<'teardown'>;
+
+/** `retire-run`'s consumed fields. */
+export type RetireRunOutput = EnvelopeOutput<'retire-run'>;
 
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = EnvelopeOutput<'sync-master'>;
@@ -170,12 +166,14 @@ export interface ToolOutputs {
   'run-gate': GateOutput;
   'live-runs': LiveRunsOutput;
   check: CheckOutput;
+  'comment-only': CommentOnlyOutput;
   'cut-batch': CutBatchOutput;
   'provision-batch': ProvisionBatchOutput;
   'cut-slice': CutSliceOutput;
   provision: ProvisionOutput;
   land: LandOutput;
   teardown: TeardownOutput;
+  'retire-run': RetireRunOutput;
   'sync-master': SyncMasterOutput;
   bump: BumpOutput;
   'check-master': CheckMasterOutput;
@@ -197,12 +195,14 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
+  'comment-only': ['tooling/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
   provision: [WORKTREE_CLI, 'provision'],
   land: [WORKTREE_CLI, 'land'],
   teardown: [WORKTREE_CLI, 'teardown'],
+  'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
   bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
@@ -244,10 +244,7 @@ const RUN_GRAPH = {
 /**
  * A tool output's schema: the runner's fields — `exitCode` and
  * `envelopePath` required, `stderrTail` not — plus the tool's consumed
- * fields.
- *
- * @param consumed - The consumed fields' object schema.
- * @returns The schema, the consumed fields' `required` kept.
+ * fields, their `required` kept.
  */
 function toolSchema(consumed: {
   readonly properties: Readonly<Record<string, unknown>>;
@@ -265,17 +262,20 @@ function toolSchema(consumed: {
   };
 }
 
-/**
- * A worktree tool's schema: {@link toolSchema} over its emitted row.
- *
- * @param name - The tool.
- * @returns The schema.
- */
+/** A worktree tool's schema: {@link toolSchema} over its emitted row. */
 function envelopeSchema(name: WorktreeToolName): JsonSchema {
   return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
 }
 
-/** Each tool's output schema: only what the workflow reads. */
+/**
+ * Each tool's output schema: only what the workflow reads. A worktree tool's row is
+ * `schemas.generated.ts`' emission of its pick in `tooling/workflows/schemas/tool-envelopes.ts` —
+ * the one source of the consumed fields, their schema and their type, and of which are required —
+ * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
+ * hand-written from `tooling/lib/run-gate.ts`' types: every consumed field required, save those a
+ * failure or exclusion kind may lack. The `comment-only` row is hand-written from
+ * `tooling/lib/comment-only.ts`' `CommentOnlyReport`, its consumed field required.
+ */
 export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   preflight: envelopeSchema('preflight'),
   'run-gate': toolSchema({
@@ -317,12 +317,17 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
     },
     required: ['ready', 'failures'],
   }),
+  'comment-only': toolSchema({
+    properties: { notCompared: { type: 'array', items: STRING } },
+    required: ['notCompared'],
+  }),
   'cut-batch': envelopeSchema('cut-batch'),
   'provision-batch': envelopeSchema('provision-batch'),
   'cut-slice': envelopeSchema('cut-slice'),
   provision: envelopeSchema('provision'),
   land: envelopeSchema('land'),
   teardown: envelopeSchema('teardown'),
+  'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
   bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
@@ -335,8 +340,6 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
 /**
  * Run one tooling command through the runner.
  *
- * @param hooks - The workflow hooks.
- * @param name - The tool.
  * @param argv - The command words after {@link TOOL_COMMANDS}'s, unquoted.
  * @param place - Where the envelope goes, the call's tag and a file to
  *   write first; default {@link PRE_CUT}.
@@ -370,7 +373,6 @@ export async function runTool<N extends ToolName>(
  * reports a tool that let it down (pre-flight's refusals, whose outputs may
  * carry no `status`, word theirs apart).
  *
- * @param tool - The tool.
  * @param out - Its output; `null` when the runner returned none.
  * @returns `<tool> <status>[ (<reason>)]: <first error or stderr tail>`.
  */

@@ -10,8 +10,9 @@
 import { readFileSync } from 'node:fs';
 
 import { describeError } from '../lib/describe-error.js';
+import { GH_BODY_LIMIT } from '../lib/gh-body-limit.js';
 
-import { GH_BODY_LIMIT, GH_TIMEOUT_MS, runCaptured } from './exec.js';
+import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import { StepFailure } from './types.js';
 
 /** What a comment is posted on: a pull request or an issue. */
@@ -21,8 +22,6 @@ type CommentSubject = 'pr' | 'issue';
  * Post the comment file on a PR or an issue.
  *
  * @param cwd - `gh`'s working directory.
- * @param subject - `pr` or `issue`.
- * @param number - The PR or issue number.
  * @param file - The comment to post, whole.
  * @returns The comment's URL, as `gh` printed it.
  * @throws StepFailure `comment` (the file unreadable or blank) or
@@ -51,8 +50,6 @@ export function postCommentFile(
 /**
  * Read the comment file.
  *
- * @param file - The comment file.
- * @returns Its text.
  * @throws StepFailure `comment` when it cannot be read or is blank.
  */
 function readComment(file: string): string {
@@ -66,17 +63,6 @@ function readComment(file: string): string {
   return text;
 }
 
-/**
- * One `gh <subject> comment <number> --body-file <file>`.
- *
- * @param cwd - `gh`'s working directory.
- * @param subject - `pr` or `issue`.
- * @param number - The PR or issue number.
- * @param file - The comment.
- * @returns The comment's URL, as `gh` printed it.
- * @throws StepFailure `<subject>-comment` on a non-zero exit; `comment-url`
- *   when `gh` printed no `https://` URL.
- */
 function postComment(cwd: string, subject: CommentSubject, number: number, file: string): string {
   const r = runCaptured('gh', [subject, 'comment', String(number), '--body-file', file], {
     cwd,

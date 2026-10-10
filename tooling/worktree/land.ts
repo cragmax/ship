@@ -1,31 +1,18 @@
 /**
- * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>` —
- * the commit queue's single deterministic step (ADR-0045 decision 3): one
- * slice commit becomes exactly one batch commit, or nothing at all.
+ * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>` — the commit queue's
+ * one deterministic step: a slice commit becomes exactly one batch commit, or nothing (ADR-0045
+ * decision 3).
  *
- * Invariant: nothing is mutated before four guards pass — the batch is a
- * registered linked worktree the CLI does not run from, it is clean with no
- * operation in progress (harvest's own guards, reused), it has a `ship/`
- * run branch checked out (cut-slice's guard, reused), and the slice is
- * exactly one commit whose parent is the cut. Once the harvest has staged
- * the slice, every outcome other than `ok` ends in harvest's rollback and a
- * batch verified clean at its unchanged `HEAD`, or reports `failed` with a
- * `rollback` entry when that cannot be verified.
+ * Invariant: nothing is mutated before four guards pass — harvest's linked-worktree and clean-batch
+ * guards, cut-slice's `ship/` run-branch guard, and a slice of exactly one commit whose parent is
+ * the cut. Once staged, every non-`ok` outcome ends in harvest's rollback with the batch verified
+ * clean at its unchanged `HEAD`, or reports `failed` with a `rollback` entry.
  *
- * The rollback is harvest's `git reset --hard HEAD`, the one exception to
- * `.claude/rules/git.md` § Commits' `reset --hard` rule: approved by the
- * maintainer on 2026-09-28 for the run's own batch worktree only, never the
- * main checkout, and only once the guards above held (git.md § Harvested
- * slices). A commit killed at its budget can leave `index.lock` behind; the
- * rollback then fails, or `batchClean` re-verifies `false`, and the caller
- * halts the epic. A lock file is never deleted here. On Windows a budget
- * kill reaches only the direct child — `git`, or Git's launcher in front of
- * it — so part of the commit's process tree may still be running in the
- * batch when `land` returns; what survives is `exec.ts`'s header to state.
- *
- * Its two long spawns name their budgets (`exec.ts`): the build runs under
- * `NPM_TIMEOUT_MS`, the commit — whose pre-commit hook runs the commit
- * gate — under `COMMIT_TIMEOUT_MS` (`commitWithHooks`, `git.ts`).
+ * The rollback's `reset --hard` is the exception `harvest.ts`' header states. A commit killed at
+ * its budget can leave `index.lock`: the rollback then fails or `batchClean` re-verifies `false`,
+ * and the caller halts the epic; a lock file is never deleted here. A Windows budget kill can leave
+ * part of the commit's process tree running (what survives: `exec.ts`' header). The build runs
+ * under `NPM_TIMEOUT_MS`, the commit under `COMMIT_TIMEOUT_MS` (`commitWithHooks`, `git.ts`).
  */
 
 import { assertRunBatch } from './cut.js';
@@ -67,7 +54,6 @@ const BUILD_PREFIXES = ['src/', 'tooling/'] as const;
 /**
  * Land one slice commit on the batch, keeping the file header's invariant.
  *
- * @param input - Batch, slice commit, cut, message and log files.
  * @returns The envelope: `ok` with the new `commit`; `refused` before any
  *   mutation (harvest's reasons, `not-run-batch`, or
  *   `slice-not-single-commit`); `conflict`
@@ -115,14 +101,9 @@ export function land(input: LandInput): LandResult {
 }
 
 /**
- * The lines the slice commit changes against its parent, the size the
- * schedule reports against the slice budget (`SLICE_BUDGET`,
- * `tooling/workflows/lib/stages.ts`).
+ * The size the schedule reports against `SLICE_BUDGET` (`tooling/workflows/lib/stages.ts`):
+ * insertions plus deletions over the slice commit's text files; a binary file adds none.
  *
- * @param batch - The batch worktree (shares the object database).
- * @param sha - The resolved slice commit.
- * @returns Insertions plus deletions over the commit's text files; a binary
- *   file (git's `-` counts) adds none.
  * @throws StepFailure `preconditions` when git fails.
  */
 function changedLines(batch: string, sha: string): number {
@@ -140,15 +121,10 @@ function changedLines(batch: string, sha: string): number {
 }
 
 /**
- * Require the slice to be exactly one commit on top of the cut: `cut..sha`
- * holds one commit, and that commit's only parent is the cut.
+ * The slice's full sha, once `base..sha` holds one commit whose only parent is `base`, the cut.
  *
- * @param batch - The batch worktree (shares the object database).
- * @param sha - The slice commit.
- * @param base - The cut.
- * @returns The slice commit's full sha.
- * @throws StepFailure `preconditions` when either does not resolve to a
- *   commit; Refusal `slice-not-single-commit` otherwise.
+ * @throws StepFailure `preconditions` when either does not resolve to a commit; Refusal
+ *   `slice-not-single-commit` otherwise.
  */
 function assertSingleCommit(batch: string, sha: string, base: string): string {
   const full = resolveCommit(batch, sha, 'preconditions');
@@ -169,15 +145,10 @@ function assertSingleCommit(batch: string, sha: string, base: string): string {
 }
 
 /**
- * Harvest the slice and copy its outcome onto the envelope.
+ * Harvest the slice, copying its `files`, `conflicts` and `rolledBack` onto `result`, and on a
+ * non-`ok` harvest its status, reason and errors.
  *
- * @param result - Envelope; gains the harvest's `files`, `conflicts` and
- *   `rolledBack`, and on a non-`ok` harvest its status, reason and errors.
- * @param batch - The batch worktree.
- * @param sha - The resolved slice commit.
- * @param selfPath - The running CLI's file.
- * @returns `true` when the slice is staged; `false` when the harvest failed
- *   (it rolled back itself).
+ * @returns `true` when staged; `false` when the harvest failed (it rolled back itself).
  */
 function pick(result: LandResult, batch: string, sha: string, selfPath: string): boolean {
   const h = harvest({ batch, sha, selfPath });
@@ -192,11 +163,9 @@ function pick(result: LandResult, batch: string, sha: string, selfPath: string):
 }
 
 /**
- * Require the staged set to equal the harvested paths, a rename as both
- * endpoints (`.claude/rules/git.md` § Direct commits step 3).
+ * Require the staged set to equal the harvest's `files`, a rename as both endpoints
+ * (`.claude/rules/git.md` § Direct commits step 3).
  *
- * @param batch - The batch worktree.
- * @param files - The harvest's `files`.
  * @throws Refusal `staged-mismatch` naming both differences.
  */
 function assertStagedSet(batch: string, files: readonly string[]): void {
@@ -222,13 +191,7 @@ export function needsBuild(files: readonly string[]): boolean {
   return files.some((file) => BUILD_PREFIXES.some((prefix) => file.startsWith(prefix)));
 }
 
-/**
- * Re-verify the batch clean, never throwing.
- *
- * @param batch - The batch worktree.
- * @returns `true` when its status is empty and no operation is in progress;
- *   `false` otherwise, or when git cannot tell.
- */
+/** Re-verify the batch clean, never throwing: `false` when residue remains or git cannot tell. */
 function isClean(batch: string): boolean {
   try {
     return batchResidue(batch, 'batch-clean').length === 0;

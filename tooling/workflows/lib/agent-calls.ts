@@ -78,7 +78,10 @@ export type PlanCard = z.infer<typeof PlanCardSchema>;
 /** The plan reviewer's answer. */
 export type PlanReview = z.infer<typeof PlanReviewSchema>;
 
-/** One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the tdd's. */
+/**
+ * One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the
+ * tdd's.
+ */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
 
 /** The tdd's evidence: its tracer test's red-green, or why it saw none. */
@@ -96,6 +99,12 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 /** The test reviewer's answer. */
 export type TestReviewOutput = z.infer<typeof TestReviewOutputSchema>;
 
+/**
+ * Why a slice's test review was skipped: no code changed, or every code change proven
+ * comment-only.
+ */
+export type TestReviewSkip = 'trivial surface' | 'comment-only';
+
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
   /** The plan card the slice was authored from (the applier's, when it ran). */
@@ -106,8 +115,8 @@ export interface SliceWork {
   readonly diffReview: DiffReviewOutput;
   /** The reviewer's answer. */
   readonly review: ReviewOutput;
-  /** The test reviewer's answer; `null` when skipped for a trivial surface. */
-  readonly testReview: TestReviewOutput | null;
+  /** The test reviewer's answer, or why it was skipped. */
+  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
 /** One finding of the critic. */
@@ -131,9 +140,6 @@ export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
 /**
  * The overlap estimator's output schema, built per call: a pair's endpoints
  * may only be the run's issues.
- *
- * @param issues - The run-set issues.
- * @returns The emitted schema, `a` and `b` narrowed to `issues`.
  */
 function overlapSchema(issues: readonly number[]): JsonSchema {
   const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
@@ -152,14 +158,7 @@ function overlapSchema(issues: readonly number[]): JsonSchema {
   };
 }
 
-/**
- * Run one agent and keep its answer only when it is an object.
- *
- * @param hooks - The workflow hooks.
- * @param prompt - The prompt.
- * @param options - The call's options.
- * @returns Resolves to the answer; `null` when there is none.
- */
+/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
 async function askAgent<T>(
   hooks: WorkflowHooks,
   prompt: string,

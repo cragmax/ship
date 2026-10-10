@@ -116,11 +116,8 @@ function assertBumpable(subjects: readonly string[]): void {
 }
 
 /**
- * Put both files back at `HEAD`, index and worktree, after a failed bump —
- * the batch was verified clean before it, so only the bump's change goes.
- *
- * @param batch - The batch worktree.
- * @param result - Envelope; a failed restore adds a `restore` error.
+ * Put both files back at `HEAD`, index and worktree, after a failed bump — the batch was verified
+ * clean before it, so only the bump's change goes; a failed restore adds a `restore` error.
  */
 function restore(batch: string, result: BumpResult): void {
   try {
@@ -131,11 +128,8 @@ function restore(batch: string, result: BumpResult): void {
 }
 
 /**
- * The subjects of the batch's own non-merge commits since it left
- * `origin/master`.
+ * The subjects of the batch's own non-merge commits since it left `origin/master`, newest first.
  *
- * @param batch - The batch worktree.
- * @returns The subjects, newest first.
  * @throws StepFailure `subjects` when git fails.
  */
 function ownSubjects(batch: string): string[] {
@@ -148,10 +142,7 @@ function ownSubjects(batch: string): string[] {
 /**
  * The batch's `package.json` version.
  *
- * @param batch - The batch worktree.
- * @returns The `version` field.
- * @throws StepFailure `version` when the file is unreadable or has no
- *   string `version`.
+ * @throws StepFailure `version` when the file is unreadable or has no string `version`.
  */
 function packageVersion(batch: string): string {
   const path = `${batch}/package.json`;
@@ -165,13 +156,10 @@ function packageVersion(batch: string): string {
 }
 
 /**
- * `origin/master`'s `package.json` version, read from the batch's
- * remote-tracking ref.
+ * `origin/master`'s `package.json` version, read from the batch's remote-tracking ref.
  *
- * @param batch - The batch worktree.
- * @returns The `version` field.
- * @throws StepFailure `version` when git cannot show the file, or it is
- *   not JSON with a string `version`.
+ * @throws StepFailure `version` when git cannot show the file, or it is not JSON with a string
+ *   `version`.
  */
 function upstreamVersion(batch: string): string {
   const source = `${RUN_UPSTREAM}:package.json`;
@@ -179,13 +167,9 @@ function upstreamVersion(batch: string): string {
 }
 
 /**
- * The `version` field of a `package.json` text.
+ * The `version` field of a `package.json` text; `source` names its origin in the failure message.
  *
- * @param text - The file's text.
- * @param source - Where the text came from, for the failure message.
- * @returns The `version` field.
- * @throws StepFailure `version` when the text is not JSON or has no string
- *   `version`.
+ * @throws StepFailure `version` when the text is not JSON or has no string `version`.
  */
 function versionOf(text: string, source: string): string {
   let version: unknown;
@@ -199,10 +183,9 @@ function versionOf(text: string, source: string): string {
 }
 
 /**
- * Stage the bump — § Direct commits steps 1–3: reset the index, add the two
- * files by name, check the staged set is exactly them.
+ * Stage the bump — § Direct commits steps 1–3: reset the index, add the two files by name, check
+ * the staged set is exactly them.
  *
- * @param batch - The batch worktree.
  * @throws Refusal `staged-mismatch` naming both differences.
  */
 function stageBump(batch: string): void {

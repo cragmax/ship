@@ -22,21 +22,10 @@ export interface StageRow {
 }
 
 /**
- * Every stage the workflow runs an agent for. `runner` runs one tooling
- * command and transcribes its envelope; `scout` checks the run set against
- * the current tree; `overlapEstimator` names the run-set pairs likely to
- * touch the same files; `planner` plans one issue and `applier` (the same
- * agent) applies the plan review's findings once; `planReviewer` reviews the
- * plan; `tdd` authors the slice's one commit; `diffReview` checks it,
- * read-only, against the repo's rules and its issue and plan, writing
- * findings for the reviewer; `reviewer` verifies those findings, hunts bugs
- * and amends the commit — the two efforts set per call by
- * {@link reviewEffort}; `resolver` (the reviewer agent) resolves the epic
- * end's doc-index conflicts; `testReview` hardens the tests on the slice's
- * final shape; `critic` reviews the epic's landed slices together in a
- * slice of its own and may commit one fix; `retro` reads the entry's
- * reports and names what the run should learn; `prWriter` reads the epic's
- * net diff and writes the PR body's Summary and Merge Danger.
+ * Every stage the workflow runs an agent for; each stage's job is its agent file's. `applier` runs
+ * the planner agent in apply mode, once over the plan review's findings; `resolver` runs the
+ * reviewer agent over the epic end's doc-index conflicts; the `diffReview` and `reviewer` efforts
+ * are set per call by {@link reviewEffort}; the `critic` works in a slice of its own.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -80,7 +69,7 @@ export const PROBES_PER_ISSUE = 3;
  */
 export const PLAN_PROBE_CAP_MINUTES = 5;
 
-/** The most plan-time probes one issue attempt's planner may run, its plan and apply modes together. */
+/** The most plan-time probes one issue attempt's planner may run, plan and apply modes together. */
 export const PLAN_PROBES_PER_ISSUE = 2;
 
 /**
@@ -136,7 +125,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, run gate, live runs, the scout and the overlap estimate; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
+      'and the overlap estimate; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -183,11 +173,9 @@ export const RESYNC_PHASES: readonly WorkflowPhase[] = [
  * The options of one `agent()` call for `stage`: its label and its
  * {@link STAGES} tier, nothing re-spelled.
  *
- * @param stage - The stage.
  * @param detail - What distinguishes this call among the stage's calls
  *   (the label becomes `<stage>:<detail>`); `null` labels it `<stage>`.
  * @param schema - The structured output's schema.
- * @returns The options.
  */
 export function agentOptions(
   stage: StageName,
@@ -209,11 +197,9 @@ export function agentOptions(
  * a `reviewer` call: {@link agentOptions}' plus the effort
  * {@link reviewEffort} picks for the slice.
  *
- * @param stage - The stage.
  * @param detail - What distinguishes this call (the label becomes `<stage>:<detail>`).
  * @param schema - The structured output's schema.
  * @param files - The slice commit's changed paths.
- * @returns The options.
  */
 export function reviewOptions(
   stage: 'diffReview' | 'reviewer',

@@ -42,9 +42,12 @@ export const AttachInfoSchema = z.object({
 export const CutBatchResultSchema = ResultBaseSchema.extend({
   /** The feature branch created or attached (`ship/<slug>`), short form. */
   branch: z.string().nullable(),
-  /** The `master` commit the branch was cut at; with `--attach`, the branch's tip (the batch's `HEAD`). */
+  /**
+   * The `master` commit the branch was cut at; with `--attach`, the branch's tip (the batch's
+   * `HEAD`).
+   */
   base: z.string().nullable(),
-  /** The run root. */
+  /** The run's root directory, as `run-layout.ts` `runLayout` derives it. */
   runRoot: z.string().nullable(),
   /** The batch worktree. */
   batch: z.string().nullable(),
@@ -75,9 +78,13 @@ export const CutSliceResultSchema = ResultBaseSchema.extend({
 });
 
 /**
- * A pre-flight check that can fail. The last three are `--attach`'s, on the
- * target branch: its PR is not open (or `gh` could not say), a slice still
- * links into its batch, or it has commits of its own `origin` lacks.
+ * A pre-flight check that can fail. `no-open-pr`, `slices-live` and
+ * `unpublished-commits` are `--attach`'s, on the target branch: its PR is not
+ * open (or `gh` could not say), a slice still links into its batch, or it has
+ * commits of its own `origin` lacks. `stale-slice-branch`: a slice branch
+ * (`slice/<slug>/…`) of a `--slug` run exists; its message names the branch and
+ * ends `of ship/<slug>`, the run branch the workflow pre-flight matches against
+ * spent runs.
  */
 export const PreflightCheckSchema = z.enum([
   'master-ahead',
@@ -87,6 +94,7 @@ export const PreflightCheckSchema = z.enum([
   'no-open-pr',
   'slices-live',
   'unpublished-commits',
+  'stale-slice-branch',
 ]);
 
 /** One failed pre-flight check. */
@@ -97,7 +105,10 @@ export const PreflightProblemSchema = z.object({
   message: z.string(),
 });
 
-/** Envelope of `preflight <main> [--attach ship/<slug>]`; `worktree` is the main checkout. */
+/**
+ * Envelope of `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]`;
+ * `worktree` is the main checkout.
+ */
 export const PreflightResultSchema = ResultBaseSchema.extend({
   /** Local `master` commits not on `origin/master`, after the fetch. */
   ahead: z.int().nullable(),
@@ -115,7 +126,7 @@ export const PreflightResultSchema = ResultBaseSchema.extend({
       master: z.object({
         /** Local `refs/heads/master`. */
         local: z.string(),
-        /** `origin`'s `refs/heads/master`, read live with `git ls-remote`, never the tracking ref. */
+        /** `origin`'s `refs/heads/master`, read live by `git ls-remote`, not the tracking ref. */
         remote: z.string(),
       }),
     })
@@ -133,7 +144,9 @@ export const LandResultSchema = ResultBaseSchema.extend({
   sha: z.string().nullable(),
   /** The new batch commit's sha; `null` unless the commit landed. */
   commit: z.string().nullable(),
-  /** The harvest's `files`: every path the slice commit changes, both endpoints of a rename, sorted. */
+  /**
+   * The harvest's `files`: every path the slice commit changes, both endpoints of a rename, sorted.
+   */
   files: z.array(z.string()),
   /**
    * The lines the slice commit changes: insertions plus deletions over its
@@ -281,7 +294,10 @@ export const PostPrCommentResultSchema = ResultBaseSchema.extend({
   url: z.string().nullable(),
 });
 
-/** Envelope of `post-issue-comment <main> --issue N --comment-file F`; `worktree` is `gh`'s directory. */
+/**
+ * Envelope of `post-issue-comment <main> --issue N --comment-file F`; `worktree` is `gh`'s
+ * directory.
+ */
 export const PostIssueCommentResultSchema = ResultBaseSchema.extend({
   /** The issue the comment was posted to, as given. */
   issue: z.int(),

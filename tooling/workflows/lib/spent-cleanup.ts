@@ -1,20 +1,17 @@
 /**
- * The saved workflows' spent-run cleanup, run by `/ship`'s launch and
- * `/resync`'s pre-flight: tear down each live run whose PR is over and
- * whose tip is in that PR's head (`live-runs`' `spent`), guarded — only a
- * batch known clean, with no worktree nested inside it.
+ * The saved workflows' spent-run cleanup, run by `/ship`'s launch and `/resync`'s pre-flight: tear
+ * down each live run whose PR is over and whose tip is in that PR's head (`live-runs`' `spent`),
+ * guarded — only a batch known clean, with no worktree nested inside it — then, after an `ok`
+ * teardown, retire the run (`retire-run`).
  *
- * - **Unknown is not none**: a `live-runs` that failed, or answered without
- *   its runs, blocks the cleanup — no teardown at all — and the caller goes
- *   on.
- * - **Unverified is not spent**: a run whose PR head cannot be checked
- *   (`spentUnverified`) is skipped and reported, never torn down.
- * - **A shrunk link target stops the caller** (teardown's `source-shrank`
- *   refusal): something outside the batch lost files. Any other teardown
- *   failure is residue, and the next spent run is still tried.
+ * - **Unknown is not none**: a `live-runs` that failed, or answered without its runs, blocks the
+ *   cleanup — no teardown at all — and the caller goes on.
+ * - **Unverified is not spent**: a run whose PR head cannot be checked (`spentUnverified`) is
+ *   skipped and reported, never torn down.
+ * - **A shrunk link target stops the caller** (teardown's `source-shrank` refusal): something
+ *   outside the batch lost files. Other teardown failures are residue; the next run is still tried.
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
 
 import type { WorkflowHooks } from './hooks.types.js';
@@ -38,9 +35,11 @@ export interface SkippedRun {
 export interface CleanupReport {
   /** The worktrees torn down, in `live-runs` order. */
   readonly tornDown: string[];
+  /** The run branches retired, in `live-runs` order. */
+  readonly retired: string[];
   /** The spent (or unverified) runs left standing. */
   readonly skipped: SkippedRun[];
-  /** What each failed teardown left behind, one line each. */
+  /** What each failed teardown or non-`ok` retire-run left behind, one line each. */
   readonly residue: string[];
   /** Why no run was looked at; `null` when `live-runs` answered. */
   blocked: string | null;
@@ -61,6 +60,7 @@ export async function cleanupSpent(
 ): Promise<CleanupReport> {
   const report: CleanupReport = {
     tornDown: [],
+    retired: [],
     skipped: [],
     residue: [],
     blocked: null,
@@ -81,8 +81,6 @@ export async function cleanupSpent(
  * Clean up one run: leave a live one, skip a spent one it must leave, tear
  * the rest down.
  *
- * @param hooks - The workflow hooks.
- * @param run - The run, as `live-runs` reported it.
  * @param report - The report; records what happened.
  */
 async function cleanupRun(
@@ -93,26 +91,30 @@ async function cleanupRun(
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, report);
+  else await tearDownSpent(hooks, target.path, run.branch, report);
 }
 
 /**
- * Tear one spent run down, recording the outcome.
- *
- * @param hooks - The workflow hooks.
- * @param path - The run's worktree.
- * @param report - The report; gains the path in `tornDown`, a `residue`
- *   line, or `stop` for a `source-shrank` refusal.
+ * Tear one spent run down, then retire its `branch`, recording each outcome on `report`: the path
+ * in `tornDown` and the branch in `retired`, a `residue` line (a failed teardown or a non-`ok`
+ * retire-run), or `stop` for a `source-shrank` refusal.
  */
 async function tearDownSpent(
   hooks: WorkflowHooks,
   path: string,
+  branch: string,
   report: CleanupReport,
 ): Promise<void> {
   const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
   const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
   if (out?.status === 'ok') {
     report.tornDown.push(path);
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
+      ...PRE_CUT,
+      tag,
+    });
+    if (retired?.status === 'ok') report.retired.push(branch);
+    else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
     report.stop = envelopeProblem('teardown', out);
   } else {
@@ -121,14 +123,9 @@ async function tearDownSpent(
 }
 
 /**
- * What the cleanup does with one run. Reads `path` and `nested` unguarded:
- * the `live-runs` row schema requires both, and the runner's answer is held
- * to it.
- *
- * @param run - The run, as `live-runs` reported it.
- * @returns `null` for a live run; a {@link SkippedRun} for a spent run it
- *   must leave (unverified, dirty or of unknown dirtiness, or with nested
- *   worktrees); otherwise the path to tear down.
+ * What the cleanup does with one run; it leaves a spent run that is unverified, dirty or of unknown
+ * dirtiness, or has nested worktrees. Reads `path` and `nested` unguarded: the `live-runs` row
+ * schema requires both, and the runner's answer is held to it.
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
   if (run.spentUnverified) {

@@ -1,32 +1,18 @@
 /**
- * One issue attempt of the `ship` workflow (ADR-0045 decisions 3–4): in a
- * slice worktree cut from the epic's branch head — the readiness re-check,
- * the cut and provision, plan, plan review (its findings applied once), tdd,
- * diff review, review and test review, each agent working in the slice and
- * the last two amending its one commit; then, through the epic's commit
- * queue, the landing.
+ * One issue attempt of the `ship` workflow (ADR-0045 decisions 3–4), in a slice worktree cut from
+ * the epic's branch head, its stages ending in a landing through the epic's commit queue.
  *
- * **Every attempt ends the same way** ({@link runAttempt}): its slice, when
- * one was cut, is torn down first, then the attempt reports how its slice
- * left it (landed, or the event that ended it) and the halt it called for,
- * for the drive loop to settle (`commit-queue.ts`). Whatever ended it — a
- * landing, a stage that blocked, an agent that died, a not-ready re-check,
- * or its entry halting — no issue settles while its slice exists.
+ * **Every attempt ends the same way**: its slice, when one was cut, is torn down first, then it
+ * reports how the slice left it and the halt it called for — no issue settles while its slice
+ * exists. **A halting entry stops its attempts** at the next stage boundary, and its queued landing
+ * never runs: such an attempt ends with `epic-halt`. A landing that calls for a halt (or throws)
+ * marks the entry inside its queue task, before the queue releases the next landing; a teardown
+ * runs outside the queue, so its halt is marked as it returns and a landing already released still
+ * runs. An agent that returns nothing is `agent-died` (the issue retried once, in a fresh slice);
+ * a stage that cannot proceed, or throws, is `blocked` with the reason, never a rejection.
  *
- * **A halting entry stops its attempts** at the next stage boundary, and a
- * queued landing of a halting entry never runs; such an attempt ends with
- * `epic-halt`. A landing that calls for a halt (or throws) marks the entry
- * halting inside its queue task, before the queue releases the next landing.
- * A teardown runs outside the queue, so one that calls for a halt marks the
- * entry as it returns: a landing the queue already released still runs.
- *
- * An agent that returns nothing is `agent-died` (the scheduler retries the
- * issue once, in a fresh slice); a stage whose answer does not let the
- * issue proceed is `blocked`, with the reason. A throw in a stage is
- * `blocked` too, never a rejected attempt.
- *
- * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect.
+ * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * effect.
  */
 
 import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
@@ -39,6 +25,7 @@ import {
   type SliceWork,
   type TddOutput,
   type TestReviewOutput,
+  type TestReviewSkip,
 } from './agent-calls.js';
 import {
   landingEvent,
@@ -210,21 +197,16 @@ interface ReviewedSlice extends DiffReviewedSlice {
   readonly review: ReviewOutput;
 }
 
-/** An authored slice: the test reviewer's answer, `null` when skipped; `sha` the last amend. */
+/** An authored slice: the test reviewer's answer, or why it was skipped; `sha` the last amend. */
 interface AuthoredSlice extends ReviewedSlice {
-  readonly testReview: TestReviewOutput | null;
+  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
 /**
- * Run one attempt of an issue, up to its authored slice; the note for an
- * authored slice carries the queued landing.
- *
- * @param ctx - The entry.
- * @param issue - The issue.
- * @param attempt - The attempt number, 1 for the first.
- * @param previousConflicts - The files the previous attempt's landing
- *   conflicted on, for the planner to re-plan against; `[]` for none.
- * @returns Resolves to the attempt's first note; never rejects.
+ * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice;
+ * `previousConflicts` are the files the previous attempt's landing conflicted on, for the planner
+ * to re-plan against. Resolves to the attempt's first note — for an authored slice, one carrying
+ * the queued landing; never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
@@ -325,12 +307,7 @@ async function cutStage(at: AttemptId): Promise<Opened> {
   return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt } };
 }
 
-/**
- * The `cut-slice` words that name an attached run's slices.
- *
- * @param entry - The entry.
- * @returns `--attached-run <R>` for an attached run; `[]` otherwise.
- */
+/** The `cut-slice` words that name an attached run's slices: `--attached-run <R>`, or `[]`. */
 export function attachedRunArgs(entry: Pick<EntrySetup, 'attachedRun'>): string[] {
   return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
 }
@@ -427,10 +404,14 @@ async function reviewStage(s: DiffReviewedSlice): Promise<Step<ReviewedSlice>> {
   return { next: { ...s, review, sha: review.sha } };
 }
 
-/** Harden the tests on the slice's final shape, unless it changes no code; `sha` its amend. */
+/**
+ * Harden the tests on the slice's final shape, unless {@link testReviewSkip} names a reason; `sha`
+ * its amend.
+ */
 async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
-  if (isTrivialSurface(s.tdd.files)) return { next: { ...s, testReview: null } };
+  const skip = await testReviewSkip(s);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
@@ -442,13 +423,26 @@ async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
 }
 
 /**
- * Land the authored slice on the batch — run inside the commit queue — its
- * message file first rewritten with the tdd's salvage.
- *
- * @returns Resolves to the slice's outcome: `landed` with the commit, its
- *   instant and size (`null` when the envelope's `lines` is), or `unlanded`
- *   with the landing's event (`commit-queue.ts`) — `epic-halt` without
- *   landing when the entry is halting.
+ * Why the test review is skipped, `null` when it runs: `'trivial surface'` when the tdd's files
+ * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
+ * `base..sha` comment-only, leaving no code path uncompared. A failed proof runs it.
+ */
+async function testReviewSkip(s: ReviewedSlice): Promise<TestReviewSkip | null> {
+  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
+  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
+  const { at } = s;
+  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
+}
+
+/**
+ * Land the authored slice on the batch — run inside the commit queue — its message file first
+ * rewritten with the tdd's salvage.
  */
 async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const { at } = s;
@@ -490,28 +484,15 @@ function notLanded(primary: SchedulerEvent): SliceOutcome {
   return { kind: 'unlanded', primary, conflicts: [] };
 }
 
-/**
- * The event of a landing whose call threw: the batch state is unknown, so
- * the entry halts — marked inside the queue task, before the next landing
- * is released.
- *
- * @param at - The attempt.
- * @param err - The throw.
- * @returns `epic-halt`, naming it.
- */
+/** The `epic-halt` of a landing whose call threw: the batch state is unknown. */
 function landThrew(at: AttemptId, err: unknown): SchedulerEvent {
   at.ctx.markHalting();
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: `land threw: ${errorText(err)}` };
 }
 
 /**
- * End the attempt: tear its slice down, then report. A teardown call that
- * rejects is read as the runner returning nothing — residue, not a halt.
- *
- * @param at - The attempt.
- * @param cut - What the cut named: the slice the teardown removes, and `startedAt`.
- * @param outcome - How the slice left the attempt.
- * @returns Resolves to the `ended` note; never rejects.
+ * End the attempt: tear down the slice the cut named, then report; never rejects. A teardown call
+ * that rejects is read as the runner returning nothing — residue, not a halt.
  */
 async function endAttempt(
   at: AttemptId,
@@ -546,13 +527,7 @@ function acceptCard(s: ProvisionedSlice, card: PlanCard | null): Step<PlannedSli
   return { next: { ...s, card } };
 }
 
-/**
- * The planner's values.
- *
- * @param mode - `plan` or `apply`.
- * @param findingsPath - The findings to apply; `apply` only.
- * @returns The values.
- */
+/** The planner's prompt input; `findingsPath` is for `apply` mode only. */
 function plannerValues(
   s: ProvisionedSlice,
   mode: 'plan' | 'apply',
@@ -574,11 +549,8 @@ function plannerValues(
 }
 
 /**
- * Where the slice's server-tier runs lease from: the tdd, the planner, the
- * reviewer and the test reviewer are handed one recipe.
- *
- * @returns The main checkout, the provision's `PH_PROJECT_DIR` and the
- *   run's pool registry.
+ * Where the slice's server-tier runs lease from: the tdd, the planner, the reviewer and the test
+ * reviewer are handed one recipe.
  */
 function leaseValues(s: ProvisionedSlice): LeaseValues {
   return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
@@ -601,13 +573,7 @@ function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   };
 }
 
-/**
- * The reviewer's or the test reviewer's values.
- *
- * @param report - The report's file-name prefix.
- * @returns The values, the slice's lease recipe ({@link leaseValues}) among
- *   them.
- */
+/** The reviewer's or the test reviewer's prompt input, `report` its report's file-name prefix. */
 function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
   return {
     ...sliceCommitValues(s),
@@ -636,13 +602,7 @@ function messagePath(at: AttemptId): string {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
 }
 
-/**
- * The attempt's diff-review findings file: the diff reviewer writes it, the
- * reviewer reads it.
- *
- * @param at - The attempt.
- * @returns `<reportDir>/diff-review-<issue>-<attempt>.md`.
- */
+/** The attempt's diff-review findings file: the diff reviewer writes it, the reviewer reads it. */
 function diffReviewPath(at: AttemptId): string {
   return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
@@ -667,24 +627,12 @@ function died(at: AttemptId): SchedulerEvent {
   return { kind: 'agent-died', issue: at.issue };
 }
 
-/**
- * The event of a stage that cannot let the issue proceed.
- *
- * @param at - The attempt.
- * @param reason - Why.
- * @returns `blocked`.
- */
+/** The event of a stage that cannot let the issue proceed. */
 function blocked(at: AttemptId, reason: string): SchedulerEvent {
   return { kind: 'blocked', issue: at.issue, reason };
 }
 
-/**
- * The event of a stage that threw.
- *
- * @param at - The attempt.
- * @param err - The throw.
- * @returns `blocked`, naming it.
- */
+/** The `blocked` event of a stage that threw, naming the throw. */
 function stageThrew(at: AttemptId, err: unknown): SchedulerEvent {
   return blocked(at, `a stage threw: ${errorText(err)}`);
 }

@@ -84,6 +84,7 @@ async function preflightWith(options: {
   readonly authExit?: number;
   readonly probe?: WarmProbe;
   readonly attach?: string;
+  readonly slugs?: readonly string[];
   readonly responses?: Record<string, FakeGhResponse>;
 }): Promise<PreflightResult> {
   const overlay = prependPath(writeFakeGh(root, options.responses ?? {}, options.authExit ?? 0));
@@ -94,6 +95,7 @@ async function preflightWith(options: {
     return await preflight({
       main,
       ...(options.attach === undefined ? {} : { attach: options.attach }),
+      ...(options.slugs === undefined ? {} : { slugs: options.slugs }),
       probe: options.probe ?? (() => Promise.resolve({ ok: true })),
     });
   } finally {
@@ -870,6 +872,54 @@ describe('preflight (in-process)', () => {
     });
   });
 
+  it(
+    'refuses a slice branch of a --slug run as stale-slice-branch, naming it',
+    TIMEOUT,
+    async () => {
+      mustRun('git', ['branch', 'slice/epic-9/1212-1'], main);
+
+      const r = await preflightWith({ slugs: ['epic-9'] });
+
+      expect(r).toMatchObject({
+        status: 'refused',
+        reason: 'preflight-failed',
+        ahead: 0,
+        behind: 0,
+      });
+      expect(r.problems).toEqual([
+        {
+          check: 'stale-slice-branch',
+          message: 'slice/epic-9/1212-1 is left over from a run of ship/epic-9',
+        },
+      ]);
+      expect(r.snapshot?.head).toBe(headSha(main));
+    },
+  );
+
+  it('passes with only another slug’s or a longer slug’s slice branches', TIMEOUT, async () => {
+    mustRun('git', ['branch', 'slice/epic-8/1-1'], main);
+    mustRun('git', ['branch', 'slice/epic-92/1-1'], main);
+
+    const r = await preflightWith({ slugs: ['epic-9'] });
+
+    expect(r).toMatchObject({ status: 'ok', problems: [] });
+  });
+
+  it('names every slice branch of every slug, slug by slug', TIMEOUT, async () => {
+    mustRun('git', ['branch', 'slice/epic-1/1-1'], main);
+    mustRun('git', ['branch', 'slice/epic-2/critic'], main);
+    mustRun('git', ['branch', 'slice/epic-2/3-1'], main);
+
+    const r = await preflightWith({ slugs: ['epic-1', 'epic-2'] });
+
+    expect(r.problems.map((p) => p.message)).toEqual([
+      'slice/epic-1/1-1 is left over from a run of ship/epic-1',
+      'slice/epic-2/3-1 is left over from a run of ship/epic-2',
+      'slice/epic-2/critic is left over from a run of ship/epic-2',
+    ]);
+    expect(r.problems.every((p) => p.check === 'stale-slice-branch')).toBe(true);
+  });
+
   describe('preflight --attach (in-process)', () => {
     const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
     const CLOSED_9 = { 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } };
@@ -1002,6 +1052,28 @@ describe('preflight', () => {
       { check: 'no-open-pr', message: 'ship/s has no open PR: closed (#9)' },
     ]);
   });
+
+  it('hands --slug’s comma-separated slugs to the slice-branch check', TIMEOUT, () => {
+    // An empty registry names no warm member, so no RCON probe leaves the process.
+    mkdirSync(join(main, 'src/server-pool/registry'), { recursive: true });
+    writeFileSync(join(main, REGISTRY), '[]\n');
+    makeBareOrigin(root, main);
+    const bin = writeFakeGh(root, {});
+    mustRun('git', ['branch', 'slice/epic-2/1-1'], main);
+
+    const r = runCli<PreflightResult>(['preflight', main, '--slug', 'epic-1,epic-2'], {
+      env: prependPath(bin),
+    });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'preflight-failed' });
+    expect(r.json.problems.filter((p) => p.check !== 'warm-unreachable')).toEqual([
+      {
+        check: 'stale-slice-branch',
+        message: 'slice/epic-2/1-1 is left over from a run of ship/epic-2',
+      },
+    ]);
+  });
 });
 
 describe('usage errors', () => {
@@ -1036,6 +1108,9 @@ describe('usage errors', () => {
       args: ['cut-batch', 'm', '--epic', '9', '--attached-run'],
     },
     { name: 'preflight --attach without a branch', args: ['preflight', 'm', '--attach'] },
+    { name: 'preflight --slug without a value', args: ['preflight', 'm', '--slug'] },
+    { name: 'preflight --slug with an empty slug', args: ['preflight', 'm', '--slug', 'a,,b'] },
+    { name: 'preflight --slug with a glob slug', args: ['preflight', 'm', '--slug', 'epic-1,*'] },
   ])('exits 2 with a stamped usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
