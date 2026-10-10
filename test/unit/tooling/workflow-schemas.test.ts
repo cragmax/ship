@@ -329,7 +329,8 @@ describe('the fake hooks fail a test on a schema violation', () => {
   // The it.fails test's error messages, read by the test after it: a file's tests run in order.
   let failure: string[] | undefined;
 
-  // it.fails inverts the result: this passes only because the harness's finish check fails the test.
+  // it.fails inverts the result: this passes only because the harness's finish check
+  // fails the test.
   it.fails(
     'fails a test whose fake answer lacks a required field, with no assertion on violations',
     async () => {

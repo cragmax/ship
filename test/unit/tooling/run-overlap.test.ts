@@ -6,7 +6,8 @@ import { findCycles } from '../../../tooling/lib/run-set.js';
 
 describe('mergeOverlapEdges', () => {
   it('directs each pair along a topological order of the declared edges, keeping the union acyclic', () => {
-    // Under "the lower number blocks", {10,15} and {15,20} add 10→15 and 15→20, and with 20→10 that is the cycle 10→15→20→10.
+    // Under "the lower number blocks", {10,15} and {15,20} add 10→15 and 15→20,
+    // and with 20→10 that is the cycle 10→15→20→10.
     const graph = {
       runSet: [{ epic: 1, issues: [10, 15, 20] }],
       edges: [{ blocker: 20, dependent: 10 }],

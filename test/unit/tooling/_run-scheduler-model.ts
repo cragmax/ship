@@ -1,12 +1,9 @@
 /**
- * Model harness for the run scheduler: arbitraries, a driver that feeds
- * generated events and checks named invariants after every step, and the
- * must-fail mutants. Used by `run-scheduler.model.test.ts`.
+ * Model harness for `run-scheduler.model.test.ts`: arbitraries, driver and must-fail mutants.
  *
- * The checker judges only what a workflow can see — the events it fed and the
- * actions it got back — and computes dependent closures with its own BFS over
- * the input edges, never with `run-set.ts`'s `transitiveDependents`, which the
- * scheduler under test uses.
+ * The checker judges only what a workflow can see (the events it fed, the actions it got back)
+ * and computes dependent closures with its own BFS, never with `run-set.ts`'s
+ * `transitiveDependents`, which the scheduler under test uses.
  */
 
 import fc from 'fast-check';
@@ -221,12 +218,9 @@ function ringEdges(ring: readonly number[]): RunEdge[] {
 
 // ---------------------------------------------------------------- driver
 
+// eslint-disable-next-line local/comment-budget -- jsdoc/require-param binds here: 3 @param + @returns
 /**
- * Drive one run: create, feed each choice as a valid event, then settle every
- * live issue until none is live — `committed`, or `blocked` for an issue of a
- * halted entry, which the consumer protocol never lands. Every state is
- * deep-frozen before it is passed back in, and the invariants are checked
- * after every step and at the end.
+ * Drive one run, then settle each live issue (`blocked` in a halted entry, else `committed`).
  *
  * @param input - The run graph.
  * @param choices - The generated script.
@@ -267,8 +261,7 @@ export function runModel(
 }
 
 /**
- * Every issue reachable from `root` along blocker → dependent edges, root
- * excluded — the checker's own BFS.
+ * Every issue reachable from `root` along blocker → dependent edges, root excluded.
  *
  * @param view - The view (its input edges).
  * @param root - The starting issue.
@@ -628,7 +621,7 @@ function checkEnd(view: View): void {
 
 // ---------------------------------------------------------------- mutants
 
-/** A must-fail twin: a fault wrapped around the real scheduler, and the invariant it must trip first. */
+/** A must-fail twin: a fault around the real scheduler, and the invariant it trips first. */
 export interface Mutant {
   readonly name: string;
   readonly trips: InvariantName;

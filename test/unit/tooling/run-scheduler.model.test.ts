@@ -1,20 +1,9 @@
 /**
- * Property model for the run scheduler (#1032) — the lifecycle invariants no
- * handful of hand-written scripts can cover: arbitrary run graphs driven by
- * arbitrary event scripts, every state deep-frozen before it goes back in, and
- * named invariants checked after every step and at the end
- * (`_run-scheduler-model.ts`).
- *
- * The teeth live here too, mirroring the lease model tests' must-fail twins:
- * the SAME property runs once against the real scheduler (must hold) and once
- * per mutant — a fault wrapped around the real scheduler's action stream —
- * which must fail with its paired invariant. They keep a later
- * "simplification" of the checker from silently disarming an invariant.
- *
- * `requeued-restarted` has no twin of its own: any mutant that withholds a
- * restart's `start` while a slot is free trips `work-conserving` first, by
- * construction (the drop-restart-start twin), and a withheld start with no
- * free slot is not a violation.
+ * Property model for the run scheduler (#1032); the harness is `_run-scheduler-model.ts`.
+ * The same property runs against the real scheduler (must hold) and against each mutant (must
+ * fail with its paired invariant), so a later checker "simplification" cannot silently disarm one.
+ * `requeued-restarted` has no twin: a withheld restart `start` with a free slot trips
+ * `work-conserving` first, and with no free slot it is no violation.
  */
 
 import { describe, it, expect, vi } from 'vitest';
