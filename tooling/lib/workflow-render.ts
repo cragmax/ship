@@ -9,9 +9,9 @@
  * {@link FORBIDDEN_TOKENS} / {@link FORBIDDEN_WORDS} member appears. Every guard throws an `Error`
  * prefixed `workflow render:` naming the files. The runtime runs the file as an async function
  * body, hooks and `args` as globals (so the tail `return` works at top level; the ES2022 built-in
- * `Object.hasOwn` runs too), and refuses a script containing CR ("script contains control
- * characters that would be hidden in the approval dialog"): the writer writes LF, `.gitattributes`
- * checks `.claude/workflows/*.js` out LF, the drift check normalises line endings (#1035).
+ * `Object.hasOwn` runs too), accepting a leading `export const meta` but not a second top-level
+ * `export` (a SyntaxError). A file holding CR still runs; the writer writes LF regardless,
+ * `.gitattributes` checks `.claude/workflows/*.js` out LF, the drift check normalises (#1035).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

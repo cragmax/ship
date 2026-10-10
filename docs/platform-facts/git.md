@@ -57,3 +57,21 @@ release in their **Platform** line, and a git release can move them.
 - **Relied on by.** #1300's run-branch retire guard (`assertMerged` in
   `tooling/worktree/retire-run.ts`), which uses `merge-base --is-ancestor` +
   `git branch -D` for this reason.
+
+## PF-91 · `git worktree remove --force` leaves the directory behind when it holds a live junction, and spares the junction target
+
+- **Claim.** On Windows, `git worktree remove --force <wt>` exits 0 and unregisters the worktree but leaves `<wt>` on disk holding the untracked junction. Git does not follow the junction: the target's contents are intact. Without `--force` it refuses (exit 128, "contains modified or untracked files").
+- **Implication.** Teardown must unlink every link before `git worktree remove` and assert none remain (`assertNoLinksRemain`), because a later recursive delete of the leftover directory could follow the junction.
+- **Platform.** `git version 2.56.0.windows.1` (Git for Windows), NTFS junction. The comment says git 2.55; 2.56.0 is the version probed.
+- **Established.** Local driver in a scratch repo: `git worktree add ../wt`, then `New-Item -ItemType Junction -Path wt\link -Target ..\target`:
+
+  ```text
+  plain: fatal: '../wt' contains modified or untracked files, use --force to delete it  (exit 128)
+  force: exit=0
+  ls -la ../wt   -> link -> .../gp/target
+  ls ../target   -> data.txt
+  git worktree list -> main checkout only
+  ```
+
+- **Last verified.** 2026-10-10.
+- **Relied on by.** `tooling/worktree/teardown.ts` (`assertNoLinksRemain`).

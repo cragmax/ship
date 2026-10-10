@@ -11,8 +11,8 @@
  * **Never gate on a partial list.** A gh connection may hold only a page, so every one passes
  * {@link complete} before it is read.
  *
- * **Same-repo assumption.** A native link's node carries no repository (gh
- * 2.101.0, observed), so its number is read as a same-repo issue (#1031).
+ * **Same-repo assumption.** A native link's node carries no repository, so its number is read
+ * as a same-repo issue (PF-92; #1031).
  */
 
 import { z } from 'zod';

@@ -7,8 +7,8 @@
  * which run mid-merge and stage by name.
  *
  * `git show` reaches the CLI through `runCaptured`, which strips one final
- * newline from stdout; npm always ends `package.json` with one, so each
- * copy read, and the merged text written back, gets exactly one again.
+ * newline from stdout; this repo's `package.json` ends with exactly one, so
+ * each copy read, and the merged text written back, gets exactly one again.
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

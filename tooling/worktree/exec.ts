@@ -4,14 +4,11 @@
  * The spawn budgets below are the only timeouts of a run's tool steps (the workflow sets none);
  * every spawn that can outlast local git plumbing names its constant here.
  *
- * A budget kill is `execaSync`'s `timeout`. On Windows (11, Node 24, Git for Windows 2.55) it
- * reaches only the direct child; its descendants survive except in a node → node chain (#1048). An
- * npm chain outlives it; an MSYS-exec'd program runs outside the Windows process tree, beyond
- * `taskkill /T`; killing a launcher (`cmd/git.exe`, from a Windows-native PATH) leaves the real
- * `git.exe` and its hook running, and from Git Bash's PATH the real `git.exe` dies and its hook
- * tree survives. Async execa kills no further, and never settles while a survivor holds the output
- * pipe. Accepted residual: a Windows budget kill's survivors are reported, not reaped
- * ({@link outputOf}, {@link orphanWarning}); POSIX is unprobed.
+ * A budget kill is `execaSync`'s `timeout`. On win32 it reaches only the direct child; npm chains,
+ * MSYS fork children and git's launcher and hook survive (PF-65; #1048). Async execa kills no
+ * further, and never settles while a survivor holds the output pipe. Accepted residual: a Windows
+ * budget kill's survivors are reported, not reaped ({@link outputOf}, {@link orphanWarning});
+ * POSIX is unprobed.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs';

@@ -20,13 +20,11 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 /**
  * The options of one `agent()` call. The runtime honours a per-call `model`
- * and `effort` — `effort` with a non-default model included (observed
- * 2026-09-29, #1035).
+ * and `effort` — `effort` with a non-default model included (PF-95).
  *
  * **No working directory.** Every agent starts in the main checkout the
- * session runs in, whatever worktree it works in (`isWorktree: false` in the
- * #92 run's transcripts, #1054). No option here sets another: none was
- * observed (#1026's capability questions never asked), and none can be
+ * session runs in, whatever worktree it works in (PF-94; #1054). No option here sets another: none
+ * was observed (#1026's capability questions never asked), and none can be
  * probed inside an unattended run. So a worktree agent reaches its worktree
  * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
  * session loads are the main checkout's. Each worktree agent's file has it
@@ -43,8 +41,7 @@ export interface AgentOptions {
   readonly effort?: Effort;
   /**
    * The structured output's schema; the runtime validates the answer against
-   * it. What it enforces beyond `required` is unobserved: no answer in the
-   * pilot broke a constraint (#1035).
+   * it, constraints such as `minimum` included.
    */
   readonly schema?: JsonSchema;
 }

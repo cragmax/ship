@@ -180,7 +180,7 @@ function baselineSources(
 
 /**
  * No link may remain after the unlink step: `git worktree remove` leaves the directory behind
- * holding a live link (git 2.55), which a later recursive delete could follow.
+ * holding a live link, which a later recursive delete could follow (PF-91).
  * @throws Refusal `links-remain` naming every surviving link.
  */
 function assertNoLinksRemain(worktree: string): void {
