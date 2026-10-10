@@ -54,6 +54,6 @@ release in their **Platform** line, and a git release can move them.
   ```
 
 - **Last verified.** 2026-10-09.
-- **Relied on by.** #1300's run-branch retire guard
-  (`tooling/worktree/retire-run.ts`, not yet landed), which uses
-  `merge-base --is-ancestor` + `git branch -D` for this reason.
+- **Relied on by.** #1300's run-branch retire guard (`assertMerged` in
+  `tooling/worktree/retire-run.ts`), which uses `merge-base --is-ancestor` +
+  `git branch -D` for this reason.

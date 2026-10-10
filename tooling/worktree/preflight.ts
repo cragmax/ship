@@ -20,6 +20,7 @@ import { assertPublished, attachSlug, openPr } from './cut-attach.js';
 import { GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import {
   assertMainWorktree,
+  branchesUnder,
   fetchOrigin,
   git,
   lsRemoteRef,
@@ -181,22 +182,18 @@ async function probeMember(
 }
 
 /**
- * One `stale-slice-branch` problem per branch under each slug's {@link sliceBranchPrefix} (its
- * trailing slash keeps `slice/<slug>2/…` out), slug by slug, in ref order (#1302).
+ * One `stale-slice-branch` problem per branch under each slug's {@link sliceBranchPrefix}
+ * ({@link branchesUnder}), slug by slug, in ref order (#1302).
  *
  * @throws StepFailure `slice-branches` when git cannot list them.
  */
 function checkSliceBranches(main: string, slugs: readonly string[]): PreflightProblem[] {
   return slugs.flatMap((slug) => {
     const { branch } = runLayout(main, slug);
-    const pattern = `refs/heads/${sliceBranchPrefix(slug)}`;
-    return git(main, ['for-each-ref', '--format=%(refname:lstrip=2)', pattern], 'slice-branches')
-      .split(/\r?\n/u)
-      .filter((name) => name !== '')
-      .map((name) => ({
-        check: 'stale-slice-branch' as const,
-        message: `${name} is left over from a run of ${branch}`,
-      }));
+    return branchesUnder(main, sliceBranchPrefix(slug), 'slice-branches').map((name) => ({
+      check: 'stale-slice-branch' as const,
+      message: `${name} is left over from a run of ${branch}`,
+    }));
   });
 }
 

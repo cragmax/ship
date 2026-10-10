@@ -7,7 +7,7 @@
  * the folder guard: emptiness ({@link assertOnlyRunRecord}), nested worktrees, links
  * ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed and the
  * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
- * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream (#1297).
+ * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream (PF-61).
  */
 
 import { readdirSync, rmSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { compareStrings } from '../shared.js';
 import { attachSlug } from './cut-attach.js';
 import { runCaptured } from './exec.js';
-import { assertMainWorktree, git, isInside, listWorktrees } from './git.js';
+import { assertMainWorktree, branchesUnder, git, isInside, listWorktrees } from './git.js';
 import { findLinks, isRealDir } from './links.js';
 import { runLayout, RUN_UPSTREAM, sliceBranchPrefix } from './run-layout.js';
 import { Refusal, recordFailure, StepFailure, type RetireRunResult } from './types.js';
@@ -73,15 +73,7 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
  * @throws StepFailure `slice-branches` (listing) or `delete-slice-branch` (one checked out).
  */
 function deleteSliceBranches(main: string, slug: string, deleted: string[]): void {
-  const prefix = `refs/heads/${sliceBranchPrefix(slug)}`;
-  const names = git(
-    main,
-    ['for-each-ref', '--format=%(refname:lstrip=2)', prefix],
-    'slice-branches',
-  )
-    .split(/\r?\n/u)
-    .filter((name) => name !== '')
-    .sort(compareStrings);
+  const names = branchesUnder(main, sliceBranchPrefix(slug), 'slice-branches').sort(compareStrings);
   for (const name of names) {
     git(main, ['branch', '-D', name], 'delete-slice-branch');
     deleted.push(name);

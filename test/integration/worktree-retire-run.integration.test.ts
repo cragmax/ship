@@ -53,15 +53,20 @@ function tearDown(): void {
   expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
 }
 
-/**
- * A spent run: one commit landed in `origin/master`, the batch torn down, and the run root left
- * holding a report and an empty slice folder.
- */
-function spentRun(): void {
+/** A cut run with one commit landed in `origin/master`, its batch still standing. */
+function mergedRun(): void {
   cutRun();
   commitChanges(batch, {}, 'landed');
   mustRun('git', ['push', '-q', 'origin', 'ship/7:master'], main);
   mustRun('git', ['fetch', '-q', 'origin'], main);
+}
+
+/**
+ * A spent run: a merged run with its batch torn down, and the run root left holding a report and
+ * an empty slice folder.
+ */
+function spentRun(): void {
+  mergedRun();
   tearDown();
   writeFileSync(`${runRoot}/reports/x.md`, 'x\n');
   mkdirSync(`${runRoot}/slice-1-1`);
@@ -311,5 +316,20 @@ describe('teardown — gone worktree', () => {
     });
     expect(isRegistered(main, batch)).toBe(false);
     expect(branchResolves()).toBe(true);
+  });
+
+  it('leaves a merged run with a deleted batch retirable', TIMEOUT, () => {
+    mergedRun();
+    rmSync(batch, { recursive: true, force: true });
+    const down = runCli<TeardownResult>(['teardown', batch], { cwd: main });
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    // An unpruned entry for the deleted batch would lie inside the run root: nested-worktree.
+    expect(r.code, JSON.stringify(r.json)).toBe(0);
+    expect(r.json).toMatchObject({ status: 'ok', branchDeleted: true, rootRemoved: true });
+    expect(branchResolves()).toBe(false);
+    expect(existsSync(runRoot)).toBe(false);
   });
 });
