@@ -1,4 +1,5 @@
-// Drives the real runShip over generated run graphs, every agent() answer released by fc.scheduler(), and checks the invariants on the timeline.
+// Drives the real runShip over generated run graphs, every agent() answer released by
+// fc.scheduler(), and checks the invariants on the timeline.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -75,10 +76,7 @@ function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[])
  * A gate releasing every answer through the scheduler, tracking each
  * entry's outstanding issue landings.
  *
- * @param s - The scheduler.
- * @param input - The run graph.
  * @param violations - Where a second outstanding landing is recorded.
- * @returns The gate.
  */
 function scheduledGate(s: fc.Scheduler, input: SchedulerInput, violations: string[]) {
   const outstanding = input.runSet.map(() => 0);
@@ -98,9 +96,6 @@ function scheduledGate(s: fc.Scheduler, input: SchedulerInput, violations: strin
 /**
  * Every timeline and report invariant a run broke.
  *
- * @param run - The fake run.
- * @param input - The run graph and cap.
- * @param report - The run's report.
  * @returns One line per broken invariant.
  */
 function brokenInvariants(run: FakeRun, input: SchedulerInput, report: ShipReport): string[] {

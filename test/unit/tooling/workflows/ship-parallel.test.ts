@@ -258,7 +258,8 @@ describe('runShip — issues in flight at once', () => {
   });
 
   it('stops a halting entry’s attempt at the stage boundary before its diff review', async () => {
-    // #8's tdd is held until #7's landing has halted the entry, so #8's next stage boundary sees the halt.
+    // #8's tdd is held until #7's landing has halted the entry,
+    // so #8's next stage boundary sees the halt.
     const hold = holdable(/^tdd:8-1$/);
     const run = fakeHooks(
       { ...list([7, 8]), 'runner:land': LAND_BATCH_DIRTY },

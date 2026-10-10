@@ -1,16 +1,10 @@
 /**
- * Fake workflow hooks for driving `runShip` in vitest: `agent()` answers from
- * a label-keyed response table and records every call; `pipeline` runs its
- * work in order; `parallel` starts every thunk at once, in array order, and
- * settles as `Promise.all` does, so a recorded call sequence stays
- * deterministic. Each answer passes through the call's schema as an agent's
- * would: cut to the schema's properties, a missing required key, an
- * off-enum value or a value of none of its `type`s recorded in
- * {@link FakeRun.violations}. A required key held as `undefined` counts as
- * missing, as JSON drops it. A test whose fake run recorded a violation fails
- * when it finishes, with no assertion needed, unless the run opts out
- * ({@link FakeOptions.offSchema}). A `null` answer is a dead agent's, and no
- * schema applies to it.
+ * Fake workflow hooks for driving `runShip` in vitest: `agent()` answers from a label-keyed
+ * response table and records every call; `pipeline` runs its work in order; `parallel` starts
+ * every thunk at once, in array order, and settles as `Promise.all` does, so a recorded call
+ * sequence stays deterministic. Each answer passes through its call's schema as an agent's would:
+ * cut to the schema's properties, each violation recorded in {@link FakeRun.violations}. A `null`
+ * answer is a dead agent's, and no schema applies to it.
  */
 
 import { onTestFinished } from 'vitest';
@@ -32,7 +26,7 @@ export interface RecordedCall {
   readonly model: string | undefined;
   /** Its `effort`, `undefined` when not given. */
   readonly effort: string | undefined;
-  /** The command words after `npx tsx` on the prompt's `Command:` line, unquoted; `[]` without one. */
+  /** The words after `npx tsx` on the prompt's `Command:` line, unquoted; `[]` without one. */
   readonly argv: readonly string[];
   /** The prompt. */
   readonly prompt: string;
@@ -49,9 +43,9 @@ export interface FakeOptions {
    */
   readonly gate?: (call: RecordedCall, answer: unknown) => Promise<unknown>;
   /**
-   * The run answers off its call schemas on purpose: its {@link FakeRun.violations}
-   * are recorded for the test to read, and do not fail it. By default any
-   * violation fails the test that made the run, when that test finishes.
+   * The run answers off its call schemas on purpose: its {@link FakeRun.violations} are recorded
+   * for the test to read, and do not fail it. Without it, any violation fails the test that made
+   * the run, when that test finishes, so {@link fakeHooks} must be called inside a running test.
    */
   readonly offSchema?: boolean;
 }
@@ -64,7 +58,7 @@ export interface FakeRun {
   readonly calls: RecordedCall[];
   /** Every `phase()` title, in call order. */
   readonly phases: string[];
-  /** Every `agent()` call (`call <label>`) and `log()` line (`log <message>`), interleaved in order. */
+  /** Every `agent()` call (`call <label>`) and `log()` line (`log <message>`), in order. */
   readonly timeline: string[];
   /**
    * Where an answer broke its call's schema: `<label>.<path>: <what>`. Any
@@ -165,10 +159,7 @@ export interface ScriptedMove {
 }
 
 /**
- * A `check-master` answer moving each ref from its launch sha in
- * {@link PREFLIGHT_OK} (`local0` / `origin0`): `ok` when both moves are
- * `equal` or `forward`, otherwise `refused` `master-not-forward`. Local's
- * `synced` is always `null`; `origin`'s defaults to `origin0`.
+ * A `check-master` answer moving each ref from its launch sha in {@link PREFLIGHT_OK}.
  *
  * @param local - Local `master`'s move.
  * @param remote - `origin`'s `master` move.
@@ -348,16 +339,11 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
 };
 
 /**
- * Build fake hooks answering each label from `responses` over the all-pass
- * defaults of a full `issues 7` run. A label `a:b:c` is answered by the
- * first of `a:b:c`, `a:b` and `a` the table holds; a label none matches
- * answers `null`, as a dead agent does.
+ * Fake hooks answering from `responses` over the all-pass defaults of a full `issues 7` run.
  *
- * @param responses - Per-label answers (or {@link Responder}s) overriding the defaults.
+ * @param responses - Per-label answers or {@link Responder}s; a label no key matches gets `null`.
  * @param options - The answer gate, and whether the run answers off its schemas on purpose.
  * @returns The hooks and their records.
- * @throws When called outside a running test without `offSchema`: the finish
- *   check registers through vitest's `onTestFinished`.
  */
 export function fakeHooks(
   responses: Readonly<Record<string, unknown>> = {},
@@ -444,14 +430,6 @@ function schemaOf(value: unknown): JsonSchema | undefined {
     : undefined;
 }
 
-/**
- * An answer as its agent would give it: only what the schema asks for.
- *
- * @param value - The answer, or a part of it.
- * @param schema - Its schema; `undefined` passes the value through.
- * @param place - Where it sits.
- * @returns The value, each object cut to its schema's `properties`.
- */
 function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPlace): unknown {
   if (schema === undefined || value === undefined) return value;
   checkType(value, schema, place);
@@ -505,14 +483,6 @@ function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void
   }
 }
 
-/**
- * An array, each item conformed to the schema's `items`.
- *
- * @param value - The array.
- * @param schema - Its schema.
- * @param place - Where it sits.
- * @returns The conformed items.
- */
 function conformItems(value: readonly unknown[], schema: JsonSchema, place: AnswerPlace): unknown {
   const items = schemaOf(schema['items']);
   if (items === undefined) return value;
@@ -540,14 +510,6 @@ function checkRequired(
   }
 }
 
-/**
- * An object cut to its schema's properties, each conformed.
- *
- * @param record - The object.
- * @param properties - The schema's `properties`.
- * @param place - Where it sits.
- * @returns The kept properties.
- */
 function pickProperties(
   record: Readonly<Record<string, unknown>>,
   properties: JsonSchema,
@@ -563,8 +525,7 @@ function pickProperties(
 }
 
 /**
- * The table key answering `label`: the label itself, else its longest
- * `:`-prefix the table holds.
+ * The table key answering `label`: the label itself, else its longest held `:`-prefix.
  *
  * @param table - The response table.
  * @param label - The call's label.

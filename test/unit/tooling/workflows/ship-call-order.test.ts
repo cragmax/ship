@@ -27,10 +27,6 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 /**
  * Ship `args` over {@link TWO_INDEPENDENT}, its answers settled at once or
  * one per standstill in `order`.
- *
- * @param order - `'at once'` for the default gate, else the pump's order.
- * @param args - The launch arguments.
- * @returns The fake run and the report.
  */
 async function shipUnder(
   order: SettleOrder | 'at once',
