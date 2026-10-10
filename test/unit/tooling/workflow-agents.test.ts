@@ -326,6 +326,47 @@ describe('workflow agents', () => {
     },
   );
 
+  // Hand-written: the scoped-rules line a reader that never Reads a matching file carries (#1243).
+  const SCOPED_RULES_TOKENS = [
+    'each `.claude/rules/*.md` whose `paths:` match a changed or planned file',
+  ];
+
+  it.each(['planner', 'critic', 'ship-plan-reviewer'])(
+    '%s reads the path-scoped rules matching its files from its worktree, under its ## Discipline',
+    (agentType) => {
+      const text = section(agentText(agentType), '## Discipline');
+      const tokens = [...SCOPED_RULES_TOKENS, 'by absolute path in your worktree'];
+
+      expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+    },
+  );
+
+  it('diff-review reads the unscoped rules and the path-scoped rules matching the diff, under its ## Rules check', () => {
+    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
+    const text = section(skill.replaceAll('\r\n', '\n'), '## Rules check');
+    const tokens = [
+      ...SCOPED_RULES_TOKENS,
+      'every `.claude/rules/*.md` without `paths:` frontmatter',
+    ];
+
+    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
+  });
+
+  it('ship-tdd never pushes and never bumps the version, under its ## Discipline', () => {
+    const text = section(agentText('ship-tdd'), '## Discipline');
+
+    expect(
+      [
+        '**Never push.**',
+        'The slice branch is scratch',
+        'ADR-0045 decision 6',
+        '**Never bump the version.**',
+        'Issue commits never bump',
+        'ADR-0045 decision 7',
+      ].filter((token) => !text.includes(token)),
+    ).toEqual([]);
+  });
+
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
