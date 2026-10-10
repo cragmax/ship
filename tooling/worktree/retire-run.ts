@@ -83,8 +83,8 @@ function deleteSliceBranches(main: string, slug: string, deleted: string[]): voi
 /**
  * Refuse `branch-unmerged` unless the branch is in {@link RUN_UPSTREAM}.
  *
- * @throws StepFailure `branch-guard` when `git merge-base --is-ancestor` exits other than 0 or 1
- *   (a missing branch exits 128).
+ * @throws StepFailure `branch-guard` when `git merge-base --is-ancestor` cannot answer (a missing
+ *   branch included).
  */
 function assertMerged(main: string, branch: string): void {
   const r = runCaptured(

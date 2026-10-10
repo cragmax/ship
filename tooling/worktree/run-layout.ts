@@ -57,7 +57,7 @@ export interface SliceLayout {
 /**
  * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
  * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
- * branch. Not `ship-<slug>`: its `node_modules` paths near Windows' 260-character limit (#1079).
+ * branch. Not `ship-<slug>` (#1079).
  */
 function runHead(slug: string): string {
   if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;

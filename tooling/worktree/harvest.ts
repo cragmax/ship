@@ -9,9 +9,7 @@
  * over a dirty batch, which a scheduler would requeue onto.
  *
  * The rollback is `git reset --hard HEAD`, git.md § Harvested slices' approved exception: the
- * guards verified a clean linked worktree, so it discards only the failed pick's changes. On git
- * 2.55 win32 `reset --merge` leaves the batch's own file deleted after a case collision, and
- * `cherry-pick --abort` has nothing to abort: `--no-commit` writes no `CHERRY_PICK_HEAD`.
+ * guards verified a clean linked worktree, so it discards only the failed pick's changes.
  * Known limitation: a force-added path the batch holds ignored is overwritten; rollback deletes it.
  */
 
@@ -117,9 +115,7 @@ export function assertLinkedWorktree(batch: string, selfPath: string): void {
 /**
  * Refuse unless the batch is clean: the rollback's `reset --hard` would
  * destroy pre-existing work, or a merge's second parent, and a requeue
- * cannot clean a dirty batch. `git status` alone is not enough — mid-merge
- * its porcelain can be empty while `MERGE_HEAD` exists (git 2.55, observed
- * 2026-09-28).
+ * cannot clean a dirty batch.
  *
  * @throws Refusal `batch-dirty` naming the status entries or the
  *   in-progress refs.
@@ -153,8 +149,7 @@ function inProgressRefs(batch: string): string[] {
 }
 
 /**
- * Resolve the slice commit to a full sha, requiring one parent: `sha^..sha` is undefined for a root
- * commit, and cherry-pick refuses a merge commit without `-m`.
+ * Resolve the slice commit to a full sha, requiring one parent.
  *
  * @throws StepFailure `preconditions` unless it resolves to a commit with exactly one parent.
  */
@@ -214,8 +209,7 @@ function cherryPick(batch: string, sha: string): void {
 }
 
 /**
- * Require the tree to match the index: on a case-insensitive filesystem (git 2.55 win32) a pick
- * adding `Foo.txt` over a tracked `foo.txt` exits 0, stages correctly, yet overwrites `foo.txt`.
+ * Require the tree to match the index.
  *
  * @throws Conflict `applied-check` naming every unstaged or untracked path.
  */
@@ -272,7 +266,7 @@ export function rollback(batch: string, result: ResultBase & { rolledBack: boole
 
 /**
  * Re-check at the reset that its target is a linked worktree root: the `--hard` approval never
- * covers the main worktree, and a reset run in a subdirectory resets the whole worktree holding it.
+ * covers the main worktree.
  *
  * @throws StepFailure `rollback` when it is not a worktree root, or is the main worktree.
  */

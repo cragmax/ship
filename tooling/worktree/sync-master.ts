@@ -4,7 +4,7 @@
  * `MERGE_HEAD` kept, for a resolver who edits, never stages: `--continue` stages and commits in
  * `.claude/rules/git.md` § Direct commits' merge-commit order, never resetting. Only when both
  * sides moved the version does the version rule ({@link planVersionRule}) hold the merge
- * `--no-ff --no-commit`: an identical bump, which git merges clean, stops before its commit.
+ * `--no-ff --no-commit`: an identical bump stops before its commit.
  *
  * Invariant: a `failed` envelope never leaves a merge this call started or continued in progress:
  * it is aborted; a failed abort adds an `abort` error. `refused` / `conflict` leave the merge as
@@ -251,9 +251,9 @@ function isMerged(batch: string): boolean {
 
 /**
  * The paths a merge of `origin/master` into `HEAD` would conflict on, sorted, empty for a clean
- * merge; computed without touching the index or the worktree.
+ * merge.
  *
- * @throws StepFailure `probe` when `git merge-tree` exits other than 0 or 1.
+ * @throws StepFailure `probe` when `git merge-tree` errors.
  */
 function probeConflicts(batch: string): string[] {
   const r = runCaptured(
@@ -269,8 +269,6 @@ function probeConflicts(batch: string): string[] {
       r.tail,
     );
   }
-  // `-z` output: the tree id, each conflicted path, then an empty field
-  // before the messages section (git 2.55, observed 2026-09-28).
   const [listing = ''] = r.stdout.split('\0\0');
   return sortedSet(
     listing

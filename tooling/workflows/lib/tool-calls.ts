@@ -7,9 +7,8 @@
  * **Types.** Each output type is shallow-`Partial`, required fields included: a command
  * that exits 2 prints no verdict, one that threw or failed its envelope
  * schema prints only the base fields (`tooling/worktree.ts`
- * `runWorktreeCli`), and the runtime enforces nothing beyond `required`
- * that anyone has observed, so a reader treats a missing field as a
- * failure, never as a pass.
+ * `runWorktreeCli`), so a reader treats a missing field as a failure,
+ * never as a pass.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect; the zod sources are imported for types only.

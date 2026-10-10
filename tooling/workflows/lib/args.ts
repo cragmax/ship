@@ -1,8 +1,8 @@
 /**
  * The `ship` workflow's launch arguments. `args` is whatever the launching Workflow call passed,
- * verbatim, and the main-loop model writes that call, not the user — a string in the pilot
- * (#1035). Two shapes are accepted — the object (also as its JSON text) and the string, its
- * numbers space- or comma-separated, each with an optional leading `#`:
+ * verbatim: the main-loop model writes that call, so a string is possible (ADR-0045, #1035). Two
+ * shapes are accepted — the object (also as its JSON text) and the string, its numbers space- or
+ * comma-separated, each with an optional leading `#`:
  *
  * ```
  * { epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }

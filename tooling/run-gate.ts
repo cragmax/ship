@@ -2,8 +2,7 @@
  * Decides whether an unattended run may start and derives its dependency edges (#1031): a shell
  * over the pure core `tooling/lib/run-gate.ts` and its `gh` boundary `tooling/lib/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
- * `#` — quote a `#N` token, since PowerShell and bash both read an unquoted leading `#` as a
- * comment. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
+ * `#` — quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
  * **Output contract.** stdout carries only the JSON (`GateVerdict` for `epics` / `issues`,
  * `IssueCheck` for `check`), pretty-printed, one trailing newline; diagnostics go to stderr. Exit

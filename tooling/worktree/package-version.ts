@@ -27,7 +27,7 @@ export type VersionDelta = 'none' | 'patch' | 'minor' | 'major';
 export type VersionTriple = z.infer<typeof VersionTripleSchema>;
 
 /**
- * The top-level `"version"` line of a `package.json` as npm writes it: two
+ * The top-level `"version"` line of this repo's `package.json`: two
  * spaces of indent, the comma kept, a CR kept. A nested (deeper) `version`
  * never matches.
  */

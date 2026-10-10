@@ -8,9 +8,9 @@
  * the cut. Once staged, every non-`ok` outcome ends in harvest's rollback with the batch verified
  * clean at its unchanged `HEAD`, or reports `failed` with a `rollback` entry.
  *
- * The rollback's `reset --hard` is the exception `harvest.ts`' header states. A commit killed at
- * its budget can leave `index.lock`: the rollback then fails or `batchClean` re-verifies `false`,
- * and the caller halts the epic; a lock file is never deleted here. A Windows budget kill can leave
+ * The rollback's `reset --hard` is the exception `harvest.ts`' header states. After a commit
+ * killed at its budget the rollback may fail or `batchClean` re-verify `false`, and the caller
+ * halts the epic; a lock file is never deleted here. A Windows budget kill can leave
  * part of the commit's process tree running (what survives: `exec.ts`' header). The build runs
  * under `NPM_TIMEOUT_MS`, the commit under `COMMIT_TIMEOUT_MS` (`commitWithHooks`, `git.ts`).
  */

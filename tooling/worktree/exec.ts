@@ -4,14 +4,11 @@
  * The spawn budgets below are the only timeouts of a run's tool steps (the workflow sets none);
  * every spawn that can outlast local git plumbing names its constant here.
  *
- * A budget kill is `execaSync`'s `timeout`. On Windows (11, Node 24, Git for Windows 2.55) it
- * reaches only the direct child; its descendants survive except in a node → node chain (#1048). An
- * npm chain outlives it; an MSYS-exec'd program runs outside the Windows process tree, beyond
- * `taskkill /T`; killing a launcher (`cmd/git.exe`, from a Windows-native PATH) leaves the real
- * `git.exe` and its hook running, and from Git Bash's PATH the real `git.exe` dies and its hook
- * tree survives. Async execa kills no further, and never settles while a survivor holds the output
- * pipe. So a Windows budget kill is reported, not repaired ({@link outputOf},
- * {@link orphanWarning}); on POSIX, whether a hook's children survive SIGTERM to `git` is unprobed.
+ * A budget kill is `execaSync`'s `timeout`. On win32 it reaches only the direct child; npm chains,
+ * MSYS fork children and git's launcher and hook survive (PF-65; #1048). Async execa kills no
+ * further, and never settles while a survivor holds the output pipe. Accepted residual: a Windows
+ * budget kill's survivors are reported, not reaped ({@link outputOf}, {@link orphanWarning});
+ * POSIX is unprobed.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -87,15 +84,13 @@ function lastLines(text: string): string {
 }
 
 /**
- * Run a child with captured output, never throwing on a child failure. `.cmd` shims (`npm` on
- * Windows) resolve through execa.
+ * Run a child with captured output, never throwing on a child failure.
  *
  * @remarks
  * The child gets this process's environment minus every `GIT_*` variable, with `options.env`
  * laid over it; an overlay must not set a `GIT_*` variable. The CLI names each repository by
- * explicit path (`git -C`), so an inherited repository-location variable is always wrong: a git
- * hook exports `GIT_DIR`, and under it `git -C <worktree>` resolves the hook's repository
- * instead. A prefix rule rather than a list, so no name that `git rev-parse --local-env-vars`
+ * explicit path (`git -C`), so an inherited repository-location variable is always wrong. A
+ * prefix rule rather than a list, so no name that `git rev-parse --local-env-vars`
  * prints can be missed; no child here needs any other `GIT_*` setting.
  *
  * @param args - Argument vector, passed without a shell.

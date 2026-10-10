@@ -4,8 +4,8 @@
  * attempt's events in order. **The cap bounds everything in flight; epic ends run outside it**:
  * an authored attempt feeds nothing, so its issue keeps its slot until its landing settles.
  *
- * **Concurrency.** The workflow runtime runs un-awaited `agent()`-chaining promises concurrently
- * and resolves `Promise.race` in completion order (#1036), so while more than one flight is in
+ * **Concurrency.** The workflow runtime resolves `Promise.race` over un-awaited flights in
+ * completion order (ADR-0045 Q7, #1036), so while more than one flight is in
  * progress the order of the run's `agent()` calls follows settle timing. With one flight at a
  * time — a single entry at `maxSlices: 1` — it does not: the resume boundary, ADR-0045 decision 10.
  *

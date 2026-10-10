@@ -10,8 +10,7 @@
  * `pending`, `expected`, `staged`, `missing`, `unexpected`, `landed`) are repository-relative, as
  * git spells them. Every count, port and number is an integer.
  *
- * Objects strip unknown keys when parsed; nothing here parses an envelope but
- * {@link guardEnvelope}, which never prints the parse output.
+ * Nothing here parses an envelope but {@link guardEnvelope}, which never prints the parse output.
  */
 
 import { z } from 'zod';

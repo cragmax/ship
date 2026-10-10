@@ -3,13 +3,12 @@
  * request title and body, fitted to GitHub's limit by moving run-report sections into PR comments
  * ({@link fitPrBody}), and an attached run's PR-body section and run report.
  *
- * **Closing keywords are the workflow's own.** GitHub closes an issue for a closing keyword
- * (`fixes`, `closes`, `resolves`, …) before its reference anywhere in a merged commit message or PR
- * body, so only this file writes one: `fixes #N`, for a landed issue whose plan card says so, in
- * its commit message and once in a PR body's or attached section's Issues list
- * ({@link landedLine}), never in a run report. Every other issue, the epic container included, is
- * `see #N`, and every text carrying agent- or tool-written words, each moved section included,
- * passes through {@link neutralText}; the body a section is appended to is never neutralised again.
+ * **Closing keywords are the workflow's own.** Only this file writes one: `fixes #N`, for a landed
+ * issue whose plan card says so, in its commit message and once in a PR body's or attached
+ * section's Issues list ({@link landedLine}), never in a run report. Every other issue, the epic
+ * container included, is `see #N`, and every text carrying agent- or tool-written words, each
+ * moved section included, passes through {@link neutralText}; the body a
+ * section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, joins the closure.

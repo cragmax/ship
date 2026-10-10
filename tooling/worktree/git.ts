@@ -70,9 +70,7 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
 }
 
 /**
- * Run a path-listing git command with `-z` and split its output: without
- * `-z` git C-quotes a non-ASCII or otherwise unusual path, which would then
- * never equal the caller's spelling of it.
+ * Run a path-listing git command with `-z` (git C-quotes unusual paths without it) and split it.
  *
  * @param args - Git subcommand first, then its options (`-z` is inserted
  *   right after the subcommand).
@@ -117,7 +115,7 @@ export function fetchOrigin(dir: string): void {
  * @param dir - The checkout whose `origin` is asked.
  * @param ref - The full ref name, e.g. `refs/heads/master`.
  * @returns The sha `origin` names for exactly `ref`; `null` when `origin`
- *   has no such ref (`ls-remote` then prints nothing and exits 0).
+ *   has no such ref.
  * @throws StepFailure for `step` carrying the output tail, on a non-zero
  *   exit, spawn failure or budget kill.
  */
@@ -180,7 +178,7 @@ export function refExists(dir: string, ref: string): boolean {
 
 /**
  * The local branches under `prefix` (`git for-each-ref refs/heads/<prefix>`), short form, in ref
- * order; a `prefix` ending `/` keeps a longer sibling (`slice/<slug>2/…`) out.
+ * order; end `prefix` with `/` to match whole path components.
  *
  * @throws StepFailure for `step` when git cannot list them.
  */
@@ -271,7 +269,7 @@ export function assertMainWorktree(path: string, step: string): void {
  * Refuse when the running CLI's own file lies inside the worktree a
  * command mutates: its tsx loader keeps `esbuild.exe` running from that
  * checkout's `node_modules`, so an `npm ci` or removal there would hit a
- * running executable.
+ * running executable, which win32 refuses to delete or overwrite (PF-66).
  *
  * @throws Refusal `self-hosted` when `selfPath` is inside `target`.
  */

@@ -1,8 +1,7 @@
 /**
  * The shared body of `post-pr-comment` and `post-issue-comment`: read the
  * comment file, refuse it over {@link GH_BODY_LIMIT}, post it with
- * `gh <pr|issue> comment --body-file`, then read the comment's URL from
- * `gh`'s stdout. It mutates no worktree — the directory is only `gh`'s
+ * `gh <pr|issue> comment --body-file`. It mutates no worktree — the directory is only `gh`'s
  * working directory — so neither command has a linked-worktree or
  * self-hosted guard.
  */
