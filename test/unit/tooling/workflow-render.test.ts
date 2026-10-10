@@ -391,3 +391,33 @@ describe('the rendered workflow directory', () => {
     expect(result.status).toBe(1);
   });
 });
+
+describe('the workflow metas', () => {
+  const words = (s: string): number => s.trim().split(/\s+/).length;
+
+  it.each(WORKFLOWS)(
+    'keeps the $name description within 40 words and whenToUse within 80',
+    ({ meta }) => {
+      expect(words(meta.description)).toBeLessThanOrEqual(40);
+      expect(words(meta.whenToUse)).toBeLessThanOrEqual(80);
+    },
+  );
+
+  it("keeps ship's launch forms, flags and resume rule in whenToUse", () => {
+    const mustCarry = [
+      '`epics N...`',
+      '`issues N...`',
+      '{ epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }',
+      '`--exclude`',
+      '`--preflight-only`',
+      '`--max-slices K`',
+      '`--attach ship/<slug>`',
+      'Never choose.',
+      '`resumeFromRunId`',
+      '`--max-slices 1`',
+      'whose script is unchanged',
+    ];
+
+    for (const token of mustCarry) expect(SHIP_META.whenToUse).toContain(token);
+  });
+});
