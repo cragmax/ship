@@ -161,7 +161,7 @@ const SalvageItemSchema = z.object({
   /** Where the claim sat, as `path:line`. */
   location: z.string(),
   /**
-   * `defect`: a known defect or accepted residual; `platform-claim`: an
+   * `defect`: a known defect, never an accepted residual; `platform-claim`: an
    * external-system claim without a `PF-N`; `test-claim`: a claim that a test
    * pins it, with no test pinning it.
    */
