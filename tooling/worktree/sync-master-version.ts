@@ -48,7 +48,6 @@ export interface VersionRule {
   readonly target: string;
 }
 
-/** The largest `git merge-file` exit that counts conflicts; above it is an error. */
 const MERGE_FILE_MAX_CONFLICTS = 127;
 
 /**

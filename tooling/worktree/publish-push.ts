@@ -33,7 +33,7 @@ const MERGEABLE_POLL_MS = 15_000;
 
 const UNCOMPUTED = 'UNKNOWN';
 
-/** `gh pr view --json mergeable,url` output; unknown keys are tolerated. */
+/** `gh pr view --json mergeable,url` output. */
 const PrViewSchema = z.object({ mergeable: z.string(), url: z.string() });
 
 /** Inputs of {@link publishPushOnly}; paths absolute with forward slashes. */

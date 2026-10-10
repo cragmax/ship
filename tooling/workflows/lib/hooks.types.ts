@@ -51,18 +51,11 @@ export interface AgentOptions {
 
 /** The hooks the workflow body is given. */
 export interface WorkflowHooks {
-  /**
-   * Run one agent; resolves to its structured output, or `null` when it
-   * returned none. The `null` is unobserved: every pilot agent answered
-   * (#1035).
-   */
+  /** Run one agent; resolves to its structured output, or `null` when it returned none. */
   readonly agent: (prompt: string, options: AgentOptions) => Promise<unknown>;
-  /**
-   * Run thunks concurrently; a thunk that threw yields `null`. That `null` is
-   * the runtime's documented behaviour; no run has observed it (#1181).
-   */
+  /** Run thunks concurrently; a thunk that threw yields `null`. */
   readonly parallel: <T>(thunks: readonly (() => Promise<T>)[]) => Promise<(T | null)[]>;
-  /** Run `step` over each item; the runtime schedules the calls, so their order is not fixed. */
+  /** Run `step` over each item. */
   readonly pipeline: <T, R>(items: readonly T[], step: (item: T) => Promise<R>) => Promise<R[]>;
   /** Enter the named phase of `meta.phases`. */
   readonly phase: (title: string) => void;

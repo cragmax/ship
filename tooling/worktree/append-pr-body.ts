@@ -21,7 +21,7 @@ import { freshLogDir, GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import type { AppendPrBodyResult } from './types-run.js';
 import { recordFailure, StepFailure } from './types.js';
 
-/** `gh pr view --json body` output; unknown keys are tolerated. */
+/** `gh pr view --json body` output. */
 const PrBodySchema = z.object({ body: z.string() });
 
 /** Inputs of {@link appendPrBody}; paths absolute with forward slashes. */

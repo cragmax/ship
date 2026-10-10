@@ -40,7 +40,7 @@ import {
 /** `gh`'s PR states in precedence order: a reopened branch's live PR wins. */
 const PR_STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
 
-/** `gh pr list --json number,state,headRefOid` output; unknown keys are tolerated. */
+/** `gh pr list --json number,state,headRefOid` output. */
 const PrListSchema = z.array(
   z.object({ number: z.number(), state: z.string(), headRefOid: z.string().optional() }),
 );
@@ -144,7 +144,7 @@ function describeRun(
  * Spent: tip `ref` is an ancestor of (or is) its merged or closed PR's head. Both `false` while the
  * PR is open, absent or unknown; `unverified` when its head is unnamed or not a commit here.
  *
- * @throws StepFailure `runs` when `git merge-base --is-ancestor` exits other than 0 or 1.
+ * @throws StepFailure `runs` when `git merge-base --is-ancestor` cannot answer.
  */
 function spentOf(
   main: string,
@@ -168,10 +168,7 @@ function spentOf(
   );
 }
 
-/**
- * Whether `oid` names a commit here: only a full hex id can, checked with
- * `git cat-file -e <oid>^{commit}`.
- */
+/** Whether `oid` names a commit here. */
 function isCommit(main: string, oid: string): boolean {
   if (!COMMIT_ID.test(oid)) return false;
   return (
@@ -196,7 +193,7 @@ function isDirty(entry: WorktreeEntry): boolean | null {
  * commit, under `GH_TIMEOUT_MS`. `publish` and `cut-batch --attach` read it
  * too, for their open-PR checks.
  *
- * @param dir - A checkout of the repository (`gh` resolves the repository from it).
+ * @param dir - A checkout of the repository.
  * @param branch - Short branch name.
  * @returns `none` for no PR; otherwise the highest-precedence PR by
  *   {@link PR_STATES}, its `headOid` `null` when `gh` names none; `unknown`

@@ -8,9 +8,8 @@
  * schema requires only the fields the gate reads and tolerates unknown keys.
  * A shape mismatch throws — the gate never guesses at gh output.
  *
- * **Never gate on a partial list.** gh fetches only `subIssues(first:100)` and
- * `blockedBy(first:50)`, so every connection passes {@link complete} before it
- * is read.
+ * **Never gate on a partial list.** A gh connection may hold only a page, so every one passes
+ * {@link complete} before it is read.
  *
  * **Same-repo assumption.** A native link's node carries no repository (gh
  * 2.101.0, observed), so its number is read as a same-repo issue (#1031).

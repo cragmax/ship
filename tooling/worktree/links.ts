@@ -2,7 +2,7 @@
  * Directory-link primitives for the worktree CLI.
  *
  * Never walk with recursive `readdirSync`: it descends into junctions on
- * Windows (probe 2026-09-28), so a walk or count would see — and a cleanup
+ * Windows, so a walk or count would see — and a cleanup
  * would reach — the link target's contents. Every walk here is a manual
  * `lstat` walk that stops at a link.
  */
@@ -15,9 +15,7 @@ import { toPosix } from '../shared.js';
 import type { LinkRecord } from './types.js';
 
 /**
- * Create a directory link at `link` pointing at `target`: a Windows junction
- * (no admin needed); on POSIX the `'junction'` type is ignored and a
- * directory symlink is made.
+ * Create a directory link at `link` pointing at `target`.
  *
  * @param link - Path of the new link; must not exist.
  * @param target - Existing directory it points at.
@@ -88,10 +86,10 @@ function countEntries(dir: string, skipDir: (name: string) => boolean = () => fa
 
 /**
  * Link-aware entry count of a link target, the teardown gate's measure.
- * Top-level dot-directories other than `.bin` are skipped: they are tool
- * caches (`.vite`, `.vite-temp`, `.cache`, …) that concurrent runs sharing
- * the tree create and delete, so counting them would trip the gate falsely,
- * while a followed link wipes packages, which are counted.
+ * Top-level dot-directories other than `.bin` are skipped: concurrent runs
+ * sharing the tree create and delete tool caches there, so counting them
+ * would trip the gate falsely, while a followed link wipes packages, which
+ * are counted.
  *
  * @returns The count, or `null` when `dir` is not a real directory.
  */

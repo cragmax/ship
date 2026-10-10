@@ -253,7 +253,7 @@ function isMerged(batch: string): boolean {
  * The paths a merge of `origin/master` into `HEAD` would conflict on, sorted, empty for a clean
  * merge.
  *
- * @throws StepFailure `probe` when `git merge-tree` exits other than 0 or 1.
+ * @throws StepFailure `probe` when `git merge-tree` errors.
  */
 function probeConflicts(batch: string): string[] {
   const r = runCaptured(
@@ -269,8 +269,6 @@ function probeConflicts(batch: string): string[] {
       r.tail,
     );
   }
-  // `-z` output: the tree id, each conflicted path, then an empty field
-  // before the messages section (git 2.55, observed 2026-09-28).
   const [listing = ''] = r.stdout.split('\0\0');
   return sortedSet(
     listing

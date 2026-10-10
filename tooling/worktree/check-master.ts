@@ -167,8 +167,7 @@ function knownCommit(main: string, sha: string): string | null {
 }
 
 /**
- * Whether full sha `launch` is an ancestor of `current`: `forward` on exit 0, `rewound` on exit 1,
- * `undecidable` otherwise.
+ * Whether full sha `launch` is an ancestor of `current`; `undecidable` when git cannot answer.
  */
 function ancestry(main: string, launch: string, current: string): MasterMove['move'] {
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', launch, current], {

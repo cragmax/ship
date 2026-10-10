@@ -8,8 +8,7 @@
  * pre-push gate's `manifest-coverage` reads a current
  * `dist/api-manifest.json` — then the push, then `gh pr create`.
  * A failed push opens no PR. The PR number is read from the PR URL that
- * `gh pr create` prints on stdout on success (its `--help`, observed
- * 2026-09-28); no URL is a `pr` failure with `pushed` true.
+ * `gh pr create` prints on stdout on success; no URL is a `pr` failure with `pushed` true.
  *
  * `publish --push-only` — the push to an open PR's branch — is
  * `publish-push.ts`'s; both push through {@link pushBranch}.
@@ -162,7 +161,6 @@ function createPr(batch: string, branch: string, input: PublishInput): OpenedPr 
     ],
     { cwd: batch, timeoutMs: GH_TIMEOUT_MS },
   );
-  // gh prints the new PR's URL on stdout (gh 2.101.0, observed 2026-09-29, #1035).
   const url = /https:\/\/\S+\/pull\/(\d+)/u.exec(r.stdout);
   if (r.exitCode !== 0 || url === null) {
     throw new StepFailure('pr', `gh pr create exited ${String(r.exitCode)} for ${branch}`, r.tail);

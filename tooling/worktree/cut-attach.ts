@@ -306,9 +306,9 @@ function fastForward(main: string, local: string, remote: string): boolean {
 }
 
 /**
- * Whether commit `a` is an ancestor of commit `b` (`git merge-base --is-ancestor` exits 0).
+ * Whether commit `a` is an ancestor of commit `b`.
  *
- * @throws StepFailure `attach` when it exits other than 0 or 1.
+ * @throws StepFailure `attach` when git cannot answer.
  */
 function isAncestor(main: string, a: string, b: string): boolean {
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', a, b], {

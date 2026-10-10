@@ -70,7 +70,7 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
 }
 
 /**
- * Run a path-listing git command with `-z` and split its output.
+ * Run a path-listing git command with `-z` (git C-quotes unusual paths without it) and split it.
  *
  * @param args - Git subcommand first, then its options (`-z` is inserted
  *   right after the subcommand).
@@ -178,7 +178,7 @@ export function refExists(dir: string, ref: string): boolean {
 
 /**
  * The local branches under `prefix` (`git for-each-ref refs/heads/<prefix>`), short form, in ref
- * order; a `prefix` ending `/` keeps a longer sibling (`slice/<slug>2/…`) out.
+ * order; end `prefix` with `/` to match whole path components.
  *
  * @throws StepFailure for `step` when git cannot list them.
  */
