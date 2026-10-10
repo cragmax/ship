@@ -89,8 +89,8 @@ describe('workflow agents', () => {
   });
 
   // Hand-written: the diff reviewer reads and writes its findings, never edits (#1099).
-  it('diff-reviewer lists exactly Read, Glob, Grep, Bash and Write in its tools', () => {
-    expect(toolsOf('diff-reviewer')).toEqual(['Read', 'Glob', 'Grep', 'Bash', 'Write']);
+  it('diff-reviewer lists exactly Read, Glob, Grep, Bash, Write and LSP in its tools', () => {
+    expect(toolsOf('diff-reviewer')).toEqual(['Read', 'Glob', 'Grep', 'Bash', 'Write', 'LSP']);
   });
 
   // Hand-written: the PR writer only reads; the workflow renders its answer (#1181).
