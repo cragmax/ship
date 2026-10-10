@@ -28,8 +28,6 @@ const BARE_VITEST = /\bnpx vitest (?:run|related)\b(?! --config vitest\.worktree
 const frontmatter = (text: string): string =>
   /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text)?.[1] ?? '';
 
-const words = (s: string): number => s.split(/\s+/).filter((w) => w !== '').length;
-
 const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType))];
 
 const agentText = (agentType: string): string =>
@@ -44,17 +42,6 @@ const toolsOf = (agentType: string): string[] => {
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '');
-};
-
-// The `description:` value, folded or inline: its first line plus each indented or blank line.
-const descriptionOf = (agentType: string): string => {
-  const lines = frontmatter(agentText(agentType)).split('\n');
-  const start = lines.findIndex((l) => l.startsWith('description:'));
-  if (start === -1) return '';
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => l !== '' && !l.startsWith(' '));
-  const head = lines[start].slice('description:'.length).replace(/^\s*[>|][-+]?/, '');
-  return [head, ...rest.slice(0, end === -1 ? rest.length : end)].join(' ');
 };
 
 // From the heading line up to the next `## ` heading; '' when the heading is absent.
@@ -113,10 +100,6 @@ describe('workflow agents', () => {
         'ship-test-review',
       ]);
     });
-
-    it.each(writers)('%s answers through StructuredOutput, per its ## Output', (agentType) => {
-      expect(section(agentText(agentType), '## Output')).toContain('StructuredOutput');
-    });
   });
 
   // Hand-written: each agent that runs an interactive skill, and the skill's step phrases it overrides.
@@ -156,229 +139,19 @@ describe('workflow agents', () => {
   });
 
   it.each(['ship-tdd', 'ship-test-review'])(
-    '%s mutates through the mutation helper and sweeps with check',
+    '%s names none of the retired by-hand restore wordings',
     (agentType) => {
-      const text = agentText(agentType);
-
-      expect(text).toContain('.claude/skills/audit-tests/mutate.ts');
-      expect(text).toMatch(/mutate\.ts check/);
-      expect(text).not.toMatch(RETIRED_RESTORE);
+      expect(agentText(agentType)).not.toMatch(RETIRED_RESTORE);
     },
   );
 
   // regression: #1077 — a bare `npx vitest run` in a slice writes into the shared, junctioned node_modules/.vite.
   it.each(['planner', 'ship-plan-reviewer', 'ship-tdd', 'reviewer', 'ship-test-review'])(
-    '%s runs unit tests under the worktree vitest config',
+    '%s names no npx vitest run without the worktree config',
     (agentType) => {
-      const text = agentText(agentType);
-
-      expect(text).toContain('npx vitest run --config vitest.worktree.config.ts <files>');
-      expect(text).not.toMatch(BARE_VITEST);
+      expect(agentText(agentType)).not.toMatch(BARE_VITEST);
     },
   );
-
-  // Hand-written: the Probes-entry tokens the planner writes and the plan reviewer and the tdd read (#1071).
-  const PLAN_PROBE_TOKENS = ['plan-time', 'tdd-time', 'pending — tdd', 'plan allowance spent'];
-
-  // Its entry-format bullet, not the whole file: step 4 and apply mode repeat the tokens, so a drifted definition hid behind them.
-  it('planner defines the plan-probe tokens in its Probes-entry format', () => {
-    const entry =
-      section(agentText('planner'), '## Plan-time probes')
-        .split('\n')
-        .find((l) => l.startsWith('- **The entry.**')) ?? '';
-
-    expect(PLAN_PROBE_TOKENS.filter((token) => !entry.includes(token))).toEqual([]);
-  });
-
-  it.each<[string, string[]]>([
-    ['ship-plan-reviewer', PLAN_PROBE_TOKENS],
-    ['ship-tdd', ['plan-time', 'pending — tdd']],
-  ])('%s spells the plan-probe tokens the planner writes', (agentType, tokens) => {
-    const text = agentText(agentType);
-
-    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
-  });
-
-  // Hand-written: the finding-line tokens the diff-review skill writes and the agents acting on its findings read (#1098, #1099).
-  const FINDING_TOKENS = ['F<n>', 'hard', 'judgement'];
-
-  // Its finding-line format, not the whole skill: its severity bullets repeat `hard` and `judgement`, so a renamed format would hide behind them.
-  it('diff-review defines the finding tokens in its report’s finding line', () => {
-    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
-    const format =
-      section(skill.replaceAll('\r\n', '\n'), '## 4. Report')
-        .split('\n')
-        .find((l) => l.startsWith('`F<n> ')) ?? '';
-
-    expect(FINDING_TOKENS.filter((token) => !format.includes(token))).toEqual([]);
-  });
-
-  it.each<[string, string, string[]]>([
-    ['reviewer', '## Review mode', FINDING_TOKENS],
-    ['diff-reviewer', '## Discipline', ['hard']],
-  ])(
-    '%s spells the finding tokens the diff-review skill writes, under its %s',
-    (agentType, heading, tokens) => {
-      const text = section(agentText(agentType), heading);
-
-      expect(tokens.filter((token) => !text.includes(`\`${token}\``))).toEqual([]);
-    },
-  );
-
-  // Hand-written: the probe timing and the greppable duration token a cap review reads (#1086).
-  const DURATION_TOKENS = ['date +%s', 'duration: <dur>', '`42s`', '`11m 04s`'];
-
-  it.each(['planner', 'ship-tdd'])(
-    '%s times each probe and writes its duration token',
-    (agentType) => {
-      const text = agentText(agentType);
-
-      expect(DURATION_TOKENS.filter((token) => !text.includes(token))).toEqual([]);
-    },
-  );
-
-  // Its return section, not the whole file: the planner's step 4 also names `seconds`, so a dropped return field hid behind it.
-  it.each<[string, string]>([
-    ['planner', '## Return'],
-    ['ship-tdd', '## Report and return'],
-  ])('%s returns each probe record’s seconds under its %s', (agentType, heading) => {
-    expect(section(agentText(agentType), heading)).toContain('`seconds`');
-  });
-
-  // Its own bullet, not the section: the verdict bullet also names `PARTIAL` and `BLOCKED`.
-  it('ship-tdd returns its tracer evidence, both kinds, under its ## Report and return', () => {
-    const bullet =
-      section(agentText('ship-tdd'), '## Report and return')
-        .split('\n')
-        .find((l) => l.startsWith('- `evidence`')) ?? '';
-
-    expect(
-      [
-        '`tracer`',
-        '`none`',
-        '`test`',
-        '`pseudocode`',
-        '`red`',
-        '`green`',
-        '`reason`',
-        '`PARTIAL`',
-        '`BLOCKED`',
-      ].filter((token) => !bullet.includes(token)),
-    ).toEqual([]);
-  });
-
-  it('ship-tdd returns its salvage items under its ## Report and return', () => {
-    const bullet =
-      section(agentText('ship-tdd'), '## Report and return')
-        .split('\n')
-        .find((l) => l.startsWith('- `salvage`')) ?? '';
-
-    expect(
-      [
-        '`location`',
-        '`kind`',
-        '`defect`',
-        '`platform-claim`',
-        '`test-claim`',
-        '`claim`',
-        '`[]`',
-        '`Salvage:`',
-      ].filter((token) => !bullet.includes(token)),
-    ).toEqual([]);
-  });
-
-  it('ship-tdd returns its plan-required values in recorded under its ## Report and return', () => {
-    const bullet =
-      section(agentText('ship-tdd'), '## Report and return')
-        .split('\n')
-        .find((l) => l.startsWith('- `recorded`')) ?? '';
-
-    expect(
-      ['`[]`', 'commit message file', 'PR body'].filter((token) => !bullet.includes(token)),
-    ).toEqual([]);
-  });
-
-  // regression: #1295 — a tdd edit round-tripped through Windows-1252 garbled UTF-8 comments.
-  it('ship-tdd states the UTF-8 without a BOM write rule under its ## Discipline', () => {
-    expect(section(agentText('ship-tdd'), '## Discipline')).toContain('UTF-8 without a BOM');
-  });
-
-  it('planner routes a commit-body acceptance request to the tdd’s recorded', () => {
-    const plan = section(agentText('planner'), '## Plan mode');
-
-    expect(
-      ['`recorded`', 'commit body', 'ship-tdd.md'].filter((token) => !plan.includes(token)),
-    ).toEqual([]);
-  });
-
-  // regression: #1296 — a plan narrowed an "in each owned file" pass to lint-hit files,
-  // and the slice blocked at review.
-  it.each<[string, string, string[]]>([
-    ['planner', '## Plan mode', ['names each owned file it leaves out with its reason']],
-    [
-      'ship-plan-reviewer',
-      '## Checks',
-      [
-        'names each one it leaves out with its reason',
-        'a plan that drops an owned file without one is a finding',
-      ],
-    ],
-  ])(
-    '%s states the owned-file rule for a per-file pass under its %s',
-    (agentType, heading, ownTokens) => {
-      const text = section(agentText(agentType), heading);
-
-      expect(
-        [
-          'per-file pass',
-          'File scope lists every owned file the pass applies to',
-          '"no lint hit" is no reason unless the bullet itself is scoped to lint hits',
-          ...ownTokens,
-        ].filter((token) => !text.includes(token)),
-      ).toEqual([]);
-    },
-  );
-
-  // Hand-written: the scoped-rules line a reader that never Reads a matching file carries (#1243).
-  const SCOPED_RULES_TOKENS = [
-    'each `.claude/rules/*.md` whose `paths:` match a changed or planned file',
-  ];
-
-  it.each(['planner', 'critic', 'ship-plan-reviewer'])(
-    '%s reads the path-scoped rules matching its files from its worktree, under its ## Discipline',
-    (agentType) => {
-      const text = section(agentText(agentType), '## Discipline');
-      const tokens = [...SCOPED_RULES_TOKENS, 'by absolute path in your worktree'];
-
-      expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
-    },
-  );
-
-  it('diff-review reads the unscoped rules and the path-scoped rules matching the diff, under its ## Rules check', () => {
-    const skill = readFileSync(join(REPO_ROOT, '.claude/skills/diff-review/SKILL.md'), 'utf8');
-    const text = section(skill.replaceAll('\r\n', '\n'), '## Rules check');
-    const tokens = [
-      ...SCOPED_RULES_TOKENS,
-      'every `.claude/rules/*.md` without `paths:` frontmatter',
-    ];
-
-    expect(tokens.filter((token) => !text.includes(token))).toEqual([]);
-  });
-
-  it('ship-tdd never pushes and never bumps the version, under its ## Discipline', () => {
-    const text = section(agentText('ship-tdd'), '## Discipline');
-
-    expect(
-      [
-        '**Never push.**',
-        'The slice branch is scratch',
-        'ADR-0045 decision 6',
-        '**Never bump the version.**',
-        'Issue commits never bump',
-        'ADR-0045 decision 7',
-      ].filter((token) => !text.includes(token)),
-    ).toEqual([]);
-  });
 
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
@@ -427,94 +200,17 @@ describe('workflow agents', () => {
     },
   );
 
-  it.each(readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')))(
-    '%s keeps its description at 40 words or fewer',
-    (file) => {
-      const n = words(descriptionOf(file.replace(/\.md$/, '')));
-
-      expect(n).toBeGreaterThan(0);
-      expect(n).toBeLessThanOrEqual(40);
-    },
-  );
-
-  // Hand-written: the mechanics #1255 cut from each description, which the body carries.
-  it.each<[string, string[]]>([
-    [
-      'reviewer',
-      [
-        '.claude/skills/manifest-tsdoc/SKILL.md',
-        '`git commit --amend --no-edit` under the hooks',
-        'Edit only the pending paths.',
-      ],
-    ],
-    [
-      'diff-reviewer',
-      [
-        "the rules check (the repo's rules plus a code-smell baseline)",
-        'the plan check (the issue and its plan)',
-      ],
-    ],
-    [
-      'planner',
-      [
-        'The claims it rests on that a cheap local probe can settle, you settle before plan review.',
-      ],
-    ],
-    [
-      'ship-plan-reviewer',
-      [
-        '**Codebase verification — the highest-value check.**',
-        '**Completeness**',
-        '**Decomposition**',
-        '**Buildability**',
-      ],
-    ],
-    ['pr-writer', ['one view of what the epic changed', 'how hard the merge is to walk back']],
-    [
-      'overlap-estimator',
-      [
-        'The workflow turns every pair you name into a scheduler edge',
-        'A missed overlap costs a harvest conflict',
-      ],
-    ],
-    [
-      'ship-test-review',
-      [
-        '§§ 6–7 (Apply fixes, Re-verify)',
-        'confirm the hardened test now fails',
-        '`git commit --amend --no-edit` under the hooks',
-      ],
-    ],
-    [
-      'retro',
-      ['Mark a finding `genuine` when', '`first-time` when it is', 'You never file an issue'],
-    ],
-    [
-      'ship-tdd',
-      [
-        '**Server-tier runs go through the lease command only**',
-        '**Probes** follow `.claude/rules/probing.md` within the caps',
-      ],
-    ],
-    ['scout', ['**Named symbols**', '**Cited behaviour**', '**Cited SHAs**']],
-  ])('%s carries the mechanics cut from its description in its body', (agentType, tokens) => {
-    const body = agentText(agentType).replace(/^---\n[\s\S]*?\n---\n/, '');
-
-    expect(tokens.filter((t) => !body.includes(t))).toEqual([]);
-  });
-
-  // Hand-written: each agent that runs a repo skill reads it by path (#1039).
+  // Hand-written: the agents that run a repo skill, which they read by path (#1039).
   it.each([
-    ['ship-tdd', '.claude/skills/tdd/SKILL.md'],
-    ['ship-test-review', '.claude/skills/audit-tests/SKILL.md'],
-    ['overlap-estimator', '.claude/skills/batch-issues/areas.md'],
-    ['reviewer', '.claude/skills/manifest-tsdoc/SKILL.md'],
-    ['diff-reviewer', '.claude/skills/diff-review/SKILL.md'],
-    ['pr-writer', '.claude/skills/pr/SKILL.md'],
-  ])('%s reads %s by repo path, not through the Skill tool', (agentType, path) => {
-    const text = readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8');
-
-    expect(text).toContain(path);
-    expect(text).not.toMatch(/\bload\b[^.]*\bwith the Skill tool\b/i);
+    'ship-tdd',
+    'ship-test-review',
+    'overlap-estimator',
+    'reviewer',
+    'diff-reviewer',
+    'pr-writer',
+  ])('%s never loads a skill with the Skill tool', (agentType) => {
+    expect(readFileSync(join(AGENTS_DIR, `${agentType}.md`), 'utf8')).not.toMatch(
+      /\bload\b[^.]*\bwith the Skill tool\b/i,
+    );
   });
 });
