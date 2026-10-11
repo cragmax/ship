@@ -1836,7 +1836,6 @@ describe('runShip — a halting entry', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
-    // `cut-batch --issues` takes one comma-joined list.
     expect(run.calls.find((c) => c.label === 'runner:cut-batch:list')?.argv).toEqual([
       'tooling/worktree.ts',
       'cut-batch',
@@ -2252,7 +2251,8 @@ describe('agent-call tiers', () => {
         const stage = call.label.split(':')[0] ?? '';
         expect(Object.keys(STAGES)).toContain(stage);
         const row: StageRow = STAGES[stage as StageName];
-        // The diff reviewer's and the reviewer's effort is per slice; every fake tdd commits TDD_FILES.
+        // The diff reviewer's and the reviewer's effort is per slice;
+        // every fake tdd commits TDD_FILES.
         const effort =
           stage === 'diffReview' || stage === 'reviewer' ? reviewEffort(TDD_FILES) : row.effort;
         expect({ agentType: call.agentType, model: call.model, effort: call.effort }).toEqual({

@@ -1010,7 +1010,8 @@ describe('preflight (in-process)', () => {
 
     it('passes a branch ahead of origin only by an unpushed merge', TIMEOUT, async () => {
       mergeOn(`${root}/origin.git`, 'ship/s');
-      // Level local master with the origin/master the merge advanced: only the attach checks are under test.
+      // Level local master with the origin/master the merge advanced: only the attach checks
+      // are under test.
       mustRun('git', ['merge', '--ff-only', '-q', 'origin/master'], main);
 
       const r = await preflightWith({ attach: 'ship/s', responses: OPEN_9 });

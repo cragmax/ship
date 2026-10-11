@@ -73,7 +73,8 @@ const LAND_BATCH_DIRTY = {
   errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
-// Up to date, but naming no origin/master sha: the master check stops the epic after the PR writer ran.
+// Up to date, but naming no origin/master sha: the master check stops the epic
+// after the PR writer ran.
 const SYNC_NO_UPSTREAM = {
   exitCode: 0,
   envelopePath: 'e.json',

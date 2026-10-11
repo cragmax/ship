@@ -1,11 +1,10 @@
 /**
- * Helpers for driving `runShip` concurrently through `fakeHooks`' answer
- * gate: {@link holdable} keeps chosen calls pending until a test releases
- * them, {@link idle} lets every unheld call chain run to a standstill,
- * {@link settleInOrder} settles held calls one per standstill, oldest or
- * newest first, so a test can compare call orders under different settle
- * timings, and {@link entryResponses} gives each run-set entry its own
- * batch, report directory, branch and PR number.
+ * Helpers for driving `runShip` concurrently through `fakeHooks`' answer gate: {@link holdable}
+ * keeps chosen calls pending until a test releases them, {@link idle} lets every unheld call chain
+ * run to a standstill, {@link settleInOrder} settles held calls one per standstill, oldest or
+ * newest first, so a test can compare call orders under different settle timings, and
+ * {@link entryResponses} gives each run-set entry its own batch, report directory, branch and PR
+ * number.
  */
 
 import type { RecordedCall } from './_fake-hooks.js';
@@ -165,8 +164,7 @@ export function entryResponses(epic: number): Record<string, unknown> {
 }
 
 /**
- * A run of epic entries: the gate's run set and edges, a fresh scout
- * verdict for every issue, and each entry's own answers.
+ * A run of epic entries: the gate's run set and edges, fresh scout verdicts, each entry's answers.
  *
  * @param entries - Each epic and its issues, in run-set order.
  * @param edges - The declared edges.

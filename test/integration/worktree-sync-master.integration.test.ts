@@ -327,7 +327,7 @@ describe('sync-master batch refresh', () => {
     rmSync(templateRoot, { recursive: true, force: true });
   });
 
-  /** An npm fixture repo (build script, `file:` dependency, lockfile) with a bare origin and a batch. */
+  /** An npm fixture (build script, `file:` dependency, lockfile) with a bare origin and a batch. */
   function makeNpmRun(): Run {
     const main = makeFixtureRepo(root, template);
     const bare = makeBareOrigin(root, main);

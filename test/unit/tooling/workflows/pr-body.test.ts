@@ -972,7 +972,8 @@ describe('renderPrBody — evidence', () => {
     expect(lines[before - 1]).toBe(`  ${fence}`);
   });
 
-  // A single-backtick span closes at the name's first backtick; this repo's test names often carry one.
+  // A single-backtick span closes at the name's first backtick;
+  // this repo's test names often carry one.
   it.each<[string, string]>([
     ['x › shadows `bot`', '- **#11** `` x › shadows `bot` ``'],
     ['x › a `` b', '- **#11** ``` x › a `` b ```'],

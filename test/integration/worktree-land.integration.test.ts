@@ -134,7 +134,7 @@ function rawMessage(dir: string, sha: string): string {
   return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
 }
 
-/** The Windows budget-kill warning for a child started in `cwd`, hand-written as the oracle for its wording. */
+/** The Windows budget-kill warning for a child started in `cwd`, hand-written as the oracle. */
 function orphanLine(cwd: string): string {
   return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
 }

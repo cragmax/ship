@@ -1,4 +1,6 @@
-// Executes a fresh in-memory render of the current sources (renderWorkflow over WORKFLOWS): resync.test.ts drives the TS sources, so a defect only the render carries passes it. The committed file's freshness is gate:codegen's.
+// Executes a fresh in-memory render of the current sources (renderWorkflow over WORKFLOWS):
+// resync.test.ts drives the TS sources, so a defect only the render carries passes it.
+// The committed file's freshness is gate:codegen's.
 import { resolve } from 'node:path';
 import vm from 'node:vm';
 
@@ -23,14 +25,8 @@ beforeAll(async () => {
 });
 
 /**
- * Run a rendered `resync.js` over a fake run's hooks, as the runtime
- * wraps it: `export` dropped, an async function body, hooks and `args` as
- * globals.
- *
- * @param js - The rendered workflow.
- * @param run - The fake run whose hooks become the globals.
- * @param args - The launch arguments.
- * @returns The workflow's result.
+ * Run a rendered `resync.js` over a fake run's hooks, as the runtime wraps it: `export` dropped,
+ * an async function body, hooks and `args` as globals.
  */
 function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
   const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
