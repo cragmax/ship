@@ -13,12 +13,12 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { renderHelpersReadme } from './generate-reserved-names-targets.js';
+import { renderHelpersReadme } from './generate-authoring-requirements-targets.js';
 import { checkRenderedWorkflows } from './lib/workflow-render.js';
 import { checkSchemaModule } from './lib/workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
 
-// ── Configuration (paths mirror generate-reserved-names-targets.ts) ────────
+// ── Configuration (paths mirror generate-authoring-requirements-targets.ts) ────────
 
 const ROOT_DIR = resolve(import.meta.dirname, '..');
 const SCAFFOLD_README = resolve(ROOT_DIR, 'src/init/templates/helpers-readme.md');
