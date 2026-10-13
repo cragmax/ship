@@ -1,7 +1,7 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots) with a bare `origin`: the fixture main checkout
- * sits at `<root>/main`, so the run `cut-batch` cuts lands under `<root>/ph-ship/7`, inside the
- * temp root. Teardown's gone-batch cases live here too, for that cut batch.
+ * sits at `<root>/main`, so the run `cut-batch` cuts lands in its `.claude/worktrees/ship-7` and
+ * `reports/ship-7`. Teardown's gone-batch cases live here too, for that cut batch.
  *
  * @integrationTier standalone
  */
@@ -30,8 +30,8 @@ beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-retire-')));
   main = makeGitRepo(root, { 'base.txt': 'base\n' });
   makeBareOrigin(root, main);
-  runRoot = `${root}/ph-ship/7`;
-  batch = `${runRoot}/ship-7`;
+  runRoot = `${main}/reports/ship-7`;
+  batch = `${main}/.claude/worktrees/ship-7`;
 });
 
 afterEach(() => {
@@ -61,15 +61,12 @@ function mergedRun(): void {
   mustRun('git', ['fetch', '-q', 'origin'], main);
 }
 
-/**
- * A spent run: a merged run with its batch torn down, and the run root left holding a report and
- * an empty slice folder.
- */
+/** A spent run: a merged run with its batch torn down, and the run root left holding reports. */
 function spentRun(): void {
   mergedRun();
   tearDown();
-  writeFileSync(`${runRoot}/reports/x.md`, 'x\n');
-  mkdirSync(`${runRoot}/slice-1-1`);
+  mkdirSync(`${runRoot}/plans`);
+  writeFileSync(`${runRoot}/plans/x.md`, 'x\n');
 }
 
 function branchResolves(branch = 'ship/7'): boolean {
@@ -182,7 +179,7 @@ describe('retire-run', () => {
     });
     expect(r.json.errors[0]?.step).toBe('branch-guard');
     expect(branchResolves()).toBe(true);
-    expect(existsSync(`${runRoot}/reports`)).toBe(true);
+    expect(existsSync(runRoot)).toBe(true);
     expect(r.json.sliceBranches).toEqual([]);
     expect(branchResolves('slice/7/1-1')).toBe(true);
   });
@@ -227,47 +224,45 @@ describe('retire-run', () => {
     expect(existsSync(runRoot)).toBe(false);
   });
 
+  /** A real directory outside the run root, holding `keep.txt`. */
+  function outside(): string {
+    mkdirSync(`${root}/outside`);
+    writeFileSync(`${root}/outside/keep.txt`, 'k');
+    return `${root}/outside`;
+  }
+
   it.each([
     {
-      name: 'a stray file',
-      reason: 'root-not-empty',
-      add: () => writeFileSync(`${runRoot}/stray.txt`, 's'),
-    },
-    {
-      name: 'a non-empty slice folder',
-      reason: 'root-not-empty',
-      add: () => writeFileSync(`${runRoot}/slice-1-1/keep.txt`, 'k'),
-    },
-    {
-      name: 'an empty folder not named slice-*',
-      reason: 'root-not-empty',
-      add: () => mkdirSync(`${runRoot}/other`),
-    },
-    {
-      name: 'a file named reports',
-      reason: 'root-not-empty',
+      name: 'the run root is a link',
+      reason: 'not-run-root',
       add: () => {
-        rmSync(`${runRoot}/reports`, { recursive: true });
-        writeFileSync(`${runRoot}/reports`, 'r');
+        rmSync(runRoot, { recursive: true });
+        createJunction(runRoot, outside());
       },
     },
     {
-      name: 'a registered worktree',
+      name: 'the run root is a file',
+      reason: 'not-run-root',
+      add: () => {
+        rmSync(runRoot, { recursive: true });
+        writeFileSync(runRoot, 'r');
+      },
+    },
+    {
+      name: 'a registered worktree in the run root',
       reason: 'nested-worktree',
       add: () => {
-        addWorktree(main, `${runRoot}/reports/wt`, 'side');
+        addWorktree(main, `${runRoot}/wt`, 'side');
       },
     },
     {
-      name: 'a link',
+      name: 'a link in the run root',
       reason: 'links-remain',
       add: () => {
-        mkdirSync(`${root}/outside`);
-        writeFileSync(`${root}/outside/keep.txt`, 'k');
-        createJunction(`${runRoot}/reports/link`, `${root}/outside`);
+        createJunction(`${runRoot}/link`, outside());
       },
     },
-  ])('refuses $reason for $name in the run root', TIMEOUT, ({ reason, add }) => {
+  ])('refuses $reason when $name', TIMEOUT, ({ reason, add }) => {
     spentRun();
     sliceBranch('slice/7/1-1');
     add();
@@ -284,7 +279,7 @@ describe('retire-run', () => {
     expect(r.json.errors[0]?.step).toBe('folder-guard');
     expect(branchResolves()).toBe(true);
     expect(existsSync(runRoot)).toBe(true);
-    if (reason === 'links-remain')
+    if (existsSync(`${root}/outside`))
       expect(readFileSync(`${root}/outside/keep.txt`, 'utf8')).toBe('k');
     expect(r.json.sliceBranches).toEqual([]);
     expect(branchResolves('slice/7/1-1')).toBe(true);
@@ -326,7 +321,6 @@ describe('teardown — gone worktree', () => {
 
     const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
 
-    // An unpruned entry for the deleted batch would lie inside the run root: nested-worktree.
     expect(r.code, JSON.stringify(r.json)).toBe(0);
     expect(r.json).toMatchObject({ status: 'ok', branchDeleted: true, rootRemoved: true });
     expect(branchResolves()).toBe(false);

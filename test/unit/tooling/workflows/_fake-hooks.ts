@@ -266,7 +266,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     worktree: 'C:/src/main',
     branch: 'ship/7',
     base: 'master0',
-    runRoot: RUN_ROOT,
     batch: BATCH,
     reportDir: REPORT_DIR,
     attach: null,

@@ -9,8 +9,8 @@
  * report dir — the `update-ref` fast-forward, the `worktree add`, the run folder — and only the
  * fetch (remote-tracking refs alone) precedes the checks that need it. The branch's own
  * unpublished commits ({@link assertPublished}) refuse on both the reused and the
- * checked-out-anew path. Like `cut-batch`, it runs from the main checkout it targets and never
- * touches that checkout's working tree (`cut.ts`).
+ * checked-out-anew path. Like `cut-batch`, it runs from the main checkout it targets and writes
+ * only its gitignored run paths there (`cut.ts`).
  */
 
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
@@ -52,10 +52,10 @@ export interface AttachInput {
 /**
  * Attach the run branch's batch worktree.
  *
- * @returns The envelope: `ok` with the branch, its tip as `base`, the run root, batch and report
- *   dir — with `attachedRun`, the run's own `reports/attach-<R>` — and `attach`, whose `run` is R
- *   (`null` without `attachedRun`) and whose `registry` is the batch's trimmed pool registry from
- *   its last provisioning ({@link lastRegistry}; `null` when none); `refused` before any branch,
+ * @returns The envelope: `ok` with the branch, its tip as `base`, the batch and report dir — with
+ *   `attachedRun`, the run's own `reports/attach-<R>` — and `attach`, whose `run` is R (`null`
+ *   without `attachedRun`) and whose `registry` is the batch's trimmed pool registry from its last
+ *   provisioning ({@link lastRegistry}; `null` when none); `refused` before any branch,
  *   worktree or report-dir mutation (`not-main-worktree`, `not-run-batch`, `no-open-pr`,
  *   `branch-checked-out`, `unpublished-commits`, `path-exists`, `branch-missing`,
  *   `branch-diverged`); or `failed` with the step (`pr-state`, `unpublished`, `fetch`, `attach`,
@@ -70,7 +70,6 @@ export function attachBatch(input: AttachInput): CutBatchResult {
     errors: [],
     branch: null,
     base: null,
-    runRoot: null,
     batch: null,
     reportDir: null,
     attach: null,
@@ -92,7 +91,6 @@ export function attachBatch(input: AttachInput): CutBatchResult {
     Object.assign(result, {
       branch: layout.branch,
       base: resolveCommit(main, `refs/heads/${branch}`, 'attach'),
-      runRoot: layout.root,
       batch: layout.batch,
       reportDir,
       attach: {

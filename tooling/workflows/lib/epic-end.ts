@@ -222,7 +222,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
 /**
  * The epic end of an entry that halted or landed nothing: the blocked-issue comments and the retro;
  * then, for an unattached run that landed nothing only, tear its batch down and, after an `ok`
- * teardown, retire it (`retire-run`: run branch, slice branches, run root and report dir). `halted`
+ * teardown, retire it (`retire-run`: run branch, slice branches and report dir). `halted`
  * cleans up nothing — its batch is unverified — and an attached run's batch and branch are the open
  * PR's.
  *

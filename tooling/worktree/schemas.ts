@@ -79,9 +79,9 @@ export const RefusalReasonSchema = z.enum([
   'no-open-pr',
   // Retire-run: the run branch is not in origin/master.
   'branch-unmerged',
-  // Retire-run: the run root holds something besides reports/ and empty slice-* folders; the
-  // message names each entry.
-  'root-not-empty',
+  // Retire-run: the run root is not a real `ship-*` directory directly under the main checkout's
+  // `reports/`; the message names it.
+  'not-run-root',
   // Check-master: a master ref was deleted or rewound since the launch, or its move could not be
   // decided; local / remote name each.
   'master-not-forward',
@@ -196,7 +196,7 @@ export const TeardownResultSchema = ResultBaseSchema.extend({
 export const RetireRunResultSchema = ResultBaseSchema.extend({
   /** Whether the run branch was deleted. */
   branchDeleted: z.boolean(),
-  /** Whether the run root was removed. */
+  /** Whether the run root, the run's report dir, was removed. */
   rootRemoved: z.boolean(),
   /** The slice branches (`slice/<slug>/…`) deleted, sorted; empty unless every guard passed. */
   sliceBranches: z.array(z.string()),

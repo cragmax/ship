@@ -31,34 +31,41 @@ describe('runSlug', () => {
 });
 
 describe('runLayout', () => {
-  it('roots an epic run beside the main checkout under ph-ship, its batch at ship-<slug>', () => {
+  it('puts an epic run’s batch under .claude/worktrees and its reports under reports', () => {
     expect(runLayout('C:/Users/gse/source/paper-harness', 'epic-997')).toEqual({
-      root: 'C:/Users/gse/source/ph-ship/epic-997',
-      batch: 'C:/Users/gse/source/ph-ship/epic-997/ship-epic-997',
-      reports: 'C:/Users/gse/source/ph-ship/epic-997/reports',
+      batch: 'C:/Users/gse/source/paper-harness/.claude/worktrees/ship-epic-997',
+      reports: 'C:/Users/gse/source/paper-harness/reports/ship-epic-997',
       branch: 'ship/epic-997',
     });
   });
 
-  it('names an explicit-list batch ship-<lowest issue>', () => {
-    expect(runLayout('C:/Users/gse/source/paper-harness', '1047-1048-1061').batch).toBe(
-      'C:/Users/gse/source/ph-ship/1047-1048-1061/ship-1047',
-    );
+  it('names an explicit-list run ship-<lowest issue>, never by its whole slug', () => {
+    expect(runLayout('C:/Users/gse/source/paper-harness', '1047-1048-1061')).toEqual({
+      batch: 'C:/Users/gse/source/paper-harness/.claude/worktrees/ship-1047',
+      reports: 'C:/Users/gse/source/paper-harness/reports/ship-1047',
+      branch: 'ship/1047-1048-1061',
+    });
   });
 
   it('names a one-issue batch ship-<issue>', () => {
-    expect(runLayout('C:/src/paper-harness', '914').batch).toBe('C:/src/ph-ship/914/ship-914');
+    expect(runLayout('C:/src/paper-harness', '914').batch).toBe(
+      'C:/src/paper-harness/.claude/worktrees/ship-914',
+    );
   });
 
   it('accepts a backslash main path', () => {
-    expect(runLayout('C:\\src\\paper-harness', '7').root).toBe('C:/src/ph-ship/7');
+    expect(runLayout('C:\\src\\paper-harness', '7').reports).toBe(
+      'C:/src/paper-harness/reports/ship-7',
+    );
   });
 });
 
 describe('sliceLayout', () => {
-  it('puts attempt K of issue N beside the batch, on a slice/ branch', () => {
-    expect(sliceLayout('C:/src/ph-ship/epic-1025', 'epic-1025', 1043, 2)).toEqual({
-      path: 'C:/src/ph-ship/epic-1025/slice-1043-2',
+  it('puts attempt K of issue N beside the batch as ship-<head>-<N>-<K>, on a slice/ branch', () => {
+    expect(
+      sliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-1025', 'epic-1025', 1043, 2),
+    ).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1025-1043-2',
       branch: 'slice/epic-1025/1043-2',
     });
   });
@@ -66,34 +73,36 @@ describe('sliceLayout', () => {
 
 describe('criticSliceLayout', () => {
   it('puts the epic end’s critic slice beside the batch, on slice/<slug>/critic', () => {
-    expect(criticSliceLayout('C:/src/ph-ship/epic-9', 'epic-9')).toEqual({
-      path: 'C:/src/ph-ship/epic-9/slice-critic',
+    expect(
+      criticSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9'),
+    ).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-9-critic',
       branch: 'slice/epic-9/critic',
     });
   });
 });
 
 describe('attached runs', () => {
-  const root = 'C:/src/ph-ship/epic-1182';
+  const batch = 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182';
   const slug = 'epic-1182';
 
-  it('names an attached run’s attempt slice-a<R>-<N>-<K> on slice/<slug>/a<R>-<N>-<K>', () => {
-    expect(sliceLayout(root, slug, 1190, 1, 2)).toEqual({
-      path: 'C:/src/ph-ship/epic-1182/slice-a2-1190-1',
+  it('names an attached run’s attempt ship-<head>-a<R>-<N>-<K> on slice/<slug>/a<R>-<N>-<K>', () => {
+    expect(sliceLayout(batch, slug, 1190, 1, 2)).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-1190-1',
       branch: 'slice/epic-1182/a2-1190-1',
     });
   });
 
-  it('names an attached run’s critic slice-a<R>-critic on slice/<slug>/a<R>-critic', () => {
-    expect(criticSliceLayout(root, slug, 2)).toEqual({
-      path: 'C:/src/ph-ship/epic-1182/slice-a2-critic',
+  it('names an attached run’s critic ship-<head>-a<R>-critic on slice/<slug>/a<R>-critic', () => {
+    expect(criticSliceLayout(batch, slug, 2)).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-critic',
       branch: 'slice/epic-1182/a2-critic',
     });
   });
 
-  it('puts an attached run’s reports in reports/attach-<R>', () => {
+  it('puts an attached run’s reports in reports/ship-<head>/attach-<R>', () => {
     expect(attachedRunReports(runLayout('C:/src/paper-harness', slug), 2)).toBe(
-      'C:/src/ph-ship/epic-1182/reports/attach-2',
+      'C:/src/paper-harness/reports/ship-epic-1182/attach-2',
     );
   });
 
@@ -147,9 +156,9 @@ describe('attached runs', () => {
     expect(n).toBe(2);
     const taken = left.branches.map((b) => `slice/epic-1182/${b}`);
     for (const branch of [
-      sliceLayout(root, slug, 1190, 1, n).branch,
-      sliceLayout(root, slug, 1190, 2, n).branch,
-      criticSliceLayout(root, slug, n).branch,
+      sliceLayout(batch, slug, 1190, 1, n).branch,
+      sliceLayout(batch, slug, 1190, 2, n).branch,
+      criticSliceLayout(batch, slug, n).branch,
     ]) {
       expect(taken).not.toContain(branch);
     }

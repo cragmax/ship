@@ -47,8 +47,6 @@ export const CutBatchResultSchema = ResultBaseSchema.extend({
    * `HEAD`).
    */
   base: z.string().nullable(),
-  /** The run's root directory, as `run-layout.ts` `runLayout` derives it. */
-  runRoot: z.string().nullable(),
   /** The batch worktree. */
   batch: z.string().nullable(),
   /**

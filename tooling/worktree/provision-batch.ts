@@ -78,8 +78,8 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
 
 /**
  * `npm ci` wipes main's `node_modules` or a link's target: junction (PF-64), symlink (unprobed).
- * @throws Refusal `self-hosted`, `main-worktree`, `report-dir-inside-worktree` (report dir in any
- *   worktree); StepFailure `preconditions`: not a worktree root, or `node_modules` is a link.
+ * @throws Refusal `self-hosted`, `main-worktree`, `report-dir-inside-worktree` (report dir in a
+ *   linked worktree); StepFailure `preconditions`: not a worktree root, or a linked `node_modules`.
  */
 function checkPreconditions(options: ProvisionBatchOptions): void {
   const { batch, reportDir } = options;
@@ -91,7 +91,10 @@ function checkPreconditions(options: ProvisionBatchOptions): void {
   if (linkTarget(`${batch}/node_modules`) !== null) {
     throw new StepFailure('preconditions', `${batch}/node_modules is a link`);
   }
-  const host = listWorktrees(batch, 'preconditions').find((w) => isInside(reportDir, w.path));
+  // The main checkout holds every run's report dir (`run-layout.ts`).
+  const host = listWorktrees(batch, 'preconditions').find(
+    (w) => !samePath(w.path, main) && isInside(reportDir, w.path),
+  );
   if (host !== undefined) {
     throw new Refusal(
       'report-dir-inside-worktree',
