@@ -77,7 +77,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
 }
 
 /**
- * Pre-install guards: `npm ci` wipes the main `node_modules` or a link's target (PF-64).
+ * `npm ci` wipes main's `node_modules` or a link's target: junction (PF-64), symlink (unprobed).
  * @throws Refusal `self-hosted`, `main-worktree`, `report-dir-inside-worktree` (report dir in any
  *   worktree); StepFailure `preconditions`: not a worktree root, or `node_modules` is a link.
  */
