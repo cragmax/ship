@@ -92,7 +92,6 @@ const TAIL = 'export { f1, f2, f3, f4, f5 };\n';
 /** An ESLint fixture: `no-console` an error, the borrowed `node_modules` ignored. */
 const LINT_BASE = {
   '.gitignore': 'node_modules\n',
-  // drift-check-allow: .mjs — fixture file name, not a doc reference
   'eslint.config.mjs':
     "export default [{ files: ['**/*.js'], rules: { 'no-console': 'error' } }];\n",
 };
