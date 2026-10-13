@@ -474,22 +474,15 @@ describe('runShip --attach — the PR body section', () => {
     expect(report.epics[0]).not.toHaveProperty('prReportComment');
   });
 
-  it('carries the run’s own salvage lines in its appended section', async () => {
-    const salvage = { location: 'src/b.ts:3', kind: 'platform-claim', claim: 'Folia drops x' };
-    const run = fakeHooks({ ...ATTACHED, tdd: { ...TDD_GREEN, salvage: [salvage] } });
+  it('carries the run’s own recorded values in its appended section', async () => {
+    const run = fakeHooks({ ...ATTACHED, tdd: { ...TDD_GREEN, recorded: ['a'] } });
 
     await runShip(run.hooks, ARGS);
 
     const lines = promptLines(run, 'runner:append-pr-body:list');
-    const at = lines.indexOf('### Salvage');
+    const at = lines.indexOf('### Recorded');
     expect(at).toBeGreaterThan(lines.indexOf('### Issues'));
-    expect(lines.slice(at, at + 5)).toEqual([
-      '### Salvage',
-      '',
-      '- #7',
-      '  - `src/b.ts:3` platform-claim: Folia drops x',
-      '',
-    ]);
+    expect(lines.slice(at, at + 5)).toEqual(['### Recorded', '', '- #7', '  - `a`', '']);
   });
 
   // An attached run's usual bump: the PR is already bumped, so a fix adds no commit.

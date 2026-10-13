@@ -442,7 +442,7 @@ async function testReviewSkip(s: ReviewedSlice): Promise<TestReviewSkip | null> 
 
 /**
  * Land the authored slice on the batch — run inside the commit queue — its message file first
- * rewritten with the tdd's salvage.
+ * rewritten per {@link commitMessage}.
  */
 async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const { at } = s;
@@ -457,7 +457,7 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const message = commitMessage(at.issue, s.card, s.tdd.salvage);
+  const message = commitMessage(at.issue, s.card);
   const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
@@ -593,7 +593,7 @@ function planPath(at: AttemptId): string {
 }
 
 /**
- * The attempt's commit message file: the tdd writes it; the landing rewrites it, salvage added.
+ * The attempt's commit message file: the tdd writes it; the landing rewrites it.
  *
  * @param at - The attempt.
  * @returns `<reportDir>/commit-<issue>-<attempt>.txt`.

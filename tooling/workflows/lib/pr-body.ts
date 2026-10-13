@@ -250,25 +250,14 @@ export function subjectLine(commit: CommitSpec): string {
 
 /**
  * A landed issue's commit message, newline-terminated: the subject line, a blank line, `fixes #N`
- * or `see #N` per its plan card, a blank line; with salvage, `Salvage:`, one `- ` line per item per
- * {@link salvageText} with every closing keyword defused, and a blank line; then
- * {@link CO_AUTHOR_TRAILER}.
+ * or `see #N` per its plan card, a blank line, then {@link CO_AUTHOR_TRAILER}.
  */
-export function commitMessage(
-  issue: number,
-  card: Pick<PlanCard, 'commit' | 'closes'>,
-  salvage: readonly SalvageItem[] = [],
-): string {
-  const block =
-    salvage.length === 0
-      ? []
-      : ['Salvage:', ...salvage.map((item) => neutralText(`- ${salvageText(item)}`)), ''];
+export function commitMessage(issue: number, card: Pick<PlanCard, 'commit' | 'closes'>): string {
   return [
     subjectLine(card.commit),
     '',
     `${card.closes} #${String(issue)}`,
     '',
-    ...block,
     CO_AUTHOR_TRAILER,
     '',
   ].join('\n');
@@ -325,9 +314,8 @@ export function sliceLeaseLines(
  * @returns Markdown, neutralised whole but for the landed `fixes` issues,
  *   the PR writer's prose included: `## Summary` per {@link summaryLines};
  *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
- *   `## Issues` per {@link issueListLines}; `## Salvage` per
- *   {@link salvageItems} and `## Recorded` per {@link recordedItems}, each
- *   per {@link perIssueSection}; then the run report per {@link reportBlock}.
+ *   `## Issues` per {@link issueListLines}; `## Recorded` per
+ *   {@link recordedSection}; then the run report per {@link reportBlock}.
  *   Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
@@ -383,8 +371,7 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    ...perIssueSection('Salvage', input.landed, salvageItems, 2),
-    ...perIssueSection('Recorded', input.landed, recordedItems, 2),
+    ...recordedSection(input.landed, 2),
     ...reportBlock(input, moved),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -394,9 +381,8 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
  * An attached run's section of the open PR's body, appended after the body already there:
  * markdown, neutralised whole but for this run's landed `fixes` issues. `## Attached run <R>`, a
  * blank line; `### Evidence` per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- * container line; `### Salvage` per {@link salvageItems} and `### Recorded` per
- * {@link recordedItems}, each per {@link perIssueSection}; then one run-report line and a blank
- * line — `Run report: [PR comment](<url>)` with a `reportComment`, else
+ * container line; `### Recorded` per {@link recordedSection}; then one run-report line and a
+ * blank line — `Run report: [PR comment](<url>)` with a `reportComment`, else
  * `Run report: not posted to this PR; it is in <reportDir>.`, the report dir in a code span.
  * No run report, no Summary and no Merge Danger: the report is posted as its own PR comment
  * ({@link renderAttachedReport}), and an attached run has no PR writer.
@@ -411,8 +397,7 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...perIssueSection('Salvage', input.landed, salvageItems, 3),
-    ...perIssueSection('Recorded', input.landed, recordedItems, 3),
+    ...recordedSection(input.landed, 3),
     report,
     '',
   ].join('\n');
@@ -441,19 +426,6 @@ function evidenceList(landed: readonly LandedIssue[]): string[] {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
 
-/** A claim a slice salvaged from a trimmed comment. */
-type SalvageItem = SliceWork['tdd']['salvage'][number];
-
-/** One salvage item's text, the same in the commit body and the PR body. */
-function salvageText(item: SalvageItem): string {
-  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
-}
-
-/** A landed issue's salvage lines, one per item per {@link salvageText}. */
-function salvageItems(landed: LandedIssue): string[] {
-  return landed.tdd.salvage.map(salvageText);
-}
-
 /**
  * A landed issue's recorded values in the tdd's order, each per {@link oneLine}, blanks dropped,
  * as a {@link codeSpan} so its markdown and mentions render inert; its closing keywords are left
@@ -467,22 +439,17 @@ function recordedItems(landed: LandedIssue): string[] {
 }
 
 /**
- * Each landed issue's `itemsOf` lines, nested under its `- #N` line, in a `heading` section at
- * `depth`; an issue with none is left out, and no lines at all when no issue has any.
+ * Each landed issue's {@link recordedItems}, nested under its `- #N` line, in a `Recorded`
+ * section at `depth`; an issue with none is left out, and no lines at all when no issue has any.
  */
-function perIssueSection(
-  heading: string,
-  landed: readonly LandedIssue[],
-  itemsOf: (landed: LandedIssue) => readonly string[],
-  depth: 2 | 3,
-): string[] {
+function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[] {
   const lines = landed.flatMap((l) => {
-    const items = itemsOf(l);
+    const items = recordedItems(l);
     return items.length === 0
       ? []
       : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
   });
-  return lines.length === 0 ? [] : section(heading, lines, depth);
+  return lines.length === 0 ? [] : section('Recorded', lines, depth);
 }
 
 /** The issues a text may close: each landed issue whose plan card says `fixes`. */

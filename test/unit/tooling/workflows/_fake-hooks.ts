@@ -207,7 +207,6 @@ export const TDD_GREEN = {
     green: '✓ test/unit/tooling/x.test.ts › adds x',
     reason: '',
   },
-  salvage: [],
   recorded: [],
 };
 
