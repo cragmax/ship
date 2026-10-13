@@ -21,8 +21,6 @@ import {
   type SliceSize,
 } from '../../../../tooling/workflows/lib/pr-body.js';
 
-type SalvageItem = SliceWork['tdd']['salvage'][number];
-
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
 
 const TRACER: TddEvidence = {
@@ -53,7 +51,6 @@ const work = (fields: {
   review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
-  salvage?: SliceWork['tdd']['salvage'];
   recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
   card: {
@@ -73,7 +70,6 @@ const work = (fields: {
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
     evidence: fields.evidence ?? TRACER,
-    salvage: fields.salvage ?? [],
     recorded: fields.recorded ?? [],
   },
   diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
@@ -278,22 +274,6 @@ const INPUT: PrBodyInput = {
 const closes = (issue: number): RegExp =>
   new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\\s:]*#${String(issue)}\\b`, 'i');
 
-const SALVAGE_A: SalvageItem = {
-  location: 'src/a.ts:12',
-  kind: 'defect',
-  claim: 'honoured nowhere',
-};
-const SALVAGE_B: SalvageItem = {
-  location: 'src/b.ts:3',
-  kind: 'platform-claim',
-  claim: 'Folia drops x',
-};
-const SALVAGE_C: SalvageItem = {
-  location: 'src/c.ts:40',
-  kind: 'test-claim',
-  claim: 'a test pins the order',
-};
-
 describe('commitMessage', () => {
   it('writes the subject line, fixes #N and the model-neutral trailer', () => {
     expect(
@@ -318,33 +298,6 @@ describe('commitMessage', () => {
 
     expect(message).not.toMatch(closes(3));
     expect(message).not.toMatch(closes(4));
-    expect(message).toMatch(closes(7));
-  });
-
-  it('writes the salvage block between the closing line and the trailer', () => {
-    expect(
-      commitMessage(
-        7,
-        { commit: { type: 'feat', scope: 'tools', subject: 'add x' }, closes: 'fixes' },
-        [SALVAGE_A, SALVAGE_B],
-      ),
-    ).toBe(
-      'feat(tools): add x\n\nfixes #7\n\nSalvage:\n- `src/a.ts:12` defect: honoured nowhere\n' +
-        '- `src/b.ts:3` platform-claim: Folia drops x\n\n' +
-        'Co-Authored-By: Claude <noreply@anthropic.com>\n',
-    );
-  });
-
-  it('defuses a closing keyword a salvage claim carries, keeping its own fixes line', () => {
-    const message = commitMessage(
-      7,
-      { commit: { type: 'feat', scope: 'tools', subject: 'add x' }, closes: 'fixes' },
-      [{ ...SALVAGE_A, claim: 'fixes #3 later; fixes #7 too' }],
-    );
-    const line = message.split('\n').find((l) => l.startsWith('- `src/a.ts:12`'));
-
-    expect(line).toBe('- `src/a.ts:12` defect: fixes (see #3) later; fixes (see #7) too');
-    expect(message).not.toMatch(closes(3));
     expect(message).toMatch(closes(7));
   });
 });
@@ -1303,29 +1256,6 @@ const sectionOf = (body: string, heading: string): string[] => {
   return at === -1 ? [] : lines.slice(at, lines.indexOf('', at + 2));
 };
 
-describe('renderPrBody — salvage', () => {
-  it('leaves an issue with no salvage out of a non-empty Salvage section', () => {
-    const body = renderPrBody({
-      ...INPUT,
-      landed: [
-        { ...SEVEN, tdd: { ...SEVEN.tdd, salvage: [] } },
-        { ...EIGHT, tdd: { ...EIGHT.tdd, salvage: [SALVAGE_C] } },
-      ],
-    });
-
-    expect(sectionOf(body, '## Salvage')).toEqual([
-      '## Salvage',
-      '',
-      '- #8',
-      '  - `src/c.ts:40` test-claim: a test pins the order',
-    ]);
-  });
-
-  it('renders no Salvage section when no landed issue salvaged anything', () => {
-    expect(renderPrBody(INPUT).split('\n')).not.toContain('## Salvage');
-  });
-});
-
 describe('renderPrBody — recorded', () => {
   it('lists each recorded value under its issue, leaving an issue that recorded none out', () => {
     const body = renderPrBody({
@@ -1343,22 +1273,6 @@ describe('renderPrBody — recorded', () => {
       '  - `a`',
       '  - `b`',
     ]);
-  });
-
-  it('puts the Recorded section after the Salvage section, in the PR body and an attached section', () => {
-    const landed = [{ ...SEVEN, tdd: { ...SEVEN.tdd, salvage: [SALVAGE_A], recorded: ['a'] } }];
-    const main = renderPrBody({ ...INPUT, landed }).split('\n');
-    const attached = renderAttachedSection({
-      ...INPUT,
-      landed,
-      run: 2,
-      reportComment: null,
-    }).split('\n');
-
-    expect(main.indexOf('## Salvage')).toBeGreaterThan(-1);
-    expect(main.indexOf('## Recorded')).toBeGreaterThan(main.indexOf('## Salvage'));
-    expect(attached.indexOf('### Salvage')).toBeGreaterThan(-1);
-    expect(attached.indexOf('### Recorded')).toBeGreaterThan(attached.indexOf('### Salvage'));
   });
 
   it('renders no Recorded section when no landed issue recorded anything', () => {
@@ -1637,28 +1551,6 @@ describe('renderAttachedSection', () => {
     expect(lines).not.toContain('## Summary');
     expect(lines).not.toContain('## Merge Danger');
     expect(lines).not.toContain('- An explicit issue list');
-  });
-
-  it('lists this run’s salvage under ### Salvage between its Issues and the run-report line', () => {
-    const lines = renderAttachedSection({
-      ...SECTION_INPUT,
-      landed: [{ ...SEVEN, tdd: { ...SEVEN.tdd, salvage: [SALVAGE_B] } }],
-      unlanded: [],
-    }).split('\n');
-
-    expect(lines.slice(lines.indexOf('### Issues'))).toEqual([
-      '### Issues',
-      '',
-      '- fixes #7 — add the x tool',
-      '',
-      '### Salvage',
-      '',
-      '- #7',
-      '  - `src/b.ts:3` platform-claim: Folia drops x',
-      '',
-      'Run report: [PR comment](https://github.com/o/r/pull/9#issuecomment-1)',
-      '',
-    ]);
   });
 
   it('lists this run’s recorded values under ### Recorded between its Issues and the run-report line', () => {

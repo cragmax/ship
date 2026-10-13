@@ -5,10 +5,10 @@
  * password-rejection one):
  * - After the TCP connect phase, rcon-client re-emits socket errors on the `Rcon` instance, and
  *   an `error` emit with no listener crashes the process (PF-83). A port that accepts and then
- *   resets (docker-proxy while the server behind it is not listening yet) lands in exactly that
- *   window, so the listener is attached before `connect()`: the crash becomes a failed probe. The
- *   pending packet promise still settles — the socket close rejects it, the packet timeout
- *   backstops it.
+ *   resets lands in exactly that window, as docker-proxy does while the server behind it is not
+ *   listening yet (unprobed), so the listener is attached before `connect()`: the crash becomes a
+ *   failed probe. The pending packet promise still settles — the socket close rejects it, the
+ *   packet timeout backstops it.
  * - A packet timeout, during the auth exchange or on the command, leaves the client's socket
  *   open, so a failed probe destroys it rather than leak it (PF-84).
  */

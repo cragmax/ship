@@ -153,22 +153,6 @@ describe('consumed fields are required', () => {
     });
   });
 
-  it('requires the tdd’s salvage: a location, a kind of defect, platform-claim or test-claim, and a claim', () => {
-    expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('salvage');
-    expect(AGENT_OUTPUT_SCHEMAS.tdd.properties.salvage).toEqual({
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          location: { type: 'string' },
-          kind: { type: 'string', enum: ['defect', 'platform-claim', 'test-claim'] },
-          claim: { type: 'string' },
-        },
-        required: ['location', 'kind', 'claim'],
-      },
-    });
-  });
-
   it('requires the tdd’s recorded values, an array of strings', () => {
     expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('recorded');
     expect(AGENT_OUTPUT_SCHEMAS.tdd.properties.recorded).toEqual({

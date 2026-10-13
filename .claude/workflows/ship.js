@@ -1884,31 +1884,10 @@ const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
-      salvage: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            location: { type: 'string' },
-            kind: { type: 'string', enum: ['defect', 'platform-claim', 'test-claim'] },
-            claim: { type: 'string' },
-          },
-          required: ['location', 'kind', 'claim'],
-        },
-      },
       recorded: { type: 'array', items: { type: 'string' } },
       reason: { type: 'string' },
     },
-    required: [
-      'verdict',
-      'sha',
-      'files',
-      'leaseLines',
-      'probes',
-      'evidence',
-      'salvage',
-      'recorded',
-    ],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'recorded'],
   },
   diffReview: {
     type: 'object',
@@ -2519,17 +2498,12 @@ function renderBlockedComment(input) {
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
 }
-function commitMessage(issue, card, salvage = []) {
-  const block =
-    salvage.length === 0
-      ? []
-      : ['Salvage:', ...salvage.map((item) => neutralText(`- ${salvageText(item)}`)), ''];
+function commitMessage(issue, card) {
   return [
     subjectLine(card.commit),
     '',
     `${card.closes} #${String(issue)}`,
     '',
-    ...block,
     CO_AUTHOR_TRAILER,
     '',
   ].join('\n');
@@ -2574,8 +2548,7 @@ function prBody(input, moved) {
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
     ...section('Issues', issueListLines(input)),
-    ...perIssueSection('Salvage', input.landed, salvageItems, 2),
-    ...perIssueSection('Recorded', input.landed, recordedItems, 2),
+    ...recordedSection(input.landed, 2),
     ...reportBlock(input, moved),
   ].join('\n');
   return neutralText(body, closingIssues(input.landed));
@@ -2590,8 +2563,7 @@ function renderAttachedSection(input) {
     '',
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
-    ...perIssueSection('Salvage', input.landed, salvageItems, 3),
-    ...perIssueSection('Recorded', input.landed, recordedItems, 3),
+    ...recordedSection(input.landed, 3),
     report,
     '',
   ].join('\n');
@@ -2607,26 +2579,20 @@ function renderAttachedReport(input) {
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
-function salvageText(item) {
-  return `${codeSpan(item.location)} ${item.kind}: ${oneLine(item.claim)}`;
-}
-function salvageItems(landed) {
-  return landed.tdd.salvage.map(salvageText);
-}
 function recordedItems(landed) {
   return landed.tdd.recorded
     .map(oneLine)
     .filter((entry) => entry !== '')
     .map(codeSpan);
 }
-function perIssueSection(heading, landed, itemsOf, depth) {
+function recordedSection(landed, depth) {
   const lines = landed.flatMap((l) => {
-    const items = itemsOf(l);
+    const items = recordedItems(l);
     return items.length === 0
       ? []
       : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
   });
-  return lines.length === 0 ? [] : section(heading, lines, depth);
+  return lines.length === 0 ? [] : section('Recorded', lines, depth);
 }
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
@@ -3025,7 +2991,7 @@ async function landSlice(s) {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const message = commitMessage(at.issue, s.card, s.tdd.salvage);
+  const message = commitMessage(at.issue, s.card);
   const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });

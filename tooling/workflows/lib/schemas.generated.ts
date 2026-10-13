@@ -1133,31 +1133,10 @@ export const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
-      salvage: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            location: { type: 'string' },
-            kind: { type: 'string', enum: ['defect', 'platform-claim', 'test-claim'] },
-            claim: { type: 'string' },
-          },
-          required: ['location', 'kind', 'claim'],
-        },
-      },
       recorded: { type: 'array', items: { type: 'string' } },
       reason: { type: 'string' },
     },
-    required: [
-      'verdict',
-      'sha',
-      'files',
-      'leaseLines',
-      'probes',
-      'evidence',
-      'salvage',
-      'recorded',
-    ],
+    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'recorded'],
   },
   diffReview: {
     type: 'object',
