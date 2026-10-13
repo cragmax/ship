@@ -40,7 +40,7 @@ export interface WorkflowSpec {
 /** Reads one source file by absolute path. */
 export type SourceReader = (path: string) => string;
 
-/** One drift-check result. */
+/** One codegen-check result. */
 export interface RenderCheck {
   /** The rendered file, as its spec names it. */
   readonly target: string;
