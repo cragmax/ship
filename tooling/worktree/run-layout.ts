@@ -5,14 +5,13 @@
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
  * check keys on, and nothing else may use it: slice branches (`slice/<slug>/…`) never sit under it.
- * The run root, a sibling of the main checkout, holds the batch worktree, the slices and `reports/`
- * ({@link runLayout} spells each). An attached run R's names sit beside the run's own, prefixed
- * `a<R>-` ({@link nextAttachedRun} picks R).
+ * Every worktree of a run is a direct child of the main checkout's {@link WORKTREES_DIR}, named
+ * from the batch's `ship-<head>`, and its report dir is `reports/ship-<head>/`; both lie in the
+ * main checkout's gitignored paths (ADR-0045 decision 13). An attached run R's names sit beside the
+ * run's own, prefixed `a<R>-` ({@link nextAttachedRun} picks R).
  *
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
-
-import { posix } from 'node:path';
 
 import { EPIC_SLUG_PREFIX } from '../lib/run-slug.js';
 import { toPosix } from '../shared.js';
@@ -34,13 +33,20 @@ export const RUN_BASE_BRANCH = 'master';
 /** The remote-tracking branch of {@link RUN_BASE_BRANCH}, as `git merge` / `git log` name it. */
 export const RUN_UPSTREAM = `origin/${RUN_BASE_BRANCH}`;
 
+/**
+ * Where every run worktree lives, relative to the main checkout. A direct child, never deeper: a
+ * worktree there takes its path-scoped rules from the main checkout, never its own (PF-104).
+ */
+const WORKTREES_DIR = '.claude/worktrees';
+
+/** Where every run's report dir lives, relative to the main checkout. */
+export const REPORTS_DIR = 'reports';
+
 /** Where a run lives; paths absolute with forward slashes. */
 export interface RunLayout {
-  /** The run root. */
-  readonly root: string;
-  /** The batch worktree, `<root>/ship-<head>`. */
+  /** The batch worktree, `<main>/.claude/worktrees/ship-<head>`. */
   readonly batch: string;
-  /** The run's report directory. */
+  /** The run's report dir, `<main>/reports/ship-<head>`: the run root `retire-run` removes. */
   readonly reports: string;
   /** The feature branch, short form (`ship/<slug>`). */
   readonly branch: string;
@@ -57,7 +63,7 @@ export interface SliceLayout {
 /**
  * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
  * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
- * branch. Not `ship-<slug>` (#1079).
+ * branch. Not `ship-<slug>`: Windows' 260-character path limit (ADR-0045 decision 13).
  */
 function runHead(slug: string): string {
   if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
@@ -67,20 +73,21 @@ function runHead(slug: string): string {
 
 /**
  * The layout of the run with `slug` of the repository whose main checkout
- * is `main`.
+ * is `main`. Two runs with one head share it: `cut-batch` refuses the
+ * second (`path-exists`).
  *
  * @param main - The main checkout, either slash direction.
  * @param slug - From `runSlug`.
- * @returns The run root `<dirname(main)>/ph-ship/<slug>`, its batch
- *   worktree `<root>/ship-<head>` (head per {@link runHead}), its report
- *   directory `<root>/reports`, and the feature branch `ship/<slug>`.
+ * @returns The batch worktree `<main>/.claude/worktrees/ship-<head>` (head
+ *   per {@link runHead}), the report dir `<main>/reports/ship-<head>`, and the
+ *   feature branch `ship/<slug>`.
  */
 export function runLayout(main: string, slug: string): RunLayout {
-  const root = `${posix.dirname(toPosix(main))}/ph-ship/${slug}`;
+  const posixMain = toPosix(main);
+  const name = `ship-${runHead(slug)}`;
   return {
-    root,
-    batch: `${root}/ship-${runHead(slug)}`,
-    reports: `${root}/reports`,
+    batch: `${posixMain}/${WORKTREES_DIR}/${name}`,
+    reports: `${posixMain}/${REPORTS_DIR}/${name}`,
     branch: `${RUN_BRANCH_PREFIX.slice('refs/heads/'.length)}${slug}`,
   };
 }
@@ -98,18 +105,18 @@ export function sliceBranchPrefix(slug: string): string {
 }
 
 /**
- * `<root>/slice-<id>` on `slice/<slug>/<id>`; when `run` (an attached run's number) is non-null,
+ * `<batch>-<id>` on `slice/<slug>/<id>`; when `run` (an attached run's number) is non-null,
  * this prefixes the id with `a<run>-` itself.
  */
-function sliceAt(root: string, slug: string, id: string, run: number | null): SliceLayout {
+function sliceAt(batch: string, slug: string, id: string, run: number | null): SliceLayout {
   const named = run === null ? id : `a${String(run)}-${id}`;
-  return { path: `${root}/slice-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
+  return { path: `${batch}-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
 }
 
 /**
- * The layout of attempt `attempt` of `issue`'s slice.
+ * The layout of attempt `attempt` of `issue`'s slice, a sibling of the batch.
  *
- * @param root - The run root ({@link RunLayout.root}).
+ * @param batch - The batch worktree ({@link RunLayout.batch}).
  * @param attempt - The attempt number, 1 for the first.
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
@@ -117,30 +124,30 @@ function sliceAt(root: string, slug: string, id: string, run: number | null): Sl
  *   `a<run>-<N>-<K>` for an attached run.
  */
 export function sliceLayout(
-  root: string,
+  batch: string,
   slug: string,
   issue: number,
   attempt: number,
   run: number | null = null,
 ): SliceLayout {
-  return sliceAt(root, slug, `${String(issue)}-${String(attempt)}`, run);
+  return sliceAt(batch, slug, `${String(issue)}-${String(attempt)}`, run);
 }
 
 /**
  * The layout of the epic end's critic slice — one per run.
  *
- * @param root - The run root ({@link RunLayout.root}).
+ * @param batch - The batch worktree ({@link RunLayout.batch}).
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
- * @returns `<root>/slice-critic` on `slice/<slug>/critic`, or
- *   `slice-a<run>-critic` on `slice/<slug>/a<run>-critic` for an attached run.
+ * @returns `<batch>-critic` on `slice/<slug>/critic`, or `<batch>-a<run>-critic`
+ *   on `slice/<slug>/a<run>-critic` for an attached run.
  */
 export function criticSliceLayout(
-  root: string,
+  batch: string,
   slug: string,
   run: number | null = null,
 ): SliceLayout {
-  return sliceAt(root, slug, 'critic', run);
+  return sliceAt(batch, slug, 'critic', run);
 }
 
 /**

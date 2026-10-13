@@ -1,24 +1,31 @@
 /**
  * `retire-run <main> --branch ship/<slug>` — retire a merged run: delete its slice branches
- * (`slice/<slug>/…`), remove its run root (`ph-ship/<slug>/`) and delete its run branch, once its
- * batch is torn down.
+ * (`slice/<slug>/…`), remove its run root (its report dir, `reports/ship-<head>/`) and delete its
+ * run branch, once its batch is torn down.
  *
  * Invariant: every guard runs before any mutation — the branch guard ({@link assertMerged}), then
- * the folder guard: emptiness ({@link assertOnlyRunRecord}), nested worktrees, links
+ * the folder guard: the run root's place ({@link assertRunRoot}), nested worktrees, links
  * ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed and the
  * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
  * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream (PF-61).
  */
 
-import { readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { lstatSync, rmSync } from 'node:fs';
+import { posix } from 'node:path';
 
 import { compareStrings } from '../shared.js';
 import { attachSlug } from './cut-attach.js';
 import { runCaptured } from './exec.js';
-import { assertMainWorktree, branchesUnder, git, isInside, listWorktrees } from './git.js';
-import { findLinks, isRealDir } from './links.js';
-import { runLayout, RUN_UPSTREAM, sliceBranchPrefix } from './run-layout.js';
+import {
+  assertMainWorktree,
+  branchesUnder,
+  git,
+  isInside,
+  listWorktrees,
+  samePath,
+} from './git.js';
+import { findLinks } from './links.js';
+import { REPORTS_DIR, runLayout, RUN_UPSTREAM, sliceBranchPrefix } from './run-layout.js';
 import { Refusal, recordFailure, StepFailure, type RetireRunResult } from './types.js';
 
 /** Inputs of {@link retireRun}. */
@@ -33,7 +40,7 @@ export interface RetireRunInput {
  * Retire the run on `branch`.
  *
  * @returns The envelope: `ok` with `rootRemoved`, `branchDeleted` and `sliceBranches`; `refused`
- *   (`not-main-worktree`, `not-run-batch`, `branch-unmerged`, `root-not-empty`, `nested-worktree`,
+ *   (`not-main-worktree`, `not-run-batch`, `branch-unmerged`, `not-run-root`, `nested-worktree`,
  *   `links-remain`) with nothing mutated and `sliceBranches` empty; or `failed` with the step, each
  *   flag and `sliceBranches` saying what was done before it.
  */
@@ -51,9 +58,9 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
   try {
     assertMainWorktree(main, 'preconditions');
     const slug = attachSlug(branch);
-    const { root } = runLayout(main, slug);
+    const root = runLayout(main, slug).reports;
     assertMerged(main, branch);
-    assertOnlyRunRecord(root);
+    assertRunRoot(main, root);
     assertNothingLive(main, root);
     deleteSliceBranches(main, slug, result.sliceBranches);
     rmSync(root, { recursive: true, force: true });
@@ -111,24 +118,22 @@ function assertMerged(main: string, branch: string): void {
 }
 
 /**
- * Refuse `root-not-empty` unless every entry of the run root is the real directory `reports` or an
- * empty real directory named `slice-*`; the message names each other entry.
+ * Refuse `not-run-root` unless the run root is a real directory named `ship-*` directly under the
+ * main checkout's {@link REPORTS_DIR}, so a path bug can remove one run's reports at most.
  *
- * @throws A filesystem error when the run root cannot be read (a missing run root included).
+ * @throws A filesystem error when the run root is missing.
  */
-function assertOnlyRunRecord(root: string): void {
-  const offenders = readdirSync(root).filter((name) => {
-    const path = join(root, name);
-    if (name === 'reports') return !isRealDir(path);
-    return !(name.startsWith('slice-') && isRealDir(path) && readdirSync(path).length === 0);
-  });
-  if (offenders.length > 0) {
-    throw new Refusal(
-      'root-not-empty',
-      'folder-guard',
-      `${root} holds more than reports/ and empty slice folders: ${offenders.join(', ')}`,
-    );
-  }
+function assertRunRoot(main: string, root: string): void {
+  const stat = lstatSync(root);
+  const placed =
+    samePath(posix.dirname(root), `${main}/${REPORTS_DIR}`) &&
+    posix.basename(root).startsWith('ship-');
+  if (placed && stat.isDirectory() && !stat.isSymbolicLink()) return;
+  throw new Refusal(
+    'not-run-root',
+    'folder-guard',
+    `${root} is not a real ship-* directory directly under ${main}/${REPORTS_DIR}`,
+  );
 }
 
 /**

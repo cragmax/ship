@@ -6,8 +6,8 @@
  * printing ({@link runWorktreeCli}).
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
- * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and a sibling
- * directory) and `retire-run` (its guards prove no worktree, so no CLI, lies in the run root it
+ * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and gitignored
+ * run paths) and `retire-run` (its guards prove no worktree, so no CLI, lies in the run root it
  * removes). Target paths and path flags resolve against the starting cwd; the rest stays as given.
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage

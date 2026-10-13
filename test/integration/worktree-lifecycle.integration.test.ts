@@ -205,8 +205,8 @@ describe('provision-batch', () => {
     TIMEOUT,
     () => {
       const main = makeFixtureRepo(root, template);
-      const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
-      const reportDir = join(root, 'reports');
+      const batch = addWorktree(main, join(main, '.claude', 'worktrees', 'ship-b'), 'ship/batch');
+      const reportDir = join(main, 'reports', 'ship-b');
 
       const run = runCli<ProvisionBatchResult>([
         'provision-batch',
@@ -538,12 +538,10 @@ describe('teardown with other worktrees nearby', () => {
     expect(isRegistered(main, sibling)).toBe(true);
   });
 
-  it('keeps a torn-down batch branch and the run record beside it', TIMEOUT, () => {
+  it('keeps a torn-down batch branch and the run record in the main checkout', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
-    // `batch` and `reports/` side by side, as a run's `ship-<head>` and `reports/` sit under
-    // `ph-ship/<slug>/`.
-    const batch = addWorktree(main, join(root, 'batch'), 'ship/run');
-    const record = join(root, 'reports', 'run.md');
+    const batch = addWorktree(main, join(main, '.claude', 'worktrees', 'ship-run'), 'ship/run');
+    const record = join(main, 'reports', 'ship-run', 'run.md');
     mkdirSync(dirname(record), { recursive: true });
     writeFileSync(record, 'the run record\n');
 

@@ -1,9 +1,9 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots): the fixture main checkout
- * sits at `<root>/main`, so a run it cuts lands under `<root>/ph-ship/`,
- * inside the temp root. `preflight` gets a bare `origin` and a fake `gh`;
- * its RCON probe is injected in-process, never aimed at the real warm-set
- * ports, which may be live.
+ * sits at `<root>/main` and ignores the run paths as this repo does, so a run
+ * it cuts lands in its `.claude/worktrees/` and `reports/`. `preflight` gets a
+ * bare `origin` and a fake `gh`; its RCON probe is injected in-process, never
+ * aimed at the real warm-set ports, which may be live.
  *
  * @integrationTier standalone
  */
@@ -54,7 +54,10 @@ let main: string;
 
 beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-cut-')));
-  main = makeGitRepo(root, { 'base.txt': 'base\n' });
+  main = makeGitRepo(root, {
+    'base.txt': 'base\n',
+    '.gitignore': '/.claude/worktrees/\n/reports/\n',
+  });
 });
 
 afterEach(() => {
@@ -144,7 +147,7 @@ function mergeOn(bare: string, branch: string, checkout?: string): string {
 }
 
 describe('cut-batch', () => {
-  it('cuts ship/epic-E at master beside the main checkout, with reports/', TIMEOUT, () => {
+  it('cuts ship/epic-E at master in .claude/worktrees, with its reports dir', TIMEOUT, () => {
     const master = headSha(main);
 
     const r = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']);
@@ -154,13 +157,12 @@ describe('cut-batch', () => {
       status: 'ok',
       branch: 'ship/epic-900',
       base: master,
-      runRoot: `${root}/ph-ship/epic-900`,
-      batch: `${root}/ph-ship/epic-900/ship-epic-900`,
-      reportDir: `${root}/ph-ship/epic-900/reports`,
+      batch: `${main}/.claude/worktrees/ship-epic-900`,
+      reportDir: `${main}/reports/ship-epic-900`,
     });
-    expect(branchOf(`${root}/ph-ship/epic-900/ship-epic-900`)).toBe('ship/epic-900');
-    expect(headSha(`${root}/ph-ship/epic-900/ship-epic-900`)).toBe(master);
-    expect(existsSync(`${root}/ph-ship/epic-900/reports`)).toBe(true);
+    expect(branchOf(`${main}/.claude/worktrees/ship-epic-900`)).toBe('ship/epic-900');
+    expect(headSha(`${main}/.claude/worktrees/ship-epic-900`)).toBe(master);
+    expect(existsSync(`${main}/reports/ship-epic-900`)).toBe(true);
     expect(porcelain(main)).toBe('');
   });
 
@@ -170,14 +172,15 @@ describe('cut-batch', () => {
     expect(r.json).toMatchObject({
       status: 'ok',
       branch: 'ship/3-12',
-      batch: `${root}/ph-ship/3-12/ship-3`,
+      batch: `${main}/.claude/worktrees/ship-3`,
     });
-    expect(branchOf(`${root}/ph-ship/3-12/ship-3`)).toBe('ship/3-12');
+    expect(branchOf(`${main}/.claude/worktrees/ship-3`)).toBe('ship/3-12');
   });
 
   it.each([
     {
       guard: 'branch-exists',
+      name: 'the run branch exists',
       target: () => {
         mustRun('git', ['branch', 'ship/epic-900'], main);
         return main;
@@ -185,16 +188,26 @@ describe('cut-batch', () => {
     },
     {
       guard: 'path-exists',
+      name: 'the batch path exists',
       target: () => {
-        mkdirSync(`${root}/ph-ship/epic-900`, { recursive: true });
+        mkdirSync(`${main}/.claude/worktrees/ship-epic-900`, { recursive: true });
+        return main;
+      },
+    },
+    {
+      guard: 'path-exists',
+      name: 'the report dir exists',
+      target: () => {
+        mkdirSync(`${main}/reports/ship-epic-900`, { recursive: true });
         return main;
       },
     },
     {
       guard: 'not-main-worktree',
+      name: 'the target is a linked worktree',
       target: () => addWorktree(main, `${root}/linked`, 'other'),
     },
-  ])('refuses $guard with the repository unchanged', TIMEOUT, ({ guard, target }) => {
+  ])('refuses $guard when $name, the repository unchanged', TIMEOUT, ({ guard, target }) => {
     const dir = target();
     const before = repoState(main);
 
@@ -207,7 +220,7 @@ describe('cut-batch', () => {
 });
 
 describe('cut-batch --attach', () => {
-  const BATCH = (): string => `${root}/ph-ship/s/ship-s`;
+  const BATCH = (): string => `${main}/.claude/worktrees/ship-s`;
   const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
   let bare: string;
 
@@ -247,14 +260,13 @@ describe('cut-batch --attach', () => {
       status: 'ok',
       branch: 'ship/s',
       base: tip,
-      runRoot: `${root}/ph-ship/s`,
       batch: BATCH(),
-      reportDir: `${root}/ph-ship/s/reports`,
+      reportDir: `${main}/reports/ship-s`,
       attach: { created: true, fastForwarded: false, pr: 9 },
     });
     expect(branchOf(BATCH())).toBe('ship/s');
     expect(headSha(BATCH())).toBe(tip);
-    expect(existsSync(`${root}/ph-ship/s/reports`)).toBe(true);
+    expect(existsSync(`${main}/reports/ship-s`)).toBe(true);
   });
 
   it('checks out a branch only origin has as a new tracking branch', TIMEOUT, () => {
@@ -286,7 +298,7 @@ describe('cut-batch --attach', () => {
     expect(r.json).toMatchObject({
       status: 'ok',
       batch: BATCH(),
-      reportDir: `${root}/ph-ship/s/reports`,
+      reportDir: `${main}/reports/ship-s`,
       attach: { created: false, fastForwarded: false, pr: 9 },
     });
     expect(repoState(main)).toEqual(before);
@@ -436,8 +448,8 @@ describe('cut-batch --attach', () => {
 
   /** The unattached run's leftovers: report files and its slice branches. */
   function unattachedLeftovers(): void {
-    mkdirSync(`${root}/ph-ship/s/reports/plans`, { recursive: true });
-    writeFileSync(`${root}/ph-ship/s/reports/pr-body.md`, 'body\n');
+    mkdirSync(`${main}/reports/ship-s/plans`, { recursive: true });
+    writeFileSync(`${main}/reports/ship-s/pr-body.md`, 'body\n');
     mustRun('git', ['branch', 'slice/s/7-1'], main);
     mustRun('git', ['branch', 'slice/s/critic'], main);
   }
@@ -454,10 +466,10 @@ describe('cut-batch --attach', () => {
       expect(r.code).toBe(0);
       expect(r.json).toMatchObject({
         status: 'ok',
-        reportDir: `${root}/ph-ship/s/reports/attach-1`,
+        reportDir: `${main}/reports/ship-s/attach-1`,
         attach: { created: true, run: 1 },
       });
-      expect(existsSync(`${root}/ph-ship/s/reports/attach-1`)).toBe(true);
+      expect(existsSync(`${main}/reports/ship-s/attach-1`)).toBe(true);
     },
   );
 
@@ -467,7 +479,7 @@ describe('cut-batch --attach', () => {
     () => {
       localBranch();
       unattachedLeftovers();
-      mkdirSync(`${root}/ph-ship/s/reports/attach-1`);
+      mkdirSync(`${main}/reports/ship-s/attach-1`);
       mustRun('git', ['branch', 'slice/s/a1-7-1'], main);
       mustRun('git', ['branch', 'slice/s/a1-critic'], main);
 
@@ -475,10 +487,10 @@ describe('cut-batch --attach', () => {
 
       expect(r.json).toMatchObject({
         status: 'ok',
-        reportDir: `${root}/ph-ship/s/reports/attach-2`,
+        reportDir: `${main}/reports/ship-s/attach-2`,
         attach: { run: 2 },
       });
-      expect(existsSync(`${root}/ph-ship/s/reports/attach-2`)).toBe(true);
+      expect(existsSync(`${main}/reports/ship-s/attach-2`)).toBe(true);
     },
   );
 
@@ -490,7 +502,7 @@ describe('cut-batch --attach', () => {
 
     expect(r.json).toMatchObject({
       status: 'ok',
-      reportDir: `${root}/ph-ship/s/reports/attach-2`,
+      reportDir: `${main}/reports/ship-s/attach-2`,
       attach: { run: 2 },
     });
   });
@@ -500,13 +512,13 @@ describe('cut-batch --attach', () => {
     TIMEOUT,
     () => {
       localBranch();
-      mkdirSync(`${root}/ph-ship/s/reports/attach-1`, { recursive: true });
+      mkdirSync(`${main}/reports/ship-s/attach-1`, { recursive: true });
 
       const r = attachRun(OPEN_9);
 
       expect(r.json).toMatchObject({
         status: 'ok',
-        reportDir: `${root}/ph-ship/s/reports/attach-2`,
+        reportDir: `${main}/reports/ship-s/attach-2`,
         attach: { run: 2 },
       });
     },
@@ -516,11 +528,11 @@ describe('cut-batch --attach', () => {
     'names the batch’s trimmed registry when written is $written, with no run number',
     TIMEOUT,
     ({ written }) => {
-      const registry = `${root}/ph-ship/s/reports/pool-registry.batch.json`;
+      const registry = `${main}/reports/ship-s/pool-registry.batch.json`;
       mustRun('git', ['branch', 'ship/s'], main);
       addWorktreeAt(BATCH(), 'ship/s');
       if (written) {
-        mkdirSync(`${root}/ph-ship/s/reports`, { recursive: true });
+        mkdirSync(`${main}/reports/ship-s`, { recursive: true });
         writeFileSync(registry, '[]\n');
       }
 
@@ -533,7 +545,7 @@ describe('cut-batch --attach', () => {
         run: null,
         registry: written ? registry : null,
       });
-      expect(r.json.reportDir).toBe(`${root}/ph-ship/s/reports`);
+      expect(r.json.reportDir).toBe(`${main}/reports/ship-s`);
     },
   );
 
@@ -544,7 +556,7 @@ describe('cut-batch --attach', () => {
     { name: 'an attached run provisioned last', rootAt: 1_000, attachedAt: 2_000, want: 'attach' },
     { name: 'a resync provisioned last', rootAt: 2_000, attachedAt: 1_000, want: 'root' },
   ])('names the newest trimmed registry when $name', TIMEOUT, ({ rootAt, attachedAt, want }) => {
-    const reports = `${root}/ph-ship/s/reports`;
+    const reports = `${main}/reports/ship-s`;
     const rootRegistry = `${reports}/pool-registry.batch.json`;
     const attachedRegistry = `${reports}/attach-1/pool-registry.batch.json`;
     mustRun('git', ['branch', 'ship/s'], main);
@@ -568,7 +580,7 @@ describe('cut-batch --attach', () => {
     const r = attachRun({ 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } });
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'no-open-pr' });
-    expect(existsSync(`${root}/ph-ship/s/reports/attach-1`)).toBe(false);
+    expect(existsSync(`${main}/reports/ship-s/attach-1`)).toBe(false);
   });
 
   it('refuses a batch entry whose directory is gone as branch-checked-out', TIMEOUT, () => {
@@ -582,7 +594,7 @@ describe('cut-batch --attach', () => {
     expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-checked-out', batch: null });
     expect(r.json.errors[0]?.message).toContain('(prunable)');
     expect(repoState(main)).toEqual(before);
-    expect(existsSync(`${root}/ph-ship/s/reports`)).toBe(false);
+    expect(existsSync(`${main}/reports/ship-s`)).toBe(false);
   });
 });
 
@@ -595,7 +607,7 @@ describe('cut-slice', () => {
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--issue', '41', '--attempt', '2']);
 
     expect(r.code).toBe(0);
-    const slice = `${root}/ph-ship/epic-900/slice-41-2`;
+    const slice = `${main}/.claude/worktrees/ship-epic-900-41-2`;
     expect(r.json).toMatchObject({
       status: 'ok',
       branch: 'slice/epic-900/41-2',
@@ -612,7 +624,7 @@ describe('cut-slice', () => {
 
   it('refuses an attempt whose slice path exists, cutting nothing', TIMEOUT, () => {
     const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
-    mkdirSync(`${root}/ph-ship/epic-900/slice-41-1`);
+    mkdirSync(`${main}/.claude/worktrees/ship-epic-900-41-1`);
     const before = repoState(main);
 
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--issue', '41', '--attempt', '1']);
@@ -630,7 +642,7 @@ describe('cut-slice', () => {
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-exists', branch: null });
     expect(repoState(main)).toEqual(before);
-    expect(existsSync(`${root}/ph-ship/epic-900/slice-41-1`)).toBe(false);
+    expect(existsSync(`${main}/.claude/worktrees/ship-epic-900-41-1`)).toBe(false);
   });
 
   it('refuses a linked worktree that is not on a ship/ branch', TIMEOUT, () => {
@@ -651,7 +663,7 @@ describe('cut-slice', () => {
       const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
 
       expect(r.code).toBe(0);
-      const slice = `${root}/ph-ship/epic-900/slice-critic`;
+      const slice = `${main}/.claude/worktrees/ship-epic-900-critic`;
       expect(r.json).toMatchObject({
         status: 'ok',
         branch: 'slice/epic-900/critic',
@@ -692,7 +704,7 @@ describe('cut-slice', () => {
       ]);
 
       expect(attempt.code).toBe(0);
-      const slice = `${root}/ph-ship/epic-900/slice-a2-41-1`;
+      const slice = `${main}/.claude/worktrees/ship-epic-900-a2-41-1`;
       expect(attempt.json).toMatchObject({
         status: 'ok',
         branch: 'slice/epic-900/a2-41-1',
@@ -703,7 +715,7 @@ describe('cut-slice', () => {
       expect(critic.json).toMatchObject({
         status: 'ok',
         branch: 'slice/epic-900/a2-critic',
-        slice: `${root}/ph-ship/epic-900/slice-a2-critic`,
+        slice: `${main}/.claude/worktrees/ship-epic-900-a2-critic`,
       });
     },
   );
@@ -932,8 +944,8 @@ describe('preflight (in-process)', () => {
 
     /** Check `ship/s` out as its batch and link a slice's `node_modules` into the batch's. */
     function liveSlice(): void {
-      const batch = `${root}/ph-ship/s/ship-s`;
-      const slice = `${root}/ph-ship/s/slice-a1-7-1`;
+      const batch = `${main}/.claude/worktrees/ship-s`;
+      const slice = `${main}/.claude/worktrees/ship-s-a1-7-1`;
       addWorktreeAt(batch, 'ship/s');
       mkdirSync(`${batch}/node_modules/dep`, { recursive: true });
       addWorktree(main, slice, 'slice/s/a1-7-1');
@@ -973,7 +985,7 @@ describe('preflight (in-process)', () => {
         setup: liveSlice,
         problem: {
           check: 'slices-live',
-          message: expect.stringContaining('slice-a1-7-1') as string,
+          message: expect.stringContaining('ship-s-a1-7-1') as string,
         },
       },
       {
