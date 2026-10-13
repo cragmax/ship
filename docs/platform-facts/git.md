@@ -75,3 +75,20 @@ release in their **Platform** line, and a git release can move them.
 
 - **Last verified.** 2026-10-10.
 - **Relied on by.** `tooling/worktree/teardown.ts` (`assertNoLinksRemain`).
+
+## PF-105 · `commit-msg` runs for a merge commit, with `MERGE_HEAD` set
+
+- **Claim.** git runs the `commit-msg` hook for a merge commit, both the commit a clean `git merge --no-edit` makes itself and the `git commit --no-edit` that concludes a conflicted merge. Both times `git rev-parse -q --verify MERGE_HEAD` succeeds inside the hook, and the message file holds git's `Merge branch '<name>'`.
+- **Implication.** A `commit-msg` check that enforces a message format must skip merge commits itself, and `MERGE_HEAD` tells it one is being made.
+- **Platform.** `git version 2.43.0` (Linux).
+- **Established.** Local driver in a scratch repo, a `commit-msg` hook printing whether `MERGE_HEAD` resolves and the message's first line:
+
+  ```text
+  == clean merge:
+  HOOK: MERGE_HEAD set, msg=Merge branch 'side'
+  == conflicted merge then commit --no-edit:
+  HOOK: MERGE_HEAD set, msg=Merge branch 's2'
+  ```
+
+- **Last verified.** 2026-10-13.
+- **Relied on by.** `tooling/commit-msg.ts` (the merge skip).
