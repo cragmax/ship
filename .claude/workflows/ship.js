@@ -38,7 +38,7 @@ const STAGES = {
   auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
-  prWriter: { agentType: 'pr-writer' },
+  prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;

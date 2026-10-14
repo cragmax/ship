@@ -12,7 +12,7 @@ describe('workflow agents', () => {
       'issue-overlap',
       'issue-readiness',
       'manifest-tsdoc',
-      'pr-writer',
+      'pr',
       'resolve-index-conflicts',
       'retro',
       'runner',

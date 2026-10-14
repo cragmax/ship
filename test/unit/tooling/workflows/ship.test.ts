@@ -2125,7 +2125,7 @@ describe('agent-call tiers', () => {
       auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
       epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
       retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
-      prWriter: { agentType: 'pr-writer' },
+      prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
     });
   });
 
