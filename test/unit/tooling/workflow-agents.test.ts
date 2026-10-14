@@ -15,8 +15,8 @@ describe('workflow agents', () => {
       'reviewer',
       'runner',
       'scout',
-      'ship-tdd',
       'ship-test-review',
+      'tdd',
     ]);
   });
 });
