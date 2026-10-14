@@ -46,8 +46,9 @@ const work = (fields: {
   closes: 'fixes' | 'see';
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
-  diffReview?: SliceWork['diffReview'];
-  review?: SliceWork['review'];
+  specReview?: SliceWork['specReview'];
+  standardsReview?: SliceWork['standardsReview'];
+  manifestTsdoc?: SliceWork['manifestTsdoc'];
   testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
@@ -63,12 +64,22 @@ const work = (fields: {
     commit: { type: 'feat', scope: 'tools', subject: fields.subject },
     closes: fields.closes,
   },
-  diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
-  review: fields.review ?? {
+  specReview: fields.specReview ?? {
+    verdict: 'fixed',
+    sha: 's1s',
+    summary: 'covered criterion 3',
+    leaseLines: [],
+  },
+  standardsReview: fields.standardsReview ?? {
     verdict: 'fixed',
     sha: 's2',
     summary: 'renamed a helper',
     leaseLines: [],
+  },
+  manifestTsdoc: fields.manifestTsdoc ?? {
+    verdict: 'fixed',
+    sha: 's2m',
+    summary: 'sharpened walkTo',
   },
   testReview:
     fields.testReview === undefined
@@ -111,6 +122,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
+    manifestTsdoc: 'no src/ change',
     testReview: 'trivial surface',
   }),
 };
@@ -141,9 +153,9 @@ const reviewed = (leaseLines: string[]): SliceWork['testReview'] => ({
   leaseLines,
 });
 
-const REVIEWER_LEASE = 'with-lease: waited 0.5s for paper@localhost:25702, held 12.5s';
+const STANDARDS_LEASE = 'with-lease: waited 0.5s for paper@localhost:25702, held 12.5s';
 
-const fixedReview = (leaseLines: string[]): SliceWork['review'] => ({
+const fixedReview = (leaseLines: string[]): SliceWork['standardsReview'] => ({
   verdict: 'fixed',
   sha: 's2',
   summary: 'renamed a helper',
@@ -325,7 +337,10 @@ describe('renderPrBody', () => {
       '### feat(tools): add the x tool',
       '- Issue: #7, landed as c7',
       '- Issue: #8, landed as c8',
-      '- Review: fixed — renamed a helper',
+      '- Spec review: fixed — covered criterion 3',
+      '- Standards review: fixed — renamed a helper',
+      '- Manifest TSDoc: fixed — sharpened walkTo',
+      '- Manifest TSDoc: skipped — no src/ change',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
       '- Test review: skipped — trivial surface',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
@@ -555,53 +570,56 @@ describe('renderPrBody', () => {
 
   it.each<[string, string[], string[], SliceWork['testReview'], string]>([
     [
-      'all three roles, the review between',
+      'all three roles, the standards review between',
       [TDD_LEASE],
-      [REVIEWER_LEASE],
+      [STANDARDS_LEASE],
       reviewed([REVIEW_LEASE]),
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
     [
-      'a reviewer that leased nothing',
+      'a standards review that leased nothing',
       [TDD_LEASE],
       [],
       reviewed([REVIEW_LEASE]),
       '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
     [
-      'the review alone',
+      'the standards review alone',
       [],
-      [REVIEWER_LEASE],
+      [STANDARDS_LEASE],
       reviewed([]),
-      '- Lease timings: review: paper@localhost:25702 waited 0.5s, held 12.5s',
+      '- Lease timings: standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ],
     [
-      'a review before a skipped test review',
+      'a standards review before a skipped test review',
       [TDD_LEASE],
-      [REVIEWER_LEASE],
+      [STANDARDS_LEASE],
       'trivial surface',
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; review: paper@localhost:25702 waited 0.5s, held 12.5s',
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ],
-  ])('renders the review’s lease timings for %s', (_name, tdd, review, testReview, line) => {
-    const lines = renderPrBody({
-      ...INPUT,
-      landed: [
-        {
-          issue: 11,
-          commit: 'c11',
-          ...work({
-            subject: 'lease x',
-            closes: 'fixes',
-            leaseLines: tdd,
-            review: fixedReview(review),
-            testReview,
-          }),
-        },
-      ],
-    }).split('\n');
+  ])(
+    'renders the standards review’s lease timings for %s',
+    (_name, tdd, review, testReview, line) => {
+      const lines = renderPrBody({
+        ...INPUT,
+        landed: [
+          {
+            issue: 11,
+            commit: 'c11',
+            ...work({
+              subject: 'lease x',
+              closes: 'fixes',
+              leaseLines: tdd,
+              standardsReview: fixedReview(review),
+              testReview,
+            }),
+          },
+        ],
+      }).split('\n');
 
-    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
-  });
+      expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
+    },
+  );
 
   it('records a capped probe with its follow-up', () => {
     expect(body).toContain('  - Paper drops y: cap-hit in 15m 00s; follow-up: probe y offline;');
@@ -663,35 +681,29 @@ describe('renderPrBody', () => {
     expect(lines).toContain(`  - Folia ticks x: confirmed in ${text}`);
   });
 
-  it.each<[number, number, string]>([
-    [3, 0, '- Diff review: 3 rules, 0 plan findings'],
-    [0, 5, '- Diff review: 0 rules, 5 plan findings'],
-  ])(
-    'renders a diff review of %s rules and %s plan findings between the issue and the review',
-    (rules, plan, line) => {
-      const lines = renderPrBody({
-        ...INPUT,
-        landed: [
-          {
-            issue: 11,
-            commit: 'c11',
-            ...work({
-              subject: 'review x',
-              closes: 'fixes',
-              diffReview: { rules, plan, findingsPath: 'd.md' },
-            }),
-          },
-        ],
-      }).split('\n');
-      const at = lines.indexOf('- Issue: #11, landed as c11');
+  it('renders the spec review, then the standards review, right after the issue line', () => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'review x',
+            closes: 'fixes',
+            specReview: { verdict: 'clean', sha: 's1', summary: 'all met', leaseLines: [] },
+          }),
+        },
+      ],
+    }).split('\n');
+    const at = lines.indexOf('- Issue: #11, landed as c11');
 
-      expect(lines.slice(at, at + 3)).toEqual([
-        '- Issue: #11, landed as c11',
-        line,
-        '- Review: fixed — renamed a helper',
-      ]);
-    },
-  );
+    expect(lines.slice(at, at + 3)).toEqual([
+      '- Issue: #11, landed as c11',
+      '- Spec review: clean — all met',
+      '- Standards review: fixed — renamed a helper',
+    ]);
+  });
 
   it('defuses a closing reference in a review summary, a critic reason and every reference form', () => {
     const tricky = renderPrBody({
@@ -699,7 +711,7 @@ describe('renderPrBody', () => {
       landed: [
         {
           ...SEVEN,
-          review: { ...SEVEN.review, summary: 'renamed, fixes #21' },
+          standardsReview: { ...SEVEN.standardsReview, summary: 'renamed, fixes #21' },
           testReview: {
             verdict: 'clean',
             sha: 's3',

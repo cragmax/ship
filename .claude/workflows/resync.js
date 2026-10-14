@@ -69,9 +69,10 @@ const STAGES = {
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
-  diffReview: { agentType: 'diff-reviewer', model: 'opus' },
-  reviewer: { agentType: 'reviewer', model: 'opus' },
-  resolver: { agentType: 'reviewer', model: 'opus' },
+  specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+  standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
+  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+  resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
@@ -81,11 +82,6 @@ const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
-const HIGH_EFFORT_FILE_COUNT = 5;
-function reviewEffort(files) {
-  const touchesSrc = files.some((path) => path.startsWith('src/'));
-  return touchesSrc || files.length > HIGH_EFFORT_FILE_COUNT ? 'high' : 'medium';
-}
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
@@ -104,7 +100,8 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
+    detail:
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -145,9 +142,6 @@ function agentOptions(stage, detail, schema) {
     ...(row.effort === undefined ? {} : { effort: row.effort }),
     schema,
   };
-}
-function reviewOptions(stage, detail, schema, files) {
-  return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
@@ -233,17 +227,13 @@ const PROMPTS = {
         content: values.messageTemplate,
       }),
     ].join('\n'),
-  diffReview: (values) =>
-    [
-      ...sliceCommitLines(values),
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-    ].join('\n'),
-  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
+  specReview: (values) => sliceReviewPrompt(values),
+  standardsReview: (values) => sliceReviewPrompt(values),
+  manifestTsdoc: (values) =>
+    [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
-      'Mode: resolve',
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
@@ -279,12 +269,11 @@ function sliceCommitLines(values) {
     `Changed files: ${values.files.join(', ')}`,
   ];
 }
-function sliceReviewPrompt(values, findingsPath) {
+function sliceReviewPrompt(values) {
   return [
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
-    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease),
   ].join('\n');
 }
@@ -1407,16 +1396,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       'closes',
     ],
   },
-  diffReview: {
-    type: 'object',
-    properties: {
-      rules: { type: 'integer' },
-      plan: { type: 'integer' },
-      findingsPath: { type: 'string' },
-    },
-    required: ['rules', 'plan', 'findingsPath'],
-  },
-  review: {
+  specReview: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
@@ -1425,6 +1405,25 @@ const AGENT_OUTPUT_SCHEMAS = {
       leaseLines: { type: 'array', items: { type: 'string' } },
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
+  },
+  standardsReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
+  },
+  manifestTsdoc: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'summary'],
   },
   testReview: {
     type: 'object',
@@ -1820,17 +1819,23 @@ const AGENT_CALLS = {
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
-  diffReview: (hooks, values, tag) =>
+  specReview: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.diffReview(values),
-      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
+      PROMPTS.specReview(values),
+      agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
-  reviewer: (hooks, values, tag) =>
+  standardsReview: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.reviewer(values),
-      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      PROMPTS.standardsReview(values),
+      agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
+    ),
+  manifestTsdoc: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.manifestTsdoc(values),
+      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
   testReview: (hooks, values, tag) =>
     askAgent(

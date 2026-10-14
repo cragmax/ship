@@ -217,7 +217,7 @@ describe('runShip — issues in flight at once', () => {
     ]);
   });
 
-  it('stops a halting entry’s attempt at the stage boundary before its diff review', async () => {
+  it('stops a halting entry’s attempt at the stage boundary before its spec review', async () => {
     // Issue 8's tdd is held until issue 7's landing has halted the entry,
     // so 8's next stage boundary sees the halt.
     const hold = holdable(/^tdd:8-1$/);
@@ -233,8 +233,8 @@ describe('runShip — issues in flight at once', () => {
     hold.releaseAll();
     const report = await done;
 
-    expect(labels(run)).toContain('diffReview:7-1');
-    expect(labels(run).filter((l) => /^(tdd|diffReview|reviewer):8-1$/.test(l))).toEqual([
+    expect(labels(run)).toContain('specReview:7-1');
+    expect(labels(run).filter((l) => /^(tdd|specReview|standardsReview):8-1$/.test(l))).toEqual([
       'tdd:8-1',
     ]);
     expect(report.epics[0]).toMatchObject({
@@ -248,17 +248,17 @@ describe('runShip — issues in flight at once', () => {
 
   const UP_TO_CUT = ['runner:check:8-1', 'runner:cut-slice:8-1'];
   const UP_TO_TDD = [...UP_TO_CUT, 'runner:provision:8-1', 'tdd:8-1'];
-  const UP_TO_DIFF_REVIEW = [...UP_TO_TDD, 'diffReview:8-1'];
+  const UP_TO_SPEC_REVIEW = [...UP_TO_TDD, 'specReview:8-1'];
   it.each<[string, string[]]>([
     ['runner:check:8-1', ['runner:check:8-1']],
     ['runner:cut-slice:8-1', [...UP_TO_CUT, 'runner:teardown:8-1']],
     ['runner:provision:8-1', [...UP_TO_CUT, 'runner:provision:8-1', 'runner:teardown:8-1']],
     ['tdd:8-1', [...UP_TO_TDD, 'runner:teardown:8-1']],
-    ['diffReview:8-1', [...UP_TO_DIFF_REVIEW, 'runner:teardown:8-1']],
-    ['reviewer:8-1', [...UP_TO_DIFF_REVIEW, 'reviewer:8-1', 'runner:teardown:8-1']],
+    ['specReview:8-1', [...UP_TO_SPEC_REVIEW, 'runner:teardown:8-1']],
+    ['standardsReview:8-1', [...UP_TO_SPEC_REVIEW, 'standardsReview:8-1', 'runner:teardown:8-1']],
     [
       'testReview:8-1',
-      [...UP_TO_DIFF_REVIEW, 'reviewer:8-1', 'testReview:8-1', 'runner:teardown:8-1'],
+      [...UP_TO_SPEC_REVIEW, 'standardsReview:8-1', 'testReview:8-1', 'runner:teardown:8-1'],
     ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));

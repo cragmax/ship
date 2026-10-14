@@ -17,6 +17,7 @@ You are a **Stage agent** of an unattended run (ADR-0045). Your agent file prelo
 ## Git
 
 - **Never push, reset or stash, and never pass `--no-verify`.** What you commit lands only through the run's commit queue (ADR-0045 decision 6). A hook failure made no commit: fix forward and run the same commit again; if the hooks cannot execute at all, return your blocked verdict.
+- **Amending the slice.** A stage that fixes a built slice amends its one commit: when a change touches `src/` or `tooling/`, run `npm run build` (the commit gate reads `dist/api-manifest.json`); stage your files by name (`git add -- <path>…`), never the `vitest.worktree*.config.ts` files, caches or `reports/`; `git commit --amend --no-edit`. Then `git rev-list --count <Slice base>..HEAD` is `1`.
 
 ## Runs
 

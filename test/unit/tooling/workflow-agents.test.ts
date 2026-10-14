@@ -8,14 +8,16 @@ describe('workflow agents', () => {
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
-      'diff-reviewer',
+      'manifest-tsdoc',
       'overlap-estimator',
       'pr-writer',
+      'resolve-index-conflicts',
       'retro',
-      'reviewer',
       'runner',
       'scout',
       'ship-test-review',
+      'spec-review',
+      'standards-review',
       'tdd',
     ]);
   });

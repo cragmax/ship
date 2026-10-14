@@ -218,13 +218,6 @@ export const TDD_GREEN = {
 /** A tdd that blocked before committing: the tree already does what issue 7 asks. */
 export const TDD_BLOCKED = { ...TDD_GREEN, verdict: 'BLOCKED', sha: '', reason: 'done at abc123' };
 
-/** A diff review that found two rules findings and one plan finding. */
-export const DIFF_REVIEW_OK = {
-  rules: 2,
-  plan: 1,
-  findingsPath: `${REPORT_DIR}/diff-review-7-1.md`,
-};
-
 /** A clean land of issue 7's slice: {@link TDD_FILES}, 40 lines changed. */
 export const LAND_OK = {
   ...OK,
@@ -281,9 +274,16 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   },
   'runner:provision': { ...OK, env: { PH_PROJECT_DIR: BATCH } },
   tdd: TDD_GREEN,
-  diffReview: DIFF_REVIEW_OK,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
-  reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper', leaseLines: [] },
+  specReview: { verdict: 'fixed', sha: 'spec1', summary: 'covered criterion 3', leaseLines: [] },
+  standardsReview: {
+    verdict: 'fixed',
+    sha: 'slice2',
+    summary: 'renamed a helper',
+    leaseLines: [],
+  },
+  // Clean: no amend, so the standards review's sha stands.
+  manifestTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
   testReview: {
     verdict: 'hardened',
     sha: 'slice3',

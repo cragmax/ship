@@ -57,7 +57,14 @@ const TEST_REVIEW_LEASED = {
   leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
 };
 
-const REVIEW_LEASED = {
+const SPEC_REVIEW_LEASED = {
+  verdict: 'fixed',
+  sha: 'spec1',
+  summary: 'covered criterion 3',
+  leaseLines: ['with-lease: waited 0.3s for folia@localhost:25703, held 8.5s'],
+};
+
+const STANDARDS_REVIEW_LEASED = {
   verdict: 'fixed',
   sha: 'slice2',
   summary: 'renamed a helper',
@@ -621,8 +628,12 @@ describe('runShip — the lease totals', () => {
     ]);
   });
 
-  it('labels the review’s leases between the tdd’s and the test review’s in the issue’s lease timings', async () => {
-    const run = fakeHooks({ reviewer: REVIEW_LEASED, testReview: TEST_REVIEW_LEASED });
+  it('labels the slice reviews’ leases between the tdd’s and the test review’s in the issue’s lease timings', async () => {
+    const run = fakeHooks({
+      specReview: SPEC_REVIEW_LEASED,
+      standardsReview: STANDARDS_REVIEW_LEASED,
+      testReview: TEST_REVIEW_LEASED,
+    });
 
     await runShip(run.hooks, 'issues 7');
 
@@ -631,12 +642,12 @@ describe('runShip — the lease totals', () => {
         .split('\n')
         .filter((l) => l.startsWith('- Lease timings: ')),
     ).toEqual([
-      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; spec-review: folia@localhost:25703 waited 0.3s, held 8.5s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ]);
   });
 
-  it('counts a landed issue’s reviewer lease in its engine’s and its issue’s totals', async () => {
-    const run = fakeHooks({ reviewer: REVIEW_LEASED });
+  it('counts a landed issue’s standards-review lease in its engine’s and its issue’s totals', async () => {
+    const run = fakeHooks({ standardsReview: STANDARDS_REVIEW_LEASED });
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -729,12 +740,12 @@ describe('runShip — the tdd’s evidence', () => {
   });
 });
 
-describe('runShip — the diff review counts', () => {
-  it('carries each landed issue’s own diff review counts into its PR-body section', async () => {
+describe('runShip — the slice review lines', () => {
+  it('carries each landed issue’s own spec review outcome into its PR-body section', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
-      'diffReview:7-1': { rules: 3, plan: 0, findingsPath: `${REPORT_DIR}/diff-review-7-1.md` },
-      'diffReview:8-1': { rules: 0, plan: 4, findingsPath: `${REPORT_DIR}/diff-review-8-1.md` },
+      'specReview:7-1': { ...SPEC_REVIEW_LEASED, leaseLines: [] },
+      'specReview:8-1': { verdict: 'clean', sha: 'slice1', summary: 'all met', leaseLines: [] },
     });
 
     await runShip(run.hooks, 'issues 7 8');
@@ -742,11 +753,8 @@ describe('runShip — the diff review counts', () => {
     expect(
       promptOf(run, 'runner:publish:list')
         .split('\n')
-        .filter((l) => l.startsWith('- Diff review: ')),
-    ).toEqual([
-      '- Diff review: 3 rules, 0 plan findings',
-      '- Diff review: 0 rules, 4 plan findings',
-    ]);
+        .filter((l) => l.startsWith('- Spec review: ')),
+    ).toEqual(['- Spec review: fixed — covered criterion 3', '- Spec review: clean — all met']);
   });
 });
 

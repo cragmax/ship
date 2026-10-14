@@ -2,23 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createScheduler } from '../../../../tooling/lib/run-scheduler.js';
 import { dropWithDependents } from '../../../../tooling/workflows/lib/preflight.js';
-import { isTrivialSurface, reviewEffort } from '../../../../tooling/workflows/lib/stages.js';
-
-describe('reviewEffort', () => {
-  it.each([
-    ['one src/ file', ['src/engine/a.ts'], 'high'],
-    ['six files outside src/', ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md'], 'high'],
-    [
-      'five files outside src/',
-      ['tooling/a.ts', 'test/a.test.ts', 'b.md', 'c.md', 'd.md'],
-      'medium',
-    ],
-    ['a path merely starting with src', ['srcmap/a.ts'], 'medium'],
-    ['no file', [], 'medium'],
-  ])('rates %s', (_name, files, effort) => {
-    expect(reviewEffort(files)).toBe(effort);
-  });
-});
+import { isTrivialSurface } from '../../../../tooling/workflows/lib/stages.js';
 
 describe('isTrivialSurface', () => {
   it.each([
