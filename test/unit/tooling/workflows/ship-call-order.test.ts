@@ -1,4 +1,4 @@
-// regression: #1058 — a resumed run replays live once two issues' calls interleave by settle timing
+// regression: a resumed run replayed live once two issues' calls interleave by settle timing
 import { describe, expect, it } from 'vitest';
 
 import { runShip, type ShipReport } from '../../../../tooling/workflows/ship.js';
@@ -7,7 +7,7 @@ import { fakeHooks, GATE_OK, type FakeRun } from './_fake-hooks.js';
 import { settleInOrder, type SettleOrder } from './_fake-parallel.js';
 
 // No declared edge and no overlap pair (the default estimator answers none),
-// so only the cap keeps #8 from starting while #7 is in flight.
+// so only the cap keeps issue 8 from starting while issue 7 is in flight.
 const TWO_INDEPENDENT = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
   scout: {

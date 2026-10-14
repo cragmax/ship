@@ -893,7 +893,7 @@ describe('runShip — the PR body limit', () => {
 });
 
 describe('runShip — a nothing-landed run cleans up after itself', () => {
-  // #7 planned stale: blocked, so the entry lands nothing.
+  // Issue 7 planned stale: blocked, so the entry lands nothing.
   const PLANNER_STALE = { planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' } };
 
   it('tears its batch down after the retro, then retires its branch from the main checkout', async () => {

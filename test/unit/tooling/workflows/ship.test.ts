@@ -752,7 +752,7 @@ const promptOf = (run: FakeRun, label: string): string => {
   return call?.prompt ?? '';
 };
 
-/** A closing keyword before `#7`, as GitHub reads one. */
+/** A closing keyword before issue 7's ref, as GitHub reads one. */
 const CLOSES_SEVEN = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#7\b/i;
 
 describe('runShip — an attempt that does not land', () => {
@@ -1433,7 +1433,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  // Hand-written: the plan-time allowance #1071 decided, and the tdd's #1038 confirmed.
+  // Hand-written: the plan-time and the tdd probe allowances.
   const PLAN_CAPS = 'Probe caps: 5 min per probe, 2 probes per issue';
   const TDD_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
 
@@ -2127,7 +2127,7 @@ describe('runAttempt — how an attempt ends', () => {
 
 describe('runShip — a failed cut', () => {
   // A cross-entry edge (the gate refuses one; the drop must still hold) lets
-  // the failed cut of epic 1 drop #2 from epic 2.
+  // the failed cut of epic 1 drop issue 2 from epic 2.
   const failedCut = (epicTwo: readonly number[]): FakeRun =>
     fakeHooks({
       'runner:run-gate': {

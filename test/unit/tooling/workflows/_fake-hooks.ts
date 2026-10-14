@@ -91,7 +91,7 @@ export const PREFLIGHT_OK = {
   errors: [],
 };
 
-/** An `ok` gate over the one-issue explicit run of #7. */
+/** An `ok` gate over the one-issue explicit run of issue 7. */
 export const GATE_OK = {
   exitCode: 0,
   envelopePath: 'reports/tool/run-gate.json',
@@ -111,7 +111,7 @@ export const LIVE_RUNS_NONE = {
   errors: [],
 };
 
-/** #7 fresh, no overlap. */
+/** Issue 7 fresh, no overlap. */
 export const SCOUT_FRESH = {
   issues: [{ issue: 7, stale: false, evidence: 'every named symbol present' }],
   overlaps: [],
@@ -217,7 +217,7 @@ export const DIFF_REVIEW_OK = {
   findingsPath: `${REPORT_DIR}/diff-review-7-1.md`,
 };
 
-/** A plan card for #7. */
+/** A plan card for issue 7. */
 export const PLAN_CARD = {
   verdict: 'plan',
   planPath: `${REPORT_DIR}/plans/7.md`,
@@ -229,7 +229,7 @@ export const PLAN_CARD = {
   probes: [],
 };
 
-/** A clean land of #7's slice: {@link TDD_FILES}, 40 lines changed. */
+/** A clean land of issue 7's slice: {@link TDD_FILES}, 40 lines changed. */
 export const LAND_OK = {
   ...OK,
   sha: 'slice1',

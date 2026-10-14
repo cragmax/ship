@@ -232,7 +232,7 @@ describe('runShip — issues in flight at once', () => {
   });
 
   it('halts only the epic whose landing left its batch unverified', async () => {
-    // #3's tdd is held until epic 1 has halted, so #3's later stages run under that halt.
+    // Issue 3's tdd is held until epic 1 has halted, so its later stages run under that halt.
     const hold = holdable(/^tdd:3-1$/);
     const run = fakeHooks(
       {
@@ -258,8 +258,8 @@ describe('runShip — issues in flight at once', () => {
   });
 
   it('stops a halting entry’s attempt at the stage boundary before its diff review', async () => {
-    // #8's tdd is held until #7's landing has halted the entry,
-    // so #8's next stage boundary sees the halt.
+    // Issue 8's tdd is held until issue 7's landing has halted the entry,
+    // so 8's next stage boundary sees the halt.
     const hold = holdable(/^tdd:8-1$/);
     const run = fakeHooks(
       { ...list([7, 8]), 'runner:land': LAND_BATCH_DIRTY },

@@ -82,7 +82,7 @@ describe('advance — protocol violations', () => {
     maxSlices: 1,
   };
 
-  // #11 waits on #10; #12 is a root queued behind #10 (one slot), so ready.
+  // Issue 11 waits on 10; 12 is a root queued behind 10 (one slot), so ready.
   it.each(
     (['committed', 'blocked', 'harvest-conflict', 'agent-died', 'slot-free'] as const).flatMap(
       (kind) => [
@@ -151,7 +151,7 @@ describe('advance — protocol violations', () => {
 
 describe('advance — epic halt', () => {
   it('halts an entry with nothing in flight at once, leaving the other entry running', () => {
-    // #20 of epic 800 holds the one slot; epic 900's #1 and #3 are ready, #2 waits on #1.
+    // Issue 20 of epic 800 holds the one slot; epic 900's 1 and 3 are ready, 2 waits on 1.
     const [, halted, first, second] = play(
       {
         runSet: [
@@ -562,7 +562,7 @@ describe('createScheduler — input guards', () => {
   });
 
   it('rejects out-of-set edges even when findCycles alone would accept them', () => {
-    // 1 -> 99 -> 1 is a cycle only through #99; findCycles ignores edges that
+    // 1 -> 99 -> 1 is a cycle only through 99; findCycles ignores edges that
     // leave the issue list, so only the scheduler's own guard catches this.
     expect(() =>
       createScheduler({

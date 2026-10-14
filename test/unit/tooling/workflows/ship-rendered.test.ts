@@ -25,7 +25,7 @@ beforeAll(async () => {
 
 /** Run a rendered `ship.js` over a fake run's hooks. */
 function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
-  // The runtime's wrapper (observed #1035): the file, `export` dropped, as an async function
+  // The runtime's wrapper (observed): the file, `export` dropped, as an async function
   // body; hooks + `args` as globals.
   const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
   // eslint-disable-next-line sonarjs/code-eval -- runs a fresh render of the repo's own sources, never user input

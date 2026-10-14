@@ -1038,7 +1038,7 @@ describe('renderPrBody — the fold', () => {
     expect(fold.split('\n')).toContain('- Issue: #8, landed as c8');
   });
 
-  // A null writer leaves the run report unfolded (#1181), out of the fold-only check's reach.
+  // A null writer leaves the run report unfolded, out of the fold-only check's reach.
   it.each<[string, PrWriterOutput | null]>([
     ['folded', WRITER],
     ['left unfolded', null],
@@ -1603,7 +1603,7 @@ describe('renderAttachedSection', () => {
     expect(text.split('\n').filter((l) => ANY_CLOSING.test(l))).toEqual([
       '- fixes #7 — add the x tool',
     ]);
-    // #3 stands for an earlier run's landed issue.
+    // Issue 3 stands for an earlier run's landed issue.
     expect(text).toContain('  **Before:** AssertionError: fixes (see #3) not applied');
   });
 });
