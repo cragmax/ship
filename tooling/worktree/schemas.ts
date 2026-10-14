@@ -213,6 +213,8 @@ export const RetireRunResultSchema = ResultBaseSchema.extend({
   branchDeleted: z.boolean(),
   /** Whether the run root, the run's report dir, was removed. */
   rootRemoved: z.boolean(),
+  /** Whether the folder guard found the run root missing, so there was none to remove. */
+  rootAbsent: z.boolean(),
   /** The slice branches (`slice/<slug>/…`) deleted, sorted; empty unless every guard passed. */
   sliceBranches: z.array(z.string()),
 });
