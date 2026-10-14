@@ -9,8 +9,8 @@ import {
   fakeHooks,
   GATE_OK,
   LAND_OK,
-  PLAN_CARD,
   REPORT_DIR,
+  TDD_BLOCKED,
   TDD_GREEN,
   type FakeRun,
 } from './_fake-hooks.js';
@@ -158,8 +158,8 @@ describe('runShip — the critic', () => {
     expect(critic).toContain(`Report file: ${REPORT_DIR}/critic.md`);
     const landed = critic.find((l) => l.startsWith('Landed (JSON): '))?.slice(15) ?? 'null';
     expect(JSON.parse(landed)).toEqual([
-      { issue: 7, commit: 'landed1', plan: PLAN_CARD.planPath },
-      { issue: 8, commit: 'landed1', plan: PLAN_CARD.planPath },
+      { issue: 7, commit: 'landed1' },
+      { issue: 8, commit: 'landed1' },
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
       '- Outcome: landed as critic-landed',
@@ -311,7 +311,7 @@ describe('runShip — the retro', () => {
 
   it('runs once for an entry that landed nothing', async () => {
     const run = fakeHooks({
-      planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+      tdd: TDD_BLOCKED,
       retro: { findings: [FINDING] },
     });
 
@@ -441,8 +441,7 @@ describe('runShip — the PR writer', () => {
         {
           issue: 7,
           commit: LAND_OK.commit,
-          plan: PLAN_CARD.planPath,
-          subject: PLAN_CARD.commit.subject,
+          subject: TDD_GREEN.commit.subject,
         },
       ])}`,
       `Report dir: ${REPORT_DIR}`,
@@ -893,11 +892,11 @@ describe('runShip — the PR body limit', () => {
 });
 
 describe('runShip — a nothing-landed run cleans up after itself', () => {
-  // Issue 7 planned stale: blocked, so the entry lands nothing.
-  const PLANNER_STALE = { planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' } };
+  // Issue 7's tdd blocked, so the entry lands nothing.
+  const TDD_STALE = { tdd: TDD_BLOCKED };
 
   it('tears its batch down after the retro, then retires its branch from the main checkout', async () => {
-    const run = fakeHooks(PLANNER_STALE);
+    const run = fakeHooks(TDD_STALE);
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -946,7 +945,7 @@ describe('runShip — a nothing-landed run cleans up after itself', () => {
       residue: `${BATCH}: the runner returned nothing for teardown`,
     },
   ])('records a $name batch teardown as residue and retires nothing', async (c) => {
-    const run = fakeHooks({ ...PLANNER_STALE, 'runner:teardown:list': c.answer });
+    const run = fakeHooks({ ...TDD_STALE, 'runner:teardown:list': c.answer });
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -978,7 +977,7 @@ describe('runShip — a nothing-landed run cleans up after itself', () => {
       residue: 'ship/7: the runner returned nothing for retire-run',
     },
   ])('records a $name retire-run as residue and still ends the entry', async (c) => {
-    const run = fakeHooks({ ...PLANNER_STALE, 'runner:retire-run:list': c.answer });
+    const run = fakeHooks({ ...TDD_STALE, 'runner:retire-run:list': c.answer });
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -991,7 +990,7 @@ describe('runShip — a nothing-landed run cleans up after itself', () => {
 
   it('keeps a slice teardown’s residue ahead of its own cleanup’s', async () => {
     const run = fakeHooks({
-      ...PLANNER_STALE,
+      ...TDD_STALE,
       'runner:teardown:7-1': () => {
         throw new Error('runner crashed');
       },

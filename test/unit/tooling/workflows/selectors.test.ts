@@ -22,11 +22,7 @@ describe('reviewEffort', () => {
 
 describe('isTrivialSurface', () => {
   it.each([
-    [
-      'docs and agents only',
-      ['docs/adr/0045-x.md', '.claude/agents/planner.md', 'README.md'],
-      true,
-    ],
+    ['docs and agents only', ['docs/adr/0045-x.md', '.claude/agents/runner.md', 'README.md'], true],
     ['no file', [], true],
     ['a path merely starting with src', ['srcmap/a.ts'], true],
     ['a src/ file', ['docs/a.md', 'src/a.ts'], false],

@@ -208,10 +208,10 @@ describe('settleEvents', () => {
     ],
     [
       'a chain-level block with no slice',
-      { kind: 'blocked', issue: 7, reason: 'planner stale' },
+      { kind: 'blocked', issue: 7, reason: 'tdd BLOCKED' },
       null,
       'running',
-      [blockedBy('planner stale')],
+      [blockedBy('tdd BLOCKED')],
       'running',
     ],
     [

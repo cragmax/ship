@@ -20,7 +20,6 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 import {
   AGENT_CALLS,
   type DiffReviewOutput,
-  type PlanCard,
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
@@ -35,14 +34,8 @@ import {
   type EpicHaltEvent,
 } from './commit-queue.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import { commitMessage, type SliceSize } from './pr-body.js';
-import type {
-  LeaseValues,
-  PlannerValues,
-  PriorSlice,
-  SliceCommitValues,
-  SliceReviewValues,
-} from './prompts.js';
+import { commitMessage, commitMessageTemplate, type SliceSize } from './pr-body.js';
+import type { LeaseValues, SliceCommitValues, SliceReviewValues } from './prompts.js';
 import { isTrivialSurface } from './stages.js';
 import { envelopeProblem, runPlace, runTool, type ToolPlace } from './tool-calls.js';
 
@@ -81,8 +74,6 @@ export interface EntryContext extends EntrySetup {
   readonly isHalting: () => boolean;
   /** Mark the entry halting. */
   readonly markHalting: () => void;
-  /** What the entry landed so far, in landing order. */
-  readonly priorSlices: () => readonly PriorSlice[];
 }
 
 /** How an attempt's slice left it: landed on the batch, or not. */
@@ -102,8 +93,6 @@ type SliceOutcome =
       readonly kind: 'unlanded';
       /** What ended it. */
       readonly primary: SchedulerEvent;
-      /** A conflicting landing's files; `[]` otherwise. */
-      readonly conflicts: readonly string[];
     };
 
 /** How an attempt ended, for the drive loop to settle: its slice's outcome, then its teardown's. */
@@ -143,8 +132,6 @@ interface AttemptId {
   /** `<issue>-<attempt>`: the attempt's label detail and file-name stem. */
   readonly tag: string;
   readonly place: ToolPlace;
-  /** The files the previous attempt's landing conflicted on; `[]` for none. */
-  readonly previousConflicts: readonly string[];
 }
 
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
@@ -176,13 +163,8 @@ interface ProvisionedSlice extends CutSlice {
   readonly projectDir: string;
 }
 
-/** A planned slice: the card it is built from (the applier's, when one ran). */
-interface PlannedSlice extends ProvisionedSlice {
-  readonly card: PlanCard;
-}
-
 /** A built slice: the tdd's answer; `sha` its commit. */
-interface BuiltSlice extends PlannedSlice {
+interface BuiltSlice extends ProvisionedSlice {
   readonly tdd: TddOutput;
   readonly sha: string;
 }
@@ -203,18 +185,15 @@ interface AuthoredSlice extends ReviewedSlice {
 }
 
 /**
- * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice;
- * `previousConflicts` are the files the previous attempt's landing conflicted on, for the planner
- * to re-plan against. Resolves to the attempt's first note — for an authored slice, one carrying
- * the queued landing; never rejects.
+ * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice. Resolves to the
+ * attempt's first note — for an authored slice, one carrying the queued landing; never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
   issue: number,
   attempt: number,
-  previousConflicts: readonly string[] = [],
 ): Promise<AttemptNote> {
-  const at = attemptId(ctx, issue, attempt, previousConflicts);
+  const at = attemptId(ctx, issue, attempt);
   const opened = await openSlice(at).catch(
     (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
   );
@@ -230,14 +209,9 @@ export async function runAttempt(
 }
 
 /** Who the attempt is, its tag `<issue>-<attempt>`. */
-function attemptId(
-  ctx: EntryContext,
-  issue: number,
-  attempt: number,
-  previousConflicts: readonly string[],
-): AttemptId {
+function attemptId(ctx: EntryContext, issue: number, attempt: number): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag), previousConflicts };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag) };
 }
 
 /** Re-check the issue, then cut its slice, each at a boundary that sees a halt. */
@@ -252,9 +226,7 @@ async function openSlice(at: AttemptId): Promise<Opened> {
 async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
-  const planned = await atBoundary(provisioned, at, planStage);
-  const approved = await atBoundary(planned, at, planReviewStage);
-  const built = await atBoundary(approved, at, tddStage);
+  const built = await atBoundary(provisioned, at, tddStage);
   const diffReviewed = await atBoundary(built, at, diffReviewStage);
   const reviewed = await atBoundary(diffReviewed, at, reviewStage);
   return atBoundary(reviewed, at, testReviewStage);
@@ -325,67 +297,36 @@ async function provisionStage(cut: CutSlice): Promise<Step<ProvisionedSlice>> {
   return { next: { ...cut, projectDir } };
 }
 
-/** Plan the issue; a `plan` card goes on. */
-async function planStage(s: ProvisionedSlice): Promise<Step<PlannedSlice>> {
-  const { at } = s;
-  return acceptCard(s, await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(s, 'plan'), at.tag));
-}
-
-/** Review the plan, and apply its findings once when there are any; the applier's card goes on. */
-async function planReviewStage(planned: PlannedSlice): Promise<Step<PlannedSlice>> {
-  const { at } = planned;
-  const values = {
-    issue: at.issue,
-    slice: planned.slice,
-    planPath: planPath(at),
-    findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
-    reportDir: at.ctx.reportDir,
-  };
-  const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return { stop: died(at) };
-  if (review.findings === 0) return { next: planned };
-  const applied = await AGENT_CALLS.planner(
-    at.ctx.hooks,
-    plannerValues(planned, 'apply', review.findingsPath),
-    at.tag,
-  );
-  return acceptCard(planned, applied);
-}
-
 /** Author the slice's one commit; a tdd that committed goes on. */
-async function tddStage(planned: PlannedSlice): Promise<Step<BuiltSlice>> {
-  const { at } = planned;
+async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
+  const { at } = s;
   const values = {
     issue: at.issue,
     attempt: at.attempt,
-    slice: planned.slice,
-    base: planned.base,
-    planPath: planPath(at),
+    slice: s.slice,
+    base: s.base,
+    reportDir: at.ctx.reportDir,
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
-    message: commitMessage(at.issue, planned.card),
-    lease: leaseValues(planned),
+    messageTemplate: commitMessageTemplate(at.issue),
+    lease: leaseValues(s),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return { stop: died(at) };
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...planned, tdd, sha: tdd.sha } };
+  return { next: { ...s, tdd, sha: tdd.sha } };
 }
 
 /**
  * Check the slice's commit, read-only, against the repo's rules and its
- * issue and plan; the findings go to {@link diffReviewPath} for the reviewer.
+ * issue; the findings go to {@link diffReviewPath} for the reviewer.
  * `agent-died` when the diff reviewer returns nothing.
  */
 async function diffReviewStage(s: BuiltSlice): Promise<Step<DiffReviewedSlice>> {
   const { at } = s;
-  const values = {
-    ...sliceCommitValues(s),
-    findingsPath: diffReviewPath(at),
-    reportDir: at.ctx.reportDir,
-  };
+  const values = { ...sliceCommitValues(s), findingsPath: diffReviewPath(at) };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
   if (out === null) return { stop: died(at) };
   return { next: { ...s, diffReview: out } };
@@ -442,7 +383,7 @@ async function testReviewSkip(s: ReviewedSlice): Promise<TestReviewSkip | null> 
 
 /**
  * Land the authored slice on the batch — run inside the commit queue — its message file first
- * rewritten per {@link commitMessage}.
+ * rewritten per {@link commitMessage} from the tdd's commit line and cite.
  */
 async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const { at } = s;
@@ -457,16 +398,16 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const message = commitMessage(at.issue, s.card);
+  const message = commitMessage(at.issue, s.tdd);
   const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { card, tdd, diffReview, review, testReview } = s;
+    const { tdd, diffReview, review, testReview } = s;
     return {
       kind: 'landed',
-      work: { card, tdd, diffReview, review, testReview },
+      work: { tdd, diffReview, review, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -475,13 +416,12 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
           : null,
     };
   }
-  const conflicts = event.kind === 'harvest-conflict' ? (out?.conflicts ?? []) : [];
-  return { kind: 'unlanded', primary: event, conflicts };
+  return notLanded(event);
 }
 
 /** The outcome of a slice that did not land, `primary` ending it. */
 function notLanded(primary: SchedulerEvent): SliceOutcome {
-  return { kind: 'unlanded', primary, conflicts: [] };
+  return { kind: 'unlanded', primary };
 }
 
 /** The `epic-halt` of a landing whose call threw: the batch state is unknown. */
@@ -518,39 +458,9 @@ async function endAttempt(
   return { kind: 'ended', issue: at.issue, ending };
 }
 
-/** Keep a planner's (or applier's) `plan` card; `agent-died` for none; `blocked` otherwise. */
-function acceptCard(s: ProvisionedSlice, card: PlanCard | null): Step<PlannedSlice> {
-  if (card === null) return { stop: died(s.at) };
-  if (card.verdict !== 'plan') {
-    return { stop: blocked(s.at, `planner ${card.verdict}: ${card.evidence}`) };
-  }
-  return { next: { ...s, card } };
-}
-
-/** The planner's prompt input; `findingsPath` is for `apply` mode only. */
-function plannerValues(
-  s: ProvisionedSlice,
-  mode: 'plan' | 'apply',
-  findingsPath?: string,
-): PlannerValues {
-  const { at } = s;
-  return {
-    mode,
-    issue: at.issue,
-    attempt: at.attempt,
-    slice: s.slice,
-    reportDir: at.ctx.reportDir,
-    planPath: planPath(at),
-    ...(findingsPath === undefined ? {} : { findingsPath }),
-    priorSlices: at.ctx.priorSlices(),
-    ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
-    lease: leaseValues(s),
-  };
-}
-
 /**
- * Where the slice's server-tier runs lease from: the tdd, the planner, the reviewer and the test
- * reviewer are handed one recipe.
+ * Where the slice's server-tier runs lease from: the tdd, the reviewer and the test reviewer are
+ * handed one recipe.
  */
 function leaseValues(s: ProvisionedSlice): LeaseValues {
   return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
@@ -559,15 +469,15 @@ function leaseValues(s: ProvisionedSlice): LeaseValues {
 /**
  * The slice's one commit as the stages after the tdd are handed it.
  *
- * @returns The issue, the slice, its base and plan, the current commit and
- *   the tdd's changed paths.
+ * @returns The issue, the slice, its base, the report dir, the current
+ *   commit and the tdd's changed paths.
  */
 function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   return {
     issue: s.at.issue,
     slice: s.slice,
     base: s.base,
-    planPath: planPath(s.at),
+    reportDir: s.at.ctx.reportDir,
     sha: s.sha,
     files: s.tdd.files,
   };
@@ -583,17 +493,7 @@ function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
 }
 
 /**
- * The issue's plan file: one per issue, re-planned by a later attempt.
- *
- * @param at - The attempt.
- * @returns `<reportDir>/plans/<issue>.md`.
- */
-function planPath(at: AttemptId): string {
-  return `${at.ctx.reportDir}/plans/${String(at.issue)}.md`;
-}
-
-/**
- * The attempt's commit message file: the tdd writes it; the landing rewrites it.
+ * The attempt's commit message file: the tdd fills it from its template; the landing rewrites it.
  *
  * @param at - The attempt.
  * @returns `<reportDir>/commit-<issue>-<attempt>.txt`.

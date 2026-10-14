@@ -192,7 +192,10 @@ export const BATCH = `${RUN_ROOT}/batch`;
 /** The files the fake tdd's slice commit changes. */
 export const TDD_FILES = ['tooling/x.ts', 'test/unit/tooling/x.test.ts'];
 
-/** A GREEN tdd over {@link TDD_FILES}, with one lease line, no probe and its tracer's red-green. */
+/**
+ * A GREEN tdd over {@link TDD_FILES} for issue 7, with one lease line, no probe, its tracer's
+ * red-green, and the commit line and cite it chose.
+ */
 export const TDD_GREEN = {
   verdict: 'GREEN',
   sha: 'slice1',
@@ -208,25 +211,18 @@ export const TDD_GREEN = {
     reason: '',
   },
   recorded: [],
+  commit: { type: 'feat', scope: 'build', subject: 'add the x tool' },
+  closes: 'fixes',
 };
+
+/** A tdd that blocked before committing: the tree already does what issue 7 asks. */
+export const TDD_BLOCKED = { ...TDD_GREEN, verdict: 'BLOCKED', sha: '', reason: 'done at abc123' };
 
 /** A diff review that found two rules findings and one plan finding. */
 export const DIFF_REVIEW_OK = {
   rules: 2,
   plan: 1,
   findingsPath: `${REPORT_DIR}/diff-review-7-1.md`,
-};
-
-/** A plan card for issue 7. */
-export const PLAN_CARD = {
-  verdict: 'plan',
-  planPath: `${REPORT_DIR}/plans/7.md`,
-  summary: 'add the x tool',
-  tier: 'unit',
-  commit: { type: 'feat', scope: 'build', subject: 'add the x tool' },
-  closes: 'fixes',
-  evidence: 'the issue asks for x',
-  probes: [],
 };
 
 /** A clean land of issue 7's slice: {@link TDD_FILES}, 40 lines changed. */
@@ -284,8 +280,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     at: '2026-09-29T10:00:00.000Z',
   },
   'runner:provision': { ...OK, env: { PH_PROJECT_DIR: BATCH } },
-  planner: PLAN_CARD,
-  planReviewer: { verdict: 'approved', findings: 0, findingsPath: `${REPORT_DIR}/pr.md` },
   tdd: TDD_GREEN,
   diffReview: DIFF_REVIEW_OK,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.

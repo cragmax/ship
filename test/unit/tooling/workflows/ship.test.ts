@@ -19,9 +19,9 @@ import {
   LAND_OK,
   LIVE_RUNS_NONE,
   liveRuns,
-  PLAN_CARD,
   PREFLIGHT_OK,
   REPORT_DIR,
+  TDD_BLOCKED,
   TDD_FILES,
   TDD_GREEN,
   type FakeRun,
@@ -112,9 +112,7 @@ const TEARDOWN_SHRANK = {
   errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
 };
 
-const PLANNER_STALE = {
-  planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'x already exists at abc123' },
-};
+const TDD_STALE = { tdd: { ...TDD_BLOCKED, reason: 'x already exists at abc123' } };
 
 const ADR_INDEX = 'docs/adr/readme.md';
 
@@ -145,19 +143,6 @@ const DOC_INDEX_CONFLICT = {
     version: null,
     pending: [],
     errors: [],
-  },
-};
-
-const PLAN_REVIEW_FINDINGS = {
-  planReviewer: {
-    verdict: 'changes',
-    findings: 2,
-    findingsPath: `${REPORT_DIR}/plan-review-7-1.md`,
-  },
-  applier: {
-    ...PLAN_CARD,
-    summary: 'add the x tool, reviewed',
-    commit: { ...PLAN_CARD.commit, subject: 'add the reviewed x tool' },
   },
 };
 
@@ -202,9 +187,8 @@ const SCENARIOS = [
     args: 'issues 7',
   },
   { name: 'land batch-dirty', responses: { 'runner:land': LAND_BATCH_DIRTY }, args: 'issues 7' },
-  { name: 'stale plan', responses: PLANNER_STALE, args: 'issues 7' },
+  { name: 'blocked tdd', responses: TDD_STALE, args: 'issues 7' },
   { name: 'dead tdd', responses: { tdd: null }, args: 'issues 7' },
-  { name: 'plan-review findings', responses: PLAN_REVIEW_FINDINGS, args: 'issues 7' },
   { name: 'doc-index conflict', responses: DOC_INDEX_CONFLICT, args: 'issues 7' },
   { name: 'two issues', responses: TWO_ISSUES, args: 'issues 7 8' },
   {
@@ -401,8 +385,6 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:check:7-1',
       'runner:cut-slice:7-1',
       'runner:provision:7-1',
-      'planner:7-1',
-      'planReviewer:7-1',
       'tdd:7-1',
       'diffReview:7-1',
       'reviewer:7-1',
@@ -777,7 +759,7 @@ describe('runShip — an attempt that does not land', () => {
       '--attempt',
       '2',
     ]);
-    expect(labels(run)).toContain('planner:7-2');
+    expect(labels(run)).toContain('tdd:7-2');
     expect(report.epics[0]).toMatchObject({
       outcome: 'pr',
       issues: [{ issue: 7, outcome: 'landed', cite: 'fixes' }],
@@ -826,17 +808,17 @@ describe('runShip — an attempt that does not land', () => {
     ]);
   });
 
-  it('tears the slice down before feeding blocked for a stale plan, landing nothing', async () => {
-    const run = fakeHooks(PLANNER_STALE);
+  it('tears the slice down before feeding blocked for a blocked tdd, landing nothing', async () => {
+    const run = fakeHooks(TDD_STALE);
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(when(run, 'call runner:teardown:7-1')).toBeLessThan(when(run, 'log fed blocked #7'));
-    expect(labels(run).filter((l) => /^(tdd|runner:land)/.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => /^(diffReview|runner:land)/.test(l))).toEqual([]);
     expect(report.epics[0]).toMatchObject({
       outcome: 'nothing-landed',
       issues: [
-        { issue: 7, outcome: 'blocked', cite: 'see', reason: expect.stringMatching(/stale/) },
+        { issue: 7, outcome: 'blocked', cite: 'see', reason: expect.stringMatching(/BLOCKED/) },
       ],
     });
   });
@@ -845,7 +827,7 @@ describe('runShip — an attempt that does not land', () => {
     const COMMENT_FILE = `${REPORT_DIR}/issue-comment-7.md`;
 
     it('posts the reason on the issue from the main checkout, the comment written first, after the slice is torn down', async () => {
-      const run = fakeHooks(PLANNER_STALE);
+      const run = fakeHooks(TDD_STALE);
 
       const report = await runShip(run.hooks, 'issues 7');
 
@@ -869,7 +851,7 @@ describe('runShip — an attempt that does not land', () => {
         '----- BEGIN FILE -----',
         '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
         '',
-        '**Not landed: blocked.** planner stale: x already exists at abc123',
+        '**Not landed: blocked.** tdd BLOCKED: x already exists at abc123',
         '',
         `Run: branch \`ship/7\`, no pull request. Report dir: \`${REPORT_DIR}\`.`,
         '----- END FILE -----',
@@ -883,7 +865,7 @@ describe('runShip — an attempt that does not land', () => {
     it('names the PR when the run opened one, on the shipping path', async () => {
       const run = fakeHooks({
         ...TWO_ISSUES,
-        'planner:8-1': { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+        'tdd:8-1': TDD_BLOCKED,
       });
 
       const report = await runShip(run.hooks, 'issues 7 8');
@@ -924,7 +906,7 @@ describe('runShip — an attempt that does not land', () => {
     ])(
       'records %s as the comment’s problem and still ends the entry',
       async (_name, answer, problem) => {
-        const run = fakeHooks({ ...PLANNER_STALE, 'runner:post-issue-comment': answer });
+        const run = fakeHooks({ ...TDD_STALE, 'runner:post-issue-comment': answer });
 
         const report = await runShip(run.hooks, 'issues 7');
 
@@ -1074,14 +1056,8 @@ const CUT_FAILED = {
   at: '2026-09-29T10:00:00.000Z',
   errors: [{ step: 'worktree', message: 'worktree add failed' }],
 };
-const UP_TO_PLAN = [
-  'runner:check:7-1',
-  'runner:cut-slice:7-1',
-  'runner:provision:7-1',
-  'planner:7-1',
-];
-const BUILD_CALL =
-  /^(runner:(check|cut-slice|provision|teardown|land)|planner|planReviewer|applier|tdd|diffReview):\d/;
+const UP_TO_TDD = ['runner:check:7-1', 'runner:cut-slice:7-1', 'runner:provision:7-1', 'tdd:7-1'];
+const BUILD_CALL = /^(runner:(check|cut-slice|provision|teardown|land)|tdd|diffReview):\d/;
 const BUILD_ENDINGS: [
   string,
   Readonly<Record<string, unknown>>,
@@ -1123,42 +1099,27 @@ const BUILD_ENDINGS: [
     { outcome: 'blocked', reason: 'provision failed: npm ci failed' },
   ],
   [
-    'blocked by the planner',
-    { planner: { ...PLAN_CARD, verdict: 'blocked', evidence: 'needs a human answer' } },
-    [...UP_TO_PLAN, 'runner:teardown:7-1'],
-    { outcome: 'blocked', reason: 'planner blocked: needs a human answer' },
-  ],
-  [
-    'stale by the applier',
-    {
-      ...PLAN_REVIEW_FINDINGS,
-      applier: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
-    },
-    [...UP_TO_PLAN, 'planReviewer:7-1', 'applier:7-1', 'runner:teardown:7-1'],
-    { outcome: 'blocked', reason: 'planner stale: done at abc123' },
-  ],
-  [
     'blocked by the tdd',
     {
-      tdd: { ...TDD_GREEN, verdict: 'BLOCKED', sha: '', reason: 'the plan names a missing symbol' },
+      tdd: { ...TDD_BLOCKED, reason: 'the issue names a missing symbol' },
     },
-    [...UP_TO_PLAN, 'planReviewer:7-1', 'tdd:7-1', 'runner:teardown:7-1'],
-    { outcome: 'blocked', reason: 'tdd BLOCKED: the plan names a missing symbol' },
+    [...UP_TO_TDD, 'runner:teardown:7-1'],
+    { outcome: 'blocked', reason: 'tdd BLOCKED: the issue names a missing symbol' },
   ],
   [
     'blocked by a tdd that committed nothing',
     { tdd: { ...TDD_GREEN, sha: '' } },
-    [...UP_TO_PLAN, 'planReviewer:7-1', 'tdd:7-1', 'runner:teardown:7-1'],
+    [...UP_TO_TDD, 'runner:teardown:7-1'],
     { outcome: 'blocked', reason: 'tdd GREEN: no commit' },
   ],
   [
-    'blocked by a planner that threw',
+    'blocked by a tdd that threw',
     {
-      planner: () => {
+      tdd: () => {
         throw new Error('runtime crashed');
       },
     },
-    [...UP_TO_PLAN, 'runner:teardown:7-1'],
+    [...UP_TO_TDD, 'runner:teardown:7-1'],
     { outcome: 'blocked', reason: 'a stage threw: runtime crashed' },
   ],
 ];
@@ -1178,30 +1139,6 @@ describe('runShip — an attempt through the build', () => {
       });
     },
   );
-
-  it('retries the issue in a fresh slice when the plan reviewer returns nothing, then blocks it', async () => {
-    const run = fakeHooks({ planReviewer: null });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(
-      labels(run).filter((l) => /^(runner:(cut-slice|teardown)|planReviewer|tdd):\d/.test(l)),
-    ).toEqual([
-      'runner:cut-slice:7-1',
-      'planReviewer:7-1',
-      'runner:teardown:7-1',
-      'runner:cut-slice:7-2',
-      'planReviewer:7-2',
-      'runner:teardown:7-2',
-    ]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'nothing-landed',
-      issues: [
-        { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
-      ],
-      schedule: [{ issue: 7, attempts: 2 }],
-    });
-  });
 });
 
 const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):\d/;
@@ -1353,27 +1290,50 @@ describe('runShip — an attempt after the build', () => {
 });
 
 describe('runShip — what an attempt hands on', () => {
+  it('hands the tdd the commit message template its commit line and cite fill', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'tdd:7-1')).toContain(
+      [
+        `Commit message template: ${REPORT_DIR}/commit-7-1.txt`,
+        '----- BEGIN FILE -----',
+        '<type>(<scope>): <subject>',
+        '',
+        '<fixes|see> #7',
+        '',
+        'Co-Authored-By: Claude <noreply@anthropic.com>',
+        '----- END FILE -----',
+      ].join('\n'),
+    );
+  });
+
   it.each([
     ['fixes', 'fixes #7'],
     ['see', 'see #7'],
   ] as const)(
-    'writes a %s card’s closing choice into the tdd’s commit message and the run report',
+    'lands a %s tdd’s commit line and closing choice in the commit message, the PR and the run report',
     async (closes, line) => {
-      const run = fakeHooks({ planner: { ...PLAN_CARD, closes } });
+      const commit = { type: 'fix', scope: 'tools', subject: 'mend the x tool' };
+      const run = fakeHooks({ tdd: { ...TDD_GREEN, commit, closes } });
 
       const report = await runShip(run.hooks, 'issues 7');
 
-      expect(promptOf(run, 'tdd:7-1')).toContain(
+      expect(promptOf(run, 'runner:land:7-1')).toContain(
         [
-          `Commit message file: ${REPORT_DIR}/commit-7-1.txt`,
+          `Write first: ${REPORT_DIR}/commit-7-1.txt`,
           '----- BEGIN FILE -----',
-          'feat(build): add the x tool',
+          'fix(tools): mend the x tool',
           '',
           line,
           '',
           'Co-Authored-By: Claude <noreply@anthropic.com>',
           '----- END FILE -----',
         ].join('\n'),
+      );
+      expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain(
+        'fix(tools): mend the x tool',
       );
       expect(report.epics[0]?.issues).toEqual([
         { issue: 7, outcome: 'landed', cite: closes, commit: 'landed1' },
@@ -1382,102 +1342,81 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it('applies plan-review findings once through the applier, authoring from its card', async () => {
-    const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+  it.each(['reviewer:7-1', 'testReview:7-1'])('hands %s the tdd’s lease recipe', async (label) => {
+    // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
+    const projectDir = 'C:/src/ph-runs/7/project-7-1';
+    const run = fakeHooks({
+      'runner:provision': {
+        exitCode: 0,
+        envelopePath: 'e.json',
+        status: 'ok',
+        errors: [],
+        env: { PH_PROJECT_DIR: projectDir },
+      },
+    });
 
     await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(planner|planReviewer|applier|tdd):/.test(l))).toEqual([
-      'planner:7-1',
-      'planReviewer:7-1',
-      'applier:7-1',
-      'tdd:7-1',
-    ]);
-    const applier = promptOf(run, 'applier:7-1');
-    expect(applier).toContain('Mode: apply');
-    expect(applier).toContain(`Findings file: ${REPORT_DIR}/plan-review-7-1.md`);
-    expect(promptOf(run, 'tdd:7-1')).toContain('feat(build): add the reviewed x tool\n\nfixes #7');
-    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain(
-      'feat(build): add the reviewed x tool',
+    const tddLines = promptOf(run, 'tdd:7-1').split('\n');
+    const recipe = ['Lease command: ', 'Lease version: '].map(
+      (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
     );
+    const registry = `${REPORT_DIR}/pool-registry.batch.json`;
+    expect(recipe).toEqual([
+      `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
+      `Lease version: the version of the chosen type's entry in ${registry}`,
+    ]);
+    expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
   });
 
-  it.each(['planner:7-1', 'applier:7-1', 'reviewer:7-1', 'testReview:7-1'])(
-    'hands %s the tdd’s lease recipe',
+  // Hand-written: the probe allowance of the tdd, the reviewer and the test reviewer.
+  const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
+
+  it.each(['tdd:7-1', 'reviewer:7-1', 'testReview:7-1'])(
+    'hands %s the probe caps, once',
     async (label) => {
-      // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
-      const projectDir = 'C:/src/ph-runs/7/project-7-1';
-      const run = fakeHooks({
-        ...PLAN_REVIEW_FINDINGS,
-        'runner:provision': {
-          exitCode: 0,
-          envelopePath: 'e.json',
-          status: 'ok',
-          errors: [],
-          env: { PH_PROJECT_DIR: projectDir },
-        },
-      });
-
-      await runShip(run.hooks, 'issues 7');
-
-      const tddLines = promptOf(run, 'tdd:7-1').split('\n');
-      const recipe = ['Lease command: ', 'Lease version: '].map(
-        (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
-      );
-      const registry = `${REPORT_DIR}/pool-registry.batch.json`;
-      expect(recipe).toEqual([
-        `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
-        `Lease version: the version of the chosen type's entry in ${registry}`,
-      ]);
-      expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
-    },
-  );
-
-  // Hand-written: the plan-time and the tdd probe allowances.
-  const PLAN_CAPS = 'Probe caps: 5 min per probe, 2 probes per issue';
-  const TDD_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
-
-  it.each([
-    ['planner:7-1', PLAN_CAPS],
-    ['applier:7-1', PLAN_CAPS],
-    ['planReviewer:7-1', PLAN_CAPS],
-    ['tdd:7-1', TDD_CAPS],
-    ['reviewer:7-1', TDD_CAPS],
-    ['testReview:7-1', TDD_CAPS],
-  ])('hands %s its stage’s probe caps', async (label, line) => {
-    const run = fakeHooks(PLAN_REVIEW_FINDINGS);
-
-    await runShip(run.hooks, 'issues 7');
-
-    expect(
-      promptOf(run, label)
-        .split('\n')
-        .filter((l) => l.startsWith('Probe caps: ')),
-    ).toEqual([line]);
-  });
-
-  // Hand-written: the slice budget set 2026-10-08 from the landed history (ADR-0045 decision 4).
-  const BUDGET = 'Slice budget: 15 files in scope, 12 tasks, 1000 lines landed';
-
-  it.each(['planner:7-1', 'applier:7-1', 'planReviewer:7-1', 'retro:list'])(
-    'hands %s the slice budget, once',
-    async (label) => {
-      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+      const run = fakeHooks();
 
       await runShip(run.hooks, 'issues 7');
 
       expect(
         promptOf(run, label)
           .split('\n')
-          .filter((l) => l.startsWith('Slice budget: ')),
-      ).toEqual([BUDGET]);
+          .filter((l) => l.startsWith('Probe caps: ')),
+      ).toEqual([PROBE_CAPS]);
     },
   );
 
+  it('hands no prompt any probe caps but those', async () => {
+    const run = fakeHooks(TWO_ISSUES);
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const caps = run.calls.flatMap((c) =>
+      c.prompt.split('\n').filter((l) => l.startsWith('Probe caps: ')),
+    );
+    expect(new Set(caps)).toEqual(new Set([PROBE_CAPS]));
+  });
+
+  // Hand-written: the slice budget set 2026-10-08 from the landed history (ADR-0045 decision 4).
+  const BUDGET = 'Slice budget: 15 files in scope, 12 tasks, 1000 lines landed';
+
+  it('hands the retro the slice budget, once', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      promptOf(run, 'retro:list')
+        .split('\n')
+        .filter((l) => l.startsWith('Slice budget: ')),
+    ).toEqual([BUDGET]);
+  });
+
   it.each(['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1', 'testReview:7-1'])(
-    'hands %s no slice budget: the plan it builds or checks is already within it',
+    'hands %s no slice budget',
     async (label) => {
-      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+      const run = fakeHooks();
 
       await runShip(run.hooks, 'issues 7');
 
@@ -1503,10 +1442,10 @@ describe('runShip — what an attempt hands on', () => {
     expect(report.epics[0]?.schedule[0]).toMatchObject({ committedAt: LAND_OK.at, size: null });
   });
 
-  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1', 'diffReview:7-1'])(
+  it.each(['tdd:7-1', 'diffReview:7-1'])(
     'hands %s the command that fetches the issue as markdown into the report dir',
     async (label) => {
-      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+      const run = fakeHooks();
 
       await runShip(run.hooks, 'issues 7');
 
@@ -1518,10 +1457,10 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['planner:7-1', 'planReviewer:7-1', 'applier:7-1', 'tdd:7-1'])(
+  it.each(['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1', 'testReview:7-1'])(
     'hands %s the slice worktree the cut named',
     async (label) => {
-      const run = fakeHooks(PLAN_REVIEW_FINDINGS);
+      const run = fakeHooks();
 
       await runShip(run.hooks, 'issues 7');
 
@@ -1544,7 +1483,7 @@ describe('runShip — what an attempt hands on', () => {
     ['reviewer:7-1', ['Mode'], ['Findings file']],
     ['testReview:7-1', [], []],
   ])(
-    'orders %s’s prompt: the slice’s lines, the report and findings files, then the server-tier recipe',
+    'orders %s’s prompt: the slice’s lines, the issue, report and findings files, then the server-tier recipe',
     async (label, head, own) => {
       const run = fakeHooks();
 
@@ -1558,9 +1497,9 @@ describe('runShip — what an attempt hands on', () => {
         'Issue',
         'Slice worktree',
         'Slice base',
-        'Plan file',
         'Slice commit',
         'Changed files',
+        'Issue file',
         'Report file',
         ...own,
         'Lease command',
@@ -1569,6 +1508,30 @@ describe('runShip — what an attempt hands on', () => {
       ]);
     },
   );
+
+  it('orders the tdd’s prompt: the slice, the issue’s lines, its report, the server-tier recipe, then the message template', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const lines = promptOf(run, 'tdd:7-1').split('\n');
+    const head = lines.slice(
+      0,
+      lines.findIndex((l) => l.startsWith('Commit message template: ')),
+    );
+    expect(head.map((l) => l.slice(0, l.indexOf(': ')))).toEqual([
+      'Issue',
+      'Attempt',
+      'Slice worktree',
+      'Slice base',
+      'Issue file',
+      'Issue command',
+      'Report file',
+      'Lease command',
+      'Lease version',
+      'Probe caps',
+    ]);
+  });
 
   it('hands the diff reviewer the tdd’s commit, its findings file and the issue’s lines, nothing else', async () => {
     const run = fakeHooks();
@@ -1580,7 +1543,6 @@ describe('runShip — what an attempt hands on', () => {
       'Issue: #7',
       'Slice worktree: C:/src/ph-runs/7/slice-7-1',
       'Slice base: cut1',
-      `Plan file: ${REPORT_DIR}/plans/7.md`,
       'Slice commit: slice1',
       'Changed files: tooling/x.ts, test/unit/tooling/x.test.ts',
       `Findings file: ${REPORT_DIR}/diff-review-7-1.md`,
@@ -1961,7 +1923,7 @@ describe('runShip — a halting entry', () => {
   });
 
   it('reports an issue that blocks while its entry is halting, before the halt is fed, blocked', async () => {
-    const hold = holdable(/^(planner:8-1|runner:teardown:7-1)$/);
+    const hold = holdable(/^(tdd:8-1|runner:teardown:7-1)$/);
     const run = fakeHooks(
       {
         'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
@@ -1970,15 +1932,15 @@ describe('runShip — a halting entry', () => {
           overlaps: [],
         },
         'runner:land:7-1': LAND_BATCH_DIRTY,
-        'planner:8-1': PLANNER_STALE.planner,
+        'tdd:8-1': TDD_STALE.tdd,
       },
       { gate: hold.gate },
     );
 
     const done = runShip(run.hooks, 'issues 7 8');
     await idle();
-    expect(hold.held()).toEqual(['planner:8-1', 'runner:teardown:7-1']);
-    hold.release('planner:8-1');
+    expect(hold.held()).toEqual(['tdd:8-1', 'runner:teardown:7-1']);
+    hold.release('tdd:8-1');
     await idle();
     hold.releaseAll();
     const report = await done;
@@ -1999,7 +1961,7 @@ describe('runShip — a halting entry', () => {
         issue: 8,
         outcome: 'blocked',
         cite: 'see',
-        reason: 'planner stale: x already exists at abc123',
+        reason: 'tdd BLOCKED: x already exists at abc123',
       },
     ]);
   });
@@ -2020,7 +1982,6 @@ describe('runAttempt — how an attempt ends', () => {
     queue: createCommitQueue(),
     isHalting: () => halting,
     markHalting: () => undefined,
-    priorSlices: () => [],
   });
   const ENDINGS: [string, Readonly<Record<string, unknown>>, Readonly<Record<string, unknown>>][] =
     [
@@ -2030,7 +1991,6 @@ describe('runAttempt — how an attempt ends', () => {
         {
           kind: 'landed',
           work: {
-            card: PLAN_CARD,
             tdd: TDD_GREEN,
             diffReview: DIFF_REVIEW_OK,
             review: {
@@ -2061,7 +2021,6 @@ describe('runAttempt — how an attempt ends', () => {
         {
           kind: 'unlanded',
           primary: { kind: 'harvest-conflict', issue: 7 },
-          conflicts: ['tooling/x.ts'],
           halt: null,
           residue: null,
           startedAt: '2026-09-29T10:00:00.000Z',
@@ -2073,7 +2032,6 @@ describe('runAttempt — how an attempt ends', () => {
         {
           kind: 'unlanded',
           primary: { kind: 'blocked', issue: 7, reason: 'cut-slice failed: worktree add failed' },
-          conflicts: [],
           halt: null,
           residue: null,
           startedAt: '2026-09-29T10:00:00.000Z',
@@ -2225,9 +2183,6 @@ describe('agent-call tiers', () => {
       runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
       scout: { agentType: 'scout' },
       overlapEstimator: { agentType: 'overlap-estimator' },
-      planner: { agentType: 'planner' },
-      applier: { agentType: 'planner' },
-      planReviewer: { agentType: 'ship-plan-reviewer' },
       tdd: { agentType: 'ship-tdd', model: 'opus' },
       diffReview: { agentType: 'diff-reviewer', model: 'opus' },
       reviewer: { agentType: 'reviewer', model: 'opus' },

@@ -7,8 +7,7 @@ import {
   GATE_OK,
   inTurn,
   LAND_OK,
-  PLAN_CARD,
-  TDD_GREEN,
+  TDD_BLOCKED,
   type FakeRun,
   type RecordedCall,
 } from './_fake-hooks.js';
@@ -75,19 +74,6 @@ const when = (run: FakeRun, entry: string): number => {
   return at;
 };
 
-/**
- * A planner call's `Previous attempt:` line.
- *
- * @param run - The fake run.
- * @param label - The planner call's label.
- * @returns The line; `undefined` when the call or the line is absent.
- */
-const previousAttempt = (run: FakeRun, label: string): string | undefined =>
-  run.calls
-    .find((c) => c.label === label)
-    ?.prompt.split('\n')
-    .find((l) => l.startsWith('Previous attempt:'));
-
 describe('runShip — issues in flight at once', () => {
   it('authors three independent issues concurrently under the cap', async () => {
     const hold = holdable(/^tdd:/);
@@ -152,7 +138,7 @@ describe('runShip — issues in flight at once', () => {
     await done;
   });
 
-  it('re-plans after each land conflict with the conflicting files, with no requeue cap', async () => {
+  it('retries in a fresh slice after each land conflict, with no requeue cap', async () => {
     const run = fakeHooks({ 'runner:land': inTurn(LAND_CONFLICT, LAND_CONFLICT, LAND_OK) });
 
     const report = await runShip(run.hooks, 'issues 7');
@@ -162,36 +148,10 @@ describe('runShip — issues in flight at once', () => {
       'runner:cut-slice:7-2',
       'runner:cut-slice:7-3',
     ]);
-    expect(previousAttempt(run, 'planner:7-1')).toBeUndefined();
-    for (const label of ['planner:7-2', 'planner:7-3']) {
-      expect(previousAttempt(run, label)).toBe(
-        'Previous attempt: harvest conflict on tooling/x.ts; re-plan against the current batch head',
-      );
-    }
     expect(report.epics[0]).toMatchObject({
       outcome: 'pr',
       issues: [{ issue: 7, outcome: 'landed' }],
     });
-  });
-
-  it('gives a retry after a died agent no conflict context from an earlier conflict', async () => {
-    const run = fakeHooks({
-      'runner:land': inTurn(LAND_CONFLICT, LAND_OK),
-      tdd: inTurn(TDD_GREEN, null, TDD_GREEN),
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run).filter((l) => l.startsWith('tdd:'))).toEqual([
-      'tdd:7-1',
-      'tdd:7-2',
-      'tdd:7-3',
-    ]);
-    expect(previousAttempt(run, 'planner:7-2')).toBe(
-      'Previous attempt: harvest conflict on tooling/x.ts; re-plan against the current batch head',
-    );
-    expect(previousAttempt(run, 'planner:7-3')).toBeUndefined();
-    expect(report.epics[0]).toMatchObject({ issues: [{ issue: 7, outcome: 'landed' }] });
   });
 
   it('keeps feeding one epic while another epic’s end is pending', async () => {
@@ -287,14 +247,13 @@ describe('runShip — issues in flight at once', () => {
   });
 
   const UP_TO_CUT = ['runner:check:8-1', 'runner:cut-slice:8-1'];
-  const UP_TO_PLAN = [...UP_TO_CUT, 'runner:provision:8-1', 'planner:8-1'];
-  const UP_TO_DIFF_REVIEW = [...UP_TO_PLAN, 'planReviewer:8-1', 'tdd:8-1', 'diffReview:8-1'];
+  const UP_TO_TDD = [...UP_TO_CUT, 'runner:provision:8-1', 'tdd:8-1'];
+  const UP_TO_DIFF_REVIEW = [...UP_TO_TDD, 'diffReview:8-1'];
   it.each<[string, string[]]>([
     ['runner:check:8-1', ['runner:check:8-1']],
     ['runner:cut-slice:8-1', [...UP_TO_CUT, 'runner:teardown:8-1']],
     ['runner:provision:8-1', [...UP_TO_CUT, 'runner:provision:8-1', 'runner:teardown:8-1']],
-    ['planner:8-1', [...UP_TO_PLAN, 'runner:teardown:8-1']],
-    ['planReviewer:8-1', [...UP_TO_PLAN, 'planReviewer:8-1', 'runner:teardown:8-1']],
+    ['tdd:8-1', [...UP_TO_TDD, 'runner:teardown:8-1']],
     ['diffReview:8-1', [...UP_TO_DIFF_REVIEW, 'runner:teardown:8-1']],
     ['reviewer:8-1', [...UP_TO_DIFF_REVIEW, 'reviewer:8-1', 'runner:teardown:8-1']],
     [
@@ -335,7 +294,7 @@ describe('runShip — issues in flight at once', () => {
       'runner:cut-slice': cutAt,
       'runner:land:7-1': LAND_CONFLICT,
       'runner:land:7-2': { ...LAND_OK, at: 'land 7-2' },
-      'planner:8-1': { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+      'tdd:8-1': TDD_BLOCKED,
     });
 
     const report = await runShip(run.hooks, 'issues 7 8 9');

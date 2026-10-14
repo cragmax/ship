@@ -1068,52 +1068,6 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['issues', 'pairs', 'areaMap'],
   },
-  planCard: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['plan', 'stale', 'blocked'] },
-      planPath: { type: 'string' },
-      summary: { type: 'string' },
-      tier: { type: 'string' },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      closes: { type: 'string', enum: ['fixes', 'see'] },
-      evidence: { type: 'string' },
-      probes: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            claim: { type: 'string' },
-            verdict: {
-              type: 'string',
-              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
-            },
-            followUp: { type: 'string' },
-            seconds: { type: 'integer' },
-          },
-          required: ['claim', 'verdict', 'followUp', 'seconds'],
-        },
-      },
-    },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
-  },
-  planReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['approved', 'changes'] },
-      findings: { type: 'integer' },
-      findingsPath: { type: 'string' },
-    },
-    required: ['verdict', 'findings', 'findingsPath'],
-  },
   tdd: {
     type: 'object',
     properties: {
@@ -1150,9 +1104,29 @@ export const AGENT_OUTPUT_SCHEMAS = {
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
       recorded: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      closes: { type: 'string', enum: ['fixes', 'see'] },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'recorded'],
+    required: [
+      'verdict',
+      'sha',
+      'files',
+      'leaseLines',
+      'probes',
+      'evidence',
+      'recorded',
+      'commit',
+      'closes',
+    ],
   },
   diffReview: {
     type: 'object',

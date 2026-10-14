@@ -4,7 +4,7 @@
  * ({@link fitPrBody}), and an attached run's PR-body section and run report.
  *
  * **Closing keywords are the workflow's own.** Only this file writes one: `fixes #N`, for a landed
- * issue whose plan card says so, in its commit message and once in a PR body's or attached
+ * issue whose tdd says so, in its commit message and once in a PR body's or attached
  * section's Issues list ({@link landedLine}), never in a run report. Every other issue, the epic
  * container included, is `see #N`, and every text carrying agent- or tool-written words, each
  * moved section included, passes through {@link neutralText}; the body a
@@ -22,11 +22,11 @@ import type {
   CommitSpec,
   CriticFinding,
   OverlapConfidence,
-  PlanCard,
   PrWriterOutput,
   ProbeRecord,
   RetroFinding,
   SliceWork,
+  TddOutput,
 } from './agent-calls.js';
 import type { ForwardMove, PassedMasterCheck } from './master-check.js';
 import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
@@ -214,8 +214,8 @@ interface BlockedCommentInput {
 
 /**
  * The comment an unattended run posts on an issue it blocked
- * (`post-issue-comment`), so the reason — a planner's split proposal among
- * them — sits on the issue the next triage or `/to-tickets` reads.
+ * (`post-issue-comment`), so the reason sits on the issue the next triage or
+ * `/to-tickets` reads.
  *
  * @param input - The issue, its reason and the run.
  * @returns A quote line saying the run changed nothing on the issue; the
@@ -241,7 +241,7 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
 /**
  * A commit's first line.
  *
- * @param commit - The planner's proposal.
+ * @param commit - The tdd's or the critic's proposal.
  * @returns `<type>(<scope>): <subject>`, neutralised whole.
  */
 export function subjectLine(commit: CommitSpec): string {
@@ -250,17 +250,22 @@ export function subjectLine(commit: CommitSpec): string {
 
 /**
  * A landed issue's commit message, newline-terminated: the subject line, a blank line, `fixes #N`
- * or `see #N` per its plan card, a blank line, then {@link CO_AUTHOR_TRAILER}.
+ * or `see #N` per its tdd, a blank line, then {@link CO_AUTHOR_TRAILER}.
  */
-export function commitMessage(issue: number, card: Pick<PlanCard, 'commit' | 'closes'>): string {
-  return [
-    subjectLine(card.commit),
-    '',
-    `${card.closes} #${String(issue)}`,
-    '',
-    CO_AUTHOR_TRAILER,
-    '',
-  ].join('\n');
+export function commitMessage(issue: number, tdd: Pick<TddOutput, 'commit' | 'closes'>): string {
+  return issueMessage(subjectLine(tdd.commit), `${tdd.closes} #${String(issue)}`);
+}
+
+/**
+ * The {@link commitMessage} the tdd fills: its subject line `<type>(<scope>): <subject>` and its
+ * cite `<fixes|see> #N`, placeholders for the tdd's own answer.
+ */
+export function commitMessageTemplate(issue: number): string {
+  return issueMessage('<type>(<scope>): <subject>', `<fixes|see> #${String(issue)}`);
+}
+
+function issueMessage(subject: string, cite: string): string {
+  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 
 /**
@@ -282,7 +287,7 @@ export function criticCommitMessage(commit: CommitSpec): string {
  */
 export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
   const [only] = input.landed;
-  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
+  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.tdd.commit);
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 
@@ -452,9 +457,9 @@ function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[]
   return lines.length === 0 ? [] : section('Recorded', lines, depth);
 }
 
-/** The issues a text may close: each landed issue whose plan card says `fixes`. */
+/** The issues a text may close: each landed issue whose tdd says `fixes`. */
 function closingIssues(landed: readonly LandedIssue[]): ReadonlySet<number> {
-  return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
+  return new Set(landed.filter((l) => l.tdd.closes === 'fixes').map((l) => l.issue));
 }
 
 /**
@@ -573,13 +578,13 @@ function epicLine(epic: number | null): string {
 }
 
 /**
- * One landed issue's Issues-list line: `fixes #N` only when its card says so, else `see #N` with
- * `(its acceptance needs a human)`; the subject is the card's bare one, not `type(scope):`.
+ * One landed issue's Issues-list line: `fixes #N` only when its tdd says so, else `see #N` with
+ * `(its acceptance needs a human)`; the subject is the tdd's bare one, not `type(scope):`.
  */
 function landedLine(landed: LandedIssue): string {
   const ref = `#${String(landed.issue)}`;
-  const subject = landed.card.commit.subject;
-  return landed.card.closes === 'fixes'
+  const subject = landed.tdd.commit.subject;
+  return landed.tdd.closes === 'fixes'
     ? `- fixes ${ref} — ${subject}`
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
@@ -673,35 +678,29 @@ function issueSection(landed: LandedIssue): string[] {
   const diff = landed.diffReview;
   const test = landed.testReview;
   return [
-    `### ${subjectLine(landed.card.commit)}`,
+    `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
     typeof test === 'string'
       ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
-    ...probeLines(landed),
+    ...probeLines(landed.tdd.probes),
     '',
   ];
 }
 
-/** A slice's probe lines: the planner's plan-time records, then the tdd's. */
-function probeLines(work: Pick<SliceWork, 'card' | 'tdd'>): string[] {
-  const records = [
-    ...work.card.probes.map((p) => probeLine('plan', p)),
-    ...work.tdd.probes.map((p) => probeLine('tdd', p)),
-  ];
-  if (records.length === 0) return ['- Probes: no probe needed'];
-  return ['- Probes:', ...records];
+/** A slice's probe lines: one nested line per tdd probe record. */
+function probeLines(probes: readonly ProbeRecord[]): string[] {
+  if (probes.length === 0) return ['- Probes: no probe needed'];
+  return ['- Probes:', ...probes.map(probeLine)];
 }
 
-/** One probe record's nested line, tagged with the stage that ran it. */
-function probeLine(stage: 'plan' | 'tdd', probe: ProbeRecord): string {
+function probeLine(probe: ProbeRecord): string {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
-  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+  return `  - ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
 }
 
 /** A probe's measured duration in whole seconds as a phrase: `42s` below 60, `11m 04s` from 60. */

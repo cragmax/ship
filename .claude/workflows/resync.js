@@ -68,9 +68,6 @@ const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
-  planner: { agentType: 'planner' },
-  applier: { agentType: 'planner' },
-  planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
@@ -83,8 +80,6 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
-const PLAN_PROBE_CAP_MINUTES = 5;
-const PLAN_PROBES_PER_ISSUE = 2;
 const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 };
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
@@ -110,8 +105,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail:
-      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
+    detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -176,28 +170,28 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
-function probeCapsLine(minutes, probes) {
-  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
-}
 function sliceBudgetLine() {
   return (
     `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
     `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
   );
 }
-function serverTierLines(lease, minutes, probes) {
+function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    probeCapsLine(minutes, probes),
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
   ];
 }
 const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+function issueFile(issue, reportDir) {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
 function issueLines(issue, reportDir) {
   const dir = `${reportDir}/issues`;
-  const file = `${dir}/${String(issue)}.md`;
+  const file = issueFile(issue, reportDir);
   return [
     `Issue file: ${file}`,
     [
@@ -232,47 +226,18 @@ const PROMPTS = {
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
     ].join('\n'),
-  planner: (values) =>
-    [
-      `Mode: ${values.mode}`,
-      `Issue: ${issueRef(values.issue)}`,
-      `Attempt: ${String(values.attempt)}`,
-      `Slice worktree: ${values.slice}`,
-      `Report dir: ${values.reportDir}`,
-      `Plan file: ${values.planPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
-      `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-      ...(values.conflicts === undefined
-        ? []
-        : [
-            `Previous attempt: harvest conflict on ${values.conflicts.join(', ')}; re-plan against the current batch head`,
-          ]),
-    ].join('\n'),
-  planReviewer: (values) =>
-    [
-      `Issue: ${issueRef(values.issue)}`,
-      `Slice worktree: ${values.slice}`,
-      `Plan file: ${values.planPath}`,
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-    ].join('\n'),
   tdd: (values) =>
     [
       `Issue: ${issueRef(values.issue)}`,
       `Attempt: ${String(values.attempt)}`,
       `Slice worktree: ${values.slice}`,
       `Slice base: ${values.base}`,
-      `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
-      ...verbatimBlock('Commit message file', {
+      ...serverTierLines(values.lease),
+      ...verbatimBlock('Commit message template', {
         path: values.messagePath,
-        content: values.message,
+        content: values.messageTemplate,
       }),
     ].join('\n'),
   diffReview: (values) =>
@@ -318,7 +283,6 @@ function sliceCommitLines(values) {
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
-    `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
   ];
@@ -326,9 +290,10 @@ function sliceCommitLines(values) {
 function sliceReviewPrompt(values, findingsPath) {
   return [
     ...sliceCommitLines(values),
+    `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
     ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
-    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
+    ...serverTierLines(values.lease),
   ].join('\n');
 }
 
@@ -1390,52 +1355,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['issues', 'pairs', 'areaMap'],
   },
-  planCard: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['plan', 'stale', 'blocked'] },
-      planPath: { type: 'string' },
-      summary: { type: 'string' },
-      tier: { type: 'string' },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      closes: { type: 'string', enum: ['fixes', 'see'] },
-      evidence: { type: 'string' },
-      probes: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            claim: { type: 'string' },
-            verdict: {
-              type: 'string',
-              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
-            },
-            followUp: { type: 'string' },
-            seconds: { type: 'integer' },
-          },
-          required: ['claim', 'verdict', 'followUp', 'seconds'],
-        },
-      },
-    },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
-  },
-  planReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['approved', 'changes'] },
-      findings: { type: 'integer' },
-      findingsPath: { type: 'string' },
-    },
-    required: ['verdict', 'findings', 'findingsPath'],
-  },
   tdd: {
     type: 'object',
     properties: {
@@ -1472,9 +1391,29 @@ const AGENT_OUTPUT_SCHEMAS = {
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
       recorded: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      closes: { type: 'string', enum: ['fixes', 'see'] },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'recorded'],
+    required: [
+      'verdict',
+      'sha',
+      'files',
+      'leaseLines',
+      'probes',
+      'evidence',
+      'recorded',
+      'commit',
+      'closes',
+    ],
   },
   diffReview: {
     type: 'object',
@@ -1886,22 +1825,6 @@ const AGENT_CALLS = {
       hooks,
       PROMPTS.overlapEstimator(values),
       agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
-    ),
-  planner: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planner(values),
-      agentOptions(
-        values.mode === 'plan' ? 'planner' : 'applier',
-        tag,
-        AGENT_OUTPUT_SCHEMAS.planCard,
-      ),
-    ),
-  planReviewer: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planReviewer(values),
-      agentOptions('planReviewer', tag, AGENT_OUTPUT_SCHEMAS.planReview),
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),

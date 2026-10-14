@@ -24,8 +24,6 @@ import type {
   DiffReviewOutputSchema,
   EstimatedPairSchema,
   OverlapEstimateSchema,
-  PlanCardSchema,
-  PlanReviewSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
   ResolverOutputSchema,
@@ -44,8 +42,6 @@ import {
   type CriticValues,
   type DiffReviewValues,
   type OverlapValues,
-  type PlannerValues,
-  type PlanReviewerValues,
   type PrWriterValues,
   type ResolverValues,
   type RetroValues,
@@ -69,19 +65,10 @@ export type OverlapConfidence = EstimatedPair['confidence'];
 /** The overlap estimator's answer. */
 export type OverlapEstimate = z.infer<typeof OverlapEstimateSchema>;
 
-/** A commit message's first line, as the planner proposes it. */
+/** A commit message's first line, as the tdd or the critic proposes it. */
 export type CommitSpec = z.infer<typeof CommitSpecSchema>;
 
-/** The planner's card (also the applier's). */
-export type PlanCard = z.infer<typeof PlanCardSchema>;
-
-/** The plan reviewer's answer. */
-export type PlanReview = z.infer<typeof PlanReviewSchema>;
-
-/**
- * One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the
- * tdd's.
- */
+/** One probe the tdd ran, or chose not to finish. */
 export type ProbeRecord = z.infer<typeof ProbeRecordSchema>;
 
 /** The tdd's evidence: its tracer test's red-green, or why it saw none. */
@@ -107,9 +94,7 @@ export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
-  /** The plan card the slice was authored from (the applier's, when it ran). */
-  readonly card: PlanCard;
-  /** The tdd's answer. */
+  /** The tdd's answer: its commit line and cite among it. */
   readonly tdd: TddOutput;
   /** The diff reviewer's answer: its two checks' finding counts and its findings file. */
   readonly diffReview: DiffReviewOutput;
@@ -185,22 +170,6 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.overlapEstimator(values),
       agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
-    ),
-  planner: (hooks: WorkflowHooks, values: PlannerValues, tag: string) =>
-    askAgent<PlanCard>(
-      hooks,
-      PROMPTS.planner(values),
-      agentOptions(
-        values.mode === 'plan' ? 'planner' : 'applier',
-        tag,
-        AGENT_OUTPUT_SCHEMAS.planCard,
-      ),
-    ),
-  planReviewer: (hooks: WorkflowHooks, values: PlanReviewerValues, tag: string) =>
-    askAgent<PlanReview>(
-      hooks,
-      PROMPTS.planReviewer(values),
-      agentOptions('planReviewer', tag, AGENT_OUTPUT_SCHEMAS.planReview),
     ),
   tdd: (hooks: WorkflowHooks, values: TddValues, tag: string) =>
     askAgent<TddOutput>(
