@@ -82,7 +82,7 @@ describe('check-master', () => {
     });
   });
 
-  // regression: a run whose saved script predates #1113 sends no --synced.
+  // regression: a run whose saved script predates `--synced` sends none.
   it('judges origin against its launch only without --synced, exit 0', TIMEOUT, () => {
     const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
 

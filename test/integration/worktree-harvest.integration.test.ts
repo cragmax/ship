@@ -664,7 +664,7 @@ describe('staged-guard', () => {
     expect(run.json.unexpected).toEqual([]);
   });
 
-  // regression: #562's skill.md → SKILL.md rename, lost by a reset plus
+  // regression: a skill.md → SKILL.md rename, lost by a reset plus
   // add-by-name after the harvest had staged it correctly.
   it.skipIf(!WIN32)(
     'refuses the case-only rename a reset plus add-by-name drops after a harvest',
