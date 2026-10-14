@@ -5,7 +5,7 @@
  * an authored attempt feeds nothing, so its issue keeps its slot until its landing settles.
  *
  * **Concurrency.** The workflow runtime resolves `Promise.race` over un-awaited flights in
- * completion order (ADR-0045 Q7, #1036), so while more than one flight is in
+ * completion order (ADR-0045 Q7), so while more than one flight is in
  * progress the order of the run's `agent()` calls follows settle timing. With one flight at a
  * time — a single entry at `maxSlices: 1` — it does not: the resume boundary, ADR-0045 decision 10.
  *

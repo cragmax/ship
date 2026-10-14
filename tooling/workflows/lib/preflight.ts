@@ -221,8 +221,8 @@ function exemptSpentSlices(
 
 /**
  * Merge the estimate's pairs, `likely` and `unsure` alike, into a graph of two or more issues,
- * first dropping a pair that shares only generated files (#1294); one `overlap-cross-epic` refusal
- * per cross-entry pair, one `overlap-estimate-failed` for no answer or a throwing merge.
+ * minus pairs sharing only generated files (a harvest regenerates them); one `overlap-cross-epic`
+ * refusal per cross-entry pair, one `overlap-estimate-failed` for no answer or a throwing merge.
  */
 async function settleOverlap(
   hooks: WorkflowHooks,

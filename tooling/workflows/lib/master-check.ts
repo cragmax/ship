@@ -2,7 +2,7 @@
  * The epic end's forward-only check of `master`: before an epic's push,
  * `worktree.ts check-master` compares local `master` and `origin`'s with the launch shas pre-flight
  * recorded, and `origin`'s also with the synced sha, which a failed `origin` line names as its
- * restore point (#1080, #1095). The call runs inside the epic end's publish task of the repo lock
+ * restore point. The call runs inside the epic end's publish task of the repo lock
  * (`epic-end.ts`), so no other epic end talks to `origin` between the check and the push.
  *
  * **Fail closed**: anything but an `ok` check naming two moves that are `equal` or `forward`, each

@@ -3,7 +3,7 @@
  * (`AgentOptions.schema`): zod's draft-07 output, rewritten into the construct set the runtime
  * has been seen to accept — `type` (a name, or a name plus `'null'`), `properties`, `required`,
  * `items` and `enum`. Anything else fails the emit rather than reaching the runtime, whose
- * handling of it is unobserved (#1047). Pure: no filesystem access.
+ * handling of it is unobserved. Pure: no filesystem access.
  *
  * Rewrites, each exactly as zod 4 writes the construct: the root `$schema`,
  * `additionalProperties: false` (every `z.object`), `readOnly: true` (`.readonly()`) and an

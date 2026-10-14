@@ -1,6 +1,6 @@
 /**
  * The run-set vocabulary — the single declaration of an unattended run's issue set and its
- * dependency edges (#1031 / #1032, ADR-0045). The run gate (`tooling/lib/run-gate.ts`) produces a
+ * dependency edges (ADR-0045). The run gate (`tooling/lib/run-gate.ts`) produces a
  * {@link RunGraph}; the run scheduler consumes it. Neither re-declares these shapes.
  *
  * **Edge semantics.** A {@link RunEdge} `{ blocker, dependent }` means `dependent` waits for
@@ -25,7 +25,7 @@ export interface RunSetEntry {
 /** An unattended run's issues, grouped by entry (spec order). */
 export type RunSet = readonly RunSetEntry[];
 
-/** `dependent` waits for `blocker`'s commit. Also the shape of overlap edges (#1036). */
+/** `dependent` waits for `blocker`'s commit. Also the shape of overlap edges. */
 export interface RunEdge {
   /** The issue whose commit must land first. */
   readonly blocker: number;

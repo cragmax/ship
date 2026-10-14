@@ -1,7 +1,7 @@
 /**
  * A pure `(state, event) → (state, actions)` machine deciding which issue of an unattended run
  * starts, waits, restarts or is skipped, and when each entry ends, from the gate's run graph plus
- * `maxSlices` (#1032). Transitions: {@link IssuePhase}; the slot rule, ready and action order and
+ * `maxSlices`. Transitions: {@link IssuePhase}; the slot rule, ready and action order and
  * consumer obligations: their docs in `run-scheduler.types.ts`. One retry per issue for life,
  * requeues included, no requeue cap; a skip only for a still-waiting dependent, so never twice; a
  * halt never touches another entry.
@@ -9,7 +9,7 @@
  * **Fail loud, pure.** Every throw an `Error` prefixed `run scheduler:` naming the offender; no
  * I/O, clock or randomness; input never mutated; issue-keyed records never iterated (integer-like
  * keys enumerate numerically; input order decides). **Render-ready, a contract** (the `ship`
- * workflow loads no module, #1026): one value import (`./run-set.js`), the rest type-only;
+ * workflow loads no module): one value import (`./run-set.js`), the rest type-only;
  * built-ins only (the renderer's `FORBIDDEN_TOKENS`); no top-level side effect or name `run-set.ts`
  * declares (the renderer refuses a repeat); erasable syntax only. A text guard test enforces it.
  */

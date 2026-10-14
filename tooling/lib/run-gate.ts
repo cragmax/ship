@@ -1,5 +1,5 @@
 /**
- * The run gate's pure decision core (#1031): resolve a launch spec into a
+ * The run gate's pure decision core: resolve a launch spec into a
  * run set, decide whether the run may start, and derive its dependency edges.
  * No I/O — `tooling/lib/run-gate-gh.ts` gathers the inputs, and the rules
  * below are the oracle the unit tests pin.
@@ -9,7 +9,7 @@
  * and — given a non-empty launch spec, which the CLI enforces and nothing here
  * re-checks — no entry is empty. The scheduler (`createScheduler` in
  * `run-scheduler.ts`) re-validates all three anyway: edges unioned in after
- * the gate (#1036's file-overlap edges) never pass through this module.
+ * the gate (overlap edges, `run-overlap.ts`) never pass through this module.
  *
  * **The epic container is never gated.** It is only asked for its sub-issues;
  * its state, labels and body never reach this module.

@@ -1,7 +1,7 @@
 /**
  * The zod source of each worktree tool's output schema: the envelope fields the saved workflows
  * consume, `.pick`ed from the envelope schemas in `tooling/worktree/schemas*.ts`, so a renamed or
- * dropped envelope field breaks the pick at compile time (#1047). Every consumed field is
+ * dropped envelope field breaks the pick at compile time. Every consumed field is
  * required — a runner answer that lacks one fails its schema, and the workflow reads a missing
  * answer as a failure — except `reason`, which the envelope carries only when `refused`; `at`,
  * optional on an in-process envelope, is required where consumed, since the CLI stamps every

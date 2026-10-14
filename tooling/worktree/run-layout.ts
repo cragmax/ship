@@ -24,10 +24,7 @@ import { toPosix } from '../shared.js';
  */
 export const RUN_BRANCH_PREFIX = 'refs/heads/ship/';
 
-/**
- * The branch every run is cut from and merged back into
- * (`.claude/rules/git.md` § Unattended workflow runs).
- */
+/** The branch every run is cut from and merged back into (ADR-0045 decision 6). */
 export const RUN_BASE_BRANCH = 'master';
 
 /** The remote-tracking branch of {@link RUN_BASE_BRANCH}, as `git merge` / `git log` name it. */

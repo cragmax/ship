@@ -1,6 +1,6 @@
 /**
  * The saved workflows' emitted schema module: the zod sources under `tooling/workflows/schemas/`
- * written as JSON Schema literals into {@link SCHEMA_MODULE} (#1047), which the workflow sources
+ * written as JSON Schema literals into {@link SCHEMA_MODULE}, which the workflow sources
  * import and the render inlines — the render can inline no `zod`, so the schemas reach it as data.
  * The module is committed and never hand-edited; {@link checkSchemaModule} is its drift check
  * (`tooling/check-codegen.ts`), and `tooling/emit-workflow-schemas.ts` writes it

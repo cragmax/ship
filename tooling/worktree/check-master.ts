@@ -1,8 +1,8 @@
 /**
  * `check-master <main> --local SHA --remote SHA [--synced SHA]` — whether local `master` and
  * `origin`'s only moved forward since the launch shas given, and `origin`'s also since the
- * `--synced` sha, when given: the `origin/master` the epic end's own sync merged or found merged
- * (#1080, #1095). The epic end runs it just before its push. `origin`'s side is read live with
+ * `--synced` sha, when given: the `origin/master` the epic end's own sync merged or found merged.
+ * The epic end runs it just before its push. `origin`'s side is read live with
  * `git ls-remote`, never the remote-tracking ref, which only says what the last fetch saw. Each
  * ref's move is one of the moves `schemas-run.ts` `MasterMoveSchema` defines.
  *
@@ -31,7 +31,7 @@ export interface CheckMasterInput {
   /**
    * `origin`'s high-water sha, kept as given; `null` judges `origin` against
    * its launch sha only. Optional only so a run whose saved workflow script
-   * predates #1113 — which never passes `--synced` — still reaches its push;
+   * predates `--synced`, and so never passes it, still reaches its push;
    * every current caller passes it.
    */
   readonly synced: string | null;

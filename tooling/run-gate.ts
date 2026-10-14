@@ -1,5 +1,5 @@
 /**
- * Decides whether an unattended run may start and derives its dependency edges (#1031): a shell
+ * Decides whether an unattended run may start and derives its dependency edges: a shell
  * over the pure core `tooling/lib/run-gate.ts` and its `gh` boundary `tooling/lib/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
  * `#` — quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.

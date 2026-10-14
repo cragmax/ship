@@ -12,7 +12,7 @@
  * {@link complete} before it is read.
  *
  * **Same-repo assumption.** A native link's node carries no repository, so its number is read
- * as a same-repo issue (PF-92; #1031).
+ * as a same-repo issue (PF-92).
  */
 
 import { z } from 'zod';

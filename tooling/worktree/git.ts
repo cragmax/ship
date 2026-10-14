@@ -140,8 +140,7 @@ export function lsRemoteRef(dir: string, ref: string, step: string): string | nu
 
 /**
  * Commit with the hooks (the pre-commit gate), under `COMMIT_TIMEOUT_MS`,
- * the whole output to a log file (`.claude/rules/git.md` § Direct commits
- * step 4).
+ * the whole output to a log file.
  *
  * @param args - `git commit`'s arguments (`-F <file>`, `--no-edit`).
  * @throws StepFailure `commit` carrying the output tail, on a non-zero exit,

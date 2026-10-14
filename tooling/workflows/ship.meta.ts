@@ -14,8 +14,8 @@ export const SHIP_META: WorkflowMeta = {
     'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, ' +
     'authored, reviewed and landed on its epic branch in dependency order, then the epic end ' +
     'and one pull request per epic.',
-  // The main-loop model writes the launch call (given `/ship #92`, it chose `issues 92`) and
-  // reads this when deciding whether to resume a run (#1035, #1058).
+  // The main-loop model writes the launch call (given a bare `/ship 92`, it chose `issues 92`)
+  // and reads this when deciding whether to resume a run.
   whenToUse:
     'Launch with `epics N...` or `issues N...` (space- or comma-separated, optional #) ' +
     'plus optional `--exclude` (drop failing or stale issues and dependents), ' +

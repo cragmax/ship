@@ -164,7 +164,7 @@ function pick(result: LandResult, batch: string, sha: string, selfPath: string):
 
 /**
  * Require the staged set to equal the harvest's `files`, a rename as both endpoints
- * (`.claude/rules/git.md` § Direct commits step 3).
+ * (ADR-0045 decision 6).
  *
  * @throws Refusal `staged-mismatch` naming both differences.
  */

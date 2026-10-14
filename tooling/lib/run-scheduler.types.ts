@@ -1,5 +1,5 @@
 /**
- * The run scheduler's vocabulary (#1032): its input, events, actions, state
+ * The run scheduler's vocabulary: its input, events, actions, state
  * and transition. Type-only — erased at build, so it adds nothing to the
  * render closure (see `run-scheduler.ts`). The graph shapes are imported from
  * `run-set.ts` and never re-declared here.

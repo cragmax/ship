@@ -23,8 +23,8 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
  * and `effort` — `effort` with a non-default model included (PF-95).
  *
  * **No working directory.** Every agent starts in the main checkout the
- * session runs in, whatever worktree it works in (PF-94; #1054). No option here sets another: none
- * was observed (#1026's capability questions never asked), and none can be
+ * session runs in, whatever worktree it works in (PF-94). No option here sets another: none
+ * was observed (ADR-0045's capability verdicts never asked), and none can be
  * probed inside an unattended run. So a worktree agent reaches its worktree
  * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
  * session loads are the main checkout's. Each worktree agent's file has it

@@ -8,7 +8,7 @@
  * rollback reports `failed` with a `rollback` entry after the triggering error — never `conflict`
  * over a dirty batch, which a scheduler would requeue onto.
  *
- * The rollback is `git reset --hard HEAD`, git.md § Harvested slices' approved exception: the
+ * The rollback is `git reset --hard HEAD`, ADR-0045 decision 6's approved exception: the
  * guards verified a clean linked worktree, so it discards only the failed pick's changes.
  * Known limitation: a force-added path the batch holds ignored is overwritten; rollback deletes it.
  */
