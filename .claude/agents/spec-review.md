@@ -23,7 +23,8 @@ You review ONE slice's commit against its issue and amend your fixes in — the 
 - `Changed files:` — its paths.
 - `Issue file:` — the issue's text, written by an earlier stage: the skill's issue, its triage brief the plan.
 - `Report file:` — where your report goes.
-- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` (see `Lease version:`) and `<files>`.
+- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
+- `Lease version:` — where the `<version>` comes from.
 - `Probe caps:` — minutes per probe and probes per issue.
 
 ## Limits

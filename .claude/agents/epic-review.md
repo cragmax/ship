@@ -2,8 +2,9 @@
 name: epic-review
 description: >
   Judges an unattended run's landed issues as one change at its epic end with
-  the epic-review skill, on the batch's final tree, and returns its verdict
-  and sourced findings for the pull request body. Never edits.
+  the epic-review skill, on the batch once the test audit has landed, and
+  returns its verdict and sourced findings for the pull request body. Never
+  edits.
 tools: Read, Write, Glob, Grep, Bash, LSP
 skills:
   - epic-review
@@ -16,7 +17,7 @@ You judge the epic's landed issues as one change, once the test audit has landed
 
 ## Inputs (from the prompt)
 
-- `Batch worktree:` — the epic's final tree, at the head the PR pushes. Run git only here.
+- `Batch worktree:` — the epic's tree once the test audit has landed, before the `origin/master` merge and the bump. Run git only here.
 - `Epic range:` — `<batch base>..HEAD`: every commit the run landed, the skill's range.
 - `Scope:` — `epic #E`, its criteria the epic's and its landed issues'; or `profiled`, its criteria the landed issues' alone.
 - `Epic file:`, `Epic command:` — with an epic only: where the epic's text goes, and the command that writes it; run it verbatim.

@@ -174,9 +174,9 @@ export interface UnlandedValues {
   readonly reason?: string;
 }
 
-/** `PROMPTS.epicReview`'s input: the run's landed change on the batch's final tree. */
+/** `PROMPTS.epicReview`'s input: the run's landed change, once the test audit has landed. */
 export interface EpicReviewValues {
-  /** The batch worktree, at its final head. */
+  /** The batch worktree, before the `origin/master` merge and the bump. */
   readonly batch: string;
   /** The run's landed range, `<batch base>..HEAD`. */
   readonly range: string;

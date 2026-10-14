@@ -27,7 +27,7 @@ You run a retrospective on ONE entry of an unattended run, once it has ended, so
 
 ## Checkpoint overrides
 
-- **_present findings_**: no one is asked. Return the candidates per your output schema, and file nothing: no issue, no comment, no edit. The PR body carries them, and the maintainer decides.
+- **_present findings_**: no one is asked. Return the candidates per your output schema, and file nothing: no issue, no comment, no edit. The run report carries them (the PR body, when a PR opens), and the maintainer decides.
 
 ## Output
 
