@@ -72,7 +72,7 @@ export const OverlapEstimateSchema = z.object({
   areaMap: z.enum(['read', 'unavailable']),
 });
 
-/** A commit message's first line, as the planner proposes it. */
+/** A commit message's first line, as the tdd or the critic proposes it. */
 export const CommitSpecSchema = z.object({
   /** `feat`, `fix`, `refactor`, `test`, `docs` or `chore`. */
   type: z.string(),
@@ -82,10 +82,7 @@ export const CommitSpecSchema = z.object({
   subject: z.string(),
 });
 
-/**
- * One probe a stage ran, or chose not to finish: a plan-time probe on the planner's card, or the
- * tdd's.
- */
+/** One probe the tdd ran, or chose not to finish. */
 export const ProbeRecordSchema = z.object({
   /** The claim probed. */
   claim: z.string(),
@@ -98,39 +95,6 @@ export const ProbeRecordSchema = z.object({
    * the kill.
    */
   seconds: z.int(),
-});
-
-/** The planner's card (also the applier's). */
-export const PlanCardSchema = z.object({
-  /** `plan`: planned; `stale`: the tree overtook the issue; `blocked`: it cannot be planned. */
-  verdict: z.enum(['plan', 'stale', 'blocked']),
-  /** The plan file written. */
-  planPath: z.string(),
-  /** The plan in one line. */
-  summary: z.string(),
-  /** The test tier the plan needs (`unit`, `standalone`, `server`). */
-  tier: z.string(),
-  /** The landing commit's first line. */
-  commit: CommitSpecSchema,
-  /** `see` when the issue carries a human-in-the-loop acceptance line, else `fixes`. */
-  closes: z.enum(['fixes', 'see']),
-  /** What backs the verdict. */
-  evidence: z.string(),
-  /**
-   * Each plan-time probe its plan records a verdict for, carried-forward ones included; never a
-   * `pending — tdd` entry.
-   */
-  probes: z.array(ProbeRecordSchema),
-});
-
-/** The plan reviewer's answer. */
-export const PlanReviewSchema = z.object({
-  /** `approved`, or `changes` with findings to apply. */
-  verdict: z.enum(['approved', 'changes']),
-  /** How many findings the file lists. */
-  findings: z.int(),
-  /** The findings file. */
-  findingsPath: z.string(),
 });
 
 /**
@@ -171,10 +135,14 @@ export const TddOutputSchema = z.object({
   /** Its tracer test's red-green, or why it saw none. */
   evidence: TddEvidenceSchema,
   /**
-   * Each value its plan asked it to record for the PR body (a count, a size
-   * the build produced), one per entry; empty when the plan asks for none.
+   * Each value its issue asked it to record for the PR body (a count, a size
+   * the build produced), one per entry; empty when the issue asks for none.
    */
   recorded: z.array(z.string()),
+  /** The landing commit's first line. */
+  commit: CommitSpecSchema,
+  /** `see` when the issue carries a human-in-the-loop acceptance line, else `fixes`. */
+  closes: z.enum(['fixes', 'see']),
   /** Why, when `BLOCKED` or `PARTIAL`. */
   reason: z.string().exactOptional(),
 });
@@ -183,7 +151,7 @@ export const TddOutputSchema = z.object({
 export const DiffReviewOutputSchema = z.object({
   /** How many findings the rules check reported. */
   rules: z.int(),
-  /** How many findings the plan check reported. */
+  /** How many findings the plan check (the issue and its brief) reported. */
   plan: z.int(),
   /** The findings file written. */
   findingsPath: z.string(),
@@ -285,8 +253,6 @@ export const PrWriterOutputSchema = z.object({
 export const AGENT_OUTPUTS = {
   scout: ScoutVerdictSchema,
   overlapEstimator: OverlapEstimateSchema,
-  planCard: PlanCardSchema,
-  planReview: PlanReviewSchema,
   tdd: TddOutputSchema,
   diffReview: DiffReviewOutputSchema,
   review: ReviewOutputSchema,

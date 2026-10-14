@@ -9,14 +9,14 @@ tools: Read, Glob, Grep
 
 # Retro
 
-An unattended run leaves a report directory per entry: plans, reviews, tdd reports, landing logs, tool envelopes. You read it once the entry has ended and name the friction worth fixing, so the maintainer reads a short list in the pull request instead of the whole directory. You never file an issue or change anything: the PR body carries your findings, and the maintainer decides.
+An unattended run leaves a report directory per entry: the issues' text, reviews, tdd reports, landing logs, tool envelopes. You read it once the entry has ended and name the friction worth fixing, so the maintainer reads a short list in the pull request instead of the whole directory. You never file an issue or change anything: the PR body carries your findings, and the maintainer decides.
 
 ## Inputs (from the prompt)
 
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Report dir:` — the run's report directory.
 - `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule (each blocker with its source — declared, or overlap and its confidence — attempts, cut and land instants, and a landed slice's `size`: files and lines changed), the teardown residue.
-- `Slice budget:` — the most lines a landed slice may change, and the file and task counts its plan was held to (`GLOSSARY.md` _Slice budget_).
+- `Slice budget:` — its lines are the most a landed slice may change (`GLOSSARY.md` _Slice budget_).
 
 ## Discipline
 
@@ -28,10 +28,10 @@ An unattended run leaves a report directory per entry: plans, reviews, tdd repor
 
 - retries and requeues — an issue with more than one attempt, and why (a harvest conflict, an agent that died);
 - blocked stages, and the reason each gave — and a blocked issue whose comment did not post (the run report's `issueComments`, a `problem` per failed post);
-- a landed slice whose schedule `size` is over `Slice budget:`'s lines — `genuine`: cite its plan (`plans/<N>.md`, the File scope and Tasks counts) and name the split that would have fit;
-- probes that hit their cap or stayed inconclusive, and how many each issue ran — the tdd reports, and the `plan-time` entries under each plan's Probes (`plans/<N>.md`);
+- a landed slice whose schedule `size` is over `Slice budget:`'s lines — `genuine`: cite its tdd report (`tdd-<N>-<K>.md`) and name the split that would have fit;
+- probes that hit their cap or stayed inconclusive, and how many each issue ran — the tdd reports;
 - a lease wait longer than its hold (the lease lines in the tdd, review and test-review reports);
-- plan deviations the tdd or the reviewer recorded;
+- deviations from the issue the tdd or the reviewer recorded;
 - tool refusals in the envelopes under `<report dir>/tool/`;
 - teardown residue.
 

@@ -12,8 +12,7 @@ export const meta = {
     },
     {
       title: 'Issues',
-      detail:
-        'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
+      detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
     },
     {
       title: 'Epic end',
@@ -30,9 +29,6 @@ const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
-  planner: { agentType: 'planner' },
-  applier: { agentType: 'planner' },
-  planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
@@ -45,8 +41,6 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
-const PLAN_PROBE_CAP_MINUTES = 5;
-const PLAN_PROBES_PER_ISSUE = 2;
 const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 };
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
@@ -72,8 +66,7 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail:
-      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
+    detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -605,28 +598,28 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
-function probeCapsLine(minutes, probes) {
-  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
-}
 function sliceBudgetLine() {
   return (
     `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
     `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
   );
 }
-function serverTierLines(lease, minutes, probes) {
+function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    probeCapsLine(minutes, probes),
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
   ];
 }
 const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
+function issueFile(issue, reportDir) {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
 function issueLines(issue, reportDir) {
   const dir = `${reportDir}/issues`;
-  const file = `${dir}/${String(issue)}.md`;
+  const file = issueFile(issue, reportDir);
   return [
     `Issue file: ${file}`,
     [
@@ -661,47 +654,18 @@ const PROMPTS = {
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
     ].join('\n'),
-  planner: (values) =>
-    [
-      `Mode: ${values.mode}`,
-      `Issue: ${issueRef(values.issue)}`,
-      `Attempt: ${String(values.attempt)}`,
-      `Slice worktree: ${values.slice}`,
-      `Report dir: ${values.reportDir}`,
-      `Plan file: ${values.planPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
-      `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-      ...(values.conflicts === undefined
-        ? []
-        : [
-            `Previous attempt: harvest conflict on ${values.conflicts.join(', ')}; re-plan against the current batch head`,
-          ]),
-    ].join('\n'),
-  planReviewer: (values) =>
-    [
-      `Issue: ${issueRef(values.issue)}`,
-      `Slice worktree: ${values.slice}`,
-      `Plan file: ${values.planPath}`,
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-    ].join('\n'),
   tdd: (values) =>
     [
       `Issue: ${issueRef(values.issue)}`,
       `Attempt: ${String(values.attempt)}`,
       `Slice worktree: ${values.slice}`,
       `Slice base: ${values.base}`,
-      `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
-      ...verbatimBlock('Commit message file', {
+      ...serverTierLines(values.lease),
+      ...verbatimBlock('Commit message template', {
         path: values.messagePath,
-        content: values.message,
+        content: values.messageTemplate,
       }),
     ].join('\n'),
   diffReview: (values) =>
@@ -747,7 +711,6 @@ function sliceCommitLines(values) {
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
-    `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
   ];
@@ -755,9 +718,10 @@ function sliceCommitLines(values) {
 function sliceReviewPrompt(values, findingsPath) {
   return [
     ...sliceCommitLines(values),
+    `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
     ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
-    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
+    ...serverTierLines(values.lease),
   ].join('\n');
 }
 
@@ -1819,52 +1783,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['issues', 'pairs', 'areaMap'],
   },
-  planCard: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['plan', 'stale', 'blocked'] },
-      planPath: { type: 'string' },
-      summary: { type: 'string' },
-      tier: { type: 'string' },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      closes: { type: 'string', enum: ['fixes', 'see'] },
-      evidence: { type: 'string' },
-      probes: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            claim: { type: 'string' },
-            verdict: {
-              type: 'string',
-              enum: ['confirmed', 'falsified', 'inconclusive', 'cap-hit'],
-            },
-            followUp: { type: 'string' },
-            seconds: { type: 'integer' },
-          },
-          required: ['claim', 'verdict', 'followUp', 'seconds'],
-        },
-      },
-    },
-    required: ['verdict', 'planPath', 'summary', 'tier', 'commit', 'closes', 'evidence', 'probes'],
-  },
-  planReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['approved', 'changes'] },
-      findings: { type: 'integer' },
-      findingsPath: { type: 'string' },
-    },
-    required: ['verdict', 'findings', 'findingsPath'],
-  },
   tdd: {
     type: 'object',
     properties: {
@@ -1901,9 +1819,29 @@ const AGENT_OUTPUT_SCHEMAS = {
         required: ['kind', 'test', 'pseudocode', 'red', 'green', 'reason'],
       },
       recorded: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      closes: { type: 'string', enum: ['fixes', 'see'] },
       reason: { type: 'string' },
     },
-    required: ['verdict', 'sha', 'files', 'leaseLines', 'probes', 'evidence', 'recorded'],
+    required: [
+      'verdict',
+      'sha',
+      'files',
+      'leaseLines',
+      'probes',
+      'evidence',
+      'recorded',
+      'commit',
+      'closes',
+    ],
   },
   diffReview: {
     type: 'object',
@@ -2345,22 +2283,6 @@ const AGENT_CALLS = {
       PROMPTS.overlapEstimator(values),
       agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
     ),
-  planner: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planner(values),
-      agentOptions(
-        values.mode === 'plan' ? 'planner' : 'applier',
-        tag,
-        AGENT_OUTPUT_SCHEMAS.planCard,
-      ),
-    ),
-  planReviewer: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.planReviewer(values),
-      agentOptions('planReviewer', tag, AGENT_OUTPUT_SCHEMAS.planReview),
-    ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
   diffReview: (hooks, values, tag) =>
@@ -2514,22 +2436,21 @@ function renderBlockedComment(input) {
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
 }
-function commitMessage(issue, card) {
-  return [
-    subjectLine(card.commit),
-    '',
-    `${card.closes} #${String(issue)}`,
-    '',
-    CO_AUTHOR_TRAILER,
-    '',
-  ].join('\n');
+function commitMessage(issue, tdd) {
+  return issueMessage(subjectLine(tdd.commit), `${tdd.closes} #${String(issue)}`);
+}
+function commitMessageTemplate(issue) {
+  return issueMessage('<type>(<scope>): <subject>', `<fixes|see> #${String(issue)}`);
+}
+function issueMessage(subject, cite) {
+  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 function criticCommitMessage(commit) {
   return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 function prTitle(input) {
   const [only] = input.landed;
-  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.card.commit);
+  if (input.landed.length === 1 && only !== undefined) return subjectLine(only.tdd.commit);
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 function sliceLeaseLines(work) {
@@ -2611,7 +2532,7 @@ function recordedSection(landed, depth) {
   return lines.length === 0 ? [] : section('Recorded', lines, depth);
 }
 function closingIssues(landed) {
-  return new Set(landed.filter((l) => l.card.closes === 'fixes').map((l) => l.issue));
+  return new Set(landed.filter((l) => l.tdd.closes === 'fixes').map((l) => l.issue));
 }
 function reportBlock(input, moved) {
   const report = runReportLines(input, moved);
@@ -2676,8 +2597,8 @@ function epicLine(epic) {
 }
 function landedLine(landed) {
   const ref = `#${String(landed.issue)}`;
-  const subject = landed.card.commit.subject;
-  return landed.card.closes === 'fixes'
+  const subject = landed.tdd.commit.subject;
+  return landed.tdd.closes === 'fixes'
     ? `- fixes ${ref} — ${subject}`
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
@@ -2753,31 +2674,26 @@ function issueSection(landed) {
   const diff = landed.diffReview;
   const test = landed.testReview;
   return [
-    `### ${subjectLine(landed.card.commit)}`,
+    `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Plan: ${landed.card.summary} (tier: ${landed.card.tier})`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
     typeof test === 'string'
       ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
-    ...probeLines(landed),
+    ...probeLines(landed.tdd.probes),
     '',
   ];
 }
-function probeLines(work) {
-  const records = [
-    ...work.card.probes.map((p) => probeLine('plan', p)),
-    ...work.tdd.probes.map((p) => probeLine('tdd', p)),
-  ];
-  if (records.length === 0) return ['- Probes: no probe needed'];
-  return ['- Probes:', ...records];
+function probeLines(probes) {
+  if (probes.length === 0) return ['- Probes: no probe needed'];
+  return ['- Probes:', ...probes.map(probeLine)];
 }
-function probeLine(stage, probe) {
+function probeLine(probe) {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
-  return `  - ${stage}: ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
+  return `  - ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
 }
 function durationText(seconds) {
   if (seconds < 60) return `${String(seconds)}s`;
@@ -2826,8 +2742,8 @@ function bumpText(bump) {
 }
 
 const NO_CUT = { slice: null, startedAt: null };
-async function runAttempt(ctx, issue, attempt, previousConflicts = []) {
-  const at = attemptId(ctx, issue, attempt, previousConflicts);
+async function runAttempt(ctx, issue, attempt) {
+  const at = attemptId(ctx, issue, attempt);
   const opened = await openSlice(at).catch((err) => ({ stop: stageThrew(at, err), cut: NO_CUT }));
   if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
   const cut = opened.next;
@@ -2839,9 +2755,9 @@ async function runAttempt(ctx, issue, attempt, previousConflicts = []) {
     .then((outcome) => endAttempt(at, cut, outcome));
   return { kind: 'authored', issue, landing };
 }
-function attemptId(ctx, issue, attempt, previousConflicts) {
+function attemptId(ctx, issue, attempt) {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag), previousConflicts };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag) };
 }
 async function openSlice(at) {
   const ready = await atBoundary({ next: at }, at, recheckStage);
@@ -2852,9 +2768,7 @@ async function openSlice(at) {
 async function authorSlice(cut) {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
-  const planned = await atBoundary(provisioned, at, planStage);
-  const approved = await atBoundary(planned, at, planReviewStage);
-  const built = await atBoundary(approved, at, tddStage);
+  const built = await atBoundary(provisioned, at, tddStage);
   const diffReviewed = await atBoundary(built, at, diffReviewStage);
   const reviewed = await atBoundary(diffReviewed, at, reviewStage);
   return atBoundary(reviewed, at, testReviewStage);
@@ -2907,56 +2821,29 @@ async function provisionStage(cut) {
   }
   return { next: { ...cut, projectDir } };
 }
-async function planStage(s) {
+async function tddStage(s) {
   const { at } = s;
-  return acceptCard(s, await AGENT_CALLS.planner(at.ctx.hooks, plannerValues(s, 'plan'), at.tag));
-}
-async function planReviewStage(planned) {
-  const { at } = planned;
-  const values = {
-    issue: at.issue,
-    slice: planned.slice,
-    planPath: planPath(at),
-    findingsPath: `${at.ctx.reportDir}/plan-review-${at.tag}.md`,
-    reportDir: at.ctx.reportDir,
-  };
-  const review = await AGENT_CALLS.planReviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return { stop: died(at) };
-  if (review.findings === 0) return { next: planned };
-  const applied = await AGENT_CALLS.planner(
-    at.ctx.hooks,
-    plannerValues(planned, 'apply', review.findingsPath),
-    at.tag,
-  );
-  return acceptCard(planned, applied);
-}
-async function tddStage(planned) {
-  const { at } = planned;
   const values = {
     issue: at.issue,
     attempt: at.attempt,
-    slice: planned.slice,
-    base: planned.base,
-    planPath: planPath(at),
+    slice: s.slice,
+    base: s.base,
+    reportDir: at.ctx.reportDir,
     reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
     messagePath: messagePath(at),
-    message: commitMessage(at.issue, planned.card),
-    lease: leaseValues(planned),
+    messageTemplate: commitMessageTemplate(at.issue),
+    lease: leaseValues(s),
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return { stop: died(at) };
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...planned, tdd, sha: tdd.sha } };
+  return { next: { ...s, tdd, sha: tdd.sha } };
 }
 async function diffReviewStage(s) {
   const { at } = s;
-  const values = {
-    ...sliceCommitValues(s),
-    findingsPath: diffReviewPath(at),
-    reportDir: at.ctx.reportDir,
-  };
+  const values = { ...sliceCommitValues(s), findingsPath: diffReviewPath(at) };
   const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
   if (out === null) return { stop: died(at) };
   return { next: { ...s, diffReview: out } };
@@ -3007,16 +2894,16 @@ async function landSlice(s) {
     '--log',
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
-  const message = commitMessage(at.issue, s.card);
+  const message = commitMessage(at.issue, s.tdd);
   const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { card, tdd, diffReview, review, testReview } = s;
+    const { tdd, diffReview, review, testReview } = s;
     return {
       kind: 'landed',
-      work: { card, tdd, diffReview, review, testReview },
+      work: { tdd, diffReview, review, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -3025,11 +2912,10 @@ async function landSlice(s) {
           : null,
     };
   }
-  const conflicts = event.kind === 'harvest-conflict' ? (out?.conflicts ?? []) : [];
-  return { kind: 'unlanded', primary: event, conflicts };
+  return notLanded(event);
 }
 function notLanded(primary) {
-  return { kind: 'unlanded', primary, conflicts: [] };
+  return { kind: 'unlanded', primary };
 }
 function landThrew(at, err) {
   at.ctx.markHalting();
@@ -3054,28 +2940,6 @@ async function endAttempt(at, cut, outcome) {
   };
   return { kind: 'ended', issue: at.issue, ending };
 }
-function acceptCard(s, card) {
-  if (card === null) return { stop: died(s.at) };
-  if (card.verdict !== 'plan') {
-    return { stop: blocked(s.at, `planner ${card.verdict}: ${card.evidence}`) };
-  }
-  return { next: { ...s, card } };
-}
-function plannerValues(s, mode, findingsPath) {
-  const { at } = s;
-  return {
-    mode,
-    issue: at.issue,
-    attempt: at.attempt,
-    slice: s.slice,
-    reportDir: at.ctx.reportDir,
-    planPath: planPath(at),
-    ...(findingsPath === undefined ? {} : { findingsPath }),
-    priorSlices: at.ctx.priorSlices(),
-    ...(at.previousConflicts.length === 0 ? {} : { conflicts: at.previousConflicts }),
-    lease: leaseValues(s),
-  };
-}
 function leaseValues(s) {
   return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
 }
@@ -3084,7 +2948,7 @@ function sliceCommitValues(s) {
     issue: s.at.issue,
     slice: s.slice,
     base: s.base,
-    planPath: planPath(s.at),
+    reportDir: s.at.ctx.reportDir,
     sha: s.sha,
     files: s.tdd.files,
   };
@@ -3095,9 +2959,6 @@ function sliceReviewValues(s, report) {
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
     lease: leaseValues(s),
   };
-}
-function planPath(at) {
-  return `${at.ctx.reportDir}/plans/${String(at.issue)}.md`;
 }
 function messagePath(at) {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
@@ -3146,7 +3007,7 @@ async function criticInSlice(input, slice, base) {
   const values = {
     slice,
     range: `${entry.base}..HEAD`,
-    landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit, plan: l.card.planPath })),
+    landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit })),
     reportPath: `${entry.reportDir}/critic.md`,
   };
   const out = await AGENT_CALLS.critic(hooks, values, entry.tag);
@@ -3548,8 +3409,7 @@ async function prWriterStep(input, upstream) {
     landed: input.landed.map((l) => ({
       issue: l.issue,
       commit: l.commit,
-      plan: l.card.planPath,
-      subject: l.card.commit.subject,
+      subject: l.tdd.commit.subject,
     })),
     reportDir: entry.reportDir,
   };
@@ -3599,7 +3459,6 @@ function newDrive(input) {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
-    conflicts: new Map(),
     timing: new Map(),
     halts: new Map(),
     outcomes: new Map(),
@@ -3618,12 +3477,6 @@ function newDrive(input) {
       markHalting: () => {
         if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
     });
   });
   return d;
@@ -3646,7 +3499,7 @@ function onNote(d, note) {
 function settle(d, issue, ending) {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const { primary, conflicts, committedAt, size } = endingFacts(issue, ending);
+  const { primary, committedAt, size } = endingFacts(issue, ending);
   const { events, entry } = settleEvents(primary, ending.halt, {
     issue,
     epic,
@@ -3654,7 +3507,6 @@ function settle(d, issue, ending) {
   });
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.conflicts.set(issue, conflicts);
   d.timing.set(issue, {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
@@ -3669,17 +3521,11 @@ function endingFacts(issue, ending) {
     case 'landed':
       return {
         primary: { kind: 'committed', issue },
-        conflicts: [],
         committedAt: ending.committedAt,
         size: ending.size,
       };
     case 'unlanded':
-      return {
-        primary: ending.primary,
-        conflicts: ending.conflicts,
-        committedAt: null,
-        size: null,
-      };
+      return { primary: ending.primary, committedAt: null, size: null };
   }
 }
 function record(d, i, issue, ending, events) {
@@ -3694,7 +3540,7 @@ function issueOutcome(issue, ending, committed, halted) {
   switch (ending.kind) {
     case 'landed':
       return committed
-        ? { issue, outcome: 'landed', cite: ending.work.card.closes, commit: ending.commit }
+        ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
         : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
     case 'unlanded':
       return unlandedOutcome(issue, ending.primary, halted);
@@ -3760,8 +3606,7 @@ function startAttempt(d, issue) {
   if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
   const attempt = d.attempts.get(issue) ?? 1;
   d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  const conflicts = d.conflicts.get(issue) ?? [];
-  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt, conflicts));
+  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt));
 }
 function endEpic(d, i) {
   const landed = d.landed.get(i) ?? [];

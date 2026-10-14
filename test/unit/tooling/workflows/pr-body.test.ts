@@ -46,23 +46,12 @@ const work = (fields: {
   closes: 'fixes' | 'see';
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
-  planProbes?: SliceWork['tdd']['probes'];
   diffReview?: SliceWork['diffReview'];
   review?: SliceWork['review'];
   testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
-  card: {
-    verdict: 'plan',
-    planPath: 'p.md',
-    summary: 'plan the thing',
-    tier: 'server',
-    commit: { type: 'feat', scope: 'tools', subject: fields.subject },
-    closes: fields.closes,
-    evidence: '',
-    probes: fields.planProbes ?? [],
-  },
   tdd: {
     verdict: 'GREEN',
     sha: 's',
@@ -71,6 +60,8 @@ const work = (fields: {
     probes: fields.probes ?? [],
     evidence: fields.evidence ?? TRACER,
     recorded: fields.recorded ?? [],
+    commit: { type: 'feat', scope: 'tools', subject: fields.subject },
+    closes: fields.closes,
   },
   diffReview: fields.diffReview ?? { rules: 2, plan: 1, findingsPath: 'd.md' },
   review: fields.review ?? {
@@ -159,21 +150,14 @@ const fixedReview = (leaseLines: string[]): SliceWork['review'] => ({
   leaseLines,
 });
 
-const PLAN_FALSIFIED: ProbeRecord = {
+const FALSIFIED: ProbeRecord = {
   claim: 'taskkill /T reaches every hook descendant',
   verdict: 'falsified',
   followUp: '',
   seconds: 664,
 };
 
-const PLAN_CAPPED: ProbeRecord = {
-  claim: 'git grep -P runs on Windows',
-  verdict: 'cap-hit',
-  followUp: 'probe grep -P offline',
-  seconds: 300,
-};
-
-const TDD_CONFIRMED: ProbeRecord = {
+const CONFIRMED: ProbeRecord = {
   claim: 'Folia ticks x',
   verdict: 'confirmed',
   followUp: '',
@@ -194,7 +178,7 @@ const INPUT: PrBodyInput = {
   reportDir: 'C:/runs/epic-1025/reports',
   landed: [SEVEN, EIGHT],
   unlanded: [
-    { issue: 9, outcome: 'blocked', reason: 'planner stale: resolved #9 by abc123' },
+    { issue: 9, outcome: 'blocked', reason: 'tdd BLOCKED: resolved #9 by abc123' },
     { issue: 10, outcome: 'skipped' },
   ],
   sync: {
@@ -290,7 +274,7 @@ describe('commitMessage', () => {
     ).toBe('fix(engine): y\n\nsee #7\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n');
   });
 
-  it('defuses a closing keyword the planner put in the subject', () => {
+  it('defuses a closing keyword the tdd put in the subject', () => {
     const message = commitMessage(7, {
       commit: { type: 'fix', scope: 'engine', subject: 'Fixes: #3 crash, resolved#4' },
       closes: 'fixes',
@@ -317,7 +301,7 @@ describe('prTitle', () => {
 describe('renderPrBody', () => {
   const body = renderPrBody(INPUT);
 
-  it('closes only the landed issue whose card says fixes', () => {
+  it('closes only the landed issue whose tdd says fixes', () => {
     expect(body).toMatch(closes(7));
     for (const issue of [8, 9, 10, 12, 13, 1025]) expect(body).not.toMatch(closes(issue));
   });
@@ -341,14 +325,13 @@ describe('renderPrBody', () => {
       '### feat(tools): add the x tool',
       '- Issue: #7, landed as c7',
       '- Issue: #8, landed as c8',
-      '- Plan: plan the thing (tier: server)',
       '- Review: fixed — renamed a helper',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
       '- Test review: skipped — trivial surface',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
-      '  - tdd: Folia ticks x: confirmed in 42s',
+      '  - Folia ticks x: confirmed in 42s',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
@@ -621,50 +604,39 @@ describe('renderPrBody', () => {
   });
 
   it('records a capped probe with its follow-up', () => {
-    expect(body).toContain(
-      '  - tdd: Paper drops y: cap-hit in 15m 00s; follow-up: probe y offline;',
-    );
+    expect(body).toContain('  - Paper drops y: cap-hit in 15m 00s; follow-up: probe y offline;');
   });
 
-  it.each<[string, ProbeRecord[], ProbeRecord[], string[]]>([
+  it.each<[string, ProbeRecord[], string[]]>([
+    ['one', [CONFIRMED], ['- Probes:', '  - Folia ticks x: confirmed in 42s']],
     [
-      'the plan’s alone',
-      [PLAN_FALSIFIED],
-      [],
-      ['- Probes:', '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s'],
-    ],
-    [
-      'the plan’s before the tdd’s',
-      [PLAN_FALSIFIED, PLAN_CAPPED],
-      [TDD_CONFIRMED],
+      'several, in the tdd’s order',
+      [FALSIFIED, CONFIRMED],
       [
         '- Probes:',
-        '  - plan: taskkill /T reaches every hook descendant: falsified in 11m 04s',
-        '  - plan: git grep -P runs on Windows: cap-hit in 5m 00s; follow-up: probe grep -P offline',
-        '  - tdd: Folia ticks x: confirmed in 42s',
+        '  - taskkill /T reaches every hook descendant: falsified in 11m 04s',
+        '  - Folia ticks x: confirmed in 42s',
       ],
     ],
-    [
-      'the tdd’s alone',
-      [],
-      [TDD_CONFIRMED],
-      ['- Probes:', '  - tdd: Folia ticks x: confirmed in 42s'],
-    ],
-    ['neither', [], [], ['- Probes: no probe needed']],
-  ])('renders the probe lines of %s', (_name, planProbes, probes, expected) => {
+    ['none', [], ['- Probes: no probe needed']],
+  ])('renders the probe lines of %s', (_name, probes, expected) => {
     const lines = renderPrBody({
       ...INPUT,
       landed: [
         {
           issue: 11,
           commit: 'c11',
-          ...work({ subject: 'probe x', closes: 'fixes', planProbes, probes }),
+          ...work({ subject: 'probe x', closes: 'fixes', probes }),
         },
       ],
     }).split('\n');
     const at = lines.findIndex((l) => l.startsWith('- Probes'));
 
     expect(lines.slice(at, at + expected.length + 1)).toEqual([...expected, '']);
+  });
+
+  it('renders a landed issue with no plan line', () => {
+    expect(body).not.toMatch(/^- Plan: /m);
   });
 
   it.each<[number, string]>([
@@ -682,20 +654,20 @@ describe('renderPrBody', () => {
           ...work({
             subject: 'probe x',
             closes: 'fixes',
-            probes: [{ ...TDD_CONFIRMED, seconds }],
+            probes: [{ ...CONFIRMED, seconds }],
           }),
         },
       ],
     }).split('\n');
 
-    expect(lines).toContain(`  - tdd: Folia ticks x: confirmed in ${text}`);
+    expect(lines).toContain(`  - Folia ticks x: confirmed in ${text}`);
   });
 
   it.each<[number, number, string]>([
     [3, 0, '- Diff review: 3 rules, 0 plan findings'],
     [0, 5, '- Diff review: 0 rules, 5 plan findings'],
   ])(
-    'renders a diff review of %s rules and %s plan findings between the plan and the review',
+    'renders a diff review of %s rules and %s plan findings between the issue and the review',
     (rules, plan, line) => {
       const lines = renderPrBody({
         ...INPUT,
@@ -711,27 +683,30 @@ describe('renderPrBody', () => {
           },
         ],
       }).split('\n');
-      const at = lines.indexOf('- Plan: plan the thing (tier: server)');
+      const at = lines.indexOf('- Issue: #11, landed as c11');
 
       expect(lines.slice(at, at + 3)).toEqual([
-        '- Plan: plan the thing (tier: server)',
+        '- Issue: #11, landed as c11',
         line,
         '- Review: fixed — renamed a helper',
       ]);
     },
   );
 
-  it('defuses a closing reference in the tier, a critic reason and every reference form', () => {
+  it('defuses a closing reference in a review summary, a critic reason and every reference form', () => {
     const tricky = renderPrBody({
       ...INPUT,
       landed: [
         {
           ...SEVEN,
-          card: {
-            ...SEVEN.card,
-            tier: 'unit, fixes #21',
+          review: { ...SEVEN.review, summary: 'renamed, fixes #21' },
+          testReview: {
+            verdict: 'clean',
+            sha: 's3',
+            survivors: 0,
             summary:
               'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
+            leaseLines: [],
           },
         },
       ],
@@ -744,7 +719,7 @@ describe('renderPrBody', () => {
     expect(tricky).not.toMatch(
       /closes[\s:]*https:\/\/github\.com\/cragmax\/paper-harness\/issues\/23/i,
     );
-    expect(tricky).toContain('(tier: unit, fixes (see #21))');
+    expect(tricky).toContain('renamed, fixes (see #21)');
     expect(tricky.split('\n')).toContain(
       '- Outcome: changes dropped — land failed: fixed (see #24) then broke',
     );
@@ -972,7 +947,7 @@ describe('renderPrBody — issues list', () => {
       '- Epic: see #1025',
       '- fixes #7 — add the x tool',
       '- see #8 — wire y — fixes (see #12) in passing (its acceptance needs a human)',
-      '- see #9 — not landed: blocked: planner stale: resolved (see #9) by abc123',
+      '- see #9 — not landed: blocked: tdd BLOCKED: resolved (see #9) by abc123',
       '- see #10 — not landed: skipped',
       '',
     ]);
@@ -1317,11 +1292,11 @@ describe('renderPrBody — recorded', () => {
 });
 
 describe('prTitle and commitMessage scrub the whole subject line', () => {
-  it('defuses a closing reference the planner put in the scope', () => {
+  it('defuses a closing reference the tdd put in the scope', () => {
     const commit = { type: 'fix', scope: 'closes #5', subject: 'y' };
 
     expect(
-      prTitle({ branch: 'ship/7', landed: [{ ...SEVEN, card: { ...SEVEN.card, commit } }] }),
+      prTitle({ branch: 'ship/7', landed: [{ ...SEVEN, tdd: { ...SEVEN.tdd, commit } }] }),
     ).toBe('fix(closes (see #5)): y');
     expect(commitMessage(7, { commit, closes: 'fixes' })).not.toMatch(closes(5));
   });
@@ -1540,7 +1515,7 @@ describe('renderAttachedSection', () => {
       '',
       '- fixes #7 — add the x tool',
       '- see #8 — wire y — fixes (see #12) in passing (its acceptance needs a human)',
-      '- see #9 — not landed: blocked: planner stale: resolved (see #9) by abc123',
+      '- see #9 — not landed: blocked: tdd BLOCKED: resolved (see #9) by abc123',
       '- see #10 — not landed: skipped',
       '',
       'Run report: [PR comment](https://github.com/o/r/pull/9#issuecomment-1)',
@@ -1648,7 +1623,7 @@ describe('renderAttachedReport', () => {
 describe('renderBlockedComment', () => {
   const BLOCKED = {
     issue: 7,
-    reason: 'planner blocked: over the slice budget: 34 files, 25 tasks',
+    reason: 'tdd BLOCKED: the issue names a missing symbol',
     branch: 'ship/epic-9',
     reportDir: 'C:/r/reports',
   };
@@ -1657,7 +1632,7 @@ describe('renderBlockedComment', () => {
     expect(renderBlockedComment({ ...BLOCKED, pr: 12 }).split('\n')).toEqual([
       '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
       '',
-      '**Not landed: blocked.** planner blocked: over the slice budget: 34 files, 25 tasks',
+      '**Not landed: blocked.** tdd BLOCKED: the issue names a missing symbol',
       '',
       'Run: PR #12. Report dir: `C:/r/reports`.',
       '',

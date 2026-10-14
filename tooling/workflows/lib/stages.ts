@@ -22,18 +22,14 @@ export interface StageRow {
 }
 
 /**
- * Every stage the workflow runs an agent for; each stage's job is its agent file's. `applier` runs
- * the planner agent in apply mode, once over the plan review's findings; `resolver` runs the
- * reviewer agent over the epic end's doc-index conflicts; the `diffReview` and `reviewer` efforts
- * are set per call by {@link reviewEffort}; the `critic` works in a slice of its own.
+ * Every stage the workflow runs an agent for; each stage's job is its agent file's. `resolver` runs
+ * the reviewer agent over the epic end's doc-index conflicts; the `diffReview` and `reviewer`
+ * efforts are set per call by {@link reviewEffort}; the `critic` works in a slice of its own.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
-  planner: { agentType: 'planner' },
-  applier: { agentType: 'planner' },
-  planReviewer: { agentType: 'ship-plan-reviewer' },
   tdd: { agentType: 'ship-tdd', model: 'opus' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
@@ -64,20 +60,10 @@ export const PROBE_CAP_MINUTES = 15;
 export const PROBES_PER_ISSUE = 3;
 
 /**
- * The most minutes one plan-time probe may take — a cheap local probe the
- * planner runs before plan review; a hit records a follow-up, never a verdict.
- */
-export const PLAN_PROBE_CAP_MINUTES = 5;
-
-/** The most plan-time probes one issue attempt's planner may run, plan and apply modes together. */
-export const PLAN_PROBES_PER_ISSUE = 2;
-
-/**
  * The slice budget (GLOSSARY.md): the most a slice may reach before it is
- * split instead of built. `files` and `tasks` bound a plan's File scope and
- * Tasks — over either, the planner blocks the issue with the split in its
- * evidence and the plan reviewer reports a finding; `lines` bounds the
- * landed commit's changed lines, which the retro reads from the schedule.
+ * split instead of built. `files` and `tasks` are ticket-time sizes; `lines`
+ * bounds the landed commit's changed lines, which the retro reads from the
+ * schedule.
  * Set 2026-10-08 from the landed history: the median issue commit changed
  * 311 lines in 7 files; the one slice that outran a tdd session
  * planned 25 tasks over 34 files and landed 2,553 lines.
@@ -131,8 +117,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail:
-      'per issue, in dependency order: plan, plan review, tdd, diff review, review, test review, land',
+    detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,

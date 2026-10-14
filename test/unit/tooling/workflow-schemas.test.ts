@@ -77,11 +77,10 @@ const DIFF_REVIEW_VALUES = {
   issue: 7,
   slice: 'C:/r/slice-7-1',
   base: 'cut1',
-  planPath: 'C:/r/reports/plans/7.md',
+  reportDir: 'C:/r/reports',
   sha: 'slice1',
   files: ['a.ts'],
   findingsPath: 'C:/r/reports/diff-review-7-1.md',
-  reportDir: 'C:/r/reports',
 };
 
 describe('consumed fields are required', () => {
@@ -113,8 +112,6 @@ describe('consumed fields are required', () => {
     expect(optionalOf(AGENT_OUTPUT_SCHEMAS)).toEqual({
       scout: [],
       overlapEstimator: [],
-      planCard: [],
-      planReview: [],
       tdd: ['reason'],
       diffReview: [],
       review: [],
@@ -127,15 +124,12 @@ describe('consumed fields are required', () => {
   });
 
   // Hand-written: a probe record's measured duration, whole seconds.
-  it.each<'planCard' | 'tdd'>(['planCard', 'tdd'])(
-    'requires the %s probe record’s duration in whole seconds',
-    (name) => {
-      const probe = AGENT_OUTPUT_SCHEMAS[name].properties.probes.items;
+  it('requires the tdd probe record’s duration in whole seconds', () => {
+    const probe = AGENT_OUTPUT_SCHEMAS.tdd.properties.probes.items;
 
-      expect(probe.properties.seconds).toEqual({ type: 'integer' });
-      expect(probe.required).toContain('seconds');
-    },
-  );
+    expect(probe.properties.seconds).toEqual({ type: 'integer' });
+    expect(probe.required).toContain('seconds');
+  });
 
   it('requires the tdd’s evidence: a kind of tracer or none and five strings', () => {
     expect(AGENT_OUTPUT_SCHEMAS.tdd.required).toContain('evidence');

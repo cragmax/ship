@@ -9,10 +9,10 @@ import {
   GATE_OK,
   liveRuns,
   OK,
-  PLAN_CARD,
   PREFLIGHT_OK,
   REPORT_DIR,
   SCOUT_FRESH,
+  TDD_BLOCKED,
   TDD_GREEN,
   type FakeRun,
 } from './_fake-hooks.js';
@@ -62,8 +62,6 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:check:7-1',
       'runner:cut-slice:7-1',
       'runner:provision:7-1',
-      'planner:7-1',
-      'planReviewer:7-1',
       'tdd:7-1',
       'diffReview:7-1',
       'reviewer:7-1',
@@ -184,13 +182,13 @@ describe('runShip --attach — setup', () => {
 
     await runShip(run.hooks, ARGS);
 
-    expect(promptLines(run, 'planner:7-1')).toEqual(
+    expect(promptLines(run, 'tdd:7-1')).toEqual(
       expect.arrayContaining([
-        `Report dir: ${ATTACH_REPORTS}`,
-        `Plan file: ${ATTACH_REPORTS}/plans/7.md`,
+        `Issue file: ${ATTACH_REPORTS}/issues/7.md`,
+        `Report file: ${ATTACH_REPORTS}/tdd-7-1.md`,
       ]),
     );
-    expect(leaseLine(run, 'planner:7-1')).toContain(`PH_POOL_REGISTRY=${REGISTRY}`);
+    expect(leaseLine(run, 'tdd:7-1')).toContain(`PH_POOL_REGISTRY=${REGISTRY}`);
     expect(callOf(run, 'runner:cut-slice:7-1')?.argv).toEqual([
       'tooling/worktree.ts',
       'cut-slice',
@@ -228,7 +226,7 @@ describe('runShip --attach — setup', () => {
       '--report-dir',
       ATTACH_REPORTS,
     ]);
-    expect(leaseLine(run, 'planner:7-1')).toContain(`PH_POOL_REGISTRY=${provisioned}`);
+    expect(leaseLine(run, 'tdd:7-1')).toContain(`PH_POOL_REGISTRY=${provisioned}`);
   });
 
   it('stops the entry when a reused batch has no trimmed pool registry', async () => {
@@ -653,7 +651,7 @@ describe('runShip --attach — an attached run that landed nothing', () => {
   it('leaves its batch and the open PR’s branch alone', async () => {
     const run = fakeHooks({
       ...ATTACHED,
-      planner: { ...PLAN_CARD, verdict: 'stale', evidence: 'done at abc123' },
+      tdd: TDD_BLOCKED,
     });
 
     const report = await runShip(run.hooks, ARGS);

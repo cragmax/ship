@@ -17,13 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
-import {
-  PLAN_PROBE_CAP_MINUTES,
-  PLAN_PROBES_PER_ISSUE,
-  PROBE_CAP_MINUTES,
-  PROBES_PER_ISSUE,
-  SLICE_BUDGET,
-} from './stages.js';
+import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE, SLICE_BUDGET } from './stages.js';
 
 /** A live run's changed files, for the scout's overlap judgment. */
 export interface LiveRunFiles {
@@ -77,52 +71,12 @@ export interface OverlapValues {
   readonly edges: readonly RunEdge[];
 }
 
-/** One issue its epic landed earlier in the run, for a later issue's planner. */
-export interface PriorSlice {
+/** One issue its epic landed, as the critic and the PR writer are handed it. */
+export interface LandedSlice {
   /** The issue. */
   readonly issue: number;
   /** Its batch commit. */
   readonly commit: string;
-  /** Its plan file. */
-  readonly plan: string;
-}
-
-/** The planner's values; `apply` mode applies a plan review's findings once. */
-export interface PlannerValues {
-  /** `plan`: write the plan; `apply`: apply the findings to it. */
-  readonly mode: 'plan' | 'apply';
-  /** The issue. */
-  readonly issue: number;
-  /** The attempt, 1 for the first. */
-  readonly attempt: number;
-  /** The slice worktree, cut from the epic's branch head. */
-  readonly slice: string;
-  /** The run's report directory. */
-  readonly reportDir: string;
-  /** The plan file. */
-  readonly planPath: string;
-  /** The plan review's findings; `apply` mode only. */
-  readonly findingsPath?: string;
-  /** What the epic landed before this issue, in landing order. */
-  readonly priorSlices: readonly PriorSlice[];
-  /** The files the previous attempt's landing conflicted on; absent after any other ending. */
-  readonly conflicts?: readonly string[];
-  /** The slice's server-tier recipe, for the plan's server-tier runs. */
-  readonly lease: LeaseValues;
-}
-
-/** `PROMPTS.planReviewer`'s input: the plan to review and where its findings go. */
-export interface PlanReviewerValues {
-  /** The issue. */
-  readonly issue: number;
-  /** The slice worktree. */
-  readonly slice: string;
-  /** The plan file. */
-  readonly planPath: string;
-  /** Where the findings go. */
-  readonly findingsPath: string;
-  /** The run's report directory: the issue's text is written under it. */
-  readonly reportDir: string;
 }
 
 /** Where a slice's lease runs lease from. */
@@ -135,7 +89,7 @@ export interface LeaseValues {
   readonly registry: string;
 }
 
-/** `PROMPTS.tdd`'s input: the slice, its plan, and the message its one commit carries. */
+/** `PROMPTS.tdd`'s input: the slice, its issue, and the message template its one commit fills. */
 export interface TddValues {
   /** The issue. */
   readonly issue: number;
@@ -145,14 +99,14 @@ export interface TddValues {
   readonly slice: string;
   /** The commit the slice was cut at: its one commit's parent. */
   readonly base: string;
-  /** The plan file. */
-  readonly planPath: string;
+  /** The run's report directory: the issue's text is written under it. */
+  readonly reportDir: string;
   /** The tdd's full report. */
   readonly reportPath: string;
   /** Where the commit message goes; the commit and the landing both read it. */
   readonly messagePath: string;
-  /** The commit message. */
-  readonly message: string;
+  /** The commit message, its first line and closing keyword left as placeholders. */
+  readonly messageTemplate: string;
   /** The lease command's values. */
   readonly lease: LeaseValues;
 }
@@ -165,23 +119,18 @@ export interface SliceCommitValues {
   readonly slice: string;
   /** The commit the slice was cut at: its one commit's parent. */
   readonly base: string;
-  /** The plan file. */
-  readonly planPath: string;
+  /** The run's report directory: the issue's text is under it. */
+  readonly reportDir: string;
   /** The slice's one commit. */
   readonly sha: string;
   /** Its changed paths. */
   readonly files: readonly string[];
 }
 
-/**
- * The diff reviewer's values: the slice's commit, where its findings go, and
- * where the issue's text goes.
- */
+/** The diff reviewer's values: the slice's commit and where its findings go. */
 export interface DiffReviewValues extends SliceCommitValues {
   /** Where the findings go; the reviewer reads them. */
   readonly findingsPath: string;
-  /** The run's report directory: the issue's text is written under it. */
-  readonly reportDir: string;
 }
 
 /**
@@ -207,8 +156,8 @@ export interface CriticValues {
   readonly slice: string;
   /** The epic's landed range, `<batch base>..HEAD`. */
   readonly range: string;
-  /** Each landed issue: its commit and plan file, in landing order. */
-  readonly landed: readonly PriorSlice[];
+  /** Each landed issue and its commit, in landing order. */
+  readonly landed: readonly LandedSlice[];
   /** The full report. */
   readonly reportPath: string;
 }
@@ -224,8 +173,8 @@ export interface RetroValues {
 }
 
 /** One issue the epic landed, as the PR writer is handed it. */
-export interface PrWriterLanded extends PriorSlice {
-  /** Its commit subject: the planner's bare subject, not its `type(scope):` line. */
+export interface PrWriterLanded extends LandedSlice {
+  /** Its commit subject: the tdd's bare subject, not its `type(scope):` line. */
   readonly subject: string;
 }
 
@@ -295,13 +244,8 @@ function leaseCommand(lease: LeaseValues): string {
   ].join(' ');
 }
 
-function probeCapsLine(minutes: number, probes: number): string {
-  return `Probe caps: ${String(minutes)} min per probe, ${String(probes)} probes per issue`;
-}
-
 /**
- * The `Slice budget:` line — {@link SLICE_BUDGET} as the planner, the plan
- * reviewer and the retro read it.
+ * The `Slice budget:` line — {@link SLICE_BUDGET} as the retro reads it.
  *
  * @returns `Slice budget: <files> files in scope, <tasks> tasks, <lines> lines landed`.
  */
@@ -314,13 +258,13 @@ function sliceBudgetLine(): string {
 
 /**
  * A slice's server-tier recipe: the lease command template, where its
- * version comes from, and the stage's probe caps.
+ * version comes from, and the probe caps.
  */
-function serverTierLines(lease: LeaseValues, minutes: number, probes: number): string[] {
+function serverTierLines(lease: LeaseValues): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    probeCapsLine(minutes, probes),
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
   ];
 }
 
@@ -334,13 +278,18 @@ const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
 
+/** Where an issue's text goes: `<reportDir>/issues/<issue>.md`. */
+function issueFile(issue: number, reportDir: string): string {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
+
 /**
  * Where an issue's text goes and the command that writes it there — so the
  * agent reads the issue from a file, never from `gh` output in its context.
  */
 function issueLines(issue: number, reportDir: string): string[] {
   const dir = `${reportDir}/issues`;
-  const file = `${dir}/${String(issue)}.md`;
+  const file = issueFile(issue, reportDir);
   return [
     `Issue file: ${file}`,
     [
@@ -386,47 +335,18 @@ export const PROMPTS = {
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
     ].join('\n'),
-  planner: (values: PlannerValues): string =>
-    [
-      `Mode: ${values.mode}`,
-      `Issue: ${issueRef(values.issue)}`,
-      `Attempt: ${String(values.attempt)}`,
-      `Slice worktree: ${values.slice}`,
-      `Report dir: ${values.reportDir}`,
-      `Plan file: ${values.planPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      ...(values.findingsPath === undefined ? [] : [`Findings file: ${values.findingsPath}`]),
-      `Prior slices (JSON): ${JSON.stringify(values.priorSlices)}`,
-      ...serverTierLines(values.lease, PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-      ...(values.conflicts === undefined
-        ? []
-        : [
-            `Previous attempt: harvest conflict on ${values.conflicts.join(', ')}; re-plan against the current batch head`,
-          ]),
-    ].join('\n'),
-  planReviewer: (values: PlanReviewerValues): string =>
-    [
-      `Issue: ${issueRef(values.issue)}`,
-      `Slice worktree: ${values.slice}`,
-      `Plan file: ${values.planPath}`,
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-      probeCapsLine(PLAN_PROBE_CAP_MINUTES, PLAN_PROBES_PER_ISSUE),
-      sliceBudgetLine(),
-    ].join('\n'),
   tdd: (values: TddValues): string =>
     [
       `Issue: ${issueRef(values.issue)}`,
       `Attempt: ${String(values.attempt)}`,
       `Slice worktree: ${values.slice}`,
       `Slice base: ${values.base}`,
-      `Plan file: ${values.planPath}`,
+      ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
-      ...verbatimBlock('Commit message file', {
+      ...serverTierLines(values.lease),
+      ...verbatimBlock('Commit message template', {
         path: values.messagePath,
-        content: values.message,
+        content: values.messageTemplate,
       }),
     ].join('\n'),
   diffReview: (values: DiffReviewValues): string =>
@@ -474,7 +394,6 @@ function sliceCommitLines(values: SliceCommitValues): string[] {
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
-    `Plan file: ${values.planPath}`,
     `Slice commit: ${values.sha}`,
     `Changed files: ${values.files.join(', ')}`,
   ];
@@ -488,8 +407,9 @@ function sliceCommitLines(values: SliceCommitValues): string[] {
 function sliceReviewPrompt(values: SliceReviewValues, findingsPath?: string): string {
   return [
     ...sliceCommitLines(values),
+    `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
     ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
-    ...serverTierLines(values.lease, PROBE_CAP_MINUTES, PROBES_PER_ISSUE),
+    ...serverTierLines(values.lease),
   ].join('\n');
 }

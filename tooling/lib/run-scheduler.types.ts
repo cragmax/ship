@@ -100,8 +100,8 @@ export type SchedulerAction =
   | {
       /**
        * Cut a slice from the epic head, re-check readiness with `tooling/run-gate.ts check` —
-       * feed a not-ready result (a missing label, a closed issue) as `label-removed` — then plan
-       * and author the issue.
+       * feed a not-ready result (a missing label, a closed issue) as `label-removed` — then
+       * author the issue.
        */
       readonly kind: 'start';
       /** The issue. */

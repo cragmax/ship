@@ -63,7 +63,7 @@ export interface IssueReport {
   readonly issue: number;
   /** How it ended; `landed-then-halted`: its commit landed, then its epic halted. */
   readonly outcome: IssueOutcome;
-  /** How the PR cites it: `fixes` only for a landed issue whose plan card says so. */
+  /** How the PR cites it: `fixes` only for a landed issue whose tdd says so. */
   readonly cite: 'fixes' | 'see';
   /** Its batch commit, when it landed. */
   readonly commit?: string;
@@ -580,8 +580,7 @@ async function prWriterStep(
     landed: input.landed.map((l) => ({
       issue: l.issue,
       commit: l.commit,
-      plan: l.card.planPath,
-      subject: l.card.commit.subject,
+      subject: l.tdd.commit.subject,
     })),
     reportDir: entry.reportDir,
   };

@@ -10,13 +10,11 @@ describe('workflow agents', () => {
       'critic',
       'diff-reviewer',
       'overlap-estimator',
-      'planner',
       'pr-writer',
       'retro',
       'reviewer',
       'runner',
       'scout',
-      'ship-plan-reviewer',
       'ship-tdd',
       'ship-test-review',
     ]);

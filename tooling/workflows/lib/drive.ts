@@ -69,7 +69,6 @@ type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt' | 'si
 /** What settling reads of an ending, by its kind. */
 interface EndingFacts extends Pick<Timing, 'committedAt' | 'size'> {
   readonly primary: SchedulerEvent;
-  readonly conflicts: readonly string[];
 }
 
 /** The loop's state. */
@@ -79,8 +78,6 @@ interface Drive {
   scheduler: SchedulerState | null;
   readonly flights: Map<string, Promise<Note>>;
   readonly attempts: Map<number, number>;
-  /** Each issue's last conflicting files, for its next attempt's planner. */
-  readonly conflicts: Map<number, readonly string[]>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
   /** Each entry's halt state; an entry it lacks is `running`. */
@@ -114,7 +111,6 @@ function newDrive(input: DriveInput): Drive {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
-    conflicts: new Map(),
     timing: new Map(),
     halts: new Map(),
     outcomes: new Map(),
@@ -133,12 +129,6 @@ function newDrive(input: DriveInput): Drive {
       markHalting: () => {
         if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
       },
-      priorSlices: () =>
-        (d.landed.get(i) ?? []).map((l) => ({
-          issue: l.issue,
-          commit: l.commit,
-          plan: l.card.planPath,
-        })),
     });
   });
   return d;
@@ -166,7 +156,7 @@ function onNote(d: Drive, note: Note): void {
 function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   const i = entryOfIssue(d, issue);
   const epic = d.input.entries[i]?.epic ?? null;
-  const { primary, conflicts, committedAt, size } = endingFacts(issue, ending);
+  const { primary, committedAt, size } = endingFacts(issue, ending);
   const { events, entry } = settleEvents(primary, ending.halt, {
     issue,
     epic,
@@ -174,7 +164,6 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   });
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.conflicts.set(issue, conflicts);
   d.timing.set(issue, {
     attempts: d.attempts.get(issue) ?? 1,
     startedAt: ending.startedAt,
@@ -191,17 +180,11 @@ function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
     case 'landed':
       return {
         primary: { kind: 'committed', issue },
-        conflicts: [],
         committedAt: ending.committedAt,
         size: ending.size,
       };
     case 'unlanded':
-      return {
-        primary: ending.primary,
-        conflicts: ending.conflicts,
-        committedAt: null,
-        size: null,
-      };
+      return { primary: ending.primary, committedAt: null, size: null };
   }
 }
 
@@ -237,7 +220,7 @@ function issueOutcome(
   switch (ending.kind) {
     case 'landed':
       return committed
-        ? { issue, outcome: 'landed', cite: ending.work.card.closes, commit: ending.commit }
+        ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
         : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
     case 'unlanded':
       return unlandedOutcome(issue, ending.primary, halted);
@@ -318,8 +301,7 @@ function startAttempt(d: Drive, issue: number): void {
   if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
   const attempt = d.attempts.get(issue) ?? 1;
   d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  const conflicts = d.conflicts.get(issue) ?? [];
-  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt, conflicts));
+  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt));
 }
 
 /**
