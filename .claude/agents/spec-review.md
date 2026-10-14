@@ -7,6 +7,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep, LSP
 skills:
   - spec-review
   - unattended-agent
+  - probe
 ---
 
 # Spec review (stage agent)

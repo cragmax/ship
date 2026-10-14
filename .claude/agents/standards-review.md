@@ -7,6 +7,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep, LSP
 skills:
   - standards-review
   - unattended-agent
+  - probe
 ---
 
 # Standards review (stage agent)
