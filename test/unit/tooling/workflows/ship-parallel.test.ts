@@ -143,7 +143,7 @@ describe('runShip — issues in flight at once', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:cut-slice'))).toEqual([
+    expect(labels(run).filter((l) => /^runner:cut-slice:\d/.test(l))).toEqual([
       'runner:cut-slice:7-1',
       'runner:cut-slice:7-2',
       'runner:cut-slice:7-3',
@@ -256,10 +256,6 @@ describe('runShip — issues in flight at once', () => {
     ['tdd:8-1', [...UP_TO_TDD, 'runner:teardown:8-1']],
     ['specReview:8-1', [...UP_TO_SPEC_REVIEW, 'runner:teardown:8-1']],
     ['standardsReview:8-1', [...UP_TO_SPEC_REVIEW, 'standardsReview:8-1', 'runner:teardown:8-1']],
-    [
-      'testReview:8-1',
-      [...UP_TO_SPEC_REVIEW, 'standardsReview:8-1', 'testReview:8-1', 'runner:teardown:8-1'],
-    ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));
     const run = fakeHooks(
@@ -379,7 +375,7 @@ describe('runShip — epics side by side', () => {
     const done = runShip(run.hooks, 'epics 1 2');
     await idle();
 
-    expect(labels(run).filter((l) => l.startsWith('runner:teardown:'))).toHaveLength(2);
+    expect(labels(run).filter((l) => /^runner:teardown:\d/.test(l))).toHaveLength(2);
     expect(labels(run).filter((l) => l.startsWith('runner:sync-master'))).toHaveLength(1);
     const [first = ''] = hold.held();
     hold.release(first);

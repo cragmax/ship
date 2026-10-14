@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AuditTestsOutput,
   ProbeRecord,
   PrWriterOutput,
   SliceWork,
@@ -49,7 +50,6 @@ const work = (fields: {
   specReview?: SliceWork['specReview'];
   standardsReview?: SliceWork['standardsReview'];
   manifestTsdoc?: SliceWork['manifestTsdoc'];
-  testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
@@ -81,16 +81,6 @@ const work = (fields: {
     sha: 's2m',
     summary: 'sharpened walkTo',
   },
-  testReview:
-    fields.testReview === undefined
-      ? {
-          verdict: 'hardened',
-          sha: 's3',
-          survivors: 1,
-          summary: 'pinned the bound',
-          leaseLines: [],
-        }
-      : fields.testReview,
 });
 
 const SEVEN: LandedIssue = {
@@ -123,7 +113,6 @@ const EIGHT: LandedIssue = {
       },
     ],
     manifestTsdoc: 'no src/ change',
-    testReview: 'trivial surface',
   }),
 };
 
@@ -145,11 +134,10 @@ const REVIEW_LEASE = 'with-lease: waited 1.2s for folia@localhost:25711, held 40
 // A wait line is no release line: a role holding only one had no lease to show.
 const WAIT_LINE = 'with-lease: waiting for paper@localhost:25701 — held by an unknown holder';
 
-const reviewed = (leaseLines: string[]): SliceWork['testReview'] => ({
-  verdict: 'hardened',
-  sha: 's3',
-  survivors: 1,
-  summary: 'pinned the bound',
+const specReviewed = (leaseLines: string[]): SliceWork['specReview'] => ({
+  verdict: 'fixed',
+  sha: 's1s',
+  summary: 'covered criterion 3',
   leaseLines,
 });
 
@@ -184,6 +172,16 @@ const WRITER: PrWriterOutput = {
   ramifications: '',
 };
 
+const AUDITED: AuditTestsOutput = {
+  verdict: 'hardened',
+  sha: 'a0',
+  files: ['test/unit/x.test.ts'],
+  commit: { type: 'test', scope: 'tools', subject: 'pin the x bound' },
+  survivors: 1,
+  summary: 'pinned the bound',
+  leaseLines: [],
+};
+
 const INPUT: PrBodyInput = {
   epic: 1025,
   branch: 'ship/epic-1025',
@@ -208,13 +206,27 @@ const INPUT: PrBodyInput = {
     remote: { launch: 'o0', synced: 'o0', current: 'o0', move: 'equal' },
   },
   mainUntouched: true,
-  critic: {
-    outcome: 'landed',
-    commit: 'k1',
-    findings: [
-      { lens: 'duplication', summary: 'two x helpers', applied: true },
-      { lens: 'test-gaps', summary: 'no cross-slice test', applied: false },
-    ],
+  auditTests: { outcome: 'landed', commit: 'a1', answer: AUDITED },
+  epicReview: {
+    verdict: 'accepted-with-open-items',
+    profiled: false,
+    answer: {
+      verdict: 'accepted-with-open-items',
+      summary: 'every criterion met, one duplication open',
+      criteria: [
+        { issue: 7, criterion: 'adds x', state: 'met', evidence: 'tooling/x.ts:1' },
+        { issue: 8, criterion: 'wires y', state: 'met', evidence: 'tooling/y.ts:2' },
+      ],
+      findings: [
+        {
+          view: 'duplication',
+          severity: 'judgement',
+          summary: 'two x helpers',
+          source: 'tooling/x.ts:3',
+        },
+      ],
+      unchecked: [],
+    },
   },
   overlap: {
     added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: 'both edit tooling/x.ts' }],
@@ -341,8 +353,7 @@ describe('renderPrBody', () => {
       '- Standards review: fixed — renamed a helper',
       '- Manifest TSDoc: fixed — sharpened walkTo',
       '- Manifest TSDoc: skipped — no src/ change',
-      '- Test review: hardened, 1 surviving mutants — pinned the bound',
-      '- Test review: skipped — trivial surface',
+      '- Audit: hardened, 1 surviving mutants — pinned the bound',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
@@ -361,7 +372,7 @@ describe('renderPrBody', () => {
   it('reports the master sync, the bump, the master check, the main checkout and the report dir as the whole epic end', () => {
     const lines = body.split('\n');
 
-    expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Critic'))).toEqual([
+    expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Test audit'))).toEqual([
       '',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
@@ -379,11 +390,11 @@ describe('renderPrBody', () => {
     expect(renderPrBody({ ...INPUT, mainUntouched }).split('\n')).toContain(line);
   });
 
-  it('reports the critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
+  it('reports the test audit, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
     const lines = body.split('\n');
     const sections = [
       '## Epic end',
-      '## Critic',
+      '## Test audit',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',
@@ -393,9 +404,7 @@ describe('renderPrBody', () => {
     expect(sections.every((at) => at > -1)).toBe(true);
     expect([...sections].sort((a, b) => a - b)).toEqual(sections);
     for (const line of [
-      '- Outcome: landed as k1',
-      '- [duplication] two x helpers (applied)',
-      '- [test-gaps] no cross-slice test (not applied)',
+      '- Outcome: landed as a1',
       '- #7 → #8 (likely): both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0; size none',
@@ -462,16 +471,14 @@ describe('renderPrBody', () => {
     expect(lines[lines.indexOf('## Schedule') + 2]?.endsWith(`; attempts 1; ${tail}`)).toBe(true);
   });
 
-  it('renders None. for an empty section and the critic’s other outcomes', () => {
+  it('renders None. for an empty section', () => {
     const lines = renderPrBody({
       ...INPUT,
-      critic: { outcome: 'skipped', findings: [] },
       overlap: { added: [], sequenced: [], areaMap: 'read' },
       schedule: [],
       retro: [],
     }).split('\n');
 
-    expect(lines).toContain('- Outcome: skipped — one issue landed');
     for (const heading of ['## Overlap edges', '## Schedule', '## Retro findings']) {
       expect(lines[lines.indexOf(heading) + 2]).toBe('None.');
     }
@@ -504,63 +511,66 @@ describe('renderPrBody', () => {
     );
   });
 
-  it('renders a comment-only test-review skip apart from a trivial-surface one', () => {
-    const twelve: LandedIssue = {
-      issue: 12,
-      commit: 'c12',
-      ...work({ subject: 'trim x', closes: 'fixes', testReview: 'comment-only' }),
-    };
+  it.each<[string, PrBodyInput['auditTests'], string[]]>([
+    [
+      'a landed one, with its answer',
+      INPUT.auditTests,
+      ['- Outcome: landed as a1', '- Audit: hardened, 1 surviving mutants — pinned the bound'],
+    ],
+    [
+      'a comment-only skip',
+      { outcome: 'skipped', reason: 'comment-only', answer: null },
+      ['- Outcome: skipped — comment-only'],
+    ],
+    [
+      'a dropped commit',
+      { ...INPUT.auditTests, outcome: 'dropped', reason: 'land refused' },
+      [
+        '- Outcome: changes dropped — land refused',
+        '- Audit: hardened, 1 surviving mutants — pinned the bound',
+      ],
+    ],
+  ])('renders the test audit section for %s', (_name, auditTests, expected) => {
+    const lines = renderPrBody({ ...INPUT, auditTests }).split('\n');
+    const at = lines.indexOf('## Test audit');
 
-    const lines = renderPrBody({ ...INPUT, landed: [EIGHT, twelve] })
-      .split('\n')
-      .filter((l) => l.startsWith('- Test review: '));
-
-    expect(lines).toEqual([
-      '- Test review: skipped — trivial surface',
-      '- Test review: skipped — comment-only',
-    ]);
+    expect(lines.slice(at + 2, lines.indexOf('', at + 2))).toEqual(expected);
   });
 
-  it.each<[string, string[], SliceWork['testReview'], string]>([
+  it.each<[string, string[], SliceWork['specReview'], string]>([
     [
       'the tdd alone',
       [TDD_LEASE],
-      reviewed([]),
+      specReviewed([]),
       '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
     ],
     [
-      'the test review alone',
+      'the spec review alone',
       [],
-      reviewed([REVIEW_LEASE]),
-      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      specReviewed([REVIEW_LEASE]),
+      '- Lease timings: spec-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
     [
       'both roles, tdd first',
       [TDD_LEASE],
-      reviewed([REVIEW_LEASE]),
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      specReviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; spec-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
-    ['neither role', [], reviewed([]), '- Lease timings: none'],
-    [
-      'a skipped test review',
-      [TDD_LEASE],
-      'trivial surface',
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s',
-    ],
+    ['neither role', [], specReviewed([]), '- Lease timings: none'],
     [
       'a tdd with only a wait line',
       [WAIT_LINE],
-      reviewed([REVIEW_LEASE]),
-      '- Lease timings: test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      specReviewed([REVIEW_LEASE]),
+      '- Lease timings: spec-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
-  ])('renders the lease timings of %s', (_name, tdd, testReview, line) => {
+  ])('renders the lease timings of %s', (_name, tdd, specReview, line) => {
     const lines = renderPrBody({
       ...INPUT,
       landed: [
         {
           issue: 11,
           commit: 'c11',
-          ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, testReview }),
+          ...work({ subject: 'lease x', closes: 'fixes', leaseLines: tdd, specReview }),
         },
       ],
     }).split('\n');
@@ -568,38 +578,31 @@ describe('renderPrBody', () => {
     expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([line]);
   });
 
-  it.each<[string, string[], string[], SliceWork['testReview'], string]>([
+  it.each<[string, string[], string[], SliceWork['specReview'], string]>([
     [
-      'all three roles, the standards review between',
+      'all three roles, the standards review last',
       [TDD_LEASE],
       [STANDARDS_LEASE],
-      reviewed([REVIEW_LEASE]),
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      specReviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; spec-review: folia@localhost:25711 waited 1.2s, held 40.3s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ],
     [
       'a standards review that leased nothing',
       [TDD_LEASE],
       [],
-      reviewed([REVIEW_LEASE]),
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      specReviewed([REVIEW_LEASE]),
+      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; spec-review: folia@localhost:25711 waited 1.2s, held 40.3s',
     ],
     [
       'the standards review alone',
       [],
       [STANDARDS_LEASE],
-      reviewed([]),
+      specReviewed([]),
       '- Lease timings: standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
-    ],
-    [
-      'a standards review before a skipped test review',
-      [TDD_LEASE],
-      [STANDARDS_LEASE],
-      'trivial surface',
-      '- Lease timings: tdd: paper@localhost:25701 waited 38.9s, held 27s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ],
   ])(
     'renders the standards review’s lease timings for %s',
-    (_name, tdd, review, testReview, line) => {
+    (_name, tdd, review, specReview, line) => {
       const lines = renderPrBody({
         ...INPUT,
         landed: [
@@ -611,7 +614,7 @@ describe('renderPrBody', () => {
               closes: 'fixes',
               leaseLines: tdd,
               standardsReview: fixedReview(review),
-              testReview,
+              specReview,
             }),
           },
         ],
@@ -705,24 +708,27 @@ describe('renderPrBody', () => {
     ]);
   });
 
-  it('defuses a closing reference in a review summary, a critic reason and every reference form', () => {
+  it('defuses a closing reference in a review summary, an epic review finding and every reference form', () => {
     const tricky = renderPrBody({
       ...INPUT,
       landed: [
         {
           ...SEVEN,
           standardsReview: { ...SEVEN.standardsReview, summary: 'renamed, fixes #21' },
-          testReview: {
-            verdict: 'clean',
-            sha: 's3',
-            survivors: 0,
-            summary:
-              'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
-            leaseLines: [],
-          },
         },
       ],
-      critic: { outcome: 'dropped', reason: 'land failed: fixed #24 then broke', findings: [] },
+      auditTests: {
+        outcome: 'clean',
+        answer: {
+          ...AUDITED,
+          summary:
+            'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
+        },
+      },
+      epicReview: {
+        ...INPUT.epicReview,
+        notRun: 'fixed #24 then broke',
+      },
     });
 
     expect(tricky).toMatch(closes(7));
@@ -732,9 +738,7 @@ describe('renderPrBody', () => {
       /closes[\s:]*https:\/\/github\.com\/cragmax\/paper-harness\/issues\/23/i,
     );
     expect(tricky).toContain('renamed, fixes (see #21)');
-    expect(tricky.split('\n')).toContain(
-      '- Outcome: changes dropped — land failed: fixed (see #24) then broke',
-    );
+    expect(tricky.split('\n')).toContain('- Not run: fixed (see #24) then broke');
   });
 });
 
@@ -983,8 +987,9 @@ describe('renderPrBody — the fold', () => {
   const body = renderPrBody(INPUT);
   const lines = body.split('\n');
 
-  it('leads with the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
+  it('leads with the Epic review, the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
     const at = [
+      '## Epic review',
       '## Summary',
       '## Evidence',
       '## Merge Danger',
@@ -992,7 +997,7 @@ describe('renderPrBody — the fold', () => {
       OPENER,
       '## Landed issues',
       '## Epic end',
-      '## Critic',
+      '## Test audit',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',
@@ -1005,7 +1010,7 @@ describe('renderPrBody — the fold', () => {
       l.startsWith('### ') || l.startsWith('- Issue: ') ? [i] : [],
     );
 
-    expect(lines[0]).toBe('## Summary');
+    expect(lines[0]).toBe('## Epic review');
     expect(at.every((i) => i > -1)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(lines[open - 1]).toBe('');
@@ -1039,7 +1044,7 @@ describe('renderPrBody — the fold', () => {
 // From the first line through the Evidence heading.
 const summaryOf = (writer: PrWriterOutput | null): string[] => {
   const lines = renderPrBody({ ...INPUT, writer }).split('\n');
-  return lines.slice(0, lines.indexOf('## Evidence') + 1);
+  return lines.slice(lines.indexOf('## Summary'), lines.indexOf('## Evidence') + 1);
 };
 
 // From the Merge Danger heading through the Issues heading after it.
@@ -1508,17 +1513,25 @@ describe('renderAttachedSection', () => {
   const SECTION_INPUT: AttachedSectionInput = {
     ...INPUT,
     epic: null,
+    epicReview: { ...INPUT.epicReview, profiled: true },
     run: 2,
     reportComment: 'https://github.com/o/r/pull/9#issuecomment-1',
   };
 
-  it('heads the section with the run, then its Evidence, its Issues and a link to its run report', () => {
+  it('heads the section with the run, then its epic review, its Evidence, its Issues and a link to its run report', () => {
     const text = renderAttachedSection(SECTION_INPUT);
     const lines = text.split('\n');
     const main = renderPrBody(INPUT).split('\n');
 
-    expect(lines.slice(0, 4)).toEqual(['## Attached run 2', '', '### Evidence', '']);
-    expect(lines[4]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
+    expect(lines.slice(0, 5)).toEqual([
+      '## Attached run 2',
+      '',
+      '### Epic review',
+      '',
+      '**Verdict:** accepted-with-open-items (profiled)',
+    ]);
+    const evidence = lines.indexOf('### Evidence');
+    expect(lines[evidence + 2]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
     expect(lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Issues') - 1)).toEqual(
       main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1),
     );

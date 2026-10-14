@@ -131,7 +131,7 @@ const DOC_INDEX_CONFLICT = {
   },
 };
 
-// Two issues bring in issue-overlap (one pair), an applied critic and a retro finding.
+// Two issues bring in issue-overlap (one pair), a hardening test audit and a retro finding.
 const TWO_ISSUES = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
   issueReadiness: {
@@ -143,13 +143,14 @@ const TWO_ISSUES = {
     liveOverlaps: [],
     areaMap: 'read',
   },
-  critic: {
-    outcome: 'applied',
-    sha: 'critic1',
-    files: ['tooling/x.ts'],
-    commit: { type: 'refactor', scope: 'build', subject: 'share x' },
-    findings: [{ lens: 'duplication', summary: 'two x helpers', applied: true }],
-    checks: 'build, eslint, vitest related, prettier',
+  auditTests: {
+    verdict: 'hardened',
+    sha: 'audit1',
+    files: ['test/unit/tooling/x.test.ts'],
+    commit: { type: 'test', scope: 'build', subject: 'pin x' },
+    survivors: 0,
+    summary: 'pinned a bound',
+    leaseLines: [],
   },
   retro: {
     findings: [{ title: 't', evidence: 'e', kind: 'genuine', suggestion: 's' }],
@@ -355,7 +356,7 @@ describe('runShip — leftover slice branches', () => {
 });
 
 describe('runShip — one issue from launch to PR', () => {
-  it('runs the chain through test review before one land, tears the slice down before committed, then the epic end', async () => {
+  it('runs the chain through the reviews before one land, tears the slice down before committed, then the epic end', async () => {
     const run = fakeHooks();
 
     const report = await runShip(run.hooks, 'issues 7');
@@ -373,9 +374,13 @@ describe('runShip — one issue from launch to PR', () => {
       'tdd:7-1',
       'specReview:7-1',
       'standardsReview:7-1',
-      'testReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
+      'runner:cut-slice:audit-tests',
+      'runner:provision:audit-tests',
+      'auditTests:list',
+      'runner:teardown:audit-tests',
+      'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -409,7 +414,7 @@ describe('runShip — one issue from launch to PR', () => {
     });
   });
 
-  it('runs the Manifest TSDoc review after the standards review on a slice changing src/, the test review reading its amend', async () => {
+  it('runs the Manifest TSDoc review after the standards review on a slice changing src/, the land reading its amend', async () => {
     const files = ['src/fluent/wrapped-bot/types.ts', 'test/unit/x.test.ts'];
     const run = fakeHooks({
       tdd: { ...TDD_GREEN, files },
@@ -423,7 +428,6 @@ describe('runShip — one issue from launch to PR', () => {
       'specReview:7-1',
       'standardsReview:7-1',
       'manifestTsdoc:7-1',
-      'testReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
     ]);
@@ -441,7 +445,7 @@ describe('runShip — one issue from launch to PR', () => {
       'Changed files: src/fluent/wrapped-bot/types.ts, test/unit/x.test.ts',
       `Report file: ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
     ]);
-    expect(promptOf(run, 'testReview:7-1').split('\n')).toContain('Slice commit: slice2m');
+    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2m');
   });
 
   it('hands each command its paths from the envelopes before it', async () => {
@@ -483,12 +487,11 @@ describe('runShip — one issue from launch to PR', () => {
     // Each amend moves the slice commit: each review sees the one before it.
     expect(shaSeenBy('specReview:7-1')).toBe('Slice commit: slice1');
     expect(shaSeenBy('standardsReview:7-1')).toBe('Slice commit: spec1');
-    expect(shaSeenBy('testReview:7-1')).toBe('Slice commit: slice2');
     expect(argvOf('runner:land:7-1')).toEqual([
       'tooling/worktree.ts',
       'land',
       BATCH,
-      'slice3',
+      'slice2',
       '--base',
       'cut1',
       '--message-file',
@@ -1141,9 +1144,9 @@ describe('runShip — an attempt through the build', () => {
 });
 
 const AFTER_BUILD_CALL =
-  /^(tdd|specReview|standardsReview|manifestTsdoc|testReview|runner:(land|teardown)):\d/;
+  /^(tdd|specReview|standardsReview|manifestTsdoc|runner:(land|teardown)):\d/;
 const UP_TO_REVIEW = ['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'];
-const UP_TO_LAND = [...UP_TO_REVIEW, 'testReview:7-1', 'runner:land:7-1'];
+const UP_TO_LAND = [...UP_TO_REVIEW, 'runner:land:7-1'];
 const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
   [
     'blocked by the spec review',
@@ -1189,20 +1192,6 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     },
     [...UP_TO_REVIEW, 'manifestTsdoc:7-1', 'runner:teardown:7-1'],
     'manifest tsdoc: a hook failure would not clear',
-  ],
-  [
-    'blocked by the test reviewer',
-    {
-      testReview: {
-        verdict: 'blocked',
-        sha: '',
-        survivors: 0,
-        summary: 'a test cannot be made to fail',
-        leaseLines: [],
-      },
-    },
-    [...UP_TO_REVIEW, 'testReview:7-1', 'runner:teardown:7-1'],
-    'test review: a test cannot be made to fail',
   ],
   [
     'blocked by a landing refused as more than one commit',
@@ -1259,7 +1248,7 @@ describe('runShip — an attempt after the build', () => {
     },
   );
 
-  it.each(['specReview', 'standardsReview', 'testReview'])(
+  it.each(['specReview', 'standardsReview'])(
     'retries the issue in a fresh slice when the %s returns nothing, then blocks it',
     async (agent) => {
       const run = fakeHooks({ [agent]: null });
@@ -1364,7 +1353,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['specReview:7-1', 'standardsReview:7-1', 'testReview:7-1'])(
+  it.each(['specReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
     'hands %s the tdd’s lease recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
@@ -1394,10 +1383,10 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  // Hand-written: the probe allowance of the tdd and the slice reviews.
+  // Hand-written: the probe allowance of the tdd, the slice reviews and the test audit.
   const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'testReview:7-1'])(
+  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
     'hands %s the probe caps, once',
     async (label) => {
       const run = fakeHooks();
@@ -1465,7 +1454,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'testReview:7-1'])(
+  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'])(
     'hands %s the slice worktree the cut named',
     async (label) => {
       const run = fakeHooks();
@@ -1476,7 +1465,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'testReview:7-1'])(
+  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'])(
     'hands %s the slice base the cut answered',
     async (label) => {
       const run = fakeHooks();
@@ -1487,7 +1476,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['specReview:7-1', 'standardsReview:7-1', 'testReview:7-1'])(
+  it.each(['specReview:7-1', 'standardsReview:7-1'])(
     'orders %s’s prompt: the slice’s lines, the issue and report files, then the server-tier recipe',
     async (label) => {
       const run = fakeHooks();
@@ -1554,115 +1543,15 @@ describe('runShip — what an attempt hands on', () => {
     ).toEqual([`Report file: ${REPORT_DIR}/${file}`]);
   });
 
-  it('skips the test review for a slice that changes no code, landing the standards review’s commit', async () => {
-    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run).filter((l) => l.startsWith('testReview'))).toEqual([]);
-    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Test review: skipped — trivial surface',
-    );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
-  });
-
-  it('skips the test review for a slice proven comment-only, landing the standards review’s commit', async () => {
-    const run = fakeHooks({
-      tdd: { ...TDD_GREEN, files: ['src/a.ts', 'eslint-suppressions.json'] },
-      'runner:comment-only': {
-        exitCode: 0,
-        envelopePath: 'e.json',
-        notCompared: ['eslint-suppressions.json'],
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(
-      labels(run).filter((l) => /^(standardsReview|runner:comment-only|testReview):/.test(l)),
-    ).toEqual(['standardsReview:7-1', 'runner:comment-only:7-1']);
-    expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
-      'tooling/comment-only.ts',
-      '--json',
-      'cut1..slice2',
-    ]);
-    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
-    const lines = promptOf(run, 'runner:publish:list').split('\n');
-    expect(lines).toContain('- Test review: skipped — comment-only');
-    expect(lines).not.toContain('- Test review: skipped — trivial surface');
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
-  });
-
-  it.each<[string, string[], unknown, boolean, boolean]>([
-    [
-      'a test/ path',
-      ['src/a.ts', 'test/unit/a.test.ts'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
-      false,
-      false,
-    ],
-    [
-      'a not-compared tooling/x.cts',
-      ['src/a.ts', 'tooling/x.cts'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/x.cts'] },
-      true,
-      false,
-    ],
-    [
-      'a not-compared src/b.js',
-      ['src/a.ts', 'src/b.js'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: ['src/b.js'] },
-      true,
-      false,
-    ],
-    [
-      'a proof exit of 1',
-      ['src/a.ts'],
-      { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
-      true,
-      false,
-    ],
-    [
-      'a proof exit of 2',
-      ['src/a.ts'],
-      {
-        exitCode: 2,
-        envelopePath: 'e.json',
-        stderrTail: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
-      },
-      true,
-      true,
-    ],
-    ['a runner that returned nothing', ['src/a.ts'], null, true, false],
-  ])(
-    'runs the test review on a slice with %s',
-    async (_name, files, proof, proofCalled, offSchema) => {
-      const run = fakeHooks(
-        { tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof },
-        { offSchema },
-      );
-
-      await runShip(run.hooks, 'issues 7');
-
-      expect(labels(run).filter((l) => /^(runner:comment-only|testReview):/.test(l))).toEqual(
-        proofCalled ? ['runner:comment-only:7-1', 'testReview:7-1'] : ['testReview:7-1'],
-      );
-      expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice3');
-      expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-        '- Test review: hardened, 0 surviving mutants — pinned a bound',
-      );
-    },
-  );
-
-  it('runs both slice reviews on a slice that changes no code, though test review is skipped', async () => {
+  it('lands the standards review’s commit on a slice that changes no code', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
 
     await runShip(run.hooks, 'issues 7');
 
     expect(
-      labels(run).filter((l) => /^(tdd|specReview|standardsReview|testReview):/.test(l)),
-    ).toEqual(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1']);
+      labels(run).filter((l) => /^(tdd|specReview|standardsReview|runner:land):\d/.test(l)),
+    ).toEqual(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'runner:land:7-1']);
+    expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
   });
 });
 
@@ -1986,13 +1875,6 @@ describe('runAttempt — how an attempt ends', () => {
               leaseLines: [],
             },
             manifestTsdoc: 'no src/ change',
-            testReview: {
-              verdict: 'hardened',
-              sha: 'slice3',
-              survivors: 0,
-              summary: 'pinned a bound',
-              leaseLines: [],
-            },
           },
           commit: 'landed1',
           committedAt: LAND_OK.at,
@@ -2240,10 +2122,10 @@ describe('agent-call tiers', () => {
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
       manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-      testReview: { agentType: 'ship-test-review', model: 'opus' },
-      critic: { agentType: 'critic' },
-      retro: { agentType: 'retro', model: 'sonnet' },
-      prWriter: { agentType: 'pr-writer' },
+      auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
+      epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
+      retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
+      prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
     });
   });
 

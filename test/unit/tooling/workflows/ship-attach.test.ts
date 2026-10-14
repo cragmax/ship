@@ -5,6 +5,7 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 import {
   BATCH,
   BUMP_NO_OP,
+  EPIC_ACCEPTED,
   fakeHooks,
   GATE_OK,
   liveRuns,
@@ -65,9 +66,13 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'tdd:7-1',
       'specReview:7-1',
       'standardsReview:7-1',
-      'testReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
+      'runner:cut-slice:audit-tests',
+      'runner:provision:audit-tests',
+      'auditTests:list',
+      'runner:teardown:audit-tests',
+      'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -263,7 +268,34 @@ describe('runShip --attach — setup', () => {
 });
 
 describe('runShip --attach — the epic end', () => {
-  it('runs the critic over this run’s slices from the attached tip, then pushes with no PR writer', async () => {
+  it.each([
+    ['accepted', {}, '**Verdict:** accepted (profiled)'],
+    [
+      'rejected',
+      { epicReview: { ...EPIC_ACCEPTED, verdict: 'rejected', summary: 'criterion 2 is unmet' } },
+      '**Verdict:** rejected (profiled)',
+    ],
+  ])(
+    'carries a %s profiled verdict first in its appended section, leaving the draft state alone',
+    async (_name, review, verdict) => {
+      const run = fakeHooks({ ...ATTACHED, ...review });
+
+      await runShip(run.hooks, ARGS);
+
+      const lines = promptLines(run, 'runner:append-pr-body:list');
+      const at = lines.indexOf('## Attached run 2');
+      expect(lines.slice(at, at + 5)).toEqual([
+        '## Attached run 2',
+        '',
+        '### Epic review',
+        '',
+        verdict,
+      ]);
+      expect(callOf(run, 'runner:publish:list')?.argv).not.toContain('--draft');
+    },
+  );
+
+  it('audits and reviews this run’s slices from the attached tip, then pushes with no PR writer', async () => {
     const run = fakeHooks({
       ...ATTACHED,
       'runner:run-gate': {
@@ -278,18 +310,25 @@ describe('runShip --attach — the epic end', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8 --attach ship/epic-9');
 
-    expect(callOf(run, 'runner:cut-slice:critic')?.argv).toEqual([
+    expect(callOf(run, 'runner:cut-slice:audit-tests')?.argv).toEqual([
       'tooling/worktree.ts',
       'cut-slice',
       BATCH,
-      '--critic',
+      '--audit-tests',
       '--attached-run',
       '2',
     ]);
-    expect(promptLines(run, 'critic:list')).toEqual(
+    expect(promptLines(run, 'auditTests:list')).toEqual(
       expect.arrayContaining([
         'Epic range: tip9..HEAD',
-        `Report file: ${ATTACH_REPORTS}/critic.md`,
+        `Report file: ${ATTACH_REPORTS}/audit-tests.md`,
+      ]),
+    );
+    expect(promptLines(run, 'epicReview:list')).toEqual(
+      expect.arrayContaining([
+        'Epic range: tip9..HEAD',
+        'Scope: profiled',
+        `Report file: ${ATTACH_REPORTS}/epic-review.md`,
       ]),
     );
     const all = labels(run);

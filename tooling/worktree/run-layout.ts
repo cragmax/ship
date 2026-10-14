@@ -49,11 +49,11 @@ export interface RunLayout {
   readonly branch: string;
 }
 
-/** Where one slice lives: an issue attempt's, or the critic's. */
+/** Where one slice lives: an issue attempt's, or the test audit's. */
 export interface SliceLayout {
   /** The slice worktree, absolute with forward slashes. */
   readonly path: string;
-  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/critic`). */
+  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/audit-tests`). */
   readonly branch: string;
 }
 
@@ -131,20 +131,20 @@ export function sliceLayout(
 }
 
 /**
- * The layout of the epic end's critic slice — one per run.
+ * The layout of the epic end's test-audit slice — one per run.
  *
  * @param batch - The batch worktree ({@link RunLayout.batch}).
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
- * @returns `<batch>-critic` on `slice/<slug>/critic`, or `<batch>-a<run>-critic`
- *   on `slice/<slug>/a<run>-critic` for an attached run.
+ * @returns `<batch>-audit-tests` on `slice/<slug>/audit-tests`, or
+ *   `<batch>-a<run>-audit-tests` on `slice/<slug>/a<run>-audit-tests` for an attached run.
  */
-export function criticSliceLayout(
+export function auditTestsSliceLayout(
   batch: string,
   slug: string,
   run: number | null = null,
 ): SliceLayout {
-  return sliceAt(batch, slug, 'critic', run);
+  return sliceAt(batch, slug, 'audit-tests', run);
 }
 
 /**

@@ -19,8 +19,9 @@ import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
 
 import type {
+  AuditTestsOutput,
   CommitSpec,
-  CriticFinding,
+  EpicReviewOutput,
   OverlapConfidence,
   PrWriterOutput,
   ProbeRecord,
@@ -57,8 +58,8 @@ export interface LandedIssue extends SliceWork {
 
 /** A slice's lease lines from one agent role. */
 export interface RoleLeaseLines {
-  /** The agent whose lease runs printed them: `tdd`, `review` or `test-review`. */
-  readonly role: 'tdd' | 'spec-review' | 'standards-review' | 'test-review';
+  /** The agent whose lease runs printed them. */
+  readonly role: 'tdd' | 'spec-review' | 'standards-review';
   /** Its `with-lease:` lines, as the agent transcribed them. */
   readonly lines: readonly string[];
 }
@@ -114,21 +115,34 @@ export interface ScheduleEntry {
   readonly size: SliceSize | null;
 }
 
-/** The critic's part of an epic end. */
-export interface CriticReport {
+/** The test audit's part of an epic end. */
+export interface AuditTestsReport {
   /**
-   * `clean`: nothing to change; `landed`: its commit landed
-   * ({@link CriticReport.commit}); `dropped`: its commit did not land;
-   * `not-run`: it could not run; `skipped`: fewer than two issues landed.
-   * The last three carry {@link CriticReport.reason}, but for `skipped`.
+   * `clean`: nothing hardened; `landed`: its commit landed ({@link AuditTestsReport.commit});
+   * `dropped`: its commit did not land; `not-run`: it could not run; `skipped`: no code to audit.
+   * The last three carry {@link AuditTestsReport.reason}.
    */
   readonly outcome: 'clean' | 'landed' | 'dropped' | 'not-run' | 'skipped';
   /** The batch commit, when `landed`. */
   readonly commit?: string;
-  /** Why, when `dropped` or `not-run`. */
+  /** Why, when `dropped`, `not-run` or `skipped`. */
   readonly reason?: string;
-  /** Every finding it reported. */
-  readonly findings: readonly CriticFinding[];
+  /** Its answer; `null` when it gave none. */
+  readonly answer: AuditTestsOutput | null;
+}
+
+/** The epic review's part of an epic end. */
+export interface EpicReviewReport {
+  /** The verdict; `null` when the review returned none and nothing forced one. */
+  readonly verdict: EpicReviewOutput['verdict'] | null;
+  /** Judged on the landed issues' criteria alone, with no epic's: a list's or attached run's. */
+  readonly profiled: boolean;
+  /** What forced `rejected` on the verdict: the issues that did not land. */
+  readonly forced?: string;
+  /** Why the review gave no answer. */
+  readonly notRun?: string;
+  /** Its answer; `null` when it gave none. */
+  readonly answer: EpicReviewOutput | null;
 }
 
 /** Everything an epic's pull request body reports. */
@@ -154,8 +168,10 @@ export interface PrBodyInput {
    * read before the push; `null` when a read failed.
    */
   readonly mainUntouched: boolean | null;
-  /** The critic's part. */
-  readonly critic: CriticReport;
+  /** The test audit's part. */
+  readonly auditTests: AuditTestsReport;
+  /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
+  readonly epicReview: EpicReviewReport;
   /** The overlap edges pre-flight added to the entry. */
   readonly overlap: OverlapRecord;
   /** Each issue's schedule, in the entry's order. */
@@ -241,7 +257,7 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
 /**
  * A commit's first line.
  *
- * @param commit - The tdd's or the critic's proposal.
+ * @param commit - The tdd's or the test audit's proposal.
  * @returns `<type>(<scope>): <subject>`, neutralised whole.
  */
 export function subjectLine(commit: CommitSpec): string {
@@ -269,13 +285,13 @@ function issueMessage(subject: string, cite: string): string {
 }
 
 /**
- * The critic commit's message: it closes and cites no issue.
+ * The test audit's commit message: it closes and cites no issue.
  *
- * @param commit - The critic's first line.
+ * @param commit - The test audit's first line.
  * @returns The subject line, a blank line and {@link CO_AUTHOR_TRAILER},
  *   newline-terminated.
  */
-export function criticCommitMessage(commit: CommitSpec): string {
+export function epicEndCommitMessage(commit: CommitSpec): string {
   return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 
@@ -292,25 +308,20 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 }
 
 /**
- * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
+ * A slice's lease lines by role: the one reader of each slice agent's `leaseLines`.
  *
- * @param work - The slice's tdd, slice review and test-review answers.
- * @returns The tdd's, the spec review's, the standards review's, then the test review's; no
- *   test-review entry when it was skipped (a `TestReviewSkip` reason); lines unparsed and
+ * @param work - The slice's tdd and slice review answers.
+ * @returns The tdd's, the spec review's, then the standards review's; lines unparsed and
  *   unfiltered.
  */
 export function sliceLeaseLines(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>,
 ): RoleLeaseLines[] {
-  const roles: RoleLeaseLines[] = [
+  return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
     { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
-  if (typeof work.testReview !== 'string') {
-    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
-  }
-  return roles;
 }
 
 /**
@@ -318,7 +329,8 @@ export function sliceLeaseLines(
  *
  * @param input - The epic's report.
  * @returns Markdown, neutralised whole but for the landed `fixes` issues,
- *   the PR writer's prose included: `## Summary` per {@link summaryLines};
+ *   the PR writer's prose included: `## Epic review` per {@link epicReviewLines};
+ *   `## Summary` per {@link summaryLines};
  *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
  *   `## Issues` per {@link issueListLines}; `## Recorded` per
  *   {@link recordedSection}; then the run report per {@link reportBlock}.
@@ -373,6 +385,7 @@ export function fitPrBody(input: PrBodyInput): FittedPrBody {
 
 function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string {
   const body = [
+    ...section('Epic review', epicReviewLines(input.epicReview)),
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
@@ -386,9 +399,10 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
 /**
  * An attached run's section of the open PR's body, appended after the body already there:
  * markdown, neutralised whole but for this run's landed `fixes` issues. `## Attached run <R>`, a
- * blank line; `### Evidence` per {@link evidenceList}; `### Issues` per {@link issueRefLines}, no
- * container line; `### Recorded` per {@link recordedSection}; then one run-report line and a
- * blank line — `Run report: [PR comment](<url>)` with a `reportComment`, else
+ * blank line; `### Epic review` per {@link epicReviewLines}; `### Evidence` per
+ * {@link evidenceList}; `### Issues` per {@link issueRefLines}, no container line; `### Recorded`
+ * per {@link recordedSection}; then one run-report line and a blank line —
+ * `Run report: [PR comment](<url>)` with a `reportComment`, else
  * `Run report: not posted to this PR; it is in <reportDir>.`, the report dir in a code span.
  * No run report, no Summary and no Merge Danger: the report is posted as its own PR comment
  * ({@link renderAttachedReport}), and an attached run has no PR writer.
@@ -401,6 +415,7 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
   const body = [
     `## Attached run ${String(input.run)}`,
     '',
+    ...section('Epic review', epicReviewLines(input.epicReview), 3),
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
     ...recordedSection(input.landed, 3),
@@ -499,7 +514,7 @@ function runReportLines(
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
-    ...section('Critic', criticLines(input.critic)),
+    ...section('Test audit', auditTestsLines(input.auditTests)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
@@ -595,20 +610,53 @@ function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): s
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 
-/** The critic's outcome line, then one line per finding. */
-function criticLines(critic: CriticReport): string[] {
+/** The test audit's outcome line, then its answer's line when it gave one. */
+function auditTestsLines(audit: AuditTestsReport): string[] {
   const outcome = {
     clean: 'no changes',
-    landed: `landed as ${critic.commit ?? '?'}`,
-    dropped: `changes dropped — ${critic.reason ?? 'no reason named'}`,
-    'not-run': `not run — ${critic.reason ?? 'no reason named'}`,
-    skipped: 'skipped — one issue landed',
-  }[critic.outcome];
+    landed: `landed as ${audit.commit ?? '?'}`,
+    dropped: `changes dropped — ${audit.reason ?? 'no reason named'}`,
+    'not-run': `not run — ${audit.reason ?? 'no reason named'}`,
+    skipped: `skipped — ${audit.reason ?? 'no reason named'}`,
+  }[audit.outcome];
+  const { answer } = audit;
   return [
     `- Outcome: ${outcome}`,
-    ...critic.findings.map(
-      (f) => `- [${f.lens}] ${f.summary} (${f.applied ? 'applied' : 'not applied'})`,
-    ),
+    ...(answer === null
+      ? []
+      : [
+          `- Audit: ${answer.verdict}, ${String(answer.survivors)} surviving mutants — ${answer.summary}`,
+        ]),
+  ];
+}
+
+/**
+ * The epic review's verdict line, `(profiled)` beside a profiled one; what forced it and why the
+ * review gave no answer; then its answer: its summary, the criteria met of the total, each
+ * criterion not met, each finding, each view it could not read.
+ */
+function epicReviewLines(review: EpicReviewReport): string[] {
+  const profiled = review.profiled ? ' (profiled)' : '';
+  const { answer } = review;
+  return [
+    `**Verdict:** ${review.verdict ?? 'not run'}${profiled}`,
+    '',
+    ...(review.forced === undefined ? [] : [`- Forced rejected: ${review.forced}`]),
+    ...(review.notRun === undefined ? [] : [`- Not run: ${review.notRun}`]),
+    ...(answer === null ? [] : epicAnswerLines(answer)),
+  ];
+}
+
+function epicAnswerLines(answer: EpicReviewOutput): string[] {
+  const met = answer.criteria.filter((c) => c.state === 'met').length;
+  return [
+    `- ${answer.summary}`,
+    `- Criteria: ${String(met)} of ${String(answer.criteria.length)} met`,
+    ...answer.criteria
+      .filter((c) => c.state !== 'met')
+      .map((c) => `- #${String(c.issue)} ${c.state}: ${c.criterion} — ${c.evidence}`),
+    ...answer.findings.map((f) => `- [${f.view}, ${f.severity}] ${f.summary} — ${f.source}`),
+    ...answer.unchecked.map((view) => `- Unchecked: ${view}`),
   ];
 }
 
@@ -677,7 +725,6 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   const tsdoc = landed.manifestTsdoc;
-  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
@@ -687,9 +734,6 @@ function issueSection(landed: LandedIssue): string[] {
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
       : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
-    typeof test === 'string'
-      ? `- Test review: skipped — ${test}`
-      : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
@@ -718,9 +762,7 @@ function durationText(seconds: number): string {
  * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
-function sliceLeaseText(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
-): string {
+function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

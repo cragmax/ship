@@ -1193,17 +1193,6 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary'],
   },
-  testReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened', 'blocked'] },
-      sha: { type: 'string' },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
-  },
   resolver: {
     type: 'object',
     properties: {
@@ -1212,10 +1201,10 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'summary'],
   },
-  critic: {
+  auditTests: {
     type: 'object',
     properties: {
-      outcome: { type: 'string', enum: ['clean', 'applied'] },
+      verdict: { type: 'string', enum: ['clean', 'hardened'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
       commit: {
@@ -1227,21 +1216,49 @@ export const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['type', 'scope', 'subject'],
       },
+      survivors: { type: 'integer' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
+  },
+  epicReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['accepted', 'accepted-with-open-items', 'rejected'] },
+      summary: { type: 'string' },
+      criteria: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            criterion: { type: 'string' },
+            state: { type: 'string', enum: ['met', 'unmet', 'unchecked'] },
+            evidence: { type: 'string' },
+          },
+          required: ['issue', 'criterion', 'state', 'evidence'],
+        },
+      },
       findings: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
-            lens: { type: 'string' },
+            view: {
+              type: 'string',
+              enum: ['duplication', 'drift', 'size', 'intent', 'architecture', 'parked'],
+            },
+            severity: { type: 'string', enum: ['hard', 'judgement'] },
             summary: { type: 'string' },
-            applied: { type: 'boolean' },
+            source: { type: 'string' },
           },
-          required: ['lens', 'summary', 'applied'],
+          required: ['view', 'severity', 'summary', 'source'],
         },
       },
-      checks: { type: 'string' },
+      unchecked: { type: 'array', items: { type: 'string' } },
     },
-    required: ['outcome', 'sha', 'files', 'commit', 'findings', 'checks'],
+    required: ['verdict', 'summary', 'criteria', 'findings', 'unchecked'],
   },
   retro: {
     type: 'object',

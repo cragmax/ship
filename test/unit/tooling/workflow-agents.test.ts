@@ -7,15 +7,15 @@ const agentTypes = [...new Set(Object.values(STAGES).map((row) => row.agentType)
 describe('workflow agents', () => {
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
-      'critic',
+      'audit-tests',
+      'epic-review',
       'issue-overlap',
       'issue-readiness',
       'manifest-tsdoc',
-      'pr-writer',
+      'pr',
       'resolve-index-conflicts',
       'retro',
       'runner',
-      'ship-test-review',
       'spec-review',
       'standards-review',
       'tdd',

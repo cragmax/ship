@@ -18,9 +18,9 @@ import type { z } from 'zod';
 
 import { runSetIssues } from '../../lib/run-set.js';
 import type {
+  AuditTestsOutputSchema,
   CommitSpecSchema,
-  CriticFindingSchema,
-  CriticOutputSchema,
+  EpicReviewOutputSchema,
   EstimatedPairSchema,
   IssueReadinessSchema,
   IssueOverlapSchema,
@@ -35,13 +35,13 @@ import type {
   ReviewOutputSchema,
   TddEvidenceSchema,
   TddOutputSchema,
-  TestReviewOutputSchema,
 } from '../schemas/agent-outputs.js';
 
 import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
-  type CriticValues,
+  type AuditTestsValues,
+  type EpicReviewValues,
   type IssueOverlapValues,
   type IssueReadinessValues,
   type ManifestTsdocValues,
@@ -72,7 +72,7 @@ export type LiveOverlap = z.infer<typeof LiveOverlapSchema>;
 /** `issue-overlap`'s answer. */
 export type IssueOverlap = z.infer<typeof IssueOverlapSchema>;
 
-/** A commit message's first line, as the tdd or the critic proposes it. */
+/** A commit message's first line, as the tdd or the test audit proposes it. */
 export type CommitSpec = z.infer<typeof CommitSpecSchema>;
 
 /** One probe the tdd ran, or chose not to finish. */
@@ -93,14 +93,14 @@ export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
 /** Why a slice's Manifest TSDoc review was skipped: it changed nothing under `src/`. */
 export type ManifestTsdocSkip = 'no src/ change';
 
-/** The test reviewer's answer. */
-export type TestReviewOutput = z.infer<typeof TestReviewOutputSchema>;
+/** The epic-end test audit's answer. */
+export type AuditTestsOutput = z.infer<typeof AuditTestsOutputSchema>;
 
 /**
- * Why a slice's test review was skipped: no code changed, or every code change proven
+ * Why an epic's test audit was skipped: no code changed, or every code change proven
  * comment-only.
  */
-export type TestReviewSkip = 'trivial surface' | 'comment-only';
+export type AuditTestsSkip = 'trivial surface' | 'comment-only';
 
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
@@ -112,15 +112,10 @@ export interface SliceWork {
   readonly standardsReview: ReviewOutput;
   /** The Manifest TSDoc review's answer, or why it was skipped. */
   readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
-  /** The test reviewer's answer, or why it was skipped. */
-  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
-/** One finding of the critic. */
-export type CriticFinding = z.infer<typeof CriticFindingSchema>;
-
-/** The critic's answer. */
-export type CriticOutput = z.infer<typeof CriticOutputSchema>;
+/** The epic review's answer. */
+export type EpicReviewOutput = z.infer<typeof EpicReviewOutputSchema>;
 
 /** One finding of the retro. */
 export type RetroFinding = z.infer<typeof RetroFindingSchema>;
@@ -210,23 +205,23 @@ export const AGENT_CALLS = {
       PROMPTS.manifestTsdoc(values),
       agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
-  testReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
-    askAgent<TestReviewOutput>(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
-    ),
   resolver: (hooks: WorkflowHooks, values: ResolverValues, tag: string) =>
     askAgent<ResolverOutput>(
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
     ),
-  critic: (hooks: WorkflowHooks, values: CriticValues, tag: string) =>
-    askAgent<CriticOutput>(
+  auditTests: (hooks: WorkflowHooks, values: AuditTestsValues, tag: string) =>
+    askAgent<AuditTestsOutput>(
       hooks,
-      PROMPTS.critic(values),
-      agentOptions('critic', tag, AGENT_OUTPUT_SCHEMAS.critic),
+      PROMPTS.auditTests(values),
+      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
+    ),
+  epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
+    askAgent<EpicReviewOutput>(
+      hooks,
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks: WorkflowHooks, values: RetroValues, tag: string) =>
     askAgent<RetroOutput>(

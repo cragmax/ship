@@ -6,8 +6,10 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 import {
   BATCH,
   BUMP_NO_OP,
+  EPIC_ACCEPTED,
   fakeHooks,
   GATE_OK,
+  inTurn,
   LAND_OK,
   readyVerdict,
   REPORT_DIR,
@@ -27,34 +29,6 @@ const SEVEN_THEN_EIGHT = {
   issueReadiness: {
     issues: [7, 8].map((issue) => readyVerdict(issue)),
   },
-};
-
-const CRITIC_CUT = {
-  exitCode: 0,
-  envelopePath: 'e.json',
-  status: 'ok',
-  errors: [],
-  branch: 'slice/7-8/critic',
-  base: 'batchhead',
-  slice: 'C:/src/ph-runs/7/slice-critic',
-  at: '2026-09-29T10:30:00.000Z',
-};
-
-const CRITIC_APPLIED = {
-  outcome: 'applied',
-  sha: 'critic1',
-  files: ['tooling/x.ts'],
-  commit: { type: 'refactor', scope: 'build', subject: 'share the x helper' },
-  findings: [{ lens: 'duplication', summary: 'two copies of the x helper', applied: true }],
-  checks: 'build, eslint, vitest related, prettier',
-};
-
-const TEST_REVIEW_LEASED = {
-  verdict: 'hardened',
-  sha: 'slice3',
-  survivors: 0,
-  summary: 'pinned a bound',
-  leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
 };
 
 const SPEC_REVIEW_LEASED = {
@@ -107,24 +81,56 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 const promptOf = (run: FakeRun, label: string): string =>
   run.calls.find((c) => c.label === label)?.prompt ?? '';
 
-describe('runShip — the critic', () => {
-  it('runs in its own slice before the master sync, landing its commit through land, then bump, retro, PR', async () => {
+const AUDIT_CUT = {
+  exitCode: 0,
+  envelopePath: 'e.json',
+  status: 'ok',
+  errors: [],
+  branch: 'slice/7-8/audit-tests',
+  base: 'batchhead',
+  slice: 'C:/src/ph-runs/7/slice-audit-tests',
+  at: '2026-09-29T10:30:00.000Z',
+};
+
+const AUDIT_HARDENED = {
+  verdict: 'hardened',
+  sha: 'audit1',
+  files: ['test/unit/tooling/x.test.ts'],
+  commit: { type: 'test', scope: 'build', subject: 'pin the x bound' },
+  survivors: 0,
+  summary: 'pinned a bound',
+  leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
+};
+
+/** The run report's `## Test audit` section, its heading through its blank line. */
+const auditSection = (run: FakeRun): string[] => {
+  const lines = promptOf(run, 'runner:publish:list').split('\n');
+  const start = lines.indexOf('## Test audit');
+  return start === -1 ? [] : lines.slice(start, lines.indexOf('', start + 2) + 1);
+};
+
+describe('runShip — the epic-end test audit', () => {
+  it('audits the epic’s tests in its own slice after the last landing, landing its commit before the epic review', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
-      'runner:cut-slice:critic': CRITIC_CUT,
-      critic: CRITIC_APPLIED,
-      'runner:land:critic': { ...LAND_OK, commit: 'critic-landed' },
+      'runner:cut-slice:audit-tests': AUDIT_CUT,
+      auditTests: AUDIT_HARDENED,
+      'runner:land:audit-tests': { ...LAND_OK, commit: 'audit-landed' },
     });
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
     const all = labels(run);
-    expect(all.slice(all.indexOf('runner:cut-slice:critic'))).toEqual([
-      'runner:cut-slice:critic',
-      'runner:provision:critic',
-      'critic:list',
-      'runner:land:critic',
-      'runner:teardown:critic',
+    expect(all.indexOf('runner:cut-slice:audit-tests')).toBeGreaterThan(
+      all.indexOf('runner:teardown:8-1'),
+    );
+    expect(all.slice(all.indexOf('runner:cut-slice:audit-tests'))).toEqual([
+      'runner:cut-slice:audit-tests',
+      'runner:provision:audit-tests',
+      'auditTests:list',
+      'runner:land:audit-tests',
+      'runner:teardown:audit-tests',
+      'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -133,76 +139,246 @@ describe('runShip — the critic', () => {
       'runner:check-master:list',
       'runner:publish:list',
     ]);
-    const land = run.calls.find((c) => c.label === 'runner:land:critic');
+    expect(run.calls.find((c) => c.label === 'runner:cut-slice:audit-tests')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'cut-slice',
+      BATCH,
+      '--audit-tests',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:provision:audit-tests')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'provision',
+      'C:/src/ph-runs/7/slice-audit-tests',
+      '--batch',
+      BATCH,
+      '--server',
+    ]);
+    const call = run.calls.find((c) => c.label === 'auditTests:list');
+    expect(call).toMatchObject({ agentType: 'audit-tests', model: 'opus', effort: 'high' });
+    const prompt = promptOf(run, 'auditTests:list').split('\n');
+    expect(prompt.slice(0, 5)).toEqual([
+      'Audit slice: C:/src/ph-runs/7/slice-audit-tests',
+      'Slice base: batchhead',
+      'Epic range: master0..HEAD',
+      `Issue files: ${REPORT_DIR}/issues/7.md, ${REPORT_DIR}/issues/8.md`,
+      `Report file: ${REPORT_DIR}/audit-tests.md`,
+    ]);
+    expect(prompt.find((l) => l.startsWith('Lease command: '))).toContain(
+      `PH_PROJECT_DIR=${BATCH}`,
+    );
+    const land = run.calls.find((c) => c.label === 'runner:land:audit-tests');
     expect(land?.argv).toEqual([
       'tooling/worktree.ts',
       'land',
       BATCH,
-      'critic1',
+      'audit1',
       '--base',
       'batchhead',
       '--message-file',
-      `${REPORT_DIR}/commit-critic.txt`,
+      `${REPORT_DIR}/commit-audit-tests.txt`,
       '--log',
-      `${REPORT_DIR}/land-critic.log`,
+      `${REPORT_DIR}/land-audit-tests.log`,
     ]);
     expect(land?.prompt).toContain(
       [
-        `Write first: ${REPORT_DIR}/commit-critic.txt`,
+        `Write first: ${REPORT_DIR}/commit-audit-tests.txt`,
         '----- BEGIN FILE -----',
-        'refactor(build): share the x helper',
+        'test(build): pin the x bound',
         '',
         'Co-Authored-By: Claude <noreply@anthropic.com>',
         '----- END FILE -----',
       ].join('\n'),
     );
     expect(land?.prompt).not.toMatch(/\b(?:fixes|see) #/);
-    const critic = promptOf(run, 'critic:list').split('\n');
-    expect(critic.slice(0, 2)).toEqual([
-      'Critic slice: C:/src/ph-runs/7/slice-critic',
-      'Epic range: master0..HEAD',
+    expect(auditSection(run)).toEqual([
+      '## Test audit',
+      '',
+      '- Outcome: landed as audit-landed',
+      '- Audit: hardened, 0 surviving mutants — pinned a bound',
+      '',
     ]);
-    expect(critic).toContain(`Report file: ${REPORT_DIR}/critic.md`);
-    const landed = critic.find((l) => l.startsWith('Landed (JSON): '))?.slice(15) ?? 'null';
-    expect(JSON.parse(landed)).toEqual([
-      { issue: 7, commit: 'landed1' },
-      { issue: 8, commit: 'landed1' },
-    ]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Outcome: landed as critic-landed',
-    );
     expect(report.epics[0]).toMatchObject({
       outcome: 'pr',
-      critic: { outcome: 'landed', commit: 'critic-landed' },
+      auditTests: { outcome: 'landed', commit: 'audit-landed' },
     });
   });
 
-  it('lands nothing for a clean critic', async () => {
+  it('runs no test review in any slice', async () => {
     const run = fakeHooks(SEVEN_THEN_EIGHT);
 
     await runShip(run.hooks, 'issues 7 8');
 
-    expect(labels(run)).toContain('critic:list');
-    expect(labels(run)).not.toContain('runner:land:critic');
-    expect(labels(run)).toContain('runner:teardown:critic');
+    expect(labels(run).filter((l) => /test-?review/i.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('auditTests'))).toEqual(['auditTests:list']);
   });
 
-  it('skips the critic when one issue landed', async () => {
+  it('lands nothing for a clean audit, and still tears its slice down', async () => {
     const run = fakeHooks();
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run)).toContain('auditTests:list');
+    expect(labels(run)).not.toContain('runner:land:audit-tests');
+    expect(labels(run)).toContain('runner:teardown:audit-tests');
+    expect(auditSection(run)).toEqual([
+      '## Test audit',
+      '',
+      '- Outcome: no changes',
+      '- Audit: clean, 0 surviving mutants — nothing to harden',
+      '',
+    ]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'clean' } });
+  });
+
+  it('counts the audit’s lease lines in its engine’s totals, under no issue', async () => {
+    const run = fakeHooks({ auditTests: AUDIT_HARDENED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
+        { type: 'folia', leases: 1, waitedSeconds: 1.2, waitedMaxSeconds: 1.2, heldSeconds: 40.3 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 1.5, heldSeconds: 42 }],
+      unparsed: [],
+    });
+  });
+
+  it('skips the audit for an epic that changes no code', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.includes('audit'))).toEqual([]);
+    expect(auditSection(run)).toEqual([
+      '## Test audit',
+      '',
+      '- Outcome: skipped — trivial surface',
+      '',
+    ]);
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'skipped' } });
+  });
+
+  it('skips the audit for an epic whose range is proven comment-only', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      tdd: { ...TDD_GREEN, files: ['src/a.ts', 'eslint-suppressions.json'] },
+      'runner:land': inTurn(LAND_OK, { ...LAND_OK, commit: 'landed2' }),
+      'runner:comment-only': {
+        exitCode: 0,
+        envelopePath: 'e.json',
+        notCompared: ['eslint-suppressions.json'],
+      },
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    expect(labels(run).filter((l) => l.includes('audit'))).toEqual([
+      'runner:comment-only:audit-tests',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:comment-only:audit-tests')?.argv).toEqual([
+      'tooling/comment-only.ts',
+      '--json',
+      'master0..landed2',
+    ]);
+    expect(auditSection(run)).toContain('- Outcome: skipped — comment-only');
+  });
+
+  it.each<[string, string[], unknown, boolean, boolean]>([
+    [
+      'a test/ path',
+      ['src/a.ts', 'test/unit/a.test.ts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
+      false,
+      false,
+    ],
+    [
+      'a not-compared tooling/x.cts',
+      ['src/a.ts', 'tooling/x.cts'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/x.cts'] },
+      true,
+      false,
+    ],
+    [
+      'a not-compared src/b.js',
+      ['src/a.ts', 'src/b.js'],
+      { exitCode: 0, envelopePath: 'e.json', notCompared: ['src/b.js'] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 1',
+      ['src/a.ts'],
+      { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
+      true,
+      false,
+    ],
+    [
+      'a proof exit of 2',
+      ['src/a.ts'],
+      {
+        exitCode: 2,
+        envelopePath: 'e.json',
+        stderrTail: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
+      },
+      true,
+      true,
+    ],
+    ['a runner that returned nothing', ['src/a.ts'], null, true, false],
+  ])('runs the audit on an epic with %s', async (_name, files, proof, proofCalled, offSchema) => {
+    const run = fakeHooks(
+      { tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof, auditTests: AUDIT_HARDENED },
+      { offSchema },
+    );
 
     await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.includes('critic'))).toEqual([]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Outcome: skipped — one issue landed',
+    expect(labels(run).filter((l) => /^(runner:comment-only|auditTests):/.test(l))).toEqual(
+      proofCalled ? ['runner:comment-only:audit-tests', 'auditTests:list'] : ['auditTests:list'],
     );
+    expect(auditSection(run)).toContain('- Audit: hardened, 0 surviving mutants — pinned a bound');
   });
 
-  it('drops a critic commit its land refuses on a clean batch, and still opens the PR', async () => {
+  it('halts the epic when the audit’s land leaves the batch unverified: no epic review, no master sync, no PR', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
-      critic: CRITIC_APPLIED,
-      'runner:land:critic': {
+      auditTests: AUDIT_HARDENED,
+      'runner:land:audit-tests': LAND_BATCH_DIRTY,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(
+      labels(run).filter((l) => /^(epicReview|runner:(sync-master|bump|publish))/.test(l)),
+    ).toEqual([]);
+    expect(labels(run)).toContain('retro:list');
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'halted',
+      message: expect.stringMatching(/the test audit halted the epic: .*batch-dirty/),
+      auditTests: { outcome: 'dropped' },
+    });
+  });
+
+  it('records an audit that returned nothing as not run, and still opens the PR', async () => {
+    const run = fakeHooks({ auditTests: null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(auditSection(run)).toEqual([
+      '## Test audit',
+      '',
+      '- Outcome: not run — the test audit returned nothing',
+      '',
+    ]);
+    expect(labels(run)).toContain('runner:teardown:audit-tests');
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'not-run' } });
+  });
+
+  it('drops an audit commit its land refuses on a clean batch, and still opens the PR', async () => {
+    const run = fakeHooks({
+      auditTests: AUDIT_HARDENED,
+      'runner:land:audit-tests': {
         ...LAND_OK,
         status: 'refused',
         reason: 'slice-not-single-commit',
@@ -211,47 +387,17 @@ describe('runShip — the critic', () => {
       },
     });
 
-    const report = await runShip(run.hooks, 'issues 7 8');
+    const report = await runShip(run.hooks, 'issues 7');
 
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+    expect(auditSection(run)).toContain(
       '- Outcome: changes dropped — land refused (slice-not-single-commit): the slice is 2 commits',
     );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', critic: { outcome: 'dropped' } });
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'dropped' } });
   });
 
-  it('halts the epic when the critic’s land leaves the batch unverified: no master sync, no PR', async () => {
+  it('records an audit whose slice could not be cut as not run, tearing nothing down, and still opens the PR', async () => {
     const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      critic: CRITIC_APPLIED,
-      'runner:land:critic': LAND_BATCH_DIRTY,
-    });
-
-    const report = await runShip(run.hooks, 'issues 7 8');
-
-    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([]);
-    expect(labels(run)).toContain('retro:list');
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'halted',
-      message: expect.stringMatching(/batch-dirty/),
-    });
-  });
-
-  it('records a critic that returned nothing as not run, and still opens the PR', async () => {
-    const run = fakeHooks({ ...SEVEN_THEN_EIGHT, critic: null });
-
-    const report = await runShip(run.hooks, 'issues 7 8');
-
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Outcome: not run — the critic returned nothing',
-    );
-    expect(labels(run)).toContain('runner:teardown:critic');
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', critic: { outcome: 'not-run' } });
-  });
-
-  it('records a critic whose slice could not be cut as not run, tearing nothing down, and still opens the PR', async () => {
-    const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      'runner:cut-slice:critic': {
+      'runner:cut-slice:audit-tests': {
         exitCode: 1,
         envelopePath: 'e.json',
         status: 'refused',
@@ -259,24 +405,25 @@ describe('runShip — the critic', () => {
         branch: null,
         base: null,
         slice: null,
-        errors: [{ step: 'preconditions', message: 'slice/7-8/critic exists' }],
+        errors: [{ step: 'preconditions', message: 'slice/7/audit-tests exists' }],
         at: '2026-09-29T10:30:00.000Z',
       },
     });
 
-    const report = await runShip(run.hooks, 'issues 7 8');
+    const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.includes('critic'))).toEqual(['runner:cut-slice:critic']);
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Outcome: not run — cut-slice refused (branch-exists): slice/7-8/critic exists',
+    expect(labels(run).filter((l) => l.endsWith(':audit-tests'))).toEqual([
+      'runner:cut-slice:audit-tests',
+    ]);
+    expect(auditSection(run)).toContain(
+      '- Outcome: not run — cut-slice refused (branch-exists): slice/7/audit-tests exists',
     );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', critic: { outcome: 'not-run' } });
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'not-run' } });
   });
 
-  it('halts the epic when the critic’s slice teardown leaves the batch unverified: no master sync, no PR', async () => {
+  it('halts the epic when the audit’s slice teardown leaves the batch unverified: no master sync, no PR', async () => {
     const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      'runner:teardown:critic': {
+      'runner:teardown:audit-tests': {
         exitCode: 1,
         envelopePath: 'e.json',
         status: 'refused',
@@ -287,14 +434,204 @@ describe('runShip — the critic', () => {
       },
     });
 
-    const report = await runShip(run.hooks, 'issues 7 8');
+    const report = await runShip(run.hooks, 'issues 7');
 
     expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([]);
     expect(report.epics[0]).toMatchObject({
       outcome: 'halted',
       message: expect.stringMatching(/source-shrank/),
-      critic: { outcome: 'clean' },
+      auditTests: { outcome: 'clean' },
     });
+  });
+});
+
+const EPIC_REJECTED = {
+  ...EPIC_ACCEPTED,
+  verdict: 'rejected',
+  summary: 'criterion 2 is unmet',
+  criteria: [
+    { issue: 7, criterion: 'adds the x tool', state: 'met', evidence: 'tooling/x.ts:1' },
+    { issue: 7, criterion: 'x rejects y', state: 'unmet', evidence: 'tooling/x.ts:9 accepts y' },
+    { issue: 7, criterion: 'x logs z', state: 'unchecked', evidence: 'no log fixture' },
+  ],
+  findings: [
+    {
+      view: 'duplication',
+      severity: 'judgement',
+      summary: 'two x parsers',
+      source: 'tooling/x.ts:3, tooling/y.ts:4',
+    },
+  ],
+  unchecked: ['architecture: no import graph tool'],
+};
+
+/** The PR body's lines, from its first through its `## Summary` heading. */
+const bodyHead = (run: FakeRun): string[] => {
+  const lines = promptOf(run, 'runner:publish:list').split('\n');
+  const start = lines.indexOf('----- BEGIN FILE -----') + 1;
+  return lines.slice(start, lines.indexOf('## Summary') + 1);
+};
+
+describe('runShip — the epic review', () => {
+  it('judges the landed change on the batch after the test audit, before the master sync, with no slice', async () => {
+    const run = fakeHooks(SEVEN_THEN_EIGHT);
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const all = labels(run);
+    expect(
+      all.slice(
+        all.indexOf('runner:teardown:audit-tests'),
+        all.indexOf('runner:sync-master:list') + 1,
+      ),
+    ).toEqual(['runner:teardown:audit-tests', 'epicReview:list', 'runner:sync-master:list']);
+    expect(run.calls.find((c) => c.label === 'epicReview:list')).toMatchObject({
+      agentType: 'epic-review',
+      model: 'opus',
+      effort: 'high',
+    });
+    expect(promptOf(run, 'epicReview:list').split('\n')).toEqual([
+      `Batch worktree: ${BATCH}`,
+      'Epic range: master0..HEAD',
+      'Scope: profiled',
+      `Issue files: ${REPORT_DIR}/issues/7.md, ${REPORT_DIR}/issues/8.md`,
+      'Unlanded (JSON): []',
+      `Slice reports: ${[7, 8].flatMap((i) => [`${REPORT_DIR}/spec-review-${String(i)}-1.md`, `${REPORT_DIR}/standards-review-${String(i)}-1.md`]).join(', ')}`,
+      `Report file: ${REPORT_DIR}/epic-review.md`,
+    ]);
+  });
+
+  it('hands an epic run’s review its epic and the command that writes the epic’s text', async () => {
+    const run = fakeHooks(epicRun([{ epic: 1, issues: [1] }]));
+
+    await runShip(run.hooks, 'epics 1');
+
+    const lines = promptOf(run, 'epicReview:epic-1').split('\n');
+    const reports = 'C:/src/ph-runs/epic-1/reports';
+    expect(lines.slice(2, 5)).toEqual([
+      'Scope: epic #1',
+      `Epic file: ${reports}/issues/1.md`,
+      `Epic command: mkdir -p ${reports}/issues && gh issue view 1 --json title,state,labels,body,comments --jq '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, (.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)' > ${reports}/issues/1.md`,
+    ]);
+  });
+
+  it('names the landed attempt’s slice reports, not an earlier attempt’s', async () => {
+    const conflict = {
+      ...LAND_OK,
+      status: 'conflict',
+      commit: null,
+      conflicts: ['tooling/x.ts'],
+      rolledBack: true,
+      errors: [{ step: 'cherry-pick', message: 'tooling/x.ts would not apply' }],
+    };
+    const run = fakeHooks({ 'runner:land': inTurn(conflict, LAND_OK) });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
+      `Slice reports: ${REPORT_DIR}/spec-review-7-2.md, ${REPORT_DIR}/standards-review-7-2.md`,
+    );
+  });
+
+  it('names the Manifest TSDoc report among the slice reports when that review ran', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['src/a.ts', 'test/unit/a.test.ts'] } });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
+      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md, ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+    );
+  });
+
+  it('leads the PR body with its verdict, marked profiled for a list, and opens the PR ready', async () => {
+    const run = fakeHooks();
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(bodyHead(run)).toEqual([
+      '## Epic review',
+      '',
+      '**Verdict:** accepted (profiled)',
+      '',
+      '- every criterion met',
+      '- Criteria: 1 of 1 met',
+      '',
+      '## Summary',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).not.toContain('--draft');
+    expect(report.epics[0]).toMatchObject({
+      epicReview: { verdict: 'accepted', profiled: true },
+    });
+  });
+
+  it('marks an epic run’s verdict unprofiled', async () => {
+    const run = fakeHooks(epicRun([{ epic: 1, issues: [1] }]));
+
+    const report = await runShip(run.hooks, 'epics 1');
+
+    expect(report.epics[0]).toMatchObject({ epicReview: { verdict: 'accepted', profiled: false } });
+  });
+
+  it('opens a rejected change as a draft, its criteria not met, findings and unread views in the lead', async () => {
+    const run = fakeHooks({ epicReview: EPIC_REJECTED });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(bodyHead(run)).toEqual([
+      '## Epic review',
+      '',
+      '**Verdict:** rejected (profiled)',
+      '',
+      '- criterion 2 is unmet',
+      '- Criteria: 1 of 3 met',
+      '- #7 unmet: x rejects y — tooling/x.ts:9 accepts y',
+      '- #7 unchecked: x logs z — no log fixture',
+      '- [duplication, judgement] two x parsers — tooling/x.ts:3, tooling/y.ts:4',
+      '- Unchecked: architecture: no import graph tool',
+      '',
+      '## Summary',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv.at(-1)).toBe('--draft');
+  });
+
+  it('forces rejected when an issue did not land, whatever the review answered, and opens a draft', async () => {
+    const run = fakeHooks({
+      ...SEVEN_THEN_EIGHT,
+      'runner:run-gate': { ...SEVEN_THEN_EIGHT['runner:run-gate'], edges: [] },
+      tdd: (call: { label: string }) => (call.label.startsWith('tdd:8') ? TDD_BLOCKED : TDD_GREEN),
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
+      'Unlanded (JSON): [{"issue":8,"outcome":"blocked","reason":"tdd BLOCKED: done at abc123"}]',
+    );
+    expect(bodyHead(run).slice(0, 5)).toEqual([
+      '## Epic review',
+      '',
+      '**Verdict:** rejected (profiled)',
+      '',
+      '- Forced rejected: did not land: #8',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain('--draft');
+    expect(report.epics[0]).toMatchObject({ epicReview: { verdict: 'rejected' } });
+  });
+
+  it('records a review that returned nothing as not run, and opens the PR as a draft', async () => {
+    const run = fakeHooks({ epicReview: null });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(bodyHead(run)).toEqual([
+      '## Epic review',
+      '',
+      '**Verdict:** not run (profiled)',
+      '',
+      '- Not run: the epic review returned nothing',
+      '',
+      '## Summary',
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain('--draft');
   });
 });
 
@@ -415,13 +752,20 @@ const bodyOf = (run: FakeRun): string[] => {
 };
 
 describe('runShip — the PR writer', () => {
-  it('writes the PR writer’s summary first and its merge danger after the Evidence', async () => {
+  it('writes the PR writer’s summary after the epic review and its merge danger after the Evidence', async () => {
     const run = fakeHooks();
 
     await runShip(run.hooks, 'issues 7');
 
     const body = bodyOf(run);
-    expect(body.slice(0, 5)).toEqual(['## Summary', '', 'Adds the x tool.', '', '## Evidence']);
+    const at = body.indexOf('## Summary');
+    expect(body.slice(at, at + 5)).toEqual([
+      '## Summary',
+      '',
+      'Adds the x tool.',
+      '',
+      '## Evidence',
+    ]);
     const d = body.indexOf('## Merge Danger');
     expect(body.slice(d, d + 7)).toEqual([
       '## Merge Danger',
@@ -545,7 +889,12 @@ describe('runShip — the PR writer', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42, retro: null });
-    expect(bodyOf(run).slice(0, 3)).toEqual(['## Summary', '', 'Adds the x tool.']);
+    const body = bodyOf(run);
+    expect(body.slice(body.indexOf('## Summary'), body.indexOf('## Summary') + 3)).toEqual([
+      '## Summary',
+      '',
+      'Adds the x tool.',
+    ]);
   });
 
   it.each([
@@ -588,9 +937,9 @@ describe('runShip — the PR writer', () => {
 });
 
 describe('the epic-end phase', () => {
-  it('names the PR writer beside the retro in its detail', () => {
+  it('names the test audit first and the PR writer beside the retro in its detail', () => {
     expect(SHIP_PHASES.find((p) => p.title === PHASE_TITLES.epicEnd)?.detail).toBe(
-      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+      'per epic: test audit, epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     );
   });
 });
@@ -614,25 +963,10 @@ describe('runShip — the lease totals', () => {
     );
   });
 
-  it('labels the test review’s leases after the tdd’s in the issue’s lease timings', async () => {
-    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
-
-    await runShip(run.hooks, 'issues 7');
-
-    expect(
-      promptOf(run, 'runner:publish:list')
-        .split('\n')
-        .filter((l) => l.startsWith('- Lease timings: ')),
-    ).toEqual([
-      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
-    ]);
-  });
-
-  it('labels the slice reviews’ leases between the tdd’s and the test review’s in the issue’s lease timings', async () => {
+  it('labels the slice reviews’ leases after the tdd’s in the issue’s lease timings', async () => {
     const run = fakeHooks({
       specReview: SPEC_REVIEW_LEASED,
       standardsReview: STANDARDS_REVIEW_LEASED,
-      testReview: TEST_REVIEW_LEASED,
     });
 
     await runShip(run.hooks, 'issues 7');
@@ -642,7 +976,7 @@ describe('runShip — the lease totals', () => {
         .split('\n')
         .filter((l) => l.startsWith('- Lease timings: ')),
     ).toEqual([
-      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; spec-review: folia@localhost:25703 waited 0.3s, held 8.5s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s; test-review: folia@localhost:25711 waited 1.2s, held 40.3s',
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; spec-review: folia@localhost:25703 waited 0.3s, held 8.5s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ]);
   });
 
@@ -661,44 +995,11 @@ describe('runShip — the lease totals', () => {
     });
   });
 
-  it('counts a landed issue’s test-review lease in its engine’s and its issue’s totals', async () => {
-    const run = fakeHooks({ testReview: TEST_REVIEW_LEASED });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(report.epics[0]?.leases).toEqual({
-      engines: [
-        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
-        { type: 'folia', leases: 1, waitedSeconds: 1.2, waitedMaxSeconds: 1.2, heldSeconds: 40.3 },
-      ],
-      issues: [{ issue: 7, waitedSeconds: 2.7, heldSeconds: 82.3 }],
-      unparsed: [],
-    });
-  });
-
-  it('keeps a test review’s malformed lease line unparsed, under its issue', async () => {
-    const run = fakeHooks({
-      testReview: {
-        ...TEST_REVIEW_LEASED,
-        leaseLines: [...TEST_REVIEW_LEASED.leaseLines, 'with-lease: waited ?s'],
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(report.epics[0]?.leases?.unparsed).toEqual([
-      { issue: 7, line: 'with-lease: waited ?s' },
-    ]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- unparsed (#7): with-lease: waited ?s',
-    );
-  });
-
-  it('still totals the landed slices’ lease lines when the critic halts the epic', async () => {
+  it('still totals the landed slices’ lease lines when the test audit halts the epic', async () => {
     const run = fakeHooks({
       ...SEVEN_THEN_EIGHT,
-      critic: CRITIC_APPLIED,
-      'runner:land:critic': LAND_BATCH_DIRTY,
+      auditTests: { ...AUDIT_HARDENED, leaseLines: [] },
+      'runner:land:audit-tests': LAND_BATCH_DIRTY,
     });
 
     const report = await runShip(run.hooks, 'issues 7 8');

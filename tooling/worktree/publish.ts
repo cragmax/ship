@@ -1,7 +1,7 @@
 /**
- * `publish <batch> --title T --body-file F --log L` — push the run's
- * feature branch and open its pull request (ADR-0045 decision 6: the PR is
- * the sole human gate).
+ * `publish <batch> --title T --body-file F --log L [--draft]` — push the run's
+ * feature branch and open its pull request, as a draft with `--draft`
+ * (ADR-0045 decision 6: the PR is the sole human gate).
  *
  * Order: the guards (a linked run batch, no open PR for the branch, a body
  * file within {@link GH_BODY_LIMIT}), then `npm run build` — so the
@@ -37,6 +37,8 @@ export interface PublishInput {
   readonly bodyFile: string;
   /** Where the push's whole output (its pre-push gate's included) is written. */
   readonly logFile: string;
+  /** Open the PR as a draft. */
+  readonly draft?: boolean;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
 }
@@ -158,6 +160,7 @@ function createPr(batch: string, branch: string, input: PublishInput): OpenedPr 
       input.title,
       '--body-file',
       input.bodyFile,
+      ...(input.draft === true ? ['--draft'] : []),
     ],
     { cwd: batch, timeoutMs: GH_TIMEOUT_MS },
   );

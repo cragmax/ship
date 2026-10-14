@@ -270,6 +270,15 @@ export const PR_WRITER_OK = {
   ramifications: '',
 };
 
+/** An epic review accepting issue 7: its one criterion met, no finding. */
+export const EPIC_ACCEPTED = {
+  verdict: 'accepted',
+  summary: 'every criterion met',
+  criteria: [{ issue: 7, criterion: 'adds the x tool', state: 'met', evidence: 'tooling/x.ts:1' }],
+  findings: [],
+  unchecked: [],
+};
+
 /** The all-pass answers of a full run of `issues 7`, by label. */
 const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
@@ -311,13 +320,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   },
   // Clean: no amend, so the standards review's sha stands.
   manifestTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
-  testReview: {
-    verdict: 'hardened',
-    sha: 'slice3',
-    survivors: 0,
-    summary: 'pinned a bound',
-    leaseLines: [],
-  },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false },
   'runner:retire-run': OK,
@@ -345,14 +347,16 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:append-pr-body': OK,
   'runner:post-pr-comment': { ...OK, url: 'https://x/pull/9#issuecomment-1' },
   'runner:post-issue-comment': { ...OK, url: 'https://x/issues/7#issuecomment-2' },
-  critic: {
-    outcome: 'clean',
+  auditTests: {
+    verdict: 'clean',
     sha: '',
     files: [],
-    commit: { type: 'refactor', scope: 'build', subject: '' },
-    findings: [],
-    checks: 'nothing to verify',
+    commit: { type: 'test', scope: 'build', subject: '' },
+    survivors: 0,
+    summary: 'nothing to harden',
+    leaseLines: [],
   },
+  epicReview: EPIC_ACCEPTED,
   retro: { findings: [] },
   prWriter: PR_WRITER_OK,
 };

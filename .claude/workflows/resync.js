@@ -73,10 +73,10 @@ const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  testReview: { agentType: 'ship-test-review', model: 'opus' },
-  critic: { agentType: 'critic' },
-  retro: { agentType: 'retro', model: 'sonnet' },
-  prWriter: { agentType: 'pr-writer' },
+  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
+  epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
+  retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
+  prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
@@ -101,12 +101,13 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
+      '(concurrently), ' +
       'master check, pull request',
   },
 ];
@@ -176,13 +177,13 @@ const ISSUE_TEXT_JQ =
 function issueFile(issue, reportDir) {
   return `${reportDir}/issues/${String(issue)}.md`;
 }
-function issueLines(issue, reportDir) {
+function issueLines(issue, reportDir, key = 'Issue') {
   const dir = `${reportDir}/issues`;
   const file = issueFile(issue, reportDir);
   return [
-    `Issue file: ${file}`,
+    `${key} file: ${file}`,
     [
-      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
       `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
       `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
     ].join(' '),
@@ -232,18 +233,34 @@ const PROMPTS = {
   standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
     ].join('\n'),
-  critic: (values) =>
+  auditTests: (values) =>
     [
-      `Critic slice: ${values.slice}`,
+      `Audit slice: ${values.slice}`,
+      `Slice base: ${values.base}`,
       `Epic range: ${values.range}`,
-      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
+    ].join('\n'),
+  epicReview: (values) =>
+    [
+      `Batch worktree: ${values.batch}`,
+      `Epic range: ${values.range}`,
+      ...(values.epic === null
+        ? ['Scope: profiled']
+        : [
+            `Scope: epic ${issueRef(values.epic)}`,
+            ...issueLines(values.epic, values.reportDir, 'Epic'),
+          ]),
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Unlanded (JSON): ${JSON.stringify(values.unlanded)}`,
+      `Slice reports: ${values.sliceReports.join(', ')}`,
       `Report file: ${values.reportPath}`,
     ].join('\n'),
   retro: (values) =>
@@ -1462,17 +1479,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary'],
   },
-  testReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened', 'blocked'] },
-      sha: { type: 'string' },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
-  },
   resolver: {
     type: 'object',
     properties: {
@@ -1481,10 +1487,10 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'summary'],
   },
-  critic: {
+  auditTests: {
     type: 'object',
     properties: {
-      outcome: { type: 'string', enum: ['clean', 'applied'] },
+      verdict: { type: 'string', enum: ['clean', 'hardened'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
       commit: {
@@ -1496,21 +1502,49 @@ const AGENT_OUTPUT_SCHEMAS = {
         },
         required: ['type', 'scope', 'subject'],
       },
+      survivors: { type: 'integer' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
+  },
+  epicReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['accepted', 'accepted-with-open-items', 'rejected'] },
+      summary: { type: 'string' },
+      criteria: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            criterion: { type: 'string' },
+            state: { type: 'string', enum: ['met', 'unmet', 'unchecked'] },
+            evidence: { type: 'string' },
+          },
+          required: ['issue', 'criterion', 'state', 'evidence'],
+        },
+      },
       findings: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
-            lens: { type: 'string' },
+            view: {
+              type: 'string',
+              enum: ['duplication', 'drift', 'size', 'intent', 'architecture', 'parked'],
+            },
+            severity: { type: 'string', enum: ['hard', 'judgement'] },
             summary: { type: 'string' },
-            applied: { type: 'boolean' },
+            source: { type: 'string' },
           },
-          required: ['lens', 'summary', 'applied'],
+          required: ['view', 'severity', 'summary', 'source'],
         },
       },
-      checks: { type: 'string' },
+      unchecked: { type: 'array', items: { type: 'string' } },
     },
-    required: ['outcome', 'sha', 'files', 'commit', 'findings', 'checks'],
+    required: ['verdict', 'summary', 'criteria', 'findings', 'unchecked'],
   },
   retro: {
     type: 'object',
@@ -1881,23 +1915,23 @@ const AGENT_CALLS = {
       PROMPTS.manifestTsdoc(values),
       agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
-  testReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
-    ),
   resolver: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
     ),
-  critic: (hooks, values, tag) =>
+  auditTests: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.critic(values),
-      agentOptions('critic', tag, AGENT_OUTPUT_SCHEMAS.critic),
+      PROMPTS.auditTests(values),
+      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
+    ),
+  epicReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),

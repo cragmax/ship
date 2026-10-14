@@ -352,6 +352,7 @@ describe('publish', () => {
     batch: string,
     gh: { responses?: Record<string, FakeGhResponse>; create?: FakePrCreate } = {},
     body = BODY,
+    extra: readonly string[] = [],
   ): { r: ReturnType<typeof runCli<PublishResult>>; bin: string } {
     const bin = writeFakeGh(root, gh.responses ?? {}, 0, gh.create ?? { number: 42 });
     writeFileSync(`${root}/body.md`, body);
@@ -365,11 +366,22 @@ describe('publish', () => {
         `${root}/body.md`,
         '--log',
         `${root}/push.log`,
+        ...extra,
       ],
       { env: prependPath(bin) },
     );
     return { r, bin };
   }
+
+  it('opens the PR as a draft with --draft', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+
+    const { r, bin } = publish(run.batch, {}, BODY, ['--draft']);
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, pr: { number: 42 } });
+    expect(readFakePrCreated(bin)?.argv.at(-1)).toBe('--draft');
+  });
 
   it('pushes the run branch and opens its PR with the title and body file', TIMEOUT, () => {
     const run = makeRun();
@@ -920,6 +932,10 @@ describe('usage errors', () => {
       args: ['publish', 'b', '--push-only', '--body-file', 'f', '--log', 'l'],
     },
     { name: 'publish --push-only without --log', args: ['publish', 'b', '--push-only'] },
+    {
+      name: 'publish --push-only with --draft',
+      args: ['publish', 'b', '--push-only', '--draft', '--log', 'l'],
+    },
     {
       name: 'append-pr-body without --section-file',
       args: ['append-pr-body', 'b', '--pr', '9'],

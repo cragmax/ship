@@ -243,7 +243,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: CutSliceResultSchema,
     valueFlags: [],
     optionFlags: ['--issue', '--attempt', '--attached-run'],
-    switchFlags: ['--critic'],
+    switchFlags: ['--audit-tests'],
     rest: NO_REST,
     run: (args) => {
       const run = args.values.get('--attached-run');
@@ -286,7 +286,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: PublishResultSchema,
     valueFlags: ['--log'],
     optionFlags: ['--title', '--body-file'],
-    switchFlags: ['--push-only'],
+    switchFlags: ['--push-only', '--draft'],
     rest: NO_REST,
     run: (args) => {
       const logFile = pathFlag(args, '--log');
@@ -303,6 +303,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         title: args.values.get('--title') ?? '',
         bodyFile: pathFlag(args, '--body-file'),
         logFile,
+        draft: args.switches.has('--draft'),
       });
     },
   },
@@ -450,7 +451,7 @@ function batchSelection(
 }
 
 /**
- * Read `cut-slice`'s slice: exactly one of `--critic` and `--issue N --attempt K`.
+ * Read `cut-slice`'s slice: exactly one of `--audit-tests` and `--issue N --attempt K`.
  *
  * @throws UsageError when both or neither is given, when one of `--issue`
  *   and `--attempt` comes without the other, or a number is bad.
@@ -458,11 +459,11 @@ function batchSelection(
 function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
   const issue = args.values.get('--issue');
   const attempt = args.values.get('--attempt');
-  const critic = args.switches.has('--critic');
-  if (critic === (issue !== undefined || attempt !== undefined)) {
-    throw new UsageError('cut-slice takes exactly one of --critic and --issue N --attempt K');
+  const auditTests = args.switches.has('--audit-tests');
+  if (auditTests === (issue !== undefined || attempt !== undefined)) {
+    throw new UsageError('cut-slice takes exactly one of --audit-tests and --issue N --attempt K');
   }
-  if (critic) return { critic: true };
+  if (auditTests) return { auditTests: true };
   if (issue === undefined || attempt === undefined) {
     throw new UsageError('cut-slice --issue and --attempt go together');
   }
@@ -473,10 +474,13 @@ function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
  * Read `publish`'s mode: `push-only` for `--push-only` alone, `create` for `--title` and
  * `--body-file` together.
  *
- * @throws UsageError when `--push-only` comes with either, or, without it, either is missing.
+ * @throws UsageError when `--push-only` comes with either or `--draft`, or either is missing.
  */
 function publishMode(args: ParsedArgs): 'push-only' | 'create' {
-  const given = ['--title', '--body-file'].filter((flag) => args.values.has(flag));
+  const given = [
+    ...['--title', '--body-file'].filter((flag) => args.values.has(flag)),
+    ...(args.switches.has('--draft') ? ['--draft'] : []),
+  ];
   if (args.switches.has('--push-only')) {
     if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
     return 'push-only';
