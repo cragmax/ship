@@ -1463,7 +1463,7 @@ describe('runShip — what an attempt hands on', () => {
   );
 
   it.each<[string, string[], string[]]>([
-    ['reviewer:7-1', ['Mode'], ['Findings file']],
+    ['reviewer:7-1', [], ['Findings file']],
     ['testReview:7-1', [], []],
   ])(
     'orders %s’s prompt: the slice’s lines, the issue, report and findings files, then the server-tier recipe',
@@ -1691,9 +1691,11 @@ describe('runShip — the epic end', () => {
       '--synced',
       'origin1',
     ]);
-    const resolver = promptOf(run, 'resolver:list');
-    expect(resolver).toContain(`Batch worktree: ${BATCH}`);
-    expect(resolver).toContain(`Pending paths: ${ADR_INDEX}`);
+    expect(promptOf(run, 'resolver:list').split('\n')).toEqual([
+      `Batch worktree: ${BATCH}`,
+      `Pending paths: ${ADR_INDEX}`,
+      `Report file: ${REPORT_DIR}/resolve.md`,
+    ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
       '- Master sync: resolved at merge1',
     );
@@ -2169,7 +2171,7 @@ describe('agent-call tiers', () => {
       tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
       diffReview: { agentType: 'diff-reviewer', model: 'opus' },
       reviewer: { agentType: 'reviewer', model: 'opus' },
-      resolver: { agentType: 'reviewer', model: 'opus' },
+      resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       testReview: { agentType: 'ship-test-review', model: 'opus' },
       critic: { agentType: 'critic' },
       retro: { agentType: 'retro', model: 'sonnet' },

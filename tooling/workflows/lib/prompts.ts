@@ -343,12 +343,10 @@ export const PROMPTS = {
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
-  reviewer: (values: ReviewerValues): string =>
-    ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
+  reviewer: (values: ReviewerValues): string => sliceReviewPrompt(values, values.findingsPath),
   testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   resolver: (values: ResolverValues): string =>
     [
-      'Mode: resolve',
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,

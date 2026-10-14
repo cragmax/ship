@@ -22,9 +22,9 @@ export interface StageRow {
 }
 
 /**
- * Every stage the workflow runs an agent for; each stage's job is its agent file's. `resolver` runs
- * the reviewer agent over the epic end's doc-index conflicts; the `diffReview` and `reviewer`
- * efforts are set per call by {@link reviewEffort}; the `critic` works in a slice of its own.
+ * Every stage the workflow runs an agent for; each stage's job is its agent file's. The
+ * `diffReview` and `reviewer` efforts are set per call by {@link reviewEffort}; the `critic` works
+ * in a slice of its own.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -33,7 +33,7 @@ export const STAGES = {
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
-  resolver: { agentType: 'reviewer', model: 'opus' },
+  resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },

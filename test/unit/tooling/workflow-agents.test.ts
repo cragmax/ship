@@ -11,6 +11,7 @@ describe('workflow agents', () => {
       'diff-reviewer',
       'overlap-estimator',
       'pr-writer',
+      'resolve-index-conflicts',
       'retro',
       'reviewer',
       'runner',

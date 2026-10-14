@@ -71,7 +71,7 @@ const STAGES = {
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
-  resolver: { agentType: 'reviewer', model: 'opus' },
+  resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
@@ -239,11 +239,10 @@ const PROMPTS = {
       `Findings file: ${values.findingsPath}`,
       ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
-  reviewer: (values) => ['Mode: review', sliceReviewPrompt(values, values.findingsPath)].join('\n'),
+  reviewer: (values) => sliceReviewPrompt(values, values.findingsPath),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
-      'Mode: resolve',
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
