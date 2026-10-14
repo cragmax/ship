@@ -79,7 +79,7 @@ export const PLAN_PROBES_PER_ISSUE = 2;
  * evidence and the plan reviewer reports a finding; `lines` bounds the
  * landed commit's changed lines, which the retro reads from the schedule.
  * Set 2026-10-08 from the landed history: the median issue commit changed
- * 311 lines in 7 files; the one slice that outran a tdd session (#1184)
+ * 311 lines in 7 files; the one slice that outran a tdd session
  * planned 25 tasks over 34 files and landed 2,553 lines.
  */
 export const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 } as const;

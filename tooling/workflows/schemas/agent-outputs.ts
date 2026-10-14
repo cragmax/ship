@@ -1,5 +1,5 @@
 /**
- * The zod source of each `ship` judgment agent's output schema (#1047): the
+ * The zod source of each `ship` judgment agent's output schema: the
  * canonical home of the answer shapes `tooling/workflows/lib/agent-calls.ts`
  * types as their `z.infer`. Every field is required — the tdd's `reason`
  * alone is optional — so a verdict never reaches the workflow without what

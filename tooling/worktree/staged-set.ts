@@ -1,7 +1,7 @@
 /**
  * `staged-guard <worktree> <file>…` — the staged set of a worktree must
- * equal a caller's list exactly, before a commit (`.claude/rules/git.md`
- * § Direct commits step 3, as a tool). Read-only, so it runs in any
+ * equal a caller's list exactly, before a commit, so no stray path rides
+ * along and no intended one is left out. Read-only, so it runs in any
  * worktree, the main checkout included, and has no self-hosted guard.
  *
  * Paths compare by exact code unit on every platform, never case-folded:

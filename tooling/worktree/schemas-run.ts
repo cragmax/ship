@@ -216,7 +216,7 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
    * found already merged: read from `origin/master` after the fetch (start
    * mode), or from `MERGE_HEAD` before a stopped merge's commit (`--continue`,
    * and start mode's own finish). The high-water mark the epic end's master
-   * check measures `origin` against (#1095). `null` unless `outcome` is
+   * check measures `origin` against. `null` unless `outcome` is
    * `up-to-date` or `merged`.
    */
   upstream: z.string().nullable(),
@@ -309,7 +309,7 @@ export const MasterMoveSchema = z.object({
   launch: z.string(),
   /**
    * `origin`'s high-water sha, as given (`--synced`): the `origin/master` the
-   * epic end's `sync-master` merged or found merged (#1095). `null` for local
+   * epic end's `sync-master` merged or found merged. `null` for local
    * `master`, and for `origin` when `--synced` was not given; either is then
    * judged against its launch sha only.
    */

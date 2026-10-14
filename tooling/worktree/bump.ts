@@ -1,12 +1,11 @@
 /**
  * `bump <batch>` — reconcile the run branch's version to its one net bump
- * over `master` (`.claude/rules/git.md` § Unattended workflow runs;
- * ADR-0045 decision 7). The kind is `minor` when any of the batch's own
+ * over `master` (ADR-0045 decision 7). The kind is `minor` when any of the batch's own
  * non-merge commits since it left `origin/master` is a `feat`, else
  * `patch`; the target is `origin/master`'s version bumped by that kind. A
  * batch already at the target gets no commit. Otherwise one commit of
  * `package.json` and the lockfile sets the version to the target, through
- * § Direct commits steps 1–4, the message carrying the run's
+ * {@link stageBump} and a logged hook commit, the message carrying the run's
  * {@link CO_AUTHOR_TRAILER}. So the net one bump may be carried by more
  * than one bump commit: a `feat` landing on a patch-bumped branch adds a
  * second, at `master`'s minor.
@@ -183,8 +182,8 @@ function versionOf(text: string, source: string): string {
 }
 
 /**
- * Stage the bump — § Direct commits steps 1–3: reset the index, add the two files by name, check
- * the staged set is exactly them.
+ * Stage the bump: reset the index, add the two files by name, check the staged set is exactly
+ * them, so nothing staged earlier rides along.
  *
  * @throws Refusal `staged-mismatch` naming both differences.
  */

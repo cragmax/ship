@@ -183,7 +183,7 @@ async function probeMember(
 
 /**
  * One `stale-slice-branch` problem per branch under each slug's {@link sliceBranchPrefix}
- * ({@link branchesUnder}), slug by slug, in ref order (#1302).
+ * ({@link branchesUnder}), slug by slug, in ref order.
  *
  * @throws StepFailure `slice-branches` when git cannot list them.
  */
