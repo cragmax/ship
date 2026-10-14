@@ -35,8 +35,11 @@ export const RefusalReasonSchema = z.enum([
   'batch-dirty',
   // Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree.
   'unregistered-worktree',
-  // Staged-guard: the staged set differs from the expected list; the envelope names both sides.
+  // Staged-guard, commit: the staged set differs from the expected list; the envelope names both
+  // sides.
   'staged-mismatch',
+  // Commit: a merge is in progress, which a reset would end.
+  'merge-in-progress',
   // Land: the slice is not exactly one commit on top of its cut.
   'slice-not-single-commit',
   // Cut-batch, preflight: the target is not the repository's main worktree.
@@ -230,6 +233,16 @@ export const StagedGuardResultSchema = ResultBaseSchema.extend({
   missing: z.array(z.string()),
   /** Staged but not expected. */
   unexpected: z.array(z.string()),
+});
+
+/** Envelope of `commit --message-file <f> -- <path>…`; `worktree` is the checkout root. */
+export const CommitResultSchema = ResultBaseSchema.extend({
+  /** The named paths, normalised and deduplicated. */
+  files: z.array(z.string()),
+  /** The new commit's full sha; `null` unless `ok`. */
+  commit: z.string().nullable(),
+  /** The commit's whole output, hooks' included; `null` when no commit ran. */
+  log: z.string().nullable(),
 });
 
 /** A run branch's pull request as `gh` reports it. */

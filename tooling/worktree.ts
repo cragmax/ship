@@ -7,8 +7,8 @@
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
  * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and gitignored
- * run paths) and `retire-run` (its guards prove no worktree, so no CLI, lies in the run root it
- * removes). Target paths and path flags resolve against the starting cwd; the rest stays as given.
+ * run paths), `retire-run` (no worktree lies in the run root it removes) and `commit` (it touches
+ * only its cwd's index and `HEAD`). Target paths and path flags resolve against the starting cwd.
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
  * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout) — the runner
@@ -26,6 +26,7 @@ import { RUN_BRANCH_SHAPE } from './workflows/lib/run-branch.js';
 import { appendPrBody } from './worktree/append-pr-body.js';
 import { bump } from './worktree/bump.js';
 import { checkMaster } from './worktree/check-master.js';
+import { commit } from './worktree/commit.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
 import { attachBatch } from './worktree/cut-attach.js';
 import { harvest } from './worktree/harvest.js';
@@ -40,6 +41,7 @@ import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
 import { retireRun } from './worktree/retire-run.js';
 import {
+  CommitResultSchema,
   guardEnvelope,
   HarvestResultSchema,
   LiveRunsResultSchema,
@@ -93,6 +95,8 @@ interface CommandSpec {
   readonly switchFlags: readonly string[];
   /** How many positionals may follow the target (`max` may be `Infinity`). */
   readonly rest: { readonly min: number; readonly max: number };
+  /** The target is the starting cwd, and every positional is `rest`. */
+  readonly cwdTarget?: true;
   /** The envelope schema `run`'s result must satisfy, in every mode of the command. */
   readonly schema: z.ZodType;
   /** Run the command. */
@@ -174,6 +178,19 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: { min: 1, max: Infinity },
     run: (args) => stagedGuard({ worktree: args.target, files: args.rest }),
+  },
+  commit: {
+    schema: CommitResultSchema,
+    valueFlags: ['--message-file'],
+    switchFlags: [],
+    rest: { min: 1, max: Infinity },
+    cwdTarget: true,
+    run: (args) =>
+      commit({
+        worktree: args.target,
+        messageFile: pathFlag(args, '--message-file'),
+        files: args.rest,
+      }),
   },
   'retire-run': {
     schema: RetireRunResultSchema,
@@ -328,7 +345,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
 };
 
 /**
- * Parse one subcommand's arguments against its spec.
+ * Parse one subcommand's arguments against its spec; a `--` ends the flags.
  *
  * @throws UsageError on an unknown flag, a flag missing its value, a missing
  *   required flag, or a positional count outside the spec's range.
@@ -336,20 +353,37 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
 function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
   const values = new Map<string, string>();
   const switches = new Set<string>();
-  const positionals: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i] ?? '';
+  const { flags, positionals, trailing } = splitAtDashes(argv, spec);
+  for (let i = 0; i < flags.length; i++) {
+    const arg = flags[i] ?? '';
     if (spec.switchFlags.includes(arg)) switches.add(arg);
     else if (spec.valueFlags.includes(arg) || spec.optionFlags?.includes(arg) === true) {
-      values.set(arg, requireValue(argv[++i], arg));
+      values.set(arg, requireValue(flags[++i], arg));
     } else if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
     else positionals.push(arg);
   }
+  positionals.push(...trailing);
   assertArity(positionals.length, spec.rest);
   const missing = spec.valueFlags.find((flag) => !values.has(flag));
   if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
   const [target = '', ...rest] = positionals;
   return { target: toTarget(target), rest, values, switches };
+}
+
+/**
+ * Split argv at its first `--` into the arguments before it and the positionals after it; the
+ * positional list starts with the cwd target for a {@link CommandSpec.cwdTarget} command.
+ */
+function splitAtDashes(
+  argv: readonly string[],
+  spec: CommandSpec,
+): { flags: readonly string[]; positionals: string[]; trailing: readonly string[] } {
+  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+  return {
+    flags: argv.slice(0, end),
+    positionals: spec.cwdTarget === true ? ['.'] : [],
+    trailing: argv.slice(end + 1),
+  };
 }
 
 /**
