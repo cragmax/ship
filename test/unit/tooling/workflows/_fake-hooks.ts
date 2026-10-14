@@ -270,6 +270,15 @@ export const PR_WRITER_OK = {
   ramifications: '',
 };
 
+/** An epic review accepting issue 7: its one criterion met, no finding. */
+export const EPIC_ACCEPTED = {
+  verdict: 'accepted',
+  summary: 'every criterion met',
+  criteria: [{ issue: 7, criterion: 'adds the x tool', state: 'met', evidence: 'tooling/x.ts:1' }],
+  findings: [],
+  unchecked: [],
+};
+
 /** The all-pass answers of a full run of `issues 7`, by label. */
 const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
@@ -347,14 +356,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     summary: 'nothing to harden',
     leaseLines: [],
   },
-  critic: {
-    outcome: 'clean',
-    sha: '',
-    files: [],
-    commit: { type: 'refactor', scope: 'build', subject: '' },
-    findings: [],
-    checks: 'nothing to verify',
-  },
+  epicReview: EPIC_ACCEPTED,
   retro: { findings: [] },
   prWriter: PR_WRITER_OK,
 };

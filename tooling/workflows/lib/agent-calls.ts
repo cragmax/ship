@@ -20,8 +20,7 @@ import { runSetIssues } from '../../lib/run-set.js';
 import type {
   AuditTestsOutputSchema,
   CommitSpecSchema,
-  CriticFindingSchema,
-  CriticOutputSchema,
+  EpicReviewOutputSchema,
   EstimatedPairSchema,
   IssueReadinessSchema,
   IssueOverlapSchema,
@@ -42,7 +41,7 @@ import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
   type AuditTestsValues,
-  type CriticValues,
+  type EpicReviewValues,
   type IssueOverlapValues,
   type IssueReadinessValues,
   type ManifestTsdocValues,
@@ -73,7 +72,7 @@ export type LiveOverlap = z.infer<typeof LiveOverlapSchema>;
 /** `issue-overlap`'s answer. */
 export type IssueOverlap = z.infer<typeof IssueOverlapSchema>;
 
-/** A commit message's first line, as the tdd, the test audit or the critic proposes it. */
+/** A commit message's first line, as the tdd or the test audit proposes it. */
 export type CommitSpec = z.infer<typeof CommitSpecSchema>;
 
 /** One probe the tdd ran, or chose not to finish. */
@@ -115,11 +114,8 @@ export interface SliceWork {
   readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
 }
 
-/** One finding of the critic. */
-export type CriticFinding = z.infer<typeof CriticFindingSchema>;
-
-/** The critic's answer. */
-export type CriticOutput = z.infer<typeof CriticOutputSchema>;
+/** The epic review's answer. */
+export type EpicReviewOutput = z.infer<typeof EpicReviewOutputSchema>;
 
 /** One finding of the retro. */
 export type RetroFinding = z.infer<typeof RetroFindingSchema>;
@@ -221,11 +217,11 @@ export const AGENT_CALLS = {
       PROMPTS.auditTests(values),
       agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
-  critic: (hooks: WorkflowHooks, values: CriticValues, tag: string) =>
-    askAgent<CriticOutput>(
+  epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
+    askAgent<EpicReviewOutput>(
       hooks,
-      PROMPTS.critic(values),
-      agentOptions('critic', tag, AGENT_OUTPUT_SCHEMAS.critic),
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks: WorkflowHooks, values: RetroValues, tag: string) =>
     askAgent<RetroOutput>(

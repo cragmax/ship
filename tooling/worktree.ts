@@ -40,7 +40,6 @@ import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
 import { retireRun } from './worktree/retire-run.js';
-import type { EpicEndSlice } from './worktree/run-layout.js';
 import {
   CommitResultSchema,
   guardEnvelope,
@@ -244,7 +243,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: CutSliceResultSchema,
     valueFlags: [],
     optionFlags: ['--issue', '--attempt', '--attached-run'],
-    switchFlags: ['--audit-tests', '--critic'],
+    switchFlags: ['--audit-tests'],
     rest: NO_REST,
     run: (args) => {
       const run = args.values.get('--attached-run');
@@ -287,7 +286,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: PublishResultSchema,
     valueFlags: ['--log'],
     optionFlags: ['--title', '--body-file'],
-    switchFlags: ['--push-only'],
+    switchFlags: ['--push-only', '--draft'],
     rest: NO_REST,
     run: (args) => {
       const logFile = pathFlag(args, '--log');
@@ -304,6 +303,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         title: args.values.get('--title') ?? '',
         bodyFile: pathFlag(args, '--body-file'),
         logFile,
+        draft: args.switches.has('--draft'),
       });
     },
   },
@@ -450,26 +450,20 @@ function batchSelection(
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
 }
 
-/** `cut-slice`'s epic-end stage switches, each named after its stage. */
-const EPIC_END_SLICES: readonly EpicEndSlice[] = ['audit-tests', 'critic'];
-
 /**
- * Read `cut-slice`'s slice: exactly one of an epic-end stage switch and `--issue N --attempt K`.
+ * Read `cut-slice`'s slice: exactly one of `--audit-tests` and `--issue N --attempt K`.
  *
- * @throws UsageError when not exactly one is given, `--issue` and `--attempt` part, or a number
- *   is bad.
+ * @throws UsageError when both or neither is given, when one of `--issue`
+ *   and `--attempt` comes without the other, or a number is bad.
  */
 function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
   const issue = args.values.get('--issue');
   const attempt = args.values.get('--attempt');
-  const stages = EPIC_END_SLICES.filter((stage) => args.switches.has(`--${stage}`));
-  if (stages.length + (issue !== undefined || attempt !== undefined ? 1 : 0) !== 1) {
-    throw new UsageError(
-      'cut-slice takes exactly one of --audit-tests, --critic and --issue N --attempt K',
-    );
+  const auditTests = args.switches.has('--audit-tests');
+  if (auditTests === (issue !== undefined || attempt !== undefined)) {
+    throw new UsageError('cut-slice takes exactly one of --audit-tests and --issue N --attempt K');
   }
-  const [stage] = stages;
-  if (stage !== undefined) return { stage };
+  if (auditTests) return { auditTests: true };
   if (issue === undefined || attempt === undefined) {
     throw new UsageError('cut-slice --issue and --attempt go together');
   }
@@ -480,10 +474,13 @@ function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
  * Read `publish`'s mode: `push-only` for `--push-only` alone, `create` for `--title` and
  * `--body-file` together.
  *
- * @throws UsageError when `--push-only` comes with either, or, without it, either is missing.
+ * @throws UsageError when `--push-only` comes with either or `--draft`, or either is missing.
  */
 function publishMode(args: ParsedArgs): 'push-only' | 'create' {
-  const given = ['--title', '--body-file'].filter((flag) => args.values.has(flag));
+  const given = [
+    ...['--title', '--body-file'].filter((flag) => args.values.has(flag)),
+    ...(args.switches.has('--draft') ? ['--draft'] : []),
+  ];
   if (args.switches.has('--push-only')) {
     if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
     return 'push-only';

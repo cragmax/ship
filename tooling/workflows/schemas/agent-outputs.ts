@@ -91,7 +91,7 @@ export const IssueOverlapSchema = z.object({
   areaMap: z.enum(['read', 'unavailable']),
 });
 
-/** A commit message's first line, as the tdd, the test audit or the critic proposes it. */
+/** A commit message's first line, as the tdd or the test audit proposes it. */
 export const CommitSpecSchema = z.object({
   /** `feat`, `fix`, `refactor`, `test`, `docs` or `chore`. */
   type: z.string(),
@@ -214,30 +214,42 @@ export const AuditTestsOutputSchema = z.object({
   leaseLines: z.array(z.string()),
 });
 
-/** One finding of the critic. */
-export const CriticFindingSchema = z.object({
-  /** `duplication`, `helpers` or `drift`. */
-  lens: z.string(),
-  /** The finding, one line. */
-  summary: z.string(),
-  /** Whether its commit carries the fix. */
-  applied: z.boolean(),
+/** One acceptance criterion as the epic review traced it. */
+export const EpicCriterionSchema = z.object({
+  /** The issue it belongs to. */
+  issue: z.int(),
+  /** Its text, one line. */
+  criterion: z.string(),
+  /** `met`, `unmet`, or `unchecked`: never traced. */
+  state: z.enum(['met', 'unmet', 'unchecked']),
+  /** Its source, or why it went unchecked. */
+  evidence: z.string(),
 });
 
-/** The critic's answer. */
-export const CriticOutputSchema = z.object({
-  /** `clean`: no commit; `applied`: one commit in the critic slice. */
-  outcome: z.enum(['clean', 'applied']),
-  /** The commit; empty when `clean`. */
-  sha: z.string(),
-  /** Its changed paths. */
-  files: z.array(z.string()),
-  /** Its first line. */
-  commit: CommitSpecSchema,
-  /** Every finding, applied or not. */
-  findings: z.array(CriticFindingSchema),
-  /** The checks it ran green, one line. */
-  checks: z.string(),
+/** One verified finding of the epic review. */
+export const EpicFindingSchema = z.object({
+  /** The cross-issue view that found it; `parked`: a slice review's skipped finding still open. */
+  view: z.enum(['duplication', 'drift', 'size', 'intent', 'architecture', 'parked']),
+  /** `hard`: it rejects the change; `judgement`: an open item. */
+  severity: z.enum(['hard', 'judgement']),
+  /** The finding, one line. */
+  summary: z.string(),
+  /** Its cited source. */
+  source: z.string(),
+});
+
+/** The epic review's answer. */
+export const EpicReviewOutputSchema = z.object({
+  /** The change's verdict. */
+  verdict: z.enum(['accepted', 'accepted-with-open-items', 'rejected']),
+  /** The verdict's reason, one line. */
+  summary: z.string(),
+  /** Every acceptance criterion it traced. */
+  criteria: z.array(EpicCriterionSchema),
+  /** Every verified finding, none applied. */
+  findings: z.array(EpicFindingSchema),
+  /** Each view it could not read, with why. */
+  unchecked: z.array(z.string()),
 });
 
 /** One finding of the retro. */
@@ -282,7 +294,7 @@ export const AGENT_OUTPUTS = {
   manifestTsdoc: ManifestTsdocOutputSchema,
   resolver: ResolverOutputSchema,
   auditTests: AuditTestsOutputSchema,
-  critic: CriticOutputSchema,
+  epicReview: EpicReviewOutputSchema,
   retro: RetroOutputSchema,
   prWriter: PrWriterOutputSchema,
 } as const;

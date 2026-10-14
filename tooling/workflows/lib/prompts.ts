@@ -76,7 +76,7 @@ export interface IssueOverlapValues {
   readonly prHead?: string;
 }
 
-/** One issue its epic landed, as the critic and the PR writer are handed it. */
+/** One issue its epic landed, as the PR writer is handed it. */
 export interface LandedSlice {
   /** The issue. */
   readonly issue: number;
@@ -164,14 +164,32 @@ export interface AuditTestsValues {
   readonly lease: LeaseValues;
 }
 
-/** `PROMPTS.critic`'s input: the epic's landed range, reviewed in a slice of its own. */
-export interface CriticValues {
-  /** The critic's slice worktree, cut from the batch head. */
-  readonly slice: string;
-  /** The epic's landed range, `<batch base>..HEAD`. */
+/** An issue of the run that did not land, as the epic review is handed it. */
+export interface UnlandedValues {
+  /** The issue. */
+  readonly issue: number;
+  /** How it ended. */
+  readonly outcome: string;
+  /** Why, when known. */
+  readonly reason?: string;
+}
+
+/** `PROMPTS.epicReview`'s input: the run's landed change on the batch's final tree. */
+export interface EpicReviewValues {
+  /** The batch worktree, at its final head. */
+  readonly batch: string;
+  /** The run's landed range, `<batch base>..HEAD`. */
   readonly range: string;
-  /** Each landed issue and its commit, in landing order. */
-  readonly landed: readonly LandedSlice[];
+  /** The entry's epic; `null` for an explicit list, whose verdict is profiled. */
+  readonly epic: number | null;
+  /** The landed issues, in landing order: their texts are under the report dir. */
+  readonly issues: readonly number[];
+  /** Every other issue of the entry. */
+  readonly unlanded: readonly UnlandedValues[];
+  /** The landed slices' review reports. */
+  readonly sliceReports: readonly string[];
+  /** The run's report directory. */
+  readonly reportDir: string;
   /** The full report. */
   readonly reportPath: string;
 }
@@ -288,14 +306,15 @@ function issueFile(issue: number, reportDir: string): string {
 /**
  * Where an issue's text goes and the command that writes it there — so the
  * agent reads the issue from a file, never from `gh` output in its context.
+ * `key` names the two lines (`<key> file:`, `<key> command:`).
  */
-function issueLines(issue: number, reportDir: string): string[] {
+function issueLines(issue: number, reportDir: string, key = 'Issue'): string[] {
   const dir = `${reportDir}/issues`;
   const file = issueFile(issue, reportDir);
   return [
-    `Issue file: ${file}`,
+    `${key} file: ${file}`,
     [
-      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
       `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
       `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
     ].join(' '),
@@ -371,11 +390,19 @@ export const PROMPTS = {
       `Report file: ${values.reportPath}`,
       ...serverTierLines(values.lease),
     ].join('\n'),
-  critic: (values: CriticValues): string =>
+  epicReview: (values: EpicReviewValues): string =>
     [
-      `Critic slice: ${values.slice}`,
+      `Batch worktree: ${values.batch}`,
       `Epic range: ${values.range}`,
-      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      ...(values.epic === null
+        ? ['Scope: profiled']
+        : [
+            `Scope: epic ${issueRef(values.epic)}`,
+            ...issueLines(values.epic, values.reportDir, 'Epic'),
+          ]),
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Unlanded (JSON): ${JSON.stringify(values.unlanded)}`,
+      `Slice reports: ${values.sliceReports.join(', ')}`,
       `Report file: ${values.reportPath}`,
     ].join('\n'),
   retro: (values: RetroValues): string =>

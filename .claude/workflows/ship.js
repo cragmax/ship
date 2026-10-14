@@ -18,7 +18,7 @@ export const meta = {
     {
       title: 'Epic end',
       detail:
-        'per epic: test audit, critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+        'per epic: test audit, epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     },
   ],
 };
@@ -36,7 +36,7 @@ const STAGES = {
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
-  critic: { agentType: 'critic' },
+  epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'sonnet' },
   prWriter: { agentType: 'pr-writer' },
 };
@@ -68,7 +68,7 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: test audit, critic, master sync, version bump, retro and PR writer ' +
+      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },
@@ -606,13 +606,13 @@ const ISSUE_TEXT_JQ =
 function issueFile(issue, reportDir) {
   return `${reportDir}/issues/${String(issue)}.md`;
 }
-function issueLines(issue, reportDir) {
+function issueLines(issue, reportDir, key = 'Issue') {
   const dir = `${reportDir}/issues`;
   const file = issueFile(issue, reportDir);
   return [
-    `Issue file: ${file}`,
+    `${key} file: ${file}`,
     [
-      `Issue command: mkdir -p ${shellWord(dir)} &&`,
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
       `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
       `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
     ].join(' '),
@@ -677,11 +677,19 @@ const PROMPTS = {
       `Report file: ${values.reportPath}`,
       ...serverTierLines(values.lease),
     ].join('\n'),
-  critic: (values) =>
+  epicReview: (values) =>
     [
-      `Critic slice: ${values.slice}`,
+      `Batch worktree: ${values.batch}`,
       `Epic range: ${values.range}`,
-      `Landed (JSON): ${JSON.stringify(values.landed)}`,
+      ...(values.epic === null
+        ? ['Scope: profiled']
+        : [
+            `Scope: epic ${issueRef(values.epic)}`,
+            ...issueLines(values.epic, values.reportDir, 'Epic'),
+          ]),
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Unlanded (JSON): ${JSON.stringify(values.unlanded)}`,
+      `Slice reports: ${values.sliceReports.join(', ')}`,
       `Report file: ${values.reportPath}`,
     ].join('\n'),
   retro: (values) =>
@@ -1929,36 +1937,43 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
   },
-  critic: {
+  epicReview: {
     type: 'object',
     properties: {
-      outcome: { type: 'string', enum: ['clean', 'applied'] },
-      sha: { type: 'string' },
-      files: { type: 'array', items: { type: 'string' } },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
+      verdict: { type: 'string', enum: ['accepted', 'accepted-with-open-items', 'rejected'] },
+      summary: { type: 'string' },
+      criteria: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            criterion: { type: 'string' },
+            state: { type: 'string', enum: ['met', 'unmet', 'unchecked'] },
+            evidence: { type: 'string' },
+          },
+          required: ['issue', 'criterion', 'state', 'evidence'],
         },
-        required: ['type', 'scope', 'subject'],
       },
       findings: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
-            lens: { type: 'string' },
+            view: {
+              type: 'string',
+              enum: ['duplication', 'drift', 'size', 'intent', 'architecture', 'parked'],
+            },
+            severity: { type: 'string', enum: ['hard', 'judgement'] },
             summary: { type: 'string' },
-            applied: { type: 'boolean' },
+            source: { type: 'string' },
           },
-          required: ['lens', 'summary', 'applied'],
+          required: ['view', 'severity', 'summary', 'source'],
         },
       },
-      checks: { type: 'string' },
+      unchecked: { type: 'array', items: { type: 'string' } },
     },
-    required: ['outcome', 'sha', 'files', 'commit', 'findings', 'checks'],
+    required: ['verdict', 'summary', 'criteria', 'findings', 'unchecked'],
   },
   retro: {
     type: 'object',
@@ -2370,11 +2385,11 @@ const AGENT_CALLS = {
       PROMPTS.auditTests(values),
       agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
-  critic: (hooks, values, tag) =>
+  epicReview: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.critic(values),
-      agentOptions('critic', tag, AGENT_OUTPUT_SCHEMAS.critic),
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
@@ -2539,6 +2554,7 @@ function fitPrBody(input) {
 }
 function prBody(input, moved) {
   const body = [
+    ...section('Epic review', epicReviewLines(input.epicReview)),
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
@@ -2556,6 +2572,7 @@ function renderAttachedSection(input) {
   const body = [
     `## Attached run ${String(input.run)}`,
     '',
+    ...section('Epic review', epicReviewLines(input.epicReview), 3),
     ...section('Evidence', evidenceList(input.landed), 3),
     ...section('Issues', issueRefLines(input), 3),
     ...recordedSection(input.landed, 3),
@@ -2614,7 +2631,6 @@ function runReportLines(input, moved = new Set()) {
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...section('Test audit', auditTestsLines(input.auditTests)),
-    ...section('Critic', criticLines(input.critic)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
@@ -2682,19 +2698,27 @@ function auditTestsLines(audit) {
         ]),
   ];
 }
-function criticLines(critic) {
-  const outcome = {
-    clean: 'no changes',
-    landed: `landed as ${critic.commit ?? '?'}`,
-    dropped: `changes dropped — ${critic.reason ?? 'no reason named'}`,
-    'not-run': `not run — ${critic.reason ?? 'no reason named'}`,
-    skipped: 'skipped — one issue landed',
-  }[critic.outcome];
+function epicReviewLines(review) {
+  const profiled = review.profiled ? ' (profiled)' : '';
+  const { answer } = review;
   return [
-    `- Outcome: ${outcome}`,
-    ...critic.findings.map(
-      (f) => `- [${f.lens}] ${f.summary} (${f.applied ? 'applied' : 'not applied'})`,
-    ),
+    `**Verdict:** ${review.verdict ?? 'not run'}${profiled}`,
+    '',
+    ...(review.forced === undefined ? [] : [`- Forced rejected: ${review.forced}`]),
+    ...(review.notRun === undefined ? [] : [`- Not run: ${review.notRun}`]),
+    ...(answer === null ? [] : epicAnswerLines(answer)),
+  ];
+}
+function epicAnswerLines(answer) {
+  const met = answer.criteria.filter((c) => c.state === 'met').length;
+  return [
+    `- ${answer.summary}`,
+    `- Criteria: ${String(met)} of ${String(answer.criteria.length)} met`,
+    ...answer.criteria
+      .filter((c) => c.state !== 'met')
+      .map((c) => `- #${String(c.issue)} ${c.state}: ${c.criterion} — ${c.evidence}`),
+    ...answer.findings.map((f) => `- [${f.view}, ${f.severity}] ${f.summary} — ${f.source}`),
+    ...answer.unchecked.map((view) => `- Unchecked: ${view}`),
   ];
 }
 function overlapLines(edges) {
@@ -3051,28 +3075,23 @@ function errorText(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
+const TAG = 'audit-tests';
 async function auditTestsStep(input) {
   const skip = await auditTestsSkip(input);
   if (skip !== null) return { outcome: 'skipped', reason: skip, answer: null, halt: null };
   const { hooks, entry } = input;
-  return endSliceStep(input, {
-    tag: 'audit-tests',
-    name: 'test audit',
-    server: true,
-    ask: (slice, base, projectDir) => {
-      const values = {
-        slice,
-        base,
-        range: `${entry.base}..HEAD`,
-        issues: input.landed.map((l) => l.issue),
-        reportDir: entry.reportDir,
-        reportPath: `${entry.reportDir}/audit-tests.md`,
-        lease: { main: entry.main, projectDir, registry: entry.registry },
-      };
-      return AGENT_CALLS.auditTests(hooks, values, entry.tag);
-    },
-    landing: (out) => (out.verdict === 'clean' ? null : out),
-  });
+  const place = runPlace(entry.reportDir, TAG);
+  const argv = [entry.batch, '--audit-tests', ...attachedRunArgs(entry)];
+  const cut = await runTool(hooks, 'cut-slice', argv, place).catch(() => null);
+  const slice = typeof cut?.slice === 'string' ? cut.slice : null;
+  const base = cut?.base;
+  if (cut?.status !== 'ok' || slice === null || typeof base !== 'string') {
+    return tornDown(input, slice, notRun(envelopeProblem('cut-slice', cut)));
+  }
+  const result = await inSlice(input, slice, base).catch((err) =>
+    notRun(`the test audit step threw: ${err instanceof Error ? err.message : String(err)}`),
+  );
+  return tornDown(input, slice, result);
 }
 async function auditTestsSkip(input) {
   const files = input.landed.flatMap((l) => l.tdd.files);
@@ -3080,8 +3099,12 @@ async function auditTestsSkip(input) {
   if (files.some((path) => path.startsWith('test/'))) return null;
   const { hooks, entry } = input;
   const head = input.landed.at(-1)?.commit ?? 'HEAD';
-  const place = runPlace(entry.reportDir, 'audit-tests');
-  const out = await runTool(hooks, 'comment-only', [`${entry.base}..${head}`], place);
+  const out = await runTool(
+    hooks,
+    'comment-only',
+    [`${entry.base}..${head}`],
+    runPlace(entry.reportDir, TAG),
+  );
   const proven =
     out !== null &&
     out.exitCode === 0 &&
@@ -3089,85 +3112,62 @@ async function auditTestsSkip(input) {
     isTrivialSurface(out.notCompared);
   return proven ? 'comment-only' : null;
 }
-async function criticStep(input) {
-  if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null };
+async function inSlice(input, slice, base) {
   const { hooks, entry } = input;
-  const { answer, ...result } = await endSliceStep(input, {
-    tag: 'critic',
-    name: 'critic',
-    server: false,
-    ask: (slice) => {
-      const values = {
-        slice,
-        range: `${entry.base}..HEAD`,
-        landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit })),
-        reportPath: `${entry.reportDir}/critic.md`,
-      };
-      return AGENT_CALLS.critic(hooks, values, entry.tag);
-    },
-    landing: (out) => (out.outcome === 'clean' ? null : out),
-  });
-  return { ...result, findings: answer?.findings ?? [] };
-}
-async function endSliceStep(input, agent) {
-  const { hooks, entry } = input;
-  const place = runPlace(entry.reportDir, agent.tag);
-  const argv = [entry.batch, `--${agent.tag}`, ...attachedRunArgs(entry)];
-  const cut = await runTool(hooks, 'cut-slice', argv, place).catch(() => null);
-  const slice = typeof cut?.slice === 'string' ? cut.slice : null;
-  const base = cut?.base;
-  if (cut?.status !== 'ok' || slice === null || typeof base !== 'string') {
-    return tornDown(input, agent, slice, notRun(envelopeProblem('cut-slice', cut)));
-  }
-  const result = await inSlice(input, agent, slice, base).catch((err) =>
-    notRun(`the ${agent.name} step threw: ${err instanceof Error ? err.message : String(err)}`),
-  );
-  return tornDown(input, agent, slice, result);
-}
-async function inSlice(input, agent, slice, base) {
-  const { hooks, entry } = input;
-  const argv = [slice, '--batch', entry.batch, ...(agent.server ? ['--server'] : [])];
-  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, agent.tag));
+  const argv = [slice, '--batch', entry.batch, '--server'];
+  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, TAG));
   const projectDir = prov?.env?.PH_PROJECT_DIR;
   if (prov?.status !== 'ok' || typeof projectDir !== 'string') {
     return notRun(envelopeProblem('provision', prov));
   }
-  const out = await agent.ask(slice, base, projectDir);
-  if (out === null) return notRun(`the ${agent.name} returned nothing`);
-  const landing = agent.landing(out);
-  if (landing === null) return { outcome: 'clean', answer: out, halt: null };
-  if (landing.sha === '') {
-    const reason = `the ${agent.name} applied no commit`;
-    return { outcome: 'dropped', reason, answer: out, halt: null };
+  const values = {
+    slice,
+    base,
+    range: `${entry.base}..HEAD`,
+    issues: input.landed.map((l) => l.issue),
+    reportDir: entry.reportDir,
+    reportPath: `${entry.reportDir}/audit-tests.md`,
+    lease: { main: entry.main, projectDir, registry: entry.registry },
+  };
+  const out = await AGENT_CALLS.auditTests(hooks, values, entry.tag);
+  if (out === null) return notRun('the test audit returned nothing');
+  if (out.verdict === 'clean') return { outcome: 'clean', answer: out, halt: null };
+  if (out.sha === '') {
+    return {
+      outcome: 'dropped',
+      reason: 'the test audit applied no commit',
+      answer: out,
+      halt: null,
+    };
   }
-  return land(input, agent, out, { ...landing, base });
+  return land(input, out, base);
 }
-async function land(input, agent, answer, commit) {
+async function land(input, out, base) {
   const { hooks, entry } = input;
-  const messagePath = `${entry.reportDir}/commit-${agent.tag}.txt`;
+  const messagePath = `${entry.reportDir}/commit-${TAG}.txt`;
   const argv = [
     entry.batch,
-    commit.sha,
+    out.sha,
     '--base',
-    commit.base,
+    base,
     '--message-file',
     messagePath,
     '--log',
-    `${entry.reportDir}/land-${agent.tag}.log`,
+    `${entry.reportDir}/land-${TAG}.log`,
   ];
-  const write = { path: messagePath, content: epicEndCommitMessage(commit.commit) };
-  const place = runPlace(entry.reportDir, agent.tag, write);
-  const out = await runTool(hooks, 'land', argv, place).catch(() => null);
-  const kind = classifyLanding(out);
-  if (kind === 'committed' && typeof out?.commit === 'string') {
-    return { outcome: 'landed', commit: out.commit, answer, halt: null };
+  const write = { path: messagePath, content: epicEndCommitMessage(out.commit) };
+  const place = runPlace(entry.reportDir, TAG, write);
+  const landed = await runTool(hooks, 'land', argv, place).catch(() => null);
+  const kind = classifyLanding(landed);
+  if (kind === 'committed' && typeof landed?.commit === 'string') {
+    return { outcome: 'landed', commit: landed.commit, answer: out, halt: null };
   }
-  const reason = envelopeProblem('land', out);
-  return { outcome: 'dropped', reason, answer, halt: kind === 'halt' ? reason : null };
+  const reason = envelopeProblem('land', landed);
+  return { outcome: 'dropped', reason, answer: out, halt: kind === 'halt' ? reason : null };
 }
-async function tornDown(input, agent, slice, result) {
+async function tornDown(input, slice, result) {
   if (slice === null) return result;
-  const place = runPlace(input.entry.reportDir, agent.tag);
+  const place = runPlace(input.entry.reportDir, TAG);
   const teardown = await runTool(input.hooks, 'teardown', [slice], place).catch(() => null);
   const halt = teardownEvent(teardown, input.entry.epic);
   return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
@@ -3295,7 +3295,7 @@ async function epicEnd(input) {
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.auditTests === undefined ? {} : { auditTests: state.auditTests }),
-    ...(state.critic === undefined ? {} : { critic: state.critic }),
+    ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
     ...(issueComments.length === 0 ? {} : { issueComments }),
@@ -3372,9 +3372,7 @@ async function shipSteps(input, state) {
   if (auditHalt !== null) {
     return { outcome: 'halted', message: `the test audit halted the epic: ${auditHalt}` };
   }
-  const { halt, ...criticReport } = await criticStep(input);
-  state.critic = criticReport;
-  if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  state.epicReview = await epicReviewStep(input);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -3475,6 +3473,7 @@ async function openPr(input, found, checked) {
     bodyPath,
     '--log',
     `${entry.reportDir}/publish.log`,
+    ...(found.state.epicReview?.verdict === 'rejected' ? ['--draft'] : []),
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
   const published = publishedPr(await runTool(hooks, 'publish', argv, place));
@@ -3504,7 +3503,12 @@ function bodyInput(input, found, checked) {
       reason: 'no test audit step',
       answer: null,
     },
-    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    epicReview: found.state.epicReview ?? {
+      verdict: null,
+      profiled: input.entry.epic === null,
+      notRun: 'no epic review step',
+      answer: null,
+    },
     overlap: input.overlap,
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed, null),
@@ -3517,6 +3521,43 @@ function leaseTotals(landed, audit) {
   );
   const ended = (audit?.answer?.leaseLines ?? []).map((line) => ({ issue: null, line }));
   return aggregateLeaseTimings([...slices, ...ended]);
+}
+async function epicReviewStep(input) {
+  const { entry } = input;
+  const unlanded = input.issues.filter((i) => i.outcome !== 'landed');
+  const values = {
+    batch: entry.batch,
+    range: `${entry.base}..HEAD`,
+    epic: entry.epic,
+    issues: input.landed.map((l) => l.issue),
+    unlanded: unlanded.map((i) => ({
+      issue: i.issue,
+      outcome: i.outcome,
+      ...(i.reason === undefined ? {} : { reason: i.reason }),
+    })),
+    sliceReports: input.landed.flatMap((l) => sliceReports(input, l)),
+    reportDir: entry.reportDir,
+    reportPath: `${entry.reportDir}/epic-review.md`,
+  };
+  const answer = await AGENT_CALLS.epicReview(input.hooks, values, entry.tag).catch(() => null);
+  const forced =
+    unlanded.length === 0
+      ? {}
+      : { forced: `did not land: ${unlanded.map((i) => `#${String(i.issue)}`).join(', ')}` };
+  return {
+    verdict: unlanded.length > 0 ? 'rejected' : (answer?.verdict ?? null),
+    profiled: entry.epic === null,
+    ...forced,
+    ...(answer === null ? { notRun: 'the epic review returned nothing' } : {}),
+    answer,
+  };
+}
+function sliceReports(input, landed) {
+  const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
+  const tag = `${String(landed.issue)}-${String(attempt)}`;
+  const stages = ['spec-review', 'standards-review'];
+  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 async function retroStep(input, report) {
   const { entry } = input;

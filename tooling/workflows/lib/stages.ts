@@ -22,7 +22,7 @@ export interface StageRow {
 
 /**
  * Every stage the workflow runs an agent for; each stage's job is its agent file's. The
- * `auditTests` and `critic` stages each work in a slice of their own.
+ * `auditTests` stage works in a slice of its own.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -34,7 +34,7 @@ export const STAGES = {
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
-  critic: { agentType: 'critic' },
+  epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'sonnet' },
   prWriter: { agentType: 'pr-writer' },
 } as const satisfies Readonly<Record<string, StageRow>>;
@@ -96,7 +96,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: test audit, critic, master sync, version bump, retro and PR writer ' +
+      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },

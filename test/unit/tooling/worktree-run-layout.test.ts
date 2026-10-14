@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { runSlug } from '../../../tooling/lib/run-slug.js';
 import {
   attachedRunReports,
-  epicEndSliceLayout,
+  auditTestsSliceLayout,
   nextAttachedRun,
   RUN_BRANCH_PREFIX,
   runLayout,
@@ -71,18 +71,15 @@ describe('sliceLayout', () => {
   });
 });
 
-describe('epicEndSliceLayout', () => {
-  it.each(['audit-tests', 'critic'] as const)(
-    'puts the epic end’s %s slice beside the batch, on slice/<slug>/%s',
-    (stage) => {
-      expect(
-        epicEndSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9', stage),
-      ).toEqual({
-        path: `C:/src/paper-harness/.claude/worktrees/ship-epic-9-${stage}`,
-        branch: `slice/epic-9/${stage}`,
-      });
-    },
-  );
+describe('auditTestsSliceLayout', () => {
+  it('puts the epic end’s test-audit slice beside the batch, on slice/<slug>/audit-tests', () => {
+    expect(
+      auditTestsSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9'),
+    ).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-9-audit-tests',
+      branch: 'slice/epic-9/audit-tests',
+    });
+  });
 });
 
 describe('attached runs', () => {
@@ -96,10 +93,10 @@ describe('attached runs', () => {
     });
   });
 
-  it('names an attached run’s critic ship-<head>-a<R>-critic on slice/<slug>/a<R>-critic', () => {
-    expect(epicEndSliceLayout(batch, slug, 'critic', 2)).toEqual({
-      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-critic',
-      branch: 'slice/epic-1182/a2-critic',
+  it('names an attached run’s test audit ship-<head>-a<R>-audit-tests on slice/<slug>/a<R>-audit-tests', () => {
+    expect(auditTestsSliceLayout(batch, slug, 2)).toEqual({
+      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-audit-tests',
+      branch: 'slice/epic-1182/a2-audit-tests',
     });
   });
 
@@ -122,17 +119,17 @@ describe('attached runs', () => {
         'plans',
         'issues',
         'pr-body.md',
-        'critic.md',
+        'audit-tests.md',
         'publish.log',
         'pool-registry.batch.json',
       ],
-      branches: ['1183-1', '1184-1', '1184-2', 'critic'],
+      branches: ['1183-1', '1184-1', '1184-2', 'audit-tests'],
       run: 1,
     },
     {
       name: 'attached run 1’s folder and branches',
       reports: ['tool', 'attach-1'],
-      branches: ['1183-1', 'critic', 'a1-1190-1', 'a1-critic'],
+      branches: ['1183-1', 'audit-tests', 'a1-1190-1', 'a1-audit-tests'],
       run: 2,
     },
     { name: 'run 1’s branches without its folder', reports: [], branches: ['a1-1190-1'], run: 2 },
@@ -151,7 +148,7 @@ describe('attached runs', () => {
   it('gives a second attached run names none of an earlier run’s leftovers collide with', () => {
     const left = {
       reports: ['tool', 'plans', 'attach-1'],
-      branches: ['1190-1', 'critic', 'a1-1190-1', 'a1-1190-2', 'a1-critic'],
+      branches: ['1190-1', 'audit-tests', 'a1-1190-1', 'a1-1190-2', 'a1-audit-tests'],
     };
 
     const n = nextAttachedRun(left);
@@ -161,8 +158,7 @@ describe('attached runs', () => {
     for (const branch of [
       sliceLayout(batch, slug, 1190, 1, n).branch,
       sliceLayout(batch, slug, 1190, 2, n).branch,
-      epicEndSliceLayout(batch, slug, 'audit-tests', n).branch,
-      epicEndSliceLayout(batch, slug, 'critic', n).branch,
+      auditTestsSliceLayout(batch, slug, n).branch,
     ]) {
       expect(taken).not.toContain(branch);
     }

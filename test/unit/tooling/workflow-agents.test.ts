@@ -8,7 +8,7 @@ describe('workflow agents', () => {
   it('covers every agent the workflow calls', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'audit-tests',
-      'critic',
+      'epic-review',
       'issue-overlap',
       'issue-readiness',
       'manifest-tsdoc',

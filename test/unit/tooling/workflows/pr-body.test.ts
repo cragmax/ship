@@ -207,13 +207,26 @@ const INPUT: PrBodyInput = {
   },
   mainUntouched: true,
   auditTests: { outcome: 'landed', commit: 'a1', answer: AUDITED },
-  critic: {
-    outcome: 'landed',
-    commit: 'k1',
-    findings: [
-      { lens: 'duplication', summary: 'two x helpers', applied: true },
-      { lens: 'drift', summary: 'a retired term', applied: false },
-    ],
+  epicReview: {
+    verdict: 'accepted-with-open-items',
+    profiled: false,
+    answer: {
+      verdict: 'accepted-with-open-items',
+      summary: 'every criterion met, one duplication open',
+      criteria: [
+        { issue: 7, criterion: 'adds x', state: 'met', evidence: 'tooling/x.ts:1' },
+        { issue: 8, criterion: 'wires y', state: 'met', evidence: 'tooling/y.ts:2' },
+      ],
+      findings: [
+        {
+          view: 'duplication',
+          severity: 'judgement',
+          summary: 'two x helpers',
+          source: 'tooling/x.ts:3',
+        },
+      ],
+      unchecked: [],
+    },
   },
   overlap: {
     added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: 'both edit tooling/x.ts' }],
@@ -377,12 +390,11 @@ describe('renderPrBody', () => {
     expect(renderPrBody({ ...INPUT, mainUntouched }).split('\n')).toContain(line);
   });
 
-  it('reports the test audit, critic, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
+  it('reports the test audit, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
     const lines = body.split('\n');
     const sections = [
       '## Epic end',
       '## Test audit',
-      '## Critic',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',
@@ -392,9 +404,7 @@ describe('renderPrBody', () => {
     expect(sections.every((at) => at > -1)).toBe(true);
     expect([...sections].sort((a, b) => a - b)).toEqual(sections);
     for (const line of [
-      '- Outcome: landed as k1',
-      '- [duplication] two x helpers (applied)',
-      '- [drift] a retired term (not applied)',
+      '- Outcome: landed as a1',
       '- #7 → #8 (likely): both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0; size none',
@@ -461,16 +471,14 @@ describe('renderPrBody', () => {
     expect(lines[lines.indexOf('## Schedule') + 2]?.endsWith(`; attempts 1; ${tail}`)).toBe(true);
   });
 
-  it('renders None. for an empty section and the critic’s other outcomes', () => {
+  it('renders None. for an empty section', () => {
     const lines = renderPrBody({
       ...INPUT,
-      critic: { outcome: 'skipped', findings: [] },
       overlap: { added: [], sequenced: [], areaMap: 'read' },
       schedule: [],
       retro: [],
     }).split('\n');
 
-    expect(lines).toContain('- Outcome: skipped — one issue landed');
     for (const heading of ['## Overlap edges', '## Schedule', '## Retro findings']) {
       expect(lines[lines.indexOf(heading) + 2]).toBe('None.');
     }
@@ -700,7 +708,7 @@ describe('renderPrBody', () => {
     ]);
   });
 
-  it('defuses a closing reference in a review summary, a critic reason and every reference form', () => {
+  it('defuses a closing reference in a review summary, an epic review finding and every reference form', () => {
     const tricky = renderPrBody({
       ...INPUT,
       landed: [
@@ -717,7 +725,10 @@ describe('renderPrBody', () => {
             'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
         },
       },
-      critic: { outcome: 'dropped', reason: 'land failed: fixed #24 then broke', findings: [] },
+      epicReview: {
+        ...INPUT.epicReview,
+        notRun: 'fixed #24 then broke',
+      },
     });
 
     expect(tricky).toMatch(closes(7));
@@ -727,9 +738,7 @@ describe('renderPrBody', () => {
       /closes[\s:]*https:\/\/github\.com\/cragmax\/paper-harness\/issues\/23/i,
     );
     expect(tricky).toContain('renamed, fixes (see #21)');
-    expect(tricky.split('\n')).toContain(
-      '- Outcome: changes dropped — land failed: fixed (see #24) then broke',
-    );
+    expect(tricky.split('\n')).toContain('- Not run: fixed (see #24) then broke');
   });
 });
 
@@ -978,8 +987,9 @@ describe('renderPrBody — the fold', () => {
   const body = renderPrBody(INPUT);
   const lines = body.split('\n');
 
-  it('leads with the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
+  it('leads with the Epic review, the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
     const at = [
+      '## Epic review',
       '## Summary',
       '## Evidence',
       '## Merge Danger',
@@ -988,7 +998,6 @@ describe('renderPrBody — the fold', () => {
       '## Landed issues',
       '## Epic end',
       '## Test audit',
-      '## Critic',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',
@@ -1001,7 +1010,7 @@ describe('renderPrBody — the fold', () => {
       l.startsWith('### ') || l.startsWith('- Issue: ') ? [i] : [],
     );
 
-    expect(lines[0]).toBe('## Summary');
+    expect(lines[0]).toBe('## Epic review');
     expect(at.every((i) => i > -1)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(lines[open - 1]).toBe('');
@@ -1035,7 +1044,7 @@ describe('renderPrBody — the fold', () => {
 // From the first line through the Evidence heading.
 const summaryOf = (writer: PrWriterOutput | null): string[] => {
   const lines = renderPrBody({ ...INPUT, writer }).split('\n');
-  return lines.slice(0, lines.indexOf('## Evidence') + 1);
+  return lines.slice(lines.indexOf('## Summary'), lines.indexOf('## Evidence') + 1);
 };
 
 // From the Merge Danger heading through the Issues heading after it.
@@ -1504,17 +1513,25 @@ describe('renderAttachedSection', () => {
   const SECTION_INPUT: AttachedSectionInput = {
     ...INPUT,
     epic: null,
+    epicReview: { ...INPUT.epicReview, profiled: true },
     run: 2,
     reportComment: 'https://github.com/o/r/pull/9#issuecomment-1',
   };
 
-  it('heads the section with the run, then its Evidence, its Issues and a link to its run report', () => {
+  it('heads the section with the run, then its epic review, its Evidence, its Issues and a link to its run report', () => {
     const text = renderAttachedSection(SECTION_INPUT);
     const lines = text.split('\n');
     const main = renderPrBody(INPUT).split('\n');
 
-    expect(lines.slice(0, 4)).toEqual(['## Attached run 2', '', '### Evidence', '']);
-    expect(lines[4]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
+    expect(lines.slice(0, 5)).toEqual([
+      '## Attached run 2',
+      '',
+      '### Epic review',
+      '',
+      '**Verdict:** accepted-with-open-items (profiled)',
+    ]);
+    const evidence = lines.indexOf('### Evidence');
+    expect(lines[evidence + 2]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
     expect(lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Issues') - 1)).toEqual(
       main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1),
     );

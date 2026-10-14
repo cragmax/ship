@@ -49,11 +49,11 @@ export interface RunLayout {
   readonly branch: string;
 }
 
-/** Where one slice lives: an issue attempt's, or an epic-end stage's. */
+/** Where one slice lives: an issue attempt's, or the test audit's. */
 export interface SliceLayout {
   /** The slice worktree, absolute with forward slashes. */
   readonly path: string;
-  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/<stage>`). */
+  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/audit-tests`). */
   readonly branch: string;
 }
 
@@ -130,25 +130,21 @@ export function sliceLayout(
   return sliceAt(batch, slug, `${String(issue)}-${String(attempt)}`, run);
 }
 
-/** An epic-end stage that works in a slice of its own. */
-export type EpicEndSlice = 'audit-tests' | 'critic';
-
 /**
- * The layout of an epic-end stage's slice — one per stage per run.
+ * The layout of the epic end's test-audit slice — one per run.
  *
  * @param batch - The batch worktree ({@link RunLayout.batch}).
  * @param run - The attached run's number; `null` (the default) for an
  *   unattached run.
- * @returns `<batch>-<stage>` on `slice/<slug>/<stage>`, or `<batch>-a<run>-<stage>`
- *   on `slice/<slug>/a<run>-<stage>` for an attached run.
+ * @returns `<batch>-audit-tests` on `slice/<slug>/audit-tests`, or
+ *   `<batch>-a<run>-audit-tests` on `slice/<slug>/a<run>-audit-tests` for an attached run.
  */
-export function epicEndSliceLayout(
+export function auditTestsSliceLayout(
   batch: string,
   slug: string,
-  stage: EpicEndSlice,
   run: number | null = null,
 ): SliceLayout {
-  return sliceAt(batch, slug, stage, run);
+  return sliceAt(batch, slug, 'audit-tests', run);
 }
 
 /**

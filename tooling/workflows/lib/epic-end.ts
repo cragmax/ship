@@ -1,8 +1,8 @@
 /**
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
- * at least one landed ({@link epicEnd}): the test audit, the critic, the master sync, the version
- * bump, then the retro and the PR writer concurrently, then the publish task; an entry that halted
- * or landed nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs once.
+ * at least one landed ({@link epicEnd}): the test audit, the epic review, the master sync, the
+ * version bump, the retro and PR writer concurrently, then the publish task; an entry that
+ * halted or landed nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs once.
  *
  * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
  * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
@@ -10,7 +10,7 @@
  *
  * The master sync and the publish task each run as one task of the run's repo lock
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
- * at once; the test audit, the critic, the bump, the retro and the PR writer run outside it.
+ * at once; the test audit, the epic review, the bump, the retro and the PR writer run outside it.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -19,8 +19,8 @@
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
 
 import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from './agent-calls.js';
+import { auditTestsStep } from './audit-tests-step.js';
 import type { CommitQueue } from './commit-queue.js';
-import { auditTestsStep, criticStep } from './end-slice-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
@@ -31,7 +31,7 @@ import {
   renderBlockedComment,
   sliceLeaseLines,
   type AuditTestsReport,
-  type CriticReport,
+  type EpicReviewReport,
   type LandedIssue,
   type PrBodyInput,
   type ScheduleEntry,
@@ -92,7 +92,7 @@ export interface EpicReport {
   /** The entry's feature branch; empty when it was never cut. */
   readonly branch: string;
   /**
-   * `pr`: opened; `halted`: a landing (the test audit's and the critic's included) or a slice
+   * `pr`: opened; `halted`: a landing (the test audit's included) or a slice
    * teardown left the batch unverified; `nothing-landed`: no issue landed,
    * so no epic end but the retro and, unattached, its own cleanup; `stopped`:
    * its cut or its epic end failed ({@link EpicReport.message}).
@@ -137,8 +137,8 @@ export interface EpicReport {
   readonly residue: readonly string[];
   /** The test audit's part; absent without an epic end. */
   readonly auditTests?: AuditTestsReport;
-  /** The critic's part; absent without an epic end. */
-  readonly critic?: CriticReport;
+  /** The epic review's part; absent without an epic end, or when the test audit halted it. */
+  readonly epicReview?: EpicReviewReport;
   /** The retro's findings, `null` when it returned none; absent for an entry never cut. */
   readonly retro?: readonly RetroFinding[] | null;
   /** The entry's lease totals; absent without an epic end. */
@@ -176,7 +176,7 @@ export interface EpicEndInput {
 /** What an epic end learnt, step by step. */
 interface EndState {
   auditTests?: AuditTestsReport;
-  critic?: CriticReport;
+  epicReview?: EpicReviewReport;
   leases?: LeaseAggregate;
   retro?: readonly RetroFinding[] | null;
   /** The PR writer's answer, once it ran; `null` when it returned none or threw. */
@@ -217,7 +217,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.auditTests === undefined ? {} : { auditTests: state.auditTests }),
-    ...(state.critic === undefined ? {} : { critic: state.critic }),
+    ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
     ...(issueComments.length === 0 ? {} : { issueComments }),
@@ -324,7 +324,7 @@ async function postIssueComment(
 }
 
 /**
- * The shipping path up to the pull request — test audit, critic, sync, bump, the retro and
+ * The shipping path up to the pull request — test audit, epic review, sync, bump, the retro and
  * (unattached runs only) the PR writer concurrently, then the publish task — filling in `state` as
  * steps report.
  */
@@ -336,9 +336,7 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   if (auditHalt !== null) {
     return { outcome: 'halted', message: `the test audit halted the epic: ${auditHalt}` };
   }
-  const { halt, ...criticReport } = await criticStep(input);
-  state.critic = criticReport;
-  if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
+  state.epicReview = await epicReviewStep(input);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
@@ -511,6 +509,7 @@ async function openPr(
     bodyPath,
     '--log',
     `${entry.reportDir}/publish.log`,
+    ...(found.state.epicReview?.verdict === 'rejected' ? ['--draft'] : []),
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
   const published = publishedPr(await runTool(hooks, 'publish', argv, place));
@@ -546,7 +545,12 @@ function bodyInput(
       reason: 'no test audit step',
       answer: null,
     },
-    critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
+    epicReview: found.state.epicReview ?? {
+      verdict: null,
+      profiled: input.entry.epic === null,
+      notRun: 'no epic review step',
+      answer: null,
+    },
     overlap: input.overlap,
     schedule: input.schedule,
     leases: found.state.leases ?? leaseTotals(input.landed, null),
@@ -568,6 +572,53 @@ function leaseTotals(
   );
   const ended = (audit?.answer?.leaseLines ?? []).map((line) => ({ issue: null, line }));
   return aggregateLeaseTimings([...slices, ...ended]);
+}
+
+/**
+ * Judge the landed change as one on the batch's final tree; never rejects. Profiled for an entry
+ * with no epic. An issue that did not land forces `rejected`, whatever the review answered.
+ */
+async function epicReviewStep(input: EpicEndInput): Promise<EpicReviewReport> {
+  const { entry } = input;
+  const unlanded = input.issues.filter((i) => i.outcome !== 'landed');
+  const values = {
+    batch: entry.batch,
+    range: `${entry.base}..HEAD`,
+    epic: entry.epic,
+    issues: input.landed.map((l) => l.issue),
+    unlanded: unlanded.map((i) => ({
+      issue: i.issue,
+      outcome: i.outcome,
+      ...(i.reason === undefined ? {} : { reason: i.reason }),
+    })),
+    sliceReports: input.landed.flatMap((l) => sliceReports(input, l)),
+    reportDir: entry.reportDir,
+    reportPath: `${entry.reportDir}/epic-review.md`,
+  };
+  const answer = await AGENT_CALLS.epicReview(input.hooks, values, entry.tag).catch(() => null);
+  const forced =
+    unlanded.length === 0
+      ? {}
+      : { forced: `did not land: ${unlanded.map((i) => `#${String(i.issue)}`).join(', ')}` };
+  return {
+    verdict: unlanded.length > 0 ? 'rejected' : (answer?.verdict ?? null),
+    profiled: entry.epic === null,
+    ...forced,
+    ...(answer === null ? { notRun: 'the epic review returned nothing' } : {}),
+    answer,
+  };
+}
+
+/**
+ * A landed issue's slice review reports, its final attempt's: the spec and standards reviews',
+ * and the Manifest TSDoc review's when it ran.
+ */
+function sliceReports(input: EpicEndInput, landed: LandedIssue): string[] {
+  const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
+  const tag = `${String(landed.issue)}-${String(attempt)}`;
+  const stages = ['spec-review', 'standards-review'];
+  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 
 /** Run the retro over the entry's report: its findings, `null` when it returned none or threw. */

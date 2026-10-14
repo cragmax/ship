@@ -131,7 +131,7 @@ const DOC_INDEX_CONFLICT = {
   },
 };
 
-// Two issues bring in issue-overlap (one pair), an applied critic and a retro finding.
+// Two issues bring in issue-overlap (one pair), a hardening test audit and a retro finding.
 const TWO_ISSUES = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
   issueReadiness: {
@@ -143,13 +143,14 @@ const TWO_ISSUES = {
     liveOverlaps: [],
     areaMap: 'read',
   },
-  critic: {
-    outcome: 'applied',
-    sha: 'critic1',
-    files: ['tooling/x.ts'],
-    commit: { type: 'refactor', scope: 'build', subject: 'share x' },
-    findings: [{ lens: 'duplication', summary: 'two x helpers', applied: true }],
-    checks: 'build, eslint, vitest related, prettier',
+  auditTests: {
+    verdict: 'hardened',
+    sha: 'audit1',
+    files: ['test/unit/tooling/x.test.ts'],
+    commit: { type: 'test', scope: 'build', subject: 'pin x' },
+    survivors: 0,
+    summary: 'pinned a bound',
+    leaseLines: [],
   },
   retro: {
     findings: [{ title: 't', evidence: 'e', kind: 'genuine', suggestion: 's' }],
@@ -379,6 +380,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:provision:audit-tests',
       'auditTests:list',
       'runner:teardown:audit-tests',
+      'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -2121,7 +2123,7 @@ describe('agent-call tiers', () => {
       manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
-      critic: { agentType: 'critic' },
+      epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
       retro: { agentType: 'retro', model: 'sonnet' },
       prWriter: { agentType: 'pr-writer' },
     });

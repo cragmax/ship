@@ -72,7 +72,7 @@ export type BumpResult = z.infer<typeof BumpResultSchema>;
 /** A pull request `publish` opened, or found open with `--push-only`. */
 export type OpenedPr = z.infer<typeof OpenedPrSchema>;
 
-/** Envelope of `publish <batch> (--title T --body-file F | --push-only) --log L`. */
+/** Envelope of `publish <batch> (--title T --body-file F [--draft] | --push-only) --log L`. */
 export type PublishResult = z.infer<typeof PublishResultSchema>;
 
 /** Envelope of `append-pr-body <batch> --pr N --section-file F`. */
