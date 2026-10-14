@@ -1,6 +1,6 @@
 /**
  * Renders a workflow's typed sources into the one plain-JS file the runtime loads (it loads no
- * module, #1026) and checks a committed copy against a fresh render (ADR-0045 decision 1).
+ * module) and checks a committed copy against a fresh render (ADR-0045 decision 1).
  *
  * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
  * ones erased, never followed; a non-relative value import an error), each transpiled (ES2022,
@@ -11,7 +11,7 @@
  * body, hooks and `args` as globals (so the tail `return` works at top level; the ES2022 built-in
  * `Object.hasOwn` runs too), accepting a leading `export const meta` but not a second top-level
  * `export` (a SyntaxError). A file holding CR still runs; the writer writes LF regardless,
- * `.gitattributes` checks `.claude/workflows/*.js` out LF, the drift check normalises (#1035).
+ * `.gitattributes` checks `.claude/workflows/*.js` out LF, the drift check normalises.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
