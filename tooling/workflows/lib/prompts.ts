@@ -17,7 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
-import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE, SLICE_BUDGET } from './stages.js';
+import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
 
 /** A live run's changed files, for the scout's overlap judgment. */
 export interface LiveRunFiles {
@@ -245,18 +245,6 @@ function leaseCommand(lease: LeaseValues): string {
 }
 
 /**
- * The `Slice budget:` line — {@link SLICE_BUDGET} as the retro reads it.
- *
- * @returns `Slice budget: <files> files in scope, <tasks> tasks, <lines> lines landed`.
- */
-function sliceBudgetLine(): string {
-  return (
-    `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
-    `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
-  );
-}
-
-/**
  * A slice's server-tier recipe: the lease command template, where its
  * version comes from, and the probe caps.
  */
@@ -377,7 +365,6 @@ export const PROMPTS = {
       `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
-      sliceBudgetLine(),
     ].join('\n'),
   prWriter: (values: PrWriterValues): string =>
     [

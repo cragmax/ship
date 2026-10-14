@@ -1398,31 +1398,14 @@ describe('runShip — what an attempt hands on', () => {
     expect(new Set(caps)).toEqual(new Set([PROBE_CAPS]));
   });
 
-  // Hand-written: the slice budget set 2026-10-08 from the landed history (ADR-0045 decision 4).
-  const BUDGET = 'Slice budget: 15 files in scope, 12 tasks, 1000 lines landed';
+  // Sizing is a ticket-time job: the run judges no slice against a budget.
+  it('hands no prompt a slice budget', async () => {
+    const run = fakeHooks(TWO_ISSUES);
 
-  it('hands the retro the slice budget, once', async () => {
-    const run = fakeHooks();
+    await runShip(run.hooks, 'issues 7 8');
 
-    await runShip(run.hooks, 'issues 7');
-
-    expect(
-      promptOf(run, 'retro:list')
-        .split('\n')
-        .filter((l) => l.startsWith('Slice budget: ')),
-    ).toEqual([BUDGET]);
+    expect(run.calls.filter((c) => c.prompt.includes('Slice budget:'))).toEqual([]);
   });
-
-  it.each(['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1', 'testReview:7-1'])(
-    'hands %s no slice budget',
-    async (label) => {
-      const run = fakeHooks();
-
-      await runShip(run.hooks, 'issues 7');
-
-      expect(promptOf(run, label)).not.toContain('Slice budget: ');
-    },
-  );
 
   it('carries the land envelope’s files and lines into the run report’s schedule as the slice’s size', async () => {
     const run = fakeHooks({

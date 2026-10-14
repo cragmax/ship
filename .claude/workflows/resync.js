@@ -80,7 +80,6 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
-const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 };
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 const HIGH_EFFORT_FILE_COUNT = 5;
 function reviewEffort(files) {
@@ -169,12 +168,6 @@ function leaseCommand(lease) {
     `--registry ${shellWord(lease.registry)}`,
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
-}
-function sliceBudgetLine() {
-  return (
-    `Slice budget: ${String(SLICE_BUDGET.files)} files in scope, ` +
-    `${String(SLICE_BUDGET.tasks)} tasks, ${String(SLICE_BUDGET.lines)} lines landed`
-  );
 }
 function serverTierLines(lease) {
   return [
@@ -267,7 +260,6 @@ const PROMPTS = {
       `Epic: ${epicLabel(values.epic)}`,
       `Report dir: ${values.reportDir}`,
       `Run report (JSON): ${JSON.stringify(values.report)}`,
-      sliceBudgetLine(),
     ].join('\n'),
   prWriter: (values) =>
     [
