@@ -8,7 +8,7 @@ export const meta = {
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout and the overlap estimate; refuses on any failure; then spent batches torn down (guarded)',
+        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout and the issue overlap; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -29,7 +29,7 @@ const RUN_BRANCH_SHAPE = /^ship\/[a-z0-9][a-z0-9-]*$/;
 const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
-  overlapEstimator: { agentType: 'overlap-estimator' },
+  issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
@@ -57,7 +57,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
-      'and the overlap estimate; ' +
+      'and the issue overlap; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -635,12 +635,13 @@ const PROMPTS = {
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
-      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
-  overlapEstimator: (values) =>
+  issueOverlap: (values) =>
     [
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
+      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
+      ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -1716,23 +1717,10 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['issue', 'stale', 'evidence'],
         },
       },
-      overlaps: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            issue: { type: 'integer' },
-            branch: { type: 'string' },
-            files: { type: 'array', items: { type: 'string' } },
-            evidence: { type: 'string' },
-          },
-          required: ['issue', 'branch', 'files', 'evidence'],
-        },
-      },
     },
-    required: ['issues', 'overlaps'],
+    required: ['issues'],
   },
-  overlapEstimator: {
+  issueOverlap: {
     type: 'object',
     properties: {
       issues: {
@@ -1761,9 +1749,22 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['a', 'b', 'confidence', 'shared', 'reason'],
         },
       },
+      liveOverlaps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            branch: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string' },
+          },
+          required: ['issue', 'branch', 'files', 'reason'],
+        },
+      },
       areaMap: { type: 'string', enum: ['read', 'unavailable'] },
     },
-    required: ['issues', 'pairs', 'areaMap'],
+    required: ['issues', 'pairs', 'liveOverlaps', 'areaMap'],
   },
   tdd: {
     type: 'object',
@@ -2247,9 +2248,8 @@ function leaseTenths(seconds) {
 }
 
 function overlapSchema(issues) {
-  const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
-  const pairs = base.properties.pairs;
-  const pair = pairs.items;
+  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
+  const { pairs, liveOverlaps } = base.properties;
   const issue = { type: 'integer', enum: issues };
   return {
     ...base,
@@ -2257,7 +2257,11 @@ function overlapSchema(issues) {
       ...base.properties,
       pairs: {
         ...pairs,
-        items: { ...pair, properties: { ...pair.properties, a: issue, b: issue } },
+        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
+      },
+      liveOverlaps: {
+        ...liveOverlaps,
+        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
       },
     },
   };
@@ -2269,11 +2273,11 @@ async function askAgent(hooks, prompt, options) {
 const AGENT_CALLS = {
   scout: (hooks, values) =>
     askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout)),
-  overlapEstimator: (hooks, values) =>
+  issueOverlap: (hooks, values) =>
     askAgent(
       hooks,
-      PROMPTS.overlapEstimator(values),
-      agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
+      PROMPTS.issueOverlap(values),
+      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
@@ -3889,9 +3893,9 @@ async function runPreflight(hooks, args) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const scout = await runScout(hooks, graph, live, args.attach);
+  const scout = await runScout(hooks, graph, args.attach);
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
-  return settleOverlap(hooks, settleScout(found, scout, args.exclude));
+  return settleOverlap(hooks, settleScout(found, scout, args.exclude), args.attach);
 }
 function preflightArgv(args) {
   if (args.attach !== null) return ['.', '--attach', args.attach];
@@ -3914,31 +3918,44 @@ function exemptSpentSlices(checks, live) {
   delete ok.reason;
   return ok;
 }
-async function settleOverlap(hooks, found) {
+function overlapValues(found, attach) {
   const { graph } = found;
-  if (graph === null || runSetIssues(graph.runSet).length < 2) {
+  if (graph === null) return null;
+  const liveRuns = (found.live?.runs ?? [])
+    .filter((r) => !r.spent && r.branch !== attach)
+    .map((r) => ({ branch: r.branch, landed: r.landed }));
+  const count = runSetIssues(graph.runSet).length;
+  if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
+  return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
+}
+async function settleOverlap(hooks, found, attach) {
+  const values = overlapValues(found, attach);
+  if (values === null) {
     return { ...found, overlap: { added: [], sequenced: [], areaMap: 'read' } };
   }
-  const estimate = await AGENT_CALLS.overlapEstimator(hooks, graph);
+  const estimate = await AGENT_CALLS.issueOverlap(hooks, values);
   if (estimate === null) {
     return withRefusals(found, [
-      { kind: 'overlap-estimate-failed', message: 'the overlap estimator returned nothing' },
+      { kind: 'overlap-estimate-failed', message: 'issue-overlap returned nothing' },
     ]);
   }
+  const live = estimate.liveOverlaps.map((o) => ({
+    kind: 'overlap',
+    issue: o.issue,
+    message: `${o.branch}: ${o.reason}`,
+  }));
   const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
   let merged;
   try {
-    merged = mergeOverlapEdges(graph, pairs);
+    merged = mergeOverlapEdges({ runSet: values.runSet, edges: values.edges }, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return withRefusals(found, [{ kind: 'overlap-estimate-failed', message }]);
+    return withRefusals(found, [...live, { kind: 'overlap-estimate-failed', message }]);
   }
   if (merged.kind === 'cross-entry') {
-    return withRefusals(
-      found,
-      merged.pairs.map((p) => crossEpicRefusal(p, pairs)),
-    );
+    return withRefusals(found, [...live, ...merged.pairs.map((p) => crossEpicRefusal(p, pairs))]);
   }
+  if (live.length > 0) return withRefusals(found, live);
   const overlap = {
     added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
@@ -4034,14 +4051,10 @@ function liveRunRefusals(live) {
   const branches = unknown.map((r) => r.branch).join(', ');
   return [{ kind: 'live-runs-failed', message: `pull request state unknown for ${branches}` }];
 }
-async function runScout(hooks, graph, live, attach) {
-  const liveRuns = (live?.runs ?? [])
-    .filter((r) => !r.spent && r.branch !== attach)
-    .map((r) => ({ branch: r.branch, landed: r.landed }));
+async function runScout(hooks, graph, attach) {
   const issues = runSetIssues(graph.runSet);
   return AGENT_CALLS.scout(hooks, {
     issues,
-    liveRuns,
     ...(attach === null ? {} : { prHead: `origin/${attach}` }),
   });
 }
@@ -4055,9 +4068,6 @@ function settleScout(found, scout, exclude) {
       kind: 'scout-unavailable',
       message: `no scout verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
     });
-  }
-  for (const o of scout?.overlaps ?? []) {
-    refusals.push({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.evidence}` });
   }
   const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
   if (!exclude) {

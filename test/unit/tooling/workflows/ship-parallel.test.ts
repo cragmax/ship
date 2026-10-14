@@ -55,7 +55,6 @@ const list = (
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues }], edges },
   scout: {
     issues: issues.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-    overlaps: [],
   },
 });
 

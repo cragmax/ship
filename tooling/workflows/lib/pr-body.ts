@@ -86,7 +86,7 @@ export type ScheduleBlocker =
       readonly issue: number;
       /** `overlap`: an edge pre-flight's overlap estimate added. */
       readonly source: 'overlap';
-      /** The estimator's word for the edge. */
+      /** issue-overlap's word for the edge. */
       readonly confidence: OverlapConfidence;
     };
 

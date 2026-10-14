@@ -1,7 +1,7 @@
 /**
  * Overlap edges: the scheduler edges pre-flight adds between two issues of one entry likely to
  * touch the same files, so they land in turn instead of racing to a harvest conflict (ADR-0045
- * decision 3). The estimator names the pairs, unordered; {@link mergeOverlapEdges} directs
+ * decision 3). `issue-overlap` names the pairs, unordered; {@link mergeOverlapEdges} directs
  * each one and merges it into the run graph.
  *
  * **Direction rule.** The declared edges are ordered topologically (Kahn's algorithm; among ready
@@ -63,7 +63,7 @@ export type OverlapMerge =
  * counts. Repeated pairs, in either order, count once.
  *
  * @param graph - The run graph: the gate's, drops applied.
- * @param pairs - The estimator's pairs.
+ * @param pairs - `issue-overlap`'s pairs.
  * @returns `cross-entry` listing every pair across entries, when any is;
  *   otherwise `ok` with the merged graph, the added edges and the pairs the
  *   declared edges already sequence.

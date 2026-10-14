@@ -27,7 +27,7 @@ export interface StageRow {
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
-  overlapEstimator: { agentType: 'overlap-estimator' },
+  issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
@@ -85,7 +85,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
-      'and the overlap estimate; ' +
+      'and the issue overlap; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {

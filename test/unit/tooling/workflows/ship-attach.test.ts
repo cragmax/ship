@@ -11,7 +11,6 @@ import {
   OK,
   PREFLIGHT_OK,
   REPORT_DIR,
-  SCOUT_FRESH,
   TDD_BLOCKED,
   TDD_GREEN,
   type FakeRun,
@@ -273,7 +272,6 @@ describe('runShip --attach — the epic end', () => {
       },
       scout: {
         issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
     });
 
@@ -354,18 +352,22 @@ const OTHER_RUN = {
   path: 'C:/src/ph-runs/epic-8/batch',
 };
 
-describe('runShip --attach — the scout', () => {
-  it('shows the scout every live run but the target, and names the PR head', async () => {
+describe('runShip --attach — the scout and issue-overlap', () => {
+  it('shows issue-overlap every live run but the target, and names the PR head to both', async () => {
     const run = fakeHooks({ ...ATTACHED, ...liveRuns(TARGET_RUN, OTHER_RUN) });
 
     const report = await runShip(run.hooks, `${ARGS} --preflight-only`);
 
-    expect(promptLines(run, 'scout')).toEqual(
-      expect.arrayContaining([
-        'Live runs (JSON): [{"branch":"ship/epic-8","landed":["src/o.ts"]}]',
-        'PR head: origin/ship/epic-9',
-      ]),
-    );
+    expect(promptLines(run, 'issueOverlap')).toEqual([
+      'Run set (JSON): [{"epic":null,"issues":[7]}]',
+      'Declared edges (JSON): []',
+      'Live runs (JSON): [{"branch":"ship/epic-8","landed":["src/o.ts"]}]',
+      'PR head: origin/ship/epic-9',
+    ]);
+    expect(promptLines(run, 'scout')).toEqual([
+      'Run-set issues: #7',
+      'PR head: origin/ship/epic-9',
+    ]);
     expect(report.status).toBe('preflight-ok');
   });
 
@@ -373,11 +375,13 @@ describe('runShip --attach — the scout', () => {
     const run = fakeHooks({
       ...ATTACHED,
       ...liveRuns(TARGET_RUN, OTHER_RUN),
-      scout: {
-        ...SCOUT_FRESH,
-        overlaps: [
-          { issue: 7, branch: 'ship/epic-8', files: ['src/o.ts'], evidence: 'both edit src/o.ts' },
+      issueOverlap: {
+        issues: [],
+        pairs: [],
+        liveOverlaps: [
+          { issue: 7, branch: 'ship/epic-8', files: ['src/o.ts'], reason: 'both edit src/o.ts' },
         ],
+        areaMap: 'read',
       },
     });
 
@@ -388,21 +392,25 @@ describe('runShip --attach — the scout', () => {
     ]);
   });
 
-  it('shows the scout no live run when the target is the only one', async () => {
+  it('asks issue-overlap nothing for one issue when the target is the only live run', async () => {
     const run = fakeHooks({ ...ATTACHED, ...liveRuns(TARGET_RUN) });
 
     const report = await runShip(run.hooks, `${ARGS} --preflight-only`);
 
-    expect(promptLines(run, 'scout')).toEqual(expect.arrayContaining(['Live runs (JSON): []']));
+    expect(labels(run)).not.toContain('issueOverlap');
     expect(report.status).toBe('preflight-ok');
   });
 
-  it('names no PR head to an unattached run’s scout', async () => {
+  it('names no PR head to an unattached run’s scout or issue-overlap', async () => {
     const run = fakeHooks(liveRuns(TARGET_RUN, OTHER_RUN));
 
     await runShip(run.hooks, 'issues 7 --preflight-only');
 
-    expect(promptLines(run, 'scout').filter((l) => l.startsWith('PR head:'))).toEqual([]);
+    const heads = (label: string): string[] =>
+      promptLines(run, label).filter((l) => l.startsWith('PR head:'));
+    expect(heads('issueOverlap')).toEqual([]);
+    expect(heads('scout')).toEqual([]);
+    expect(labels(run)).toContain('issueOverlap');
   });
 });
 

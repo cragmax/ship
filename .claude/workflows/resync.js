@@ -67,7 +67,7 @@ function resyncJson(text) {
 const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
-  overlapEstimator: { agentType: 'overlap-estimator' },
+  issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
@@ -95,7 +95,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.preflight,
     detail:
       'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
-      'and the overlap estimate; ' +
+      'and the issue overlap; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -206,12 +206,13 @@ const PROMPTS = {
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
-      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
-  overlapEstimator: (values) =>
+  issueOverlap: (values) =>
     [
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
+      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
+      ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
     ].join('\n'),
   tdd: (values) =>
     [
@@ -1287,23 +1288,10 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['issue', 'stale', 'evidence'],
         },
       },
-      overlaps: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            issue: { type: 'integer' },
-            branch: { type: 'string' },
-            files: { type: 'array', items: { type: 'string' } },
-            evidence: { type: 'string' },
-          },
-          required: ['issue', 'branch', 'files', 'evidence'],
-        },
-      },
     },
-    required: ['issues', 'overlaps'],
+    required: ['issues'],
   },
-  overlapEstimator: {
+  issueOverlap: {
     type: 'object',
     properties: {
       issues: {
@@ -1332,9 +1320,22 @@ const AGENT_OUTPUT_SCHEMAS = {
           required: ['a', 'b', 'confidence', 'shared', 'reason'],
         },
       },
+      liveOverlaps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            branch: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string' },
+          },
+          required: ['issue', 'branch', 'files', 'reason'],
+        },
+      },
       areaMap: { type: 'string', enum: ['read', 'unavailable'] },
     },
-    required: ['issues', 'pairs', 'areaMap'],
+    required: ['issues', 'pairs', 'liveOverlaps', 'areaMap'],
   },
   tdd: {
     type: 'object',
@@ -1789,9 +1790,8 @@ function stronglyConnected(adj) {
 }
 
 function overlapSchema(issues) {
-  const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
-  const pairs = base.properties.pairs;
-  const pair = pairs.items;
+  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
+  const { pairs, liveOverlaps } = base.properties;
   const issue = { type: 'integer', enum: issues };
   return {
     ...base,
@@ -1799,7 +1799,11 @@ function overlapSchema(issues) {
       ...base.properties,
       pairs: {
         ...pairs,
-        items: { ...pair, properties: { ...pair.properties, a: issue, b: issue } },
+        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
+      },
+      liveOverlaps: {
+        ...liveOverlaps,
+        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
       },
     },
   };
@@ -1811,11 +1815,11 @@ async function askAgent(hooks, prompt, options) {
 const AGENT_CALLS = {
   scout: (hooks, values) =>
     askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout)),
-  overlapEstimator: (hooks, values) =>
+  issueOverlap: (hooks, values) =>
     askAgent(
       hooks,
-      PROMPTS.overlapEstimator(values),
-      agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
+      PROMPTS.issueOverlap(values),
+      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),

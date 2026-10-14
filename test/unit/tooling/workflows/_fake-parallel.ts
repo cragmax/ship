@@ -187,7 +187,6 @@ export function epicRun(
     },
     scout: {
       issues: issues.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-      overlaps: [],
     },
     ...Object.fromEntries(entries.flatMap((e) => Object.entries(entryResponses(e.epic)))),
   };

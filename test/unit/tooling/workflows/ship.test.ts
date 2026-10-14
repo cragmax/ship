@@ -33,7 +33,6 @@ const EPIC_FRESH = {
       { issue: 1045, stale: false, evidence: 'fresh' },
       { issue: 1046, stale: false, evidence: 'fresh' },
     ],
-    overlaps: [],
   },
 };
 
@@ -57,7 +56,6 @@ const THREE_REFUSALS = {
       { issue: 7, stale: true, evidence: 'parseFoo no longer exists' },
       { issue: 8, stale: false, evidence: 'fresh' },
     ],
-    overlaps: [],
   },
 };
 
@@ -73,7 +71,6 @@ const SEVEN_STALE_BLOCKS_EIGHT = {
       { issue: 8, stale: false, evidence: 'fresh' },
       { issue: 9, stale: false, evidence: 'fresh' },
     ],
-    overlaps: [],
   },
 };
 
@@ -139,16 +136,16 @@ const DOC_INDEX_CONFLICT = {
   },
 };
 
-// Two issues bring in the overlap estimator (one pair), an applied critic and a retro finding.
+// Two issues bring in issue-overlap (one pair), an applied critic and a retro finding.
 const TWO_ISSUES = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
   scout: {
     issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-    overlaps: [],
   },
-  overlapEstimator: {
+  issueOverlap: {
     issues: [{ number: 7, columns: ['tooling'], paths: ['tooling/x.ts'] }],
     pairs: [{ a: 7, b: 8, confidence: 'likely', shared: ['tooling/x.ts'], reason: 'both edit x' }],
+    liveOverlaps: [],
     areaMap: 'read',
   },
   critic: {
@@ -217,7 +214,7 @@ describe('runShip — pre-flight only', () => {
       'runner:run-gate',
       'runner:live-runs',
       'scout',
-      'overlapEstimator',
+      'issueOverlap',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
       ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
@@ -574,26 +571,8 @@ describe('runShip — every tool failure is a refusal', () => {
       [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
     ],
     [
-      'a code overlap, even in exclude mode',
-      {
-        scout: {
-          issues: [{ issue: 7, stale: false, evidence: 'fresh' }],
-          overlaps: [
-            {
-              issue: 7,
-              branch: 'ship/epic-9',
-              files: ['src/a.ts'],
-              evidence: 'both edit src/a.ts',
-            },
-          ],
-        },
-      },
-      'issues 7 --exclude --preflight-only',
-      [{ kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' }],
-    ],
-    [
       'exclude mode dropping every issue',
-      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] } },
+      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }] } },
       'issues 7 --exclude --preflight-only',
       [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
     ],
@@ -680,7 +659,7 @@ describe('runShip — every tool failure is a refusal', () => {
     expect(run.calls.map((c) => c.label)).not.toContain('scout');
   });
 
-  it('shows the scout only the unspent live runs', async () => {
+  it('shows issue-overlap only the unspent live runs', async () => {
     const run = fakeHooks({
       'runner:live-runs': {
         ...LIVE_RUNS_NONE,
@@ -702,10 +681,10 @@ describe('runShip — every tool failure is a refusal', () => {
 
     await runShip(run.hooks, 'issues 7 --preflight-only');
 
-    const scoutPrompt = run.calls.find((c) => c.label === 'scout')?.prompt ?? '';
-    expect(scoutPrompt).toContain('#7');
-    expect(scoutPrompt).toContain('"branch":"ship/epic-9","landed":["src/a.ts"]');
-    expect(scoutPrompt).not.toContain('ship/epic-8');
+    const prompt = run.calls.find((c) => c.label === 'issueOverlap')?.prompt ?? '';
+    expect(prompt.split('\n')).toContain(
+      'Live runs (JSON): [{"branch":"ship/epic-9","landed":["src/a.ts"]}]',
+    );
   });
 
   it('reports the gate’s exclude-mode drops with their reasons', async () => {
@@ -1771,7 +1750,6 @@ async function haltRace(teardownKey: string) {
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
       scout: {
         issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
       [teardownKey]: TEARDOWN_SHRANK,
       'runner:land:8-1': { ...LAND_OK, commit: 'landed8' },
@@ -1802,7 +1780,6 @@ describe('runShip — a halting entry', () => {
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
       scout: {
         issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
       'runner:land': LAND_BATCH_DIRTY,
     });
@@ -1835,7 +1812,6 @@ describe('runShip — a halting entry', () => {
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
       scout: {
         issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
       'runner:land': () => {
         throw new Error('runner crashed');
@@ -1940,7 +1916,6 @@ describe('runShip — a halting entry', () => {
         'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
         scout: {
           issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-          overlaps: [],
         },
         'runner:land:7-1': LAND_BATCH_DIRTY,
         'tdd:8-1': TDD_STALE.tdd,
@@ -2115,7 +2090,6 @@ describe('runShip — a failed cut', () => {
       },
       scout: {
         issues: [1, ...epicTwo].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
       'runner:cut-batch:epic-1': {
         exitCode: 1,
@@ -2199,7 +2173,7 @@ describe('agent-call tiers', () => {
     expect(STAGES).toEqual({
       runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
       scout: { agentType: 'scout' },
-      overlapEstimator: { agentType: 'overlap-estimator' },
+      issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
       tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
       specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },

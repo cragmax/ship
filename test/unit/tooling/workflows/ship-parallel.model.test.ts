@@ -64,7 +64,6 @@ function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[])
     'runner:run-gate': { ...GATE_OK, runSet: input.runSet, edges: input.edges },
     scout: {
       issues: order.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-      overlaps: [],
     },
     tdd: (call: RecordedCall) => (outcome(call.label) === 'die' ? null : TDD_GREEN),
     'runner:land': (call: RecordedCall) =>

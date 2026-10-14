@@ -119,7 +119,7 @@ describe('consumed fields are required', () => {
   it('leaves only the tdd’s reason optional in every agent output schema', () => {
     expect(optionalOf(AGENT_OUTPUT_SCHEMAS)).toEqual({
       scout: [],
-      overlapEstimator: [],
+      issueOverlap: [],
       tdd: ['reason'],
       specReview: [],
       standardsReview: [],
@@ -198,9 +198,10 @@ describe('a slice review’s output schema', () => {
 describe('the construct set', () => {
   it('hands the runtime only the keywords and types it has been seen to accept', async () => {
     const run = fakeHooks();
-    await AGENT_CALLS.overlapEstimator(run.hooks, {
+    await AGENT_CALLS.issueOverlap(run.hooks, {
       runSet: [{ epic: null, issues: [7, 8] }],
       edges: [],
+      liveRuns: [],
     });
     const overlap = run.calls[0]?.schema;
     expect(overlap).toBeDefined();

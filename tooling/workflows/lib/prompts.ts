@@ -19,7 +19,7 @@ import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
 import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
 
-/** A live run's changed files, for the scout's overlap judgment. */
+/** A live run's changed files, for `issue-overlap`'s judgment. */
 export interface LiveRunFiles {
   /** The run branch, e.g. `ship/epic-1025`. */
   readonly branch: string;
@@ -50,12 +50,10 @@ export interface RunnerValues {
   readonly write?: FileToWrite;
 }
 
-/** The scout's values: the run set and the live runs. */
+/** The scout's values: the run set, and an attached run's PR head. */
 export interface ScoutValues {
   /** The run-set issues, ascending. */
   readonly issues: readonly number[];
-  /** The unspent live runs — those whose files the run could still collide with. */
-  readonly liveRuns: readonly LiveRunFiles[];
   /**
    * An attached run's open PR head (`origin/ship/<slug>`), the tree the scout judges; absent
    * otherwise.
@@ -63,12 +61,19 @@ export interface ScoutValues {
   readonly prHead?: string;
 }
 
-/** The overlap estimator's values: the run set and its declared edges. */
-export interface OverlapValues {
+/** `issue-overlap`'s values: the run set, its declared edges and the live runs. */
+export interface IssueOverlapValues {
   /** The run set, drops applied. */
   readonly runSet: RunSet;
   /** Its declared edges. */
   readonly edges: readonly RunEdge[];
+  /** The unspent live runs — those whose files the run could still collide with. */
+  readonly liveRuns: readonly LiveRunFiles[];
+  /**
+   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges; absent
+   * otherwise.
+   */
+  readonly prHead?: string;
 }
 
 /** One issue its epic landed, as the critic and the PR writer are handed it. */
@@ -310,12 +315,13 @@ export const PROMPTS = {
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
-      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
     ].join('\n'),
-  overlapEstimator: (values: OverlapValues): string =>
+  issueOverlap: (values: IssueOverlapValues): string =>
     [
       `Run set (JSON): ${JSON.stringify(values.runSet)}`,
       `Declared edges (JSON): ${JSON.stringify(values.edges)}`,
+      `Live runs (JSON): ${JSON.stringify(values.liveRuns)}`,
+      ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
     ].join('\n'),
   tdd: (values: TddValues): string =>
     [

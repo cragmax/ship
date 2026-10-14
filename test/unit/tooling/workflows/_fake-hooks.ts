@@ -114,7 +114,6 @@ export const LIVE_RUNS_NONE = {
 /** Issue 7 fresh, no overlap. */
 export const SCOUT_FRESH = {
   issues: [{ issue: 7, stale: false, evidence: 'every named symbol present' }],
-  overlaps: [],
 };
 
 const RUN_ROOT = 'C:/src/ph-runs/7';
@@ -249,7 +248,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:run-gate': GATE_OK,
   'runner:live-runs': LIVE_RUNS_NONE,
   scout: SCOUT_FRESH,
-  overlapEstimator: { issues: [], pairs: [], areaMap: 'read' },
+  issueOverlap: { issues: [], pairs: [], liveOverlaps: [], areaMap: 'read' },
   'runner:cut-batch': {
     ...OK,
     worktree: 'C:/src/main',

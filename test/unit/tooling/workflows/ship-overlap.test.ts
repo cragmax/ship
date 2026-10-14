@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
 import { epicRun } from './_fake-parallel.js';
 
 /** The gate and scout answers of an explicit list of 7 and 8, no declared edge. */
@@ -10,14 +10,13 @@ const SEVEN_EIGHT = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }], edges: [] },
   scout: {
     issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-    overlaps: [],
   },
 };
 
 const REASON = 'both edit tooling/x.ts';
 
 /**
- * An estimator answer naming the given pairs.
+ * An issue-overlap answer naming the given pairs.
  *
  * @param pairs - Each pair's endpoints, confidence and shared paths (default `tooling/x.ts`).
  * @returns The answer.
@@ -32,18 +31,19 @@ const estimate = (
 ): unknown => ({
   issues: [],
   pairs: pairs.map(({ shared = ['tooling/x.ts'], ...p }) => ({ ...p, shared, reason: REASON })),
+  liveOverlaps: [],
   areaMap: 'read',
 });
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 describe('runShip — the overlap estimate', () => {
-  it('asks no estimator for a one-issue run', async () => {
+  it('asks no issue-overlap for a one-issue run with no live run', async () => {
     const run = fakeHooks();
 
     const report = await runShip(run.hooks, 'issues 7 --preflight-only');
 
-    expect(labels(run)).not.toContain('overlapEstimator');
+    expect(labels(run)).not.toContain('issueOverlap');
     expect(report).toMatchObject({
       status: 'preflight-ok',
       overlap: { added: [], sequenced: [], areaMap: 'read' },
@@ -53,7 +53,7 @@ describe('runShip — the overlap estimate', () => {
   it('merges a likely pair into the graph as an edge and records it with its reason', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({ a: 8, b: 7, confidence: 'likely' }),
+      issueOverlap: estimate({ a: 8, b: 7, confidence: 'likely' }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
@@ -72,7 +72,7 @@ describe('runShip — the overlap estimate', () => {
   it('adds no edge for a pair whose only shared path is eslint-suppressions.json', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({
+      issueOverlap: estimate({
         a: 7,
         b: 8,
         confidence: 'likely',
@@ -95,7 +95,7 @@ describe('runShip — the overlap estimate', () => {
   ])('keeps the edge of a pair sharing %s', async (_name, shared) => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'likely', shared }),
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'likely', shared }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
@@ -110,7 +110,7 @@ describe('runShip — the overlap estimate', () => {
   it('starts the dependent of an overlap edge only once its blocker committed', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'likely' }),
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'likely' }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8');
@@ -125,7 +125,7 @@ describe('runShip — the overlap estimate', () => {
   it('names an overlap blocker’s source and confidence on its PR body schedule line', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({ a: 8, b: 7, confidence: 'likely' }),
+      issueOverlap: estimate({ a: 8, b: 7, confidence: 'likely' }),
     });
 
     await runShip(run.hooks, 'issues 7 8');
@@ -142,7 +142,7 @@ describe('runShip — the overlap estimate', () => {
   it('carries each blocker’s source and confidence in the run report’s schedule', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
-      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'unsure' }),
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'unsure' }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8');
@@ -162,9 +162,8 @@ describe('runShip — the overlap estimate', () => {
       },
       scout: {
         issues: [7, 8, 9].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
-      overlapEstimator: estimate({ a: 7, b: 9, confidence: 'likely' }),
+      issueOverlap: estimate({ a: 7, b: 9, confidence: 'likely' }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8 9');
@@ -180,7 +179,7 @@ describe('runShip — the overlap estimate', () => {
   });
 
   it('reads an edge both declared and estimated as declared', async () => {
-    // The estimator names a pair the declared 7 → 8 already orders.
+    // issue-overlap names a pair the declared 7 → 8 already orders.
     const run = fakeHooks({
       ...SEVEN_EIGHT,
       'runner:run-gate': {
@@ -188,7 +187,7 @@ describe('runShip — the overlap estimate', () => {
         runSet: [{ epic: null, issues: [7, 8] }],
         edges: [{ blocker: 7, dependent: 8 }],
       },
-      overlapEstimator: estimate({ a: 7, b: 8, confidence: 'unsure' }),
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'unsure' }),
     });
 
     const report = await runShip(run.hooks, 'issues 7 8');
@@ -211,7 +210,7 @@ describe('runShip — the overlap estimate', () => {
         ],
         [{ blocker: 1, dependent: 2 }],
       ),
-      overlapEstimator: estimate(
+      issueOverlap: estimate(
         { a: 1, b: 4, confidence: 'likely' },
         { a: 2, b: 3, confidence: 'unsure' },
       ),
@@ -250,7 +249,7 @@ describe('runShip — the overlap estimate', () => {
         { epic: 1, issues: [1, 2] },
         { epic: 2, issues: [3] },
       ]),
-      overlapEstimator: estimate({ a: 1, b: 3, confidence: 'unsure' }),
+      issueOverlap: estimate({ a: 1, b: 3, confidence: 'unsure' }),
     });
 
     const report = await runShip(run.hooks, 'epics 1 2');
@@ -276,7 +275,7 @@ describe('runShip — the overlap estimate', () => {
         { epic: 1, issues: [1, 2] },
         { epic: 2, issues: [3] },
       ]),
-      overlapEstimator: estimate({
+      issueOverlap: estimate({
         a: 1,
         b: 3,
         confidence: 'unsure',
@@ -298,7 +297,7 @@ describe('runShip — the overlap estimate', () => {
         { epic: 1, issues: [1, 2] },
         { epic: 2, issues: [3, 4] },
       ]),
-      overlapEstimator: estimate(
+      issueOverlap: estimate(
         { a: 1, b: 2, confidence: 'likely' },
         { a: 3, b: 4, confidence: 'unsure' },
       ),
@@ -315,14 +314,14 @@ describe('runShip — the overlap estimate', () => {
   });
 
   it.each([
-    ['an estimator that returned nothing', null, 'the overlap estimator returned nothing'],
+    ['an issue-overlap that returned nothing', null, 'issue-overlap returned nothing'],
     [
       'a pair of one issue',
       estimate({ a: 7, b: 7, confidence: 'likely' }),
       'run overlap: pair {#7, #7} pairs an issue with itself',
     ],
   ])('refuses %s as overlap-estimate-failed', async (_name, answer, message) => {
-    const run = fakeHooks({ ...SEVEN_EIGHT, overlapEstimator: answer });
+    const run = fakeHooks({ ...SEVEN_EIGHT, issueOverlap: answer });
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
@@ -336,7 +335,7 @@ describe('runShip — the overlap estimate', () => {
 
   it('refuses a pair naming an issue outside the run as overlap-estimate-failed', async () => {
     const run = fakeHooks(
-      { ...SEVEN_EIGHT, overlapEstimator: estimate({ a: 7, b: 99, confidence: 'likely' }) },
+      { ...SEVEN_EIGHT, issueOverlap: estimate({ a: 7, b: 99, confidence: 'likely' }) },
       { offSchema: true },
     );
 
@@ -355,7 +354,7 @@ describe('runShip — the overlap estimate', () => {
     });
   });
 
-  it('shows the estimator the run set and the declared edges, and lets a pair name only run issues', async () => {
+  it('shows issue-overlap the run set, the declared edges and the live runs, and lets a pair or a live overlap name only run issues', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
       'runner:run-gate': {
@@ -365,20 +364,63 @@ describe('runShip — the overlap estimate', () => {
       },
       scout: {
         issues: [7, 8, 9].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-        overlaps: [],
       },
     });
 
     await runShip(run.hooks, 'issues 7 8 9 --preflight-only');
 
-    const call = run.calls.find((c) => c.label === 'overlapEstimator');
+    const call = run.calls.find((c) => c.label === 'issueOverlap');
     expect(call?.prompt.split('\n')).toEqual([
       'Run set (JSON): [{"epic":null,"issues":[7,8,9]}]',
       'Declared edges (JSON): [{"blocker":7,"dependent":9}]',
+      'Live runs (JSON): []',
     ]);
-    const pair = (call?.schema?.['properties'] as Record<string, { items: unknown }>)['pairs']
-      ?.items as { properties: Record<string, unknown> };
-    expect(pair.properties['a']).toEqual({ type: 'integer', enum: [7, 8, 9] });
-    expect(pair.properties['b']).toEqual({ type: 'integer', enum: [7, 8, 9] });
+    const items = (key: string): Record<string, unknown> =>
+      (
+        (call?.schema?.['properties'] as Record<string, { items: unknown }>)[key]?.items as {
+          properties: Record<string, unknown>;
+        }
+      ).properties;
+    expect(items('pairs')['a']).toEqual({ type: 'integer', enum: [7, 8, 9] });
+    expect(items('pairs')['b']).toEqual({ type: 'integer', enum: [7, 8, 9] });
+    expect(items('liveOverlaps')['issue']).toEqual({ type: 'integer', enum: [7, 8, 9] });
+  });
+});
+
+/** An unspent live run whose PR is open, having changed `src/a.ts`. */
+const LIVE_RUN = {
+  branch: 'ship/epic-9',
+  landed: ['src/a.ts'],
+  pr: { state: 'open', number: 4 },
+  spent: false,
+};
+
+describe('runShip — live-run overlap', () => {
+  it('refuses a one-issue run issue-overlap finds touching a live run’s file, even in exclude mode', async () => {
+    const run = fakeHooks({
+      ...liveRuns(LIVE_RUN),
+      issueOverlap: {
+        issues: [],
+        pairs: [],
+        liveOverlaps: [
+          { issue: 7, branch: 'ship/epic-9', files: ['src/a.ts'], reason: 'both edit src/a.ts' },
+        ],
+        areaMap: 'read',
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 --exclude --preflight-only');
+
+    expect(report.refusals).toEqual([
+      { kind: 'overlap', issue: 7, message: 'ship/epic-9: both edit src/a.ts' },
+    ]);
+    const call = run.calls.find((c) => c.label === 'issueOverlap');
+    expect(call).toMatchObject({ agentType: 'issue-overlap', model: 'opus', effort: 'medium' });
+    expect(call?.prompt.split('\n')).toEqual([
+      'Run set (JSON): [{"epic":null,"issues":[7]}]',
+      'Declared edges (JSON): []',
+      'Live runs (JSON): [{"branch":"ship/epic-9","landed":["src/a.ts"]}]',
+    ]);
+    expect(run.calls.find((c) => c.label === 'scout')?.prompt).not.toContain('Live runs');
   });
 });

@@ -22,28 +22,14 @@ const ScoutIssueSchema = z.object({
   evidence: z.string(),
 });
 
-/** A run-set issue whose change would touch a live run's files. */
-const ScoutOverlapSchema = z.object({
-  /** The run-set issue's number. */
-  issue: z.int(),
-  /** The live run's branch. */
-  branch: z.string(),
-  /** The files both would touch. */
-  files: z.array(z.string()),
-  /** What backs the overlap. */
-  evidence: z.string(),
-});
-
 /** The scout's answer. */
 export const ScoutVerdictSchema = z.object({
   /** One verdict per run-set issue it judged. */
   issues: z.array(ScoutIssueSchema),
-  /** Every overlap with a live run. */
-  overlaps: z.array(ScoutOverlapSchema),
 });
 
 /**
- * Two run-set issues the estimator judged likely to touch the same files.
+ * Two run-set issues `issue-overlap` judged likely to touch the same files.
  * The per-call schema narrows `a` and `b` to the run's issues
  * (`agent-calls.ts` `overlapSchema`).
  */
@@ -60,14 +46,31 @@ export const EstimatedPairSchema = z.object({
   reason: z.string(),
 });
 
-/** The overlap estimator's answer. */
-export const OverlapEstimateSchema = z.object({
+/**
+ * A run-set issue whose change would touch a live run's changed files. The
+ * per-call schema narrows `issue` to the run's issues.
+ */
+export const LiveOverlapSchema = z.object({
+  /** The run-set issue. */
+  issue: z.int(),
+  /** The live run's branch. */
+  branch: z.string(),
+  /** The files both would change. */
+  files: z.array(z.string()),
+  /** What backs the overlap. */
+  reason: z.string(),
+});
+
+/** `issue-overlap`'s answer. */
+export const IssueOverlapSchema = z.object({
   /** Each run-set issue's area-map columns and paths. */
   issues: z.array(
     z.object({ number: z.int(), columns: z.array(z.string()), paths: z.array(z.string()) }),
   ),
   /** Every pair it judged to overlap, unordered. */
   pairs: z.array(EstimatedPairSchema),
+  /** Every overlap with a live run's changed files. */
+  liveOverlaps: z.array(LiveOverlapSchema),
   /** Whether it could read the area map. */
   areaMap: z.enum(['read', 'unavailable']),
 });
@@ -252,7 +255,7 @@ export const PrWriterOutputSchema = z.object({
 /** Each judgment stage's output schema, keyed as `schemas.generated.ts` emits it. */
 export const AGENT_OUTPUTS = {
   scout: ScoutVerdictSchema,
-  overlapEstimator: OverlapEstimateSchema,
+  issueOverlap: IssueOverlapSchema,
   tdd: TddOutputSchema,
   specReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,

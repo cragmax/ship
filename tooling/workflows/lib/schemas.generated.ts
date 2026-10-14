@@ -1019,23 +1019,10 @@ export const AGENT_OUTPUT_SCHEMAS = {
           required: ['issue', 'stale', 'evidence'],
         },
       },
-      overlaps: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            issue: { type: 'integer' },
-            branch: { type: 'string' },
-            files: { type: 'array', items: { type: 'string' } },
-            evidence: { type: 'string' },
-          },
-          required: ['issue', 'branch', 'files', 'evidence'],
-        },
-      },
     },
-    required: ['issues', 'overlaps'],
+    required: ['issues'],
   },
-  overlapEstimator: {
+  issueOverlap: {
     type: 'object',
     properties: {
       issues: {
@@ -1064,9 +1051,22 @@ export const AGENT_OUTPUT_SCHEMAS = {
           required: ['a', 'b', 'confidence', 'shared', 'reason'],
         },
       },
+      liveOverlaps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            issue: { type: 'integer' },
+            branch: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string' },
+          },
+          required: ['issue', 'branch', 'files', 'reason'],
+        },
+      },
       areaMap: { type: 'string', enum: ['read', 'unavailable'] },
     },
-    required: ['issues', 'pairs', 'areaMap'],
+    required: ['issues', 'pairs', 'liveOverlaps', 'areaMap'],
   },
   tdd: {
     type: 'object',

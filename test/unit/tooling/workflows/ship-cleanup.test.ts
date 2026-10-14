@@ -249,7 +249,7 @@ describe('runShip — spent-run cleanup at launch', () => {
   it('tears nothing down when pre-flight refuses the launch', async () => {
     const run = fakeHooks({
       ...liveRuns({}),
-      scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }], overlaps: [] },
+      scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }] },
     });
 
     const report = await runShip(run.hooks, 'issues 7');

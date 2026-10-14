@@ -22,8 +22,9 @@ import type {
   CriticFindingSchema,
   CriticOutputSchema,
   EstimatedPairSchema,
+  IssueOverlapSchema,
+  LiveOverlapSchema,
   ManifestTsdocOutputSchema,
-  OverlapEstimateSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
   ResolverOutputSchema,
@@ -40,8 +41,8 @@ import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
   type CriticValues,
+  type IssueOverlapValues,
   type ManifestTsdocValues,
-  type OverlapValues,
   type PrWriterValues,
   type ResolverValues,
   type RetroValues,
@@ -55,14 +56,17 @@ import { agentOptions } from './stages.js';
 /** The scout's answer. */
 export type ScoutVerdict = z.infer<typeof ScoutVerdictSchema>;
 
-/** Two run-set issues the estimator judged likely to touch the same files. */
+/** Two run-set issues `issue-overlap` judged likely to touch the same files. */
 export type EstimatedPair = z.infer<typeof EstimatedPairSchema>;
 
-/** How sure the estimator is that a pair overlaps. */
+/** How sure `issue-overlap` is that a pair overlaps. */
 export type OverlapConfidence = EstimatedPair['confidence'];
 
-/** The overlap estimator's answer. */
-export type OverlapEstimate = z.infer<typeof OverlapEstimateSchema>;
+/** A run-set issue whose change would touch a live run's changed files. */
+export type LiveOverlap = z.infer<typeof LiveOverlapSchema>;
+
+/** `issue-overlap`'s answer. */
+export type IssueOverlap = z.infer<typeof IssueOverlapSchema>;
 
 /** A commit message's first line, as the tdd or the critic proposes it. */
 export type CommitSpec = z.infer<typeof CommitSpecSchema>;
@@ -127,13 +131,12 @@ export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
 export type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
 
 /**
- * The overlap estimator's output schema, built per call: a pair's endpoints
- * may only be the run's issues.
+ * `issue-overlap`'s output schema, built per call: a pair's endpoints and a
+ * live overlap's issue may only be the run's issues.
  */
 function overlapSchema(issues: readonly number[]): JsonSchema {
-  const base = AGENT_OUTPUT_SCHEMAS.overlapEstimator;
-  const pairs = base.properties.pairs;
-  const pair = pairs.items;
+  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
+  const { pairs, liveOverlaps } = base.properties;
   const issue = { type: 'integer', enum: issues } as const;
   return {
     ...base,
@@ -141,7 +144,11 @@ function overlapSchema(issues: readonly number[]): JsonSchema {
       ...base.properties,
       pairs: {
         ...pairs,
-        items: { ...pair, properties: { ...pair.properties, a: issue, b: issue } },
+        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
+      },
+      liveOverlaps: {
+        ...liveOverlaps,
+        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
       },
     },
   };
@@ -159,7 +166,7 @@ async function askAgent<T>(
 
 /**
  * One wrapper per judgment stage; `tag` tells the call from the stage's
- * others (`7-1`). The scout and the overlap estimator run once per launch,
+ * others (`7-1`). The scout and `issue-overlap` run once per launch,
  * so they take none.
  */
 export const AGENT_CALLS = {
@@ -169,11 +176,11 @@ export const AGENT_CALLS = {
       PROMPTS.scout(values),
       agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout),
     ),
-  overlapEstimator: (hooks: WorkflowHooks, values: OverlapValues) =>
-    askAgent<OverlapEstimate>(
+  issueOverlap: (hooks: WorkflowHooks, values: IssueOverlapValues) =>
+    askAgent<IssueOverlap>(
       hooks,
-      PROMPTS.overlapEstimator(values),
-      agentOptions('overlapEstimator', null, overlapSchema(runSetIssues(values.runSet))),
+      PROMPTS.issueOverlap(values),
+      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks: WorkflowHooks, values: TddValues, tag: string) =>
     askAgent<TddOutput>(

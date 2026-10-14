@@ -25,7 +25,6 @@ const SEVEN_THEN_EIGHT = {
   },
   scout: {
     issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
-    overlaps: [],
   },
 };
 
