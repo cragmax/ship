@@ -101,8 +101,8 @@ export function land(input: LandInput): LandResult {
 }
 
 /**
- * The size the schedule reports against `SLICE_BUDGET` (`tooling/workflows/lib/stages.ts`):
- * insertions plus deletions over the slice commit's text files; a binary file adds none.
+ * The size the schedule reports: insertions plus deletions over the slice commit's text
+ * files; a binary file adds none.
  *
  * @throws StepFailure `preconditions` when git fails.
  */

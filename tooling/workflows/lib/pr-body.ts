@@ -110,7 +110,7 @@ export interface ScheduleEntry {
   readonly startedAt: string | null;
   /** When its commit landed; `null` unless it landed. */
   readonly committedAt: string | null;
-  /** Its landed commit's size, for the retro's slice-budget read; `null` unless it landed. */
+  /** Its landed commit's size; `null` unless it landed. */
   readonly size: SliceSize | null;
 }
 

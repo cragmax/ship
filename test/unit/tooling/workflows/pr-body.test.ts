@@ -425,7 +425,7 @@ describe('renderPrBody', () => {
     expect(lines[lines.indexOf('## Schedule') + 2]).toBe(line);
   });
 
-  // Hand-written: the size the retro reads against the slice budget, at the line's end.
+  // Hand-written: the landed slice's size, at the line's end.
   it.each<[string, SliceSize | null, string]>([
     ['landed', { files: 23, lines: 912 }, 'size 23 files, 912 lines'],
     ['not landed', null, 'size none'],

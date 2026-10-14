@@ -59,17 +59,6 @@ export const PROBE_CAP_MINUTES = 15;
 /** The most probes one issue's tdd, reviewer or test reviewer may run. */
 export const PROBES_PER_ISSUE = 3;
 
-/**
- * The slice budget (GLOSSARY.md): the most a slice may reach before it is
- * split instead of built. `files` and `tasks` are ticket-time sizes; `lines`
- * bounds the landed commit's changed lines, which the retro reads from the
- * schedule.
- * Set 2026-10-08 from the landed history: the median issue commit changed
- * 311 lines in 7 files; the one slice that outran a tdd session
- * planned 25 tasks over 34 files and landed 2,553 lines.
- */
-export const SLICE_BUDGET = { files: 15, tasks: 12, lines: 1000 } as const;
-
 /** The paths whose change is not a trivial surface: code, tooling and tests. */
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
 
