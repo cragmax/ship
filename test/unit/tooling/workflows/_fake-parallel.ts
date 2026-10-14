@@ -7,7 +7,7 @@
  * number.
  */
 
-import type { RecordedCall } from './_fake-hooks.js';
+import { readyVerdict, type RecordedCall } from './_fake-hooks.js';
 
 /** A gate that holds matching calls until released. */
 export interface Holdable {
@@ -164,7 +164,7 @@ export function entryResponses(epic: number): Record<string, unknown> {
 }
 
 /**
- * A run of epic entries: the gate's run set and edges, fresh scout verdicts, each entry's answers.
+ * A run of epic entries: the gate's run set and edges, every issue ready, each entry's answers.
  *
  * @param entries - Each epic and its issues, in run-set order.
  * @param edges - The declared edges.
@@ -185,8 +185,8 @@ export function epicRun(
       runSet: entries,
       edges,
     },
-    scout: {
-      issues: issues.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+    issueReadiness: {
+      issues: issues.map((issue) => readyVerdict(issue)),
     },
     ...Object.fromEntries(entries.flatMap((e) => Object.entries(entryResponses(e.epic)))),
   };

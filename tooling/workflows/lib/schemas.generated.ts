@@ -1004,7 +1004,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
 
 /** Each judgment agent's output. */
 export const AGENT_OUTPUT_SCHEMAS = {
-  scout: {
+  issueReadiness: {
     type: 'object',
     properties: {
       issues: {
@@ -1013,10 +1013,46 @@ export const AGENT_OUTPUT_SCHEMAS = {
           type: 'object',
           properties: {
             issue: { type: 'integer' },
-            stale: { type: 'boolean' },
-            evidence: { type: 'string' },
+            current: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            sliceable: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            unblocked: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            rightSized: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            directionDecided: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            specified: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
           },
-          required: ['issue', 'stale', 'evidence'],
+          required: [
+            'issue',
+            'current',
+            'sliceable',
+            'unblocked',
+            'rightSized',
+            'directionDecided',
+            'specified',
+          ],
         },
       },
     },

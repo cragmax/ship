@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, liveRuns, readyVerdict, type FakeRun } from './_fake-hooks.js';
 
 /**
  * Every call's label, in call order.
@@ -25,7 +25,7 @@ describe('runShip — spent-run cleanup at launch', () => {
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
-      'scout',
+      'issueReadiness',
       'runner:teardown:spent-1',
       'runner:retire-run:spent-1',
       'runner:cut-batch:list',
@@ -249,7 +249,7 @@ describe('runShip — spent-run cleanup at launch', () => {
   it('tears nothing down when pre-flight refuses the launch', async () => {
     const run = fakeHooks({
       ...liveRuns({}),
-      scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }] },
+      issueReadiness: { issues: [readyVerdict(7, { current: 'done in abc123' })] },
     });
 
     const report = await runShip(run.hooks, 'issues 7');

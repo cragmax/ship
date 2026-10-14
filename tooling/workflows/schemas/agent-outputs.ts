@@ -12,20 +12,36 @@
 
 import { z } from 'zod';
 
-/** The scout's verdict on one run-set issue. */
-const ScoutIssueSchema = z.object({
-  /** The run-set issue's number. */
-  issue: z.int(),
-  /** Whether the current tree has overtaken it. */
-  stale: z.boolean(),
+/** One readiness check of an issue. */
+const ReadinessCheckSchema = z.object({
+  /** Whether the issue passes it. */
+  pass: z.boolean(),
   /** What backs the verdict. */
   evidence: z.string(),
 });
 
-/** The scout's answer. */
-export const ScoutVerdictSchema = z.object({
+/** `issue-readiness`'s verdict on one run-set issue: the tree, then each rubric point. */
+export const ReadinessVerdictSchema = z.object({
+  /** The run-set issue's number. */
+  issue: z.int(),
+  /** It still describes the tree; failing makes it stale. */
+  current: ReadinessCheckSchema,
+  /** Rubric point 1. */
+  sliceable: ReadinessCheckSchema,
+  /** Rubric point 2. */
+  unblocked: ReadinessCheckSchema,
+  /** Rubric point 3. */
+  rightSized: ReadinessCheckSchema,
+  /** Rubric point 4. */
+  directionDecided: ReadinessCheckSchema,
+  /** Rubric point 5. */
+  specified: ReadinessCheckSchema,
+});
+
+/** `issue-readiness`'s answer. */
+export const IssueReadinessSchema = z.object({
   /** One verdict per run-set issue it judged. */
-  issues: z.array(ScoutIssueSchema),
+  issues: z.array(ReadinessVerdictSchema),
 });
 
 /**
@@ -254,7 +270,7 @@ export const PrWriterOutputSchema = z.object({
 
 /** Each judgment stage's output schema, keyed as `schemas.generated.ts` emits it. */
 export const AGENT_OUTPUTS = {
-  scout: ScoutVerdictSchema,
+  issueReadiness: IssueReadinessSchema,
   issueOverlap: IssueOverlapSchema,
   tdd: TddOutputSchema,
   specReview: ReviewOutputSchema,

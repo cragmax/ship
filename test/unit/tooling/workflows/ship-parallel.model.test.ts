@@ -12,6 +12,7 @@ import {
   fakeHooks,
   GATE_OK,
   LAND_OK,
+  readyVerdict,
   TDD_GREEN,
   type FakeRun,
   type RecordedCall,
@@ -62,8 +63,8 @@ function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[])
   };
   return {
     'runner:run-gate': { ...GATE_OK, runSet: input.runSet, edges: input.edges },
-    scout: {
-      issues: order.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+    issueReadiness: {
+      issues: order.map((issue) => readyVerdict(issue)),
     },
     tdd: (call: RecordedCall) => (outcome(call.label) === 'die' ? null : TDD_GREEN),
     'runner:land': (call: RecordedCall) =>

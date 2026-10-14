@@ -118,7 +118,7 @@ describe('consumed fields are required', () => {
 
   it('leaves only the tdd’s reason optional in every agent output schema', () => {
     expect(optionalOf(AGENT_OUTPUT_SCHEMAS)).toEqual({
-      scout: [],
+      issueReadiness: [],
       issueOverlap: [],
       tdd: ['reason'],
       specReview: [],

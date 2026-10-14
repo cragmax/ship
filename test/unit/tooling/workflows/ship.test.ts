@@ -17,6 +17,7 @@ import {
   REPORT_DIR,
   TDD_BLOCKED,
   TDD_GREEN,
+  readyVerdict,
   type FakeRun,
 } from './_fake-hooks.js';
 import { epicRun, holdable, idle } from './_fake-parallel.js';
@@ -28,11 +29,8 @@ const EPIC_GRAPH = {
 
 const EPIC_FRESH = {
   'runner:run-gate': { ...GATE_OK, ...EPIC_GRAPH },
-  scout: {
-    issues: [
-      { issue: 1045, stale: false, evidence: 'fresh' },
-      { issue: 1046, stale: false, evidence: 'fresh' },
-    ],
+  issueReadiness: {
+    issues: [readyVerdict(1045), readyVerdict(1046)],
   },
 };
 
@@ -51,11 +49,8 @@ const THREE_REFUSALS = {
     failures: [{ kind: 'missing-label', issue: 8, message: '#8 lacks ready-for-agent' }],
     runSet: [{ epic: null, issues: [7, 8] }],
   },
-  scout: {
-    issues: [
-      { issue: 7, stale: true, evidence: 'parseFoo no longer exists' },
-      { issue: 8, stale: false, evidence: 'fresh' },
-    ],
+  issueReadiness: {
+    issues: [readyVerdict(7, { current: 'parseFoo no longer exists' }), readyVerdict(8)],
   },
 };
 
@@ -65,11 +60,11 @@ const SEVEN_STALE_BLOCKS_EIGHT = {
     runSet: [{ epic: null, issues: [7, 8, 9] }],
     edges: [{ blocker: 7, dependent: 8 }],
   },
-  scout: {
+  issueReadiness: {
     issues: [
-      { issue: 7, stale: true, evidence: 'already implemented at abc123' },
-      { issue: 8, stale: false, evidence: 'fresh' },
-      { issue: 9, stale: false, evidence: 'fresh' },
+      readyVerdict(7, { current: 'already implemented at abc123' }),
+      readyVerdict(8),
+      readyVerdict(9),
     ],
   },
 };
@@ -139,8 +134,8 @@ const DOC_INDEX_CONFLICT = {
 // Two issues bring in issue-overlap (one pair), an applied critic and a retro finding.
 const TWO_ISSUES = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-  scout: {
-    issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+  issueReadiness: {
+    issues: [7, 8].map((issue) => readyVerdict(issue)),
   },
   issueOverlap: {
     issues: [{ number: 7, columns: ['tooling'], paths: ['tooling/x.ts'] }],
@@ -213,7 +208,7 @@ describe('runShip — pre-flight only', () => {
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
-      'scout',
+      'issueReadiness',
       'issueOverlap',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
@@ -280,14 +275,14 @@ const STALE_PREFLIGHT = {
 };
 
 describe('runShip — leftover slice branches', () => {
-  it('refuses a stale-slice-branch problem though the scout finds #7 fresh, cutting nothing', async () => {
+  it('refuses a stale-slice-branch problem though issue-readiness finds #7 ready, cutting nothing', async () => {
     const run = fakeHooks({ 'runner:preflight': STALE_PREFLIGHT });
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report.status).toBe('refused');
     expect(report.refusals).toEqual([{ kind: 'stale-slice-branch', message: STALE_7.message }]);
-    expect(run.calls.map((c) => c.label)).toContain('scout');
+    expect(run.calls.map((c) => c.label)).toContain('issueReadiness');
     expect(run.calls.filter(isCutOrLand)).toEqual([]);
   });
 
@@ -369,7 +364,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
-      'scout',
+      'issueReadiness',
       'runner:cut-batch:list',
       'runner:provision-batch:list',
       'runner:check:7-1',
@@ -565,16 +560,16 @@ describe('runShip — every tool failure is a refusal', () => {
       [{ kind: 'live-runs-failed', message: 'pull request state unknown for ship/epic-9' }],
     ],
     [
-      'a scout that returned nothing',
-      { scout: null },
+      'an issue-readiness that returned nothing',
+      { issueReadiness: null },
       'issues 7 --preflight-only',
-      [{ kind: 'scout-unavailable', message: 'no scout verdict for #7' }],
+      [{ kind: 'readiness-unavailable', message: 'no issue-readiness verdict for #7' }],
     ],
     [
       'exclude mode dropping every issue',
-      { scout: { issues: [{ issue: 7, stale: true, evidence: 'done in abc123' }] } },
+      { issueReadiness: { issues: [readyVerdict(7, { current: 'done in abc123' })] } },
       'issues 7 --exclude --preflight-only',
-      [{ kind: 'empty-run-set', message: 'no issue is left after the stale drops' }],
+      [{ kind: 'empty-run-set', message: 'no issue is left after the readiness drops' }],
     ],
   ])('refuses %s', async (_name, responses, args, refusals) => {
     await refuses(fakeHooks(responses), args, refusals);
@@ -645,7 +640,7 @@ describe('runShip — every tool failure is a refusal', () => {
     await refuses(fakeHooks(responses, { offSchema: true }), args, refusals);
   });
 
-  it('refuses a gate with no verdict, and skips the scout for want of a run set', async () => {
+  it('refuses a gate with no verdict, and skips issue-readiness for want of a run set', async () => {
     const run = fakeHooks(
       {
         'runner:run-gate': { exitCode: 2, envelopePath: 'g', stderrTail: 'run-gate: schema error' },
@@ -656,7 +651,7 @@ describe('runShip — every tool failure is a refusal', () => {
     const report = await runShip(run.hooks, 'issues 7 --preflight-only');
 
     expect(report.refusals).toEqual([{ kind: 'gate-error', message: 'run-gate: schema error' }]);
-    expect(run.calls.map((c) => c.label)).not.toContain('scout');
+    expect(run.calls.map((c) => c.label)).not.toContain('issueReadiness');
   });
 
   it('shows issue-overlap only the unspent live runs', async () => {
@@ -1748,8 +1743,8 @@ async function haltRace(teardownKey: string) {
   const run = fakeHooks(
     {
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-      scout: {
-        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8].map((issue) => readyVerdict(issue)),
       },
       [teardownKey]: TEARDOWN_SHRANK,
       'runner:land:8-1': { ...LAND_OK, commit: 'landed8' },
@@ -1778,8 +1773,8 @@ describe('runShip — a halting entry', () => {
   it('feeds one epic-halt when two in-flight issues of the entry stop for it', async () => {
     const run = fakeHooks({
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-      scout: {
-        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8].map((issue) => readyVerdict(issue)),
       },
       'runner:land': LAND_BATCH_DIRTY,
     });
@@ -1810,8 +1805,8 @@ describe('runShip — a halting entry', () => {
   it('runs no queued landing of the entry after a land call that throws', async () => {
     const run = fakeHooks({
       'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-      scout: {
-        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8].map((issue) => readyVerdict(issue)),
       },
       'runner:land': () => {
         throw new Error('runner crashed');
@@ -1914,8 +1909,8 @@ describe('runShip — a halting entry', () => {
     const run = fakeHooks(
       {
         'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-        scout: {
-          issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+        issueReadiness: {
+          issues: [7, 8].map((issue) => readyVerdict(issue)),
         },
         'runner:land:7-1': LAND_BATCH_DIRTY,
         'tdd:8-1': TDD_STALE.tdd,
@@ -2088,8 +2083,8 @@ describe('runShip — a failed cut', () => {
         ],
         edges: [{ blocker: 1, dependent: 2 }],
       },
-      scout: {
-        issues: [1, ...epicTwo].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [1, ...epicTwo].map((issue) => readyVerdict(issue)),
       },
       'runner:cut-batch:epic-1': {
         exitCode: 1,
@@ -2141,7 +2136,73 @@ describe('runShip — a failed cut', () => {
   });
 });
 
+describe('runShip — issue readiness', () => {
+  it('refuses an issue failing a rubric point as not-ready, each failed point with its evidence', async () => {
+    const run = fakeHooks({
+      issueReadiness: {
+        issues: [
+          readyVerdict(7, { rightSized: 'title reads as a list', specified: 'no done-criteria' }),
+        ],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 --preflight-only');
+
+    expect(report.refusals).toEqual([
+      {
+        kind: 'not-ready',
+        issue: 7,
+        message: 'right-sized: title reads as a list; specified: no done-criteria',
+      },
+    ]);
+    expect(run.calls.find((c) => c.label === 'issueReadiness')).toMatchObject({
+      agentType: 'issue-readiness',
+      model: 'opus',
+      effort: 'medium',
+      prompt: 'Run-set issues: #7',
+    });
+  });
+  it('refuses an issue both stale and not-ready once for each', async () => {
+    const run = fakeHooks({
+      issueReadiness: {
+        issues: [readyVerdict(7, { current: 'parseFoo is gone', sliceable: 'an epic container' })],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 --preflight-only');
+
+    expect(report.refusals).toEqual([
+      { kind: 'stale', issue: 7, message: 'parseFoo is gone' },
+      { kind: 'not-ready', issue: 7, message: 'sliceable: an epic container' },
+    ]);
+  });
+});
+
 describe('runShip — exclude mode', () => {
+  it('drops a not-ready issue and its dependent under its failed points', async () => {
+    const run = fakeHooks({
+      ...SEVEN_STALE_BLOCKS_EIGHT,
+      issueReadiness: {
+        issues: [
+          readyVerdict(7, { unblocked: 'blocked by open #99' }),
+          readyVerdict(8),
+          readyVerdict(9),
+        ],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7,8 #9 --exclude --preflight-only');
+
+    expect(report).toMatchObject({
+      status: 'preflight-ok',
+      graph: { runSet: [{ epic: null, issues: [9] }], edges: [] },
+      dropped: [
+        { issue: 7, cause: 'not-ready', message: 'unblocked: blocked by open #99' },
+        { issue: 8, cause: 'dependent', message: 'blocked by a dropped issue' },
+      ],
+    });
+  });
+
   it('drops the stale issue and its dependent, keeping the rest of the graph', async () => {
     const run = fakeHooks(SEVEN_STALE_BLOCKS_EIGHT);
 
@@ -2153,7 +2214,7 @@ describe('runShip — exclude mode', () => {
       overlap: { added: [], sequenced: [], areaMap: 'read' },
       dropped: [
         { issue: 7, cause: 'stale', message: 'already implemented at abc123' },
-        { issue: 8, cause: 'dependent', message: 'blocked by a stale issue' },
+        { issue: 8, cause: 'dependent', message: 'blocked by a dropped issue' },
       ],
       epics: [],
     });
@@ -2172,7 +2233,7 @@ describe('agent-call tiers', () => {
   it('holds the planned tier per stage', () => {
     expect(STAGES).toEqual({
       runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
-      scout: { agentType: 'scout' },
+      issueReadiness: { agentType: 'issue-readiness', model: 'opus', effort: 'medium' },
       issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
       tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
       specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },

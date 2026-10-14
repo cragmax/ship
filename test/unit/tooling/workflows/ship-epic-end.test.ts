@@ -9,6 +9,7 @@ import {
   fakeHooks,
   GATE_OK,
   LAND_OK,
+  readyVerdict,
   REPORT_DIR,
   TDD_BLOCKED,
   TDD_GREEN,
@@ -16,15 +17,15 @@ import {
 } from './_fake-hooks.js';
 import { epicRun, holdable, idle } from './_fake-parallel.js';
 
-/** The gate and scout answers of the explicit list 7 → 8. */
+/** The gate and issue-readiness answers of the explicit list 7 → 8. */
 const SEVEN_THEN_EIGHT = {
   'runner:run-gate': {
     ...GATE_OK,
     runSet: [{ epic: null, issues: [7, 8] }],
     edges: [{ blocker: 7, dependent: 8 }],
   },
-  scout: {
-    issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+  issueReadiness: {
+    issues: [7, 8].map((issue) => readyVerdict(issue)),
   },
 };
 

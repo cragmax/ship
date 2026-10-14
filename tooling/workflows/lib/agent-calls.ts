@@ -22,16 +22,17 @@ import type {
   CriticFindingSchema,
   CriticOutputSchema,
   EstimatedPairSchema,
+  IssueReadinessSchema,
   IssueOverlapSchema,
   LiveOverlapSchema,
   ManifestTsdocOutputSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
+  ReadinessVerdictSchema,
   ResolverOutputSchema,
   RetroFindingSchema,
   RetroOutputSchema,
   ReviewOutputSchema,
-  ScoutVerdictSchema,
   TddEvidenceSchema,
   TddOutputSchema,
   TestReviewOutputSchema,
@@ -42,19 +43,22 @@ import {
   PROMPTS,
   type CriticValues,
   type IssueOverlapValues,
+  type IssueReadinessValues,
   type ManifestTsdocValues,
   type PrWriterValues,
   type ResolverValues,
   type RetroValues,
-  type ScoutValues,
   type SliceReviewValues,
   type TddValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
 import { agentOptions } from './stages.js';
 
-/** The scout's answer. */
-export type ScoutVerdict = z.infer<typeof ScoutVerdictSchema>;
+/** `issue-readiness`'s verdict on one run-set issue. */
+export type ReadinessVerdict = z.infer<typeof ReadinessVerdictSchema>;
+
+/** `issue-readiness`'s answer. */
+export type IssueReadiness = z.infer<typeof IssueReadinessSchema>;
 
 /** Two run-set issues `issue-overlap` judged likely to touch the same files. */
 export type EstimatedPair = z.infer<typeof EstimatedPairSchema>;
@@ -166,15 +170,15 @@ async function askAgent<T>(
 
 /**
  * One wrapper per judgment stage; `tag` tells the call from the stage's
- * others (`7-1`). The scout and `issue-overlap` run once per launch,
+ * others (`7-1`). `issue-readiness` and `issue-overlap` run once per launch,
  * so they take none.
  */
 export const AGENT_CALLS = {
-  scout: (hooks: WorkflowHooks, values: ScoutValues) =>
-    askAgent<ScoutVerdict>(
+  issueReadiness: (hooks: WorkflowHooks, values: IssueReadinessValues) =>
+    askAgent<IssueReadiness>(
       hooks,
-      PROMPTS.scout(values),
-      agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout),
+      PROMPTS.issueReadiness(values),
+      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
     ),
   issueOverlap: (hooks: WorkflowHooks, values: IssueOverlapValues) =>
     askAgent<IssueOverlap>(

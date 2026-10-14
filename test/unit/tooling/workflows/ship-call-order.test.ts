@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip, type ShipReport } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, readyVerdict, type FakeRun } from './_fake-hooks.js';
 import { settleInOrder, type SettleOrder } from './_fake-parallel.js';
 
 // No declared edge and no overlap pair (the default issue-overlap answers none),
 // so only the cap keeps issue 8 from starting while issue 7 is in flight.
 const TWO_INDEPENDENT = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-  scout: {
-    issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+  issueReadiness: {
+    issues: [7, 8].map((issue) => readyVerdict(issue)),
   },
 };
 

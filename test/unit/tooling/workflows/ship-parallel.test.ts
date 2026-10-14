@@ -7,6 +7,7 @@ import {
   GATE_OK,
   inTurn,
   LAND_OK,
+  readyVerdict,
   TDD_BLOCKED,
   type FakeRun,
   type RecordedCall,
@@ -42,7 +43,7 @@ const LAND_BATCH_DIRTY = {
 };
 
 /**
- * The gate and scout answers of an explicit list.
+ * The gate and issue-readiness answers of an explicit list.
  *
  * @param issues - The list.
  * @param edges - Its declared edges.
@@ -53,8 +54,8 @@ const list = (
   edges: readonly { blocker: number; dependent: number }[] = [],
 ): Record<string, unknown> => ({
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues }], edges },
-  scout: {
-    issues: issues.map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+  issueReadiness: {
+    issues: issues.map((issue) => readyVerdict(issue)),
   },
 });
 

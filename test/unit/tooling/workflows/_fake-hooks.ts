@@ -111,10 +111,38 @@ export const LIVE_RUNS_NONE = {
   errors: [],
 };
 
-/** Issue 7 fresh, no overlap. */
-export const SCOUT_FRESH = {
-  issues: [{ issue: 7, stale: false, evidence: 'every named symbol present' }],
-};
+/** The checks of an `issue-readiness` verdict: the tree, then each rubric point. */
+const READINESS_CHECKS = [
+  'current',
+  'sliceable',
+  'unblocked',
+  'rightSized',
+  'directionDecided',
+  'specified',
+] as const;
+
+/**
+ * One issue's `issue-readiness` verdict: every check passing but those `fails` names.
+ *
+ * @param issue - The issue.
+ * @param fails - Each failing check and its evidence.
+ * @returns The verdict.
+ */
+export const readyVerdict = (
+  issue: number,
+  fails: Partial<Record<(typeof READINESS_CHECKS)[number], string>> = {},
+) => ({
+  issue,
+  ...Object.fromEntries(
+    READINESS_CHECKS.map((check) => {
+      const evidence = fails[check];
+      return [
+        check,
+        evidence === undefined ? { pass: true, evidence: 'holds' } : { pass: false, evidence },
+      ];
+    }),
+  ),
+});
 
 const RUN_ROOT = 'C:/src/ph-runs/7';
 
@@ -247,7 +275,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   'runner:preflight': PREFLIGHT_OK,
   'runner:run-gate': GATE_OK,
   'runner:live-runs': LIVE_RUNS_NONE,
-  scout: SCOUT_FRESH,
+  issueReadiness: { issues: [readyVerdict(7)] },
   issueOverlap: { issues: [], pairs: [], liveOverlaps: [], areaMap: 'read' },
   'runner:cut-batch': {
     ...OK,

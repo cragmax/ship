@@ -50,12 +50,12 @@ export interface RunnerValues {
   readonly write?: FileToWrite;
 }
 
-/** The scout's values: the run set, and an attached run's PR head. */
-export interface ScoutValues {
+/** `issue-readiness`'s values: the run set, and an attached run's PR head. */
+export interface IssueReadinessValues {
   /** The run-set issues, ascending. */
   readonly issues: readonly number[];
   /**
-   * An attached run's open PR head (`origin/ship/<slug>`), the tree the scout judges; absent
+   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges; absent
    * otherwise.
    */
   readonly prHead?: string;
@@ -311,7 +311,7 @@ export const PROMPTS = {
       `Envelope name: ${values.envelopeName}`,
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
-  scout: (values: ScoutValues): string =>
+  issueReadiness: (values: IssueReadinessValues): string =>
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),

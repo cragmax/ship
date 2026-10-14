@@ -66,7 +66,7 @@ function resyncJson(text) {
 
 const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
-  scout: { agentType: 'scout' },
+  issueReadiness: { agentType: 'issue-readiness', model: 'opus', effort: 'medium' },
   issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
@@ -94,8 +94,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
-      'and the issue overlap; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, issue ' +
+      'readiness and issue overlap; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -202,7 +202,7 @@ const PROMPTS = {
       `Envelope name: ${values.envelopeName}`,
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
-  scout: (values) =>
+  issueReadiness: (values) =>
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
@@ -1273,7 +1273,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
-  scout: {
+  issueReadiness: {
     type: 'object',
     properties: {
       issues: {
@@ -1282,10 +1282,46 @@ const AGENT_OUTPUT_SCHEMAS = {
           type: 'object',
           properties: {
             issue: { type: 'integer' },
-            stale: { type: 'boolean' },
-            evidence: { type: 'string' },
+            current: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            sliceable: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            unblocked: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            rightSized: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            directionDecided: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            specified: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
           },
-          required: ['issue', 'stale', 'evidence'],
+          required: [
+            'issue',
+            'current',
+            'sliceable',
+            'unblocked',
+            'rightSized',
+            'directionDecided',
+            'specified',
+          ],
         },
       },
     },
@@ -1813,8 +1849,12 @@ async function askAgent(hooks, prompt, options) {
   return typeof out === 'object' && out !== null ? out : null;
 }
 const AGENT_CALLS = {
-  scout: (hooks, values) =>
-    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout)),
+  issueReadiness: (hooks, values) =>
+    askAgent(
+      hooks,
+      PROMPTS.issueReadiness(values),
+      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
+    ),
   issueOverlap: (hooks, values) =>
     askAgent(
       hooks,

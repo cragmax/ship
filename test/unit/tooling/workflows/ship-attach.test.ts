@@ -10,6 +10,7 @@ import {
   liveRuns,
   OK,
   PREFLIGHT_OK,
+  readyVerdict,
   REPORT_DIR,
   TDD_BLOCKED,
   TDD_GREEN,
@@ -56,7 +57,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
-      'scout',
+      'issueReadiness',
       'runner:cut-batch:list',
       'runner:check:7-1',
       'runner:cut-slice:7-1',
@@ -163,7 +164,7 @@ describe('runShip --attach --preflight-only', () => {
       'runner:preflight',
       'runner:run-gate',
       'runner:live-runs',
-      'scout',
+      'issueReadiness',
     ]);
     expect(report.status).toBe('preflight-ok');
   });
@@ -270,8 +271,8 @@ describe('runShip --attach — the epic end', () => {
         runSet: [{ epic: null, issues: [7, 8] }],
         edges: [{ blocker: 7, dependent: 8 }],
       },
-      scout: {
-        issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8].map((issue) => readyVerdict(issue)),
       },
     });
 
@@ -352,7 +353,7 @@ const OTHER_RUN = {
   path: 'C:/src/ph-runs/epic-8/batch',
 };
 
-describe('runShip --attach — the scout and issue-overlap', () => {
+describe('runShip --attach — issue-readiness and issue-overlap', () => {
   it('shows issue-overlap every live run but the target, and names the PR head to both', async () => {
     const run = fakeHooks({ ...ATTACHED, ...liveRuns(TARGET_RUN, OTHER_RUN) });
 
@@ -364,7 +365,7 @@ describe('runShip --attach — the scout and issue-overlap', () => {
       'Live runs (JSON): [{"branch":"ship/epic-8","landed":["src/o.ts"]}]',
       'PR head: origin/ship/epic-9',
     ]);
-    expect(promptLines(run, 'scout')).toEqual([
+    expect(promptLines(run, 'issueReadiness')).toEqual([
       'Run-set issues: #7',
       'PR head: origin/ship/epic-9',
     ]);
@@ -401,7 +402,7 @@ describe('runShip --attach — the scout and issue-overlap', () => {
     expect(report.status).toBe('preflight-ok');
   });
 
-  it('names no PR head to an unattached run’s scout or issue-overlap', async () => {
+  it('names no PR head to an unattached run’s issue-readiness or issue-overlap', async () => {
     const run = fakeHooks(liveRuns(TARGET_RUN, OTHER_RUN));
 
     await runShip(run.hooks, 'issues 7 --preflight-only');
@@ -409,7 +410,7 @@ describe('runShip --attach — the scout and issue-overlap', () => {
     const heads = (label: string): string[] =>
       promptLines(run, label).filter((l) => l.startsWith('PR head:'));
     expect(heads('issueOverlap')).toEqual([]);
-    expect(heads('scout')).toEqual([]);
+    expect(heads('issueReadiness')).toEqual([]);
     expect(labels(run)).toContain('issueOverlap');
   });
 });

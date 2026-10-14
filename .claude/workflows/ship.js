@@ -8,7 +8,7 @@ export const meta = {
     {
       title: 'Pre-flight',
       detail:
-        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout and the issue overlap; refuses on any failure; then spent batches torn down (guarded)',
+        'master level, gh auth, warm set, leftover slice branches, run gate, live runs, issue readiness and issue overlap; refuses on any failure; then spent batches torn down (guarded)',
     },
     {
       title: 'Issues',
@@ -28,7 +28,7 @@ const RUN_BRANCH_SHAPE = /^ship\/[a-z0-9][a-z0-9-]*$/;
 
 const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
-  scout: { agentType: 'scout' },
+  issueReadiness: { agentType: 'issue-readiness', model: 'opus', effort: 'medium' },
   issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
@@ -56,8 +56,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.preflight,
     detail:
-      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, the scout ' +
-      'and the issue overlap; ' +
+      'master level, gh auth, warm set, leftover slice branches, run gate, live runs, issue ' +
+      'readiness and issue overlap; ' +
       'refuses on any failure; then spent batches torn down (guarded)',
   },
   {
@@ -631,7 +631,7 @@ const PROMPTS = {
       `Envelope name: ${values.envelopeName}`,
       ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
     ].join('\n'),
-  scout: (values) =>
+  issueReadiness: (values) =>
     [
       `Run-set issues: ${values.issues.map(issueRef).join(', ')}`,
       ...(values.prHead === undefined ? [] : [`PR head: ${values.prHead}`]),
@@ -1702,7 +1702,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
   },
 };
 const AGENT_OUTPUT_SCHEMAS = {
-  scout: {
+  issueReadiness: {
     type: 'object',
     properties: {
       issues: {
@@ -1711,10 +1711,46 @@ const AGENT_OUTPUT_SCHEMAS = {
           type: 'object',
           properties: {
             issue: { type: 'integer' },
-            stale: { type: 'boolean' },
-            evidence: { type: 'string' },
+            current: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            sliceable: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            unblocked: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            rightSized: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            directionDecided: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
+            specified: {
+              type: 'object',
+              properties: { pass: { type: 'boolean' }, evidence: { type: 'string' } },
+              required: ['pass', 'evidence'],
+            },
           },
-          required: ['issue', 'stale', 'evidence'],
+          required: [
+            'issue',
+            'current',
+            'sliceable',
+            'unblocked',
+            'rightSized',
+            'directionDecided',
+            'specified',
+          ],
         },
       },
     },
@@ -2271,8 +2307,12 @@ async function askAgent(hooks, prompt, options) {
   return typeof out === 'object' && out !== null ? out : null;
 }
 const AGENT_CALLS = {
-  scout: (hooks, values) =>
-    askAgent(hooks, PROMPTS.scout(values), agentOptions('scout', null, AGENT_OUTPUT_SCHEMAS.scout)),
+  issueReadiness: (hooks, values) =>
+    askAgent(
+      hooks,
+      PROMPTS.issueReadiness(values),
+      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
+    ),
   issueOverlap: (hooks, values) =>
     askAgent(
       hooks,
@@ -3893,9 +3933,12 @@ async function runPreflight(hooks, args) {
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const scout = await runScout(hooks, graph, args.attach);
+  const readiness = await AGENT_CALLS.issueReadiness(hooks, {
+    issues: runSetIssues(graph.runSet),
+    ...(args.attach === null ? {} : { prHead: `origin/${args.attach}` }),
+  });
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
-  return settleOverlap(hooks, settleScout(found, scout, args.exclude), args.attach);
+  return settleOverlap(hooks, settleReadiness(found, readiness, args.exclude), args.attach);
 }
 function preflightArgv(args) {
   if (args.attach !== null) return ['.', '--attach', args.attach];
@@ -4051,43 +4094,65 @@ function liveRunRefusals(live) {
   const branches = unknown.map((r) => r.branch).join(', ');
   return [{ kind: 'live-runs-failed', message: `pull request state unknown for ${branches}` }];
 }
-async function runScout(hooks, graph, attach) {
-  const issues = runSetIssues(graph.runSet);
-  return AGENT_CALLS.scout(hooks, {
-    issues,
-    ...(attach === null ? {} : { prHead: `origin/${attach}` }),
-  });
+const RUBRIC_POINTS = [
+  ['sliceable', 'sliceable'],
+  ['unblocked', 'unblocked'],
+  ['rightSized', 'right-sized'],
+  ['directionDecided', 'direction-decided'],
+  ['specified', 'specified'],
+];
+function readinessFailures(v) {
+  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
+  return [
+    ...(v.current.pass ? [] : [{ cause: 'stale', message: v.current.evidence }]),
+    ...(failed.length === 0
+      ? []
+      : [
+          {
+            cause: 'not-ready',
+            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
+          },
+        ]),
+  ];
 }
-function settleScout(found, scout, exclude) {
+function settleReadiness(found, readiness, exclude) {
   const issues = runSetIssues(found.graph.runSet);
-  const judged = new Set((scout?.issues ?? []).map((v) => v.issue));
+  const verdicts = (readiness?.issues ?? []).filter((v) => issues.includes(v.issue));
+  const judged = new Set(verdicts.map((v) => v.issue));
   const unjudged = issues.filter((n) => !judged.has(n));
   const refusals = [...found.refusals];
   if (unjudged.length > 0) {
     refusals.push({
-      kind: 'scout-unavailable',
-      message: `no scout verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
+      kind: 'readiness-unavailable',
+      message: `no issue-readiness verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
     });
   }
-  const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
+  const failing = verdicts
+    .map((v) => ({ issue: v.issue, failures: readinessFailures(v) }))
+    .filter((f) => f.failures.length > 0);
   if (!exclude) {
-    for (const v of stale) refusals.push({ kind: 'stale', issue: v.issue, message: v.evidence });
+    for (const f of failing) {
+      for (const x of f.failures)
+        refusals.push({ kind: x.cause, issue: f.issue, message: x.message });
+    }
     return { ...found, refusals };
   }
   const { graph, dependents } = dropWithDependents(
     found.graph,
-    stale.map((v) => v.issue),
+    failing.map((f) => f.issue),
   );
   if (graph.runSet.length === 0) {
-    refusals.push({ kind: 'empty-run-set', message: 'no issue is left after the stale drops' });
+    refusals.push({ kind: 'empty-run-set', message: 'no issue is left after the readiness drops' });
   }
   const dropped = [
     ...found.dropped,
-    ...stale.map((v) => ({ issue: v.issue, cause: 'stale', message: v.evidence })),
+    ...failing.flatMap(({ issue, failures: [first] }) =>
+      first === undefined ? [] : [{ issue, ...first }],
+    ),
     ...dependents.map((n) => ({
       issue: n,
       cause: 'dependent',
-      message: 'blocked by a stale issue',
+      message: 'blocked by a dropped issue',
     })),
   ];
   return { ...found, refusals, dropped, graph };

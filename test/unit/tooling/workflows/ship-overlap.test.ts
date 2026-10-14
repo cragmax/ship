@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, liveRuns, readyVerdict, type FakeRun } from './_fake-hooks.js';
 import { epicRun } from './_fake-parallel.js';
 
-/** The gate and scout answers of an explicit list of 7 and 8, no declared edge. */
+/** The gate and issue-readiness answers of an explicit list of 7 and 8, no declared edge. */
 const SEVEN_EIGHT = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }], edges: [] },
-  scout: {
-    issues: [7, 8].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+  issueReadiness: {
+    issues: [7, 8].map((issue) => readyVerdict(issue)),
   },
 };
 
@@ -160,8 +160,8 @@ describe('runShip — the overlap estimate', () => {
         runSet: [{ epic: null, issues: [7, 8, 9] }],
         edges: [{ blocker: 8, dependent: 9 }],
       },
-      scout: {
-        issues: [7, 8, 9].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8, 9].map((issue) => readyVerdict(issue)),
       },
       issueOverlap: estimate({ a: 7, b: 9, confidence: 'likely' }),
     });
@@ -362,8 +362,8 @@ describe('runShip — the overlap estimate', () => {
         runSet: [{ epic: null, issues: [7, 8, 9] }],
         edges: [{ blocker: 7, dependent: 9 }],
       },
-      scout: {
-        issues: [7, 8, 9].map((issue) => ({ issue, stale: false, evidence: 'fresh' })),
+      issueReadiness: {
+        issues: [7, 8, 9].map((issue) => readyVerdict(issue)),
       },
     });
 
@@ -421,6 +421,6 @@ describe('runShip — live-run overlap', () => {
       'Declared edges (JSON): []',
       'Live runs (JSON): [{"branch":"ship/epic-9","landed":["src/a.ts"]}]',
     ]);
-    expect(run.calls.find((c) => c.label === 'scout')?.prompt).not.toContain('Live runs');
+    expect(run.calls.find((c) => c.label === 'issueReadiness')?.prompt).not.toContain('Live runs');
   });
 });

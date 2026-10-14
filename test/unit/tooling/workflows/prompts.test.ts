@@ -21,15 +21,14 @@ describe('the PR writer’s Epic line', () => {
   });
 });
 
-describe('the scout’s PR head', () => {
+describe('issue-readiness’s PR head', () => {
   it('names the PR head after the run set when given', () => {
-    expect(PROMPTS.scout({ issues: [7], prHead: 'origin/ship/epic-9' }).split('\n')).toEqual([
-      'Run-set issues: #7',
-      'PR head: origin/ship/epic-9',
-    ]);
+    expect(
+      PROMPTS.issueReadiness({ issues: [7], prHead: 'origin/ship/epic-9' }).split('\n'),
+    ).toEqual(['Run-set issues: #7', 'PR head: origin/ship/epic-9']);
   });
 
   it('names no PR head without one', () => {
-    expect(PROMPTS.scout({ issues: [7] }).split('\n')).toEqual(['Run-set issues: #7']);
+    expect(PROMPTS.issueReadiness({ issues: [7] }).split('\n')).toEqual(['Run-set issues: #7']);
   });
 });

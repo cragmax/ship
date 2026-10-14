@@ -1,16 +1,16 @@
 /**
  * The `ship` workflow's pre-flight phase (ADR-0045): everything a run must hold before it cuts
  * anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set — always
- * checked, since server-tier tdd runs lease it), the run gate, `live-runs`, the scout once over the
- * run set, then `issue-overlap` once over what it left and the unspent live runs' files.
+ * checked, since server-tier tdd runs lease it), the run gate, `live-runs`, `issue-readiness` once
+ * over the run set, then `issue-overlap` once over what it left and the unspent live runs' files.
  *
- * **Every refusal is collected**: no check stops the phase early but the scout's need for a run
- * set. No verdict, or a verdict missing its backing fields, is a refusal, as is a run-set issue the
- * scout returns no verdict for — never a pass. **Exclude mode** drops a stale issue with its
- * dependents ({@link dropWithDependents}); a live-run overlap, and any pair
- * {@link settleOverlap} keeps across two epics, still refuses. **An attached run**'s `no-open-pr`,
- * `slices-live` and `unpublished-commits` refuse like any check; {@link runScout} owns the target.
- * **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
+ * **Every refusal is collected**: no check stops the phase early but `issue-readiness`'s need for
+ * a run set. No verdict, a verdict missing its fields, or a run-set issue left unjudged is a
+ * refusal, never a pass. **Exclude mode** drops a stale or not-ready issue with its dependents
+ * ({@link dropWithDependents}); a live-run overlap, and any pair {@link settleOverlap} keeps across
+ * two epics, still refuses. **An attached run**'s `no-open-pr`, `slices-live` and
+ * `unpublished-commits` refuse like any check; `issue-readiness` and `issue-overlap` judge its PR
+ * head. **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
@@ -36,7 +36,8 @@ import {
   AGENT_CALLS,
   type EstimatedPair,
   type OverlapConfidence,
-  type ScoutVerdict,
+  type IssueReadiness,
+  type ReadinessVerdict,
 } from './agent-calls.js';
 import type { ShipArgs } from './args.js';
 import type { WorkflowHooks } from './hooks.types.js';
@@ -51,7 +52,7 @@ import {
 /**
  * What stopped a launch: `usage` (the arguments); a failed pre-flight check
  * or `preflight-error`; a gate failure kind or `gate-error`;
- * `live-runs-failed`; `stale` or `scout-unavailable` (the scout);
+ * `live-runs-failed`; `stale`, `not-ready` or `readiness-unavailable` (`issue-readiness`);
  * `empty-run-set` (exclude mode dropped everything); `overlap` (a live run),
  * `overlap-cross-epic` or `overlap-estimate-failed` (`issue-overlap`);
  * `source-shrank` (the launch's spent-run cleanup: a teardown found a link
@@ -65,8 +66,9 @@ export type ShipRefusalKind =
   | 'gate-error'
   | 'live-runs-failed'
   | 'stale'
+  | 'not-ready'
   | 'overlap'
-  | 'scout-unavailable'
+  | 'readiness-unavailable'
   | 'overlap-cross-epic'
   | 'overlap-estimate-failed'
   | 'source-shrank';
@@ -86,11 +88,11 @@ export interface DroppedIssue {
   /** The issue. */
   readonly issue: number;
   /**
-   * `gate`: the gate dropped it; `stale`: the scout found it stale; `dependent`: a dropped issue
-   * blocks it.
+   * `gate`: the gate dropped it; `stale` or `not-ready`: `issue-readiness` found it so;
+   * `dependent`: a dropped issue blocks it.
    */
-  readonly cause: 'gate' | 'stale' | 'dependent';
-  /** Why, from the gate or the scout. */
+  readonly cause: 'gate' | 'stale' | 'not-ready' | 'dependent';
+  /** Why, from the gate or `issue-readiness`. */
   readonly message: string;
 }
 
@@ -179,9 +181,12 @@ export async function runPreflight(
     return { refusals, dropped: [], graph: null, main, overlap: null, live };
   }
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const scout = await runScout(hooks, graph, args.attach);
+  const readiness = await AGENT_CALLS.issueReadiness(hooks, {
+    issues: runSetIssues(graph.runSet),
+    ...(args.attach === null ? {} : { prHead: `origin/${args.attach}` }),
+  });
   const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
-  return settleOverlap(hooks, settleScout(found, scout, args.exclude), args.attach);
+  return settleOverlap(hooks, settleReadiness(found, readiness, args.exclude), args.attach);
 }
 
 /**
@@ -414,55 +419,81 @@ function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
   return [{ kind: 'live-runs-failed', message: `pull request state unknown for ${branches}` }];
 }
 
-/** Run the scout over the gate's run set — for an attached run, against the target's PR head. */
-async function runScout(
-  hooks: WorkflowHooks,
-  graph: RunGraph,
-  attach: string | null,
-): Promise<ScoutVerdict | null> {
-  const issues = runSetIssues(graph.runSet);
-  return AGENT_CALLS.scout(hooks, {
-    issues,
-    ...(attach === null ? {} : { prHead: `origin/${attach}` }),
-  });
+/** Each rubric point of a {@link ReadinessVerdict}, with the name a refusal gives it. */
+const RUBRIC_POINTS = [
+  ['sliceable', 'sliceable'],
+  ['unblocked', 'unblocked'],
+  ['rightSized', 'right-sized'],
+  ['directionDecided', 'direction-decided'],
+  ['specified', 'specified'],
+] as const;
+
+/** An issue's failures, in order: `stale` for the tree, `not-ready` naming each failed point. */
+function readinessFailures(
+  v: ReadinessVerdict,
+): { readonly cause: 'stale' | 'not-ready'; readonly message: string }[] {
+  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
+  return [
+    ...(v.current.pass ? [] : [{ cause: 'stale' as const, message: v.current.evidence }]),
+    ...(failed.length === 0
+      ? []
+      : [
+          {
+            cause: 'not-ready' as const,
+            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
+          },
+        ]),
+  ];
 }
 
 /**
- * Fold the scout's verdict in: outside exclude mode stale issues refuse; in exclude mode they drop
- * with their dependents.
+ * Fold `issue-readiness`'s verdict in: outside exclude mode each stale or not-ready failure
+ * refuses; in exclude mode such an issue drops with its dependents.
  */
-function settleScout(
+function settleReadiness(
   found: PreflightOutcome & { readonly graph: RunGraph },
-  scout: ScoutVerdict | null,
+  readiness: IssueReadiness | null,
   exclude: boolean,
 ): PreflightOutcome {
   const issues = runSetIssues(found.graph.runSet);
-  const judged = new Set((scout?.issues ?? []).map((v) => v.issue));
+  const verdicts = (readiness?.issues ?? []).filter((v) => issues.includes(v.issue));
+  const judged = new Set(verdicts.map((v) => v.issue));
   const unjudged = issues.filter((n) => !judged.has(n));
   const refusals = [...found.refusals];
   if (unjudged.length > 0) {
     refusals.push({
-      kind: 'scout-unavailable',
-      message: `no scout verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
+      kind: 'readiness-unavailable',
+      message: `no issue-readiness verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
     });
   }
-  const stale = (scout?.issues ?? []).filter((v) => v.stale && issues.includes(v.issue));
+  const failing = verdicts
+    .map((v) => ({ issue: v.issue, failures: readinessFailures(v) }))
+    .filter((f) => f.failures.length > 0);
   if (!exclude) {
-    for (const v of stale) refusals.push({ kind: 'stale', issue: v.issue, message: v.evidence });
+    for (const f of failing) {
+      for (const x of f.failures)
+        refusals.push({ kind: x.cause, issue: f.issue, message: x.message });
+    }
     return { ...found, refusals };
   }
   const { graph, dependents } = dropWithDependents(
     found.graph,
-    stale.map((v) => v.issue),
+    failing.map((f) => f.issue),
   );
   if (graph.runSet.length === 0) {
-    refusals.push({ kind: 'empty-run-set', message: 'no issue is left after the stale drops' });
+    refusals.push({ kind: 'empty-run-set', message: 'no issue is left after the readiness drops' });
   }
   const dropped: DroppedIssue[] = [
     ...found.dropped,
-    ...stale.map((v): DroppedIssue => ({ issue: v.issue, cause: 'stale', message: v.evidence })),
+    ...failing.flatMap(({ issue, failures: [first] }): DroppedIssue[] =>
+      first === undefined ? [] : [{ issue, ...first }],
+    ),
     ...dependents.map(
-      (n): DroppedIssue => ({ issue: n, cause: 'dependent', message: 'blocked by a stale issue' }),
+      (n): DroppedIssue => ({
+        issue: n,
+        cause: 'dependent',
+        message: 'blocked by a dropped issue',
+      }),
     ),
   ];
   return { ...found, refusals, dropped, graph };
