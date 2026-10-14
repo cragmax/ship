@@ -21,7 +21,6 @@ import type {
   CommitSpecSchema,
   CriticFindingSchema,
   CriticOutputSchema,
-  DiffReviewOutputSchema,
   EstimatedPairSchema,
   ManifestTsdocOutputSchema,
   OverlapEstimateSchema,
@@ -41,19 +40,17 @@ import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
   type CriticValues,
-  type DiffReviewValues,
   type ManifestTsdocValues,
   type OverlapValues,
   type PrWriterValues,
   type ResolverValues,
   type RetroValues,
-  type ReviewerValues,
   type ScoutValues,
   type SliceReviewValues,
   type TddValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
-import { agentOptions, reviewOptions } from './stages.js';
+import { agentOptions } from './stages.js';
 
 /** The scout's answer. */
 export type ScoutVerdict = z.infer<typeof ScoutVerdictSchema>;
@@ -79,10 +76,7 @@ export type TddEvidence = z.infer<typeof TddEvidenceSchema>;
 /** The tdd's answer. */
 export type TddOutput = z.infer<typeof TddOutputSchema>;
 
-/** The diff reviewer's answer. */
-export type DiffReviewOutput = z.infer<typeof DiffReviewOutputSchema>;
-
-/** The reviewer's answer. */
+/** A slice review's answer: the spec review's or the standards review's. */
 export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 
 /** The Manifest TSDoc review's answer. */
@@ -104,10 +98,10 @@ export type TestReviewSkip = 'trivial surface' | 'comment-only';
 export interface SliceWork {
   /** The tdd's answer: its commit line and cite among it. */
   readonly tdd: TddOutput;
-  /** The diff reviewer's answer: its two checks' finding counts and its findings file. */
-  readonly diffReview: DiffReviewOutput;
-  /** The reviewer's answer. */
-  readonly review: ReviewOutput;
+  /** The spec review's answer. */
+  readonly specReview: ReviewOutput;
+  /** The standards review's answer. */
+  readonly standardsReview: ReviewOutput;
   /** The Manifest TSDoc review's answer, or why it was skipped. */
   readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
   /** The test reviewer's answer, or why it was skipped. */
@@ -187,17 +181,17 @@ export const AGENT_CALLS = {
       PROMPTS.tdd(values),
       agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd),
     ),
-  diffReview: (hooks: WorkflowHooks, values: DiffReviewValues, tag: string) =>
-    askAgent<DiffReviewOutput>(
-      hooks,
-      PROMPTS.diffReview(values),
-      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
-    ),
-  reviewer: (hooks: WorkflowHooks, values: ReviewerValues, tag: string) =>
+  specReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
     askAgent<ReviewOutput>(
       hooks,
-      PROMPTS.reviewer(values),
-      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      PROMPTS.specReview(values),
+      agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
+    ),
+  standardsReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
+    askAgent<ReviewOutput>(
+      hooks,
+      PROMPTS.standardsReview(values),
+      agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   manifestTsdoc: (hooks: WorkflowHooks, values: ManifestTsdocValues, tag: string) =>
     askAgent<ManifestTsdocOutput>(

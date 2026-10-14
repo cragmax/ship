@@ -58,7 +58,7 @@ export interface LandedIssue extends SliceWork {
 /** A slice's lease lines from one agent role. */
 export interface RoleLeaseLines {
   /** The agent whose lease runs printed them: `tdd`, `review` or `test-review`. */
-  readonly role: 'tdd' | 'review' | 'test-review';
+  readonly role: 'tdd' | 'spec-review' | 'standards-review' | 'test-review';
   /** Its `with-lease:` lines, as the agent transcribed them. */
   readonly lines: readonly string[];
 }
@@ -294,17 +294,18 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 /**
  * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
  *
- * @param work - The slice's tdd, review and test-review answers.
- * @returns The tdd's, then the review's, then the test review's; no
+ * @param work - The slice's tdd, slice review and test-review answers.
+ * @returns The tdd's, the spec review's, the standards review's, then the test review's; no
  *   test-review entry when it was skipped (a `TestReviewSkip` reason); lines unparsed and
  *   unfiltered.
  */
 export function sliceLeaseLines(
-  work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>,
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
 ): RoleLeaseLines[] {
   const roles: RoleLeaseLines[] = [
     { role: 'tdd', lines: work.tdd.leaseLines },
-    { role: 'review', lines: work.review.leaseLines },
+    { role: 'spec-review', lines: work.specReview.leaseLines },
+    { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
   if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
@@ -675,15 +676,14 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
-  const diff = landed.diffReview;
   const tsdoc = landed.manifestTsdoc;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
-    `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
+    `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
+    `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
       : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
@@ -718,7 +718,9 @@ function durationText(seconds: number): string {
  * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
-function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'review' | 'testReview'>): string {
+function sliceLeaseText(
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
+): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

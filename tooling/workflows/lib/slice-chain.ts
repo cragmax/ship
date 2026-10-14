@@ -19,7 +19,6 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,
-  type DiffReviewOutput,
   type ManifestTsdocOutput,
   type ManifestTsdocSkip,
   type ReviewOutput,
@@ -171,14 +170,14 @@ interface BuiltSlice extends ProvisionedSlice {
   readonly sha: string;
 }
 
-/** A diff-reviewed slice: the diff reviewer's answer. */
-interface DiffReviewedSlice extends BuiltSlice {
-  readonly diffReview: DiffReviewOutput;
+/** A spec-reviewed slice: the spec review's answer; `sha` its amend. */
+interface SpecReviewedSlice extends BuiltSlice {
+  readonly specReview: ReviewOutput;
 }
 
-/** A reviewed slice: the reviewer's answer; `sha` its amend. */
-interface ReviewedSlice extends DiffReviewedSlice {
-  readonly review: ReviewOutput;
+/** A reviewed slice: the standards review's answer too; `sha` its amend. */
+interface ReviewedSlice extends SpecReviewedSlice {
+  readonly standardsReview: ReviewOutput;
 }
 
 /** A Manifest-TSDoc-reviewed slice: its answer, or why it was skipped; `sha` its amend. */
@@ -234,8 +233,8 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
-  const diffReviewed = await atBoundary(built, at, diffReviewStage);
-  const reviewed = await atBoundary(diffReviewed, at, reviewStage);
+  const specReviewed = await atBoundary(built, at, specReviewStage);
+  const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
   const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
   return atBoundary(tsdocReviewed, at, testReviewStage);
 }
@@ -327,30 +326,30 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   return { next: { ...s, tdd, sha: tdd.sha } };
 }
 
-/**
- * Check the slice's commit, read-only, against the repo's rules and its
- * issue; the findings go to {@link diffReviewPath} for the reviewer.
- * `agent-died` when the diff reviewer returns nothing.
- */
-async function diffReviewStage(s: BuiltSlice): Promise<Step<DiffReviewedSlice>> {
+/** Hold the slice to its issue, amending its commit with any fix; `sha` its amend. */
+async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> {
   const { at } = s;
-  const values = { ...sliceCommitValues(s), findingsPath: diffReviewPath(at) };
-  const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
+  const out = await AGENT_CALLS.specReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'spec-review'),
+    at.tag,
+  );
   if (out === null) return { stop: died(at) };
-  return { next: { ...s, diffReview: out } };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `spec review: ${out.summary}`) };
+  return { next: { ...s, specReview: out, sha: out.sha } };
 }
 
-/**
- * Review the slice — the diff review's findings verified, its own
- * correctness pass — amending its commit with any fix; its output's `sha` is the amend.
- */
-async function reviewStage(s: DiffReviewedSlice): Promise<Step<ReviewedSlice>> {
+/** Hold the slice to the repo's rules, amending its commit with any fix; `sha` its amend. */
+async function standardsReviewStage(s: SpecReviewedSlice): Promise<Step<ReviewedSlice>> {
   const { at } = s;
-  const values = { ...sliceReviewValues(s, 'review'), findingsPath: diffReviewPath(at) };
-  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return { stop: died(at) };
-  if (review.verdict === 'blocked') return { stop: blocked(at, `review: ${review.summary}`) };
-  return { next: { ...s, review, sha: review.sha } };
+  const out = await AGENT_CALLS.standardsReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'standards-review'),
+    at.tag,
+  );
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `standards review: ${out.summary}`) };
+  return { next: { ...s, standardsReview: out, sha: out.sha } };
 }
 
 /**
@@ -431,10 +430,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, diffReview, review, manifestTsdoc, testReview } = s;
+    const { tdd, specReview, standardsReview, manifestTsdoc, testReview } = s;
     return {
       kind: 'landed',
-      work: { tdd, diffReview, review, manifestTsdoc, testReview },
+      work: { tdd, specReview, standardsReview, manifestTsdoc, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -486,8 +485,8 @@ async function endAttempt(
 }
 
 /**
- * Where the slice's server-tier runs lease from: the tdd, the reviewer and the test reviewer are
- * handed one recipe.
+ * Where the slice's server-tier runs lease from: the tdd and the slice reviews are handed one
+ * recipe.
  */
 function leaseValues(s: ProvisionedSlice): LeaseValues {
   return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
@@ -510,7 +509,7 @@ function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   };
 }
 
-/** The reviewer's or the test reviewer's prompt input, `report` its report's file-name prefix. */
+/** A slice review's or the test reviewer's prompt input, `report` its report's file-name prefix. */
 function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
   return {
     ...sliceCommitValues(s),
@@ -527,11 +526,6 @@ function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
  */
 function messagePath(at: AttemptId): string {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
-}
-
-/** The attempt's diff-review findings file: the diff reviewer writes it, the reviewer reads it. */
-function diffReviewPath(at: AttemptId): string {
-  return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
 
 /**

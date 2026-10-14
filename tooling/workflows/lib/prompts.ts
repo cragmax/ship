@@ -127,14 +127,8 @@ export interface SliceCommitValues {
   readonly files: readonly string[];
 }
 
-/** The diff reviewer's values: the slice's commit and where its findings go. */
-export interface DiffReviewValues extends SliceCommitValues {
-  /** Where the findings go; the reviewer reads them. */
-  readonly findingsPath: string;
-}
-
 /**
- * The reviewer's and the test reviewer's values: the slice's, and where its
+ * A slice review's and the test reviewer's values: the slice's, and where its
  * server-tier runs lease from.
  */
 export interface SliceReviewValues extends SliceCommitValues {
@@ -148,12 +142,6 @@ export interface SliceReviewValues extends SliceCommitValues {
 export interface ManifestTsdocValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;
-}
-
-/** The reviewer's values: the slice's, and the diff review's findings. */
-export interface ReviewerValues extends SliceReviewValues {
-  /** The diff review's findings file. */
-  readonly findingsPath: string;
 }
 
 /** `PROMPTS.critic`'s input: the epic's landed range, reviewed in a slice of its own. */
@@ -343,13 +331,8 @@ export const PROMPTS = {
         content: values.messageTemplate,
       }),
     ].join('\n'),
-  diffReview: (values: DiffReviewValues): string =>
-    [
-      ...sliceCommitLines(values),
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-    ].join('\n'),
-  reviewer: (values: ReviewerValues): string => sliceReviewPrompt(values, values.findingsPath),
+  specReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
+  standardsReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   manifestTsdoc: (values: ManifestTsdocValues): string =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
@@ -392,17 +375,12 @@ function sliceCommitLines(values: SliceCommitValues): string[] {
   ];
 }
 
-/**
- * The prompt of a stage that reviews the slice's commit and may amend it.
- *
- * @param findingsPath - The diff review's findings file; the reviewer's only.
- */
-function sliceReviewPrompt(values: SliceReviewValues, findingsPath?: string): string {
+/** The prompt of a stage that reviews the slice's commit and may amend it. */
+function sliceReviewPrompt(values: SliceReviewValues): string {
   return [
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
-    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease),
   ].join('\n');
 }

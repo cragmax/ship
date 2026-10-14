@@ -147,23 +147,13 @@ export const TddOutputSchema = z.object({
   reason: z.string().exactOptional(),
 });
 
-/** The diff reviewer's answer. */
-export const DiffReviewOutputSchema = z.object({
-  /** How many findings the rules check reported. */
-  rules: z.int(),
-  /** How many findings the plan check (the issue and its brief) reported. */
-  plan: z.int(),
-  /** The findings file written. */
-  findingsPath: z.string(),
-});
-
-/** The reviewer's answer. */
+/** A slice review's answer: the spec review's or the standards review's. */
 export const ReviewOutputSchema = z.object({
   /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
   verdict: z.enum(['clean', 'fixed', 'blocked']),
   /** The slice's commit after any amend. */
   sha: z.string(),
-  /** The review-fix summary, one line. */
+  /** The review's outcome, one line. */
   summary: z.string(),
   /** Every `with-lease:` release line its lease runs printed, verbatim, one per lease. */
   leaseLines: z.array(z.string()),
@@ -264,8 +254,8 @@ export const AGENT_OUTPUTS = {
   scout: ScoutVerdictSchema,
   overlapEstimator: OverlapEstimateSchema,
   tdd: TddOutputSchema,
-  diffReview: DiffReviewOutputSchema,
-  review: ReviewOutputSchema,
+  specReview: ReviewOutputSchema,
+  standardsReview: ReviewOutputSchema,
   manifestTsdoc: ManifestTsdocOutputSchema,
   testReview: TestReviewOutputSchema,
   resolver: ResolverOutputSchema,

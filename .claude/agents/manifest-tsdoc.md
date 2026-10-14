@@ -33,7 +33,7 @@ You audit the Manifest TSDoc ONE slice's commit reaches and amend your fixes in 
 
 ## Amend
 
-When you applied anything: run `npm run build`, stage your files by name (`git add -- <path>…`) and `git commit --amend --no-edit` under the hooks. A hook failure is fixed forward, then amend again. Check the contract: `git rev-list --count <Slice base>..HEAD` is `1`.
+When you applied anything, amend the slice per `unattended-agent` § Git.
 
 ## Output
 

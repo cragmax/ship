@@ -1128,16 +1128,17 @@ export const AGENT_OUTPUT_SCHEMAS = {
       'closes',
     ],
   },
-  diffReview: {
+  specReview: {
     type: 'object',
     properties: {
-      rules: { type: 'integer' },
-      plan: { type: 'integer' },
-      findingsPath: { type: 'string' },
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['rules', 'plan', 'findingsPath'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  review: {
+  standardsReview: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },

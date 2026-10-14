@@ -12,7 +12,8 @@ export const meta = {
     },
     {
       title: 'Issues',
-      detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
+      detail:
+        'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
     },
     {
       title: 'Epic end',
@@ -30,8 +31,8 @@ const STAGES = {
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
-  diffReview: { agentType: 'diff-reviewer', model: 'opus' },
-  reviewer: { agentType: 'reviewer', model: 'opus' },
+  specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+  standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
@@ -43,11 +44,6 @@ const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_ISSUE = 3;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
-const HIGH_EFFORT_FILE_COUNT = 5;
-function reviewEffort(files) {
-  const touchesSrc = files.some((path) => path.startsWith('src/'));
-  return touchesSrc || files.length > HIGH_EFFORT_FILE_COUNT ? 'high' : 'medium';
-}
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
 }
@@ -66,7 +62,8 @@ const SHIP_PHASES = [
   },
   {
     title: PHASE_TITLES.issues,
-    detail: 'per issue, in dependency order: tdd, diff review, review, test review, land',
+    detail:
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -107,9 +104,6 @@ function agentOptions(stage, detail, schema) {
     ...(row.effort === undefined ? {} : { effort: row.effort }),
     schema,
   };
-}
-function reviewOptions(stage, detail, schema, files) {
-  return { ...agentOptions(stage, detail, schema), effort: reviewEffort(files) };
 }
 
 const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'attach'];
@@ -662,13 +656,8 @@ const PROMPTS = {
         content: values.messageTemplate,
       }),
     ].join('\n'),
-  diffReview: (values) =>
-    [
-      ...sliceCommitLines(values),
-      `Findings file: ${values.findingsPath}`,
-      ...issueLines(values.issue, values.reportDir),
-    ].join('\n'),
-  reviewer: (values) => sliceReviewPrompt(values, values.findingsPath),
+  specReview: (values) => sliceReviewPrompt(values),
+  standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
@@ -709,12 +698,11 @@ function sliceCommitLines(values) {
     `Changed files: ${values.files.join(', ')}`,
   ];
 }
-function sliceReviewPrompt(values, findingsPath) {
+function sliceReviewPrompt(values) {
   return [
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
-    ...(findingsPath === undefined ? [] : [`Findings file: ${findingsPath}`]),
     ...serverTierLines(values.lease),
   ].join('\n');
 }
@@ -1837,16 +1825,17 @@ const AGENT_OUTPUT_SCHEMAS = {
       'closes',
     ],
   },
-  diffReview: {
+  specReview: {
     type: 'object',
     properties: {
-      rules: { type: 'integer' },
-      plan: { type: 'integer' },
-      findingsPath: { type: 'string' },
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
     },
-    required: ['rules', 'plan', 'findingsPath'],
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  review: {
+  standardsReview: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
@@ -2288,17 +2277,17 @@ const AGENT_CALLS = {
     ),
   tdd: (hooks, values, tag) =>
     askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
-  diffReview: (hooks, values, tag) =>
+  specReview: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.diffReview(values),
-      reviewOptions('diffReview', tag, AGENT_OUTPUT_SCHEMAS.diffReview, values.files),
+      PROMPTS.specReview(values),
+      agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
-  reviewer: (hooks, values, tag) =>
+  standardsReview: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.reviewer(values),
-      reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+      PROMPTS.standardsReview(values),
+      agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   manifestTsdoc: (hooks, values, tag) =>
     askAgent(
@@ -2465,7 +2454,8 @@ function prTitle(input) {
 function sliceLeaseLines(work) {
   const roles = [
     { role: 'tdd', lines: work.tdd.leaseLines },
-    { role: 'review', lines: work.review.leaseLines },
+    { role: 'spec-review', lines: work.specReview.leaseLines },
+    { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
   if (typeof work.testReview !== 'string') {
     roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
@@ -2680,15 +2670,14 @@ function retroLines(retro) {
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 function issueSection(landed) {
-  const diff = landed.diffReview;
   const tsdoc = landed.manifestTsdoc;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
-    `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
+    `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
+    `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
       : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
@@ -2782,8 +2771,8 @@ async function authorSlice(cut) {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
-  const diffReviewed = await atBoundary(built, at, diffReviewStage);
-  const reviewed = await atBoundary(diffReviewed, at, reviewStage);
+  const specReviewed = await atBoundary(built, at, specReviewStage);
+  const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
   const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
   return atBoundary(tsdocReviewed, at, testReviewStage);
 }
@@ -2855,20 +2844,27 @@ async function tddStage(s) {
   }
   return { next: { ...s, tdd, sha: tdd.sha } };
 }
-async function diffReviewStage(s) {
+async function specReviewStage(s) {
   const { at } = s;
-  const values = { ...sliceCommitValues(s), findingsPath: diffReviewPath(at) };
-  const out = await AGENT_CALLS.diffReview(at.ctx.hooks, values, at.tag);
+  const out = await AGENT_CALLS.specReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'spec-review'),
+    at.tag,
+  );
   if (out === null) return { stop: died(at) };
-  return { next: { ...s, diffReview: out } };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `spec review: ${out.summary}`) };
+  return { next: { ...s, specReview: out, sha: out.sha } };
 }
-async function reviewStage(s) {
+async function standardsReviewStage(s) {
   const { at } = s;
-  const values = { ...sliceReviewValues(s, 'review'), findingsPath: diffReviewPath(at) };
-  const review = await AGENT_CALLS.reviewer(at.ctx.hooks, values, at.tag);
-  if (review === null) return { stop: died(at) };
-  if (review.verdict === 'blocked') return { stop: blocked(at, `review: ${review.summary}`) };
-  return { next: { ...s, review, sha: review.sha } };
+  const out = await AGENT_CALLS.standardsReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'standards-review'),
+    at.tag,
+  );
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `standards review: ${out.summary}`) };
+  return { next: { ...s, standardsReview: out, sha: out.sha } };
 }
 async function manifestTsdocStage(s) {
   const { at } = s;
@@ -2928,10 +2924,10 @@ async function landSlice(s) {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, diffReview, review, manifestTsdoc, testReview } = s;
+    const { tdd, specReview, standardsReview, manifestTsdoc, testReview } = s;
     return {
       kind: 'landed',
-      work: { tdd, diffReview, review, manifestTsdoc, testReview },
+      work: { tdd, specReview, standardsReview, manifestTsdoc, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -2990,9 +2986,6 @@ function sliceReviewValues(s, report) {
 }
 function messagePath(at) {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
-}
-function diffReviewPath(at) {
-  return `${at.ctx.reportDir}/diff-review-${at.tag}.md`;
 }
 function haltedStop(at) {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };
