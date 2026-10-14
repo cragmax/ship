@@ -2124,7 +2124,7 @@ describe('agent-call tiers', () => {
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
       epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
-      retro: { agentType: 'retro', model: 'sonnet' },
+      retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
       prWriter: { agentType: 'pr-writer' },
     });
   });
