@@ -222,8 +222,10 @@ function issueOutcome(
       return committed
         ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
         : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
-    case 'unlanded':
-      return unlandedOutcome(issue, ending.primary, halted);
+    case 'unlanded': {
+      const outcome = unlandedOutcome(issue, ending.primary, halted);
+      return outcome === null || ending.kept === null ? outcome : { ...outcome, kept: ending.kept };
+    }
   }
 }
 

@@ -41,6 +41,7 @@ import {
   isRegistered,
   listTree,
   makeFixtureRepo,
+  mustRun,
   porcelain,
   prepareTemplate,
   runCli,
@@ -357,6 +358,8 @@ describe('usage errors', () => {
   it.each([
     { name: 'an unknown subcommand', args: ['frobnicate', 'x'] },
     { name: 'provision without --batch', args: ['provision', 'x'] },
+    { name: 'teardown --keep-to without --base', args: ['teardown', 'x', '--keep-to', 'k'] },
+    { name: 'teardown --report without --keep-to', args: ['teardown', 'x', '--report', 'r'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
@@ -553,6 +556,86 @@ describe('teardown with other worktrees nearby', () => {
     expect(branch.exitCode).toBe(0);
     expect(readFileSync(record, 'utf8')).toBe('the run record\n');
   });
+});
+
+describe('teardown keeping an unlanded attempt’s work', () => {
+  /** A slice off `main` with its base, and a tdd report outside it, in a run root. */
+  function sliceWithReport(): { main: string; slice: string; base: string; report: string } {
+    const main = makeFixtureRepo(root, template);
+    const base = mustRun('git', ['rev-parse', 'HEAD'], main).trim();
+    const slice = addWorktree(main, join(root, 'slice'), 'slice-7-1');
+    const report = join(root, 'reports', 'ship-7', 'tdd-7-1.md');
+    mkdirSync(dirname(report), { recursive: true });
+    writeFileSync(report, '# tdd 7-1\nBLOCKED at the probe\n');
+    return { main, slice, base, report };
+  }
+
+  it(
+    'writes a patch of the committed and uncommitted work that applies to the slice base, and copies the report, before removing the slice',
+    TIMEOUT,
+    () => {
+      const { main, slice, base, report } = sliceWithReport();
+      writeFileSync(join(slice, 'committed.txt'), 'committed on the slice branch\n');
+      mustRun('git', ['add', 'committed.txt'], slice);
+      mustRun('git', ['commit', '-q', '-m', 'slice work'], slice);
+      writeFileSync(join(slice, 'vitest.config.ts'), 'export default { edited: true };\n');
+      writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+      const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+      const down = runCli<TeardownResult>([
+        'teardown',
+        slice,
+        '--keep-to',
+        kept,
+        '--base',
+        base,
+        '--report',
+        report,
+      ]);
+
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+      expect(down.json.removed).toBe(true);
+      expect(existsSync(slice)).toBe(false);
+      expect(down.json.kept).toEqual({
+        patch: `${kept}/slice.patch`,
+        report: `${kept}/tdd-7-1.md`,
+      });
+      expect(readFileSync(`${kept}/tdd-7-1.md`, 'utf8')).toBe('# tdd 7-1\nBLOCKED at the probe\n');
+      mustRun('git', ['apply', `${kept}/slice.patch`], main);
+      expect(readFileSync(join(main, 'committed.txt'), 'utf8')).toBe(
+        'committed on the slice branch\n',
+      );
+      expect(readFileSync(join(main, 'vitest.config.ts'), 'utf8')).toBe(
+        'export default { edited: true };\n',
+      );
+      expect(readFileSync(join(main, 'untracked.txt'), 'utf8')).toBe('never staged\n');
+    },
+  );
+
+  it(
+    'writes no patch for a slice with no diff from its base, still copying the report',
+    TIMEOUT,
+    () => {
+      const { slice, base, report } = sliceWithReport();
+      const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+      const down = runCli<TeardownResult>([
+        'teardown',
+        slice,
+        '--keep-to',
+        kept,
+        '--base',
+        base,
+        '--report',
+        report,
+      ]);
+
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+      expect(down.json.kept).toEqual({ patch: null, report: `${kept}/tdd-7-1.md` });
+      expect(existsSync(`${kept}/slice.patch`)).toBe(false);
+      expect(existsSync(slice)).toBe(false);
+    },
+  );
 });
 
 describe.skipIf(!WIN32)('provision', () => {

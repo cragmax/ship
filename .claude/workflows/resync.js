@@ -223,6 +223,7 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
+      `Kept dir: ${values.keptDir}`,
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
@@ -814,8 +815,13 @@ const TOOL_ENVELOPE_SCHEMAS = {
       },
       removed: { type: 'boolean' },
       registered: { type: 'boolean' },
+      kept: {
+        type: ['object', 'null'],
+        properties: { patch: { type: ['string', 'null'] }, report: { type: ['string', 'null'] } },
+        required: ['patch', 'report'],
+      },
     },
-    required: ['status', 'errors', 'removed', 'registered'],
+    required: ['status', 'errors', 'removed', 'registered', 'kept'],
   },
   'retire-run': {
     type: 'object',

@@ -2,7 +2,8 @@
  * `teardown <worktree>` — remove a slice or batch worktree without ever
  * letting git or a recursive delete follow a live link into its target.
  *
- * Invariant: nothing is mutated before the refusal guards pass, and
+ * Invariant: nothing is mutated before the refusal guards pass; any work asked kept
+ * ({@link KeepRequest}) is written before the first unlink; and
  * `git worktree remove` runs only once no link remains in the worktree and
  * no external link target has lost entries since teardown started. After
  * any outcome `registered` is re-read from git, so a caller sees a half
@@ -13,14 +14,17 @@
  * `git worktree prune` drops a still-registered entry.
  */
 
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { posix } from 'node:path';
 
+import { runCaptured } from './exec.js';
 import {
   assertNotSelfHosted,
   git,
   isInside,
   listWorktrees,
   requireWorktreeRoot,
+  resolveCommit,
   samePath,
 } from './git.js';
 import { countSource, findLinks, isRealDir, unlinkLink } from './links.js';
@@ -42,6 +46,19 @@ export interface TeardownDeps {
 
 const DEFAULT_DEPS: TeardownDeps = { unlink: unlinkLink, selfPath: import.meta.filename };
 
+/** What to keep before the worktree goes: `--keep-to <dir> --base <sha> [--report <file>]`. */
+export interface KeepRequest {
+  /** Where the work is kept, absolute with forward slashes; created when missing. */
+  readonly dir: string;
+  /** The commit the patch is taken from: the slice base. */
+  readonly base: string;
+  /** A file copied into `dir` under its own name, when it exists. */
+  readonly report?: string;
+}
+
+/** The patch's file name in {@link KeepRequest.dir}. */
+const PATCH_FILE = 'slice.patch';
+
 /**
  * Tear down a worktree, keeping the file header's invariant.
  *
@@ -49,13 +66,15 @@ const DEFAULT_DEPS: TeardownDeps = { unlink: unlinkLink, selfPath: import.meta.f
  * @param deps - Seams; each defaults to production. `unlink` lets a test
  *   simulate a followed link or a surviving one; `selfPath` lets it
  *   exercise the self-hosted guard.
+ * @param keep - Work to keep first ({@link keepWork}); an absent worktree keeps nothing.
  * @returns The envelope: `ok` with `removed: true`, or with `removed: false`
  *   when the path was already absent; `refused` with `reason` and the
- *   worktree left registered; or `failed` with the step.
+ *   worktree left registered; or `failed` with the step — `keep` leaving the worktree in place.
  */
 export function teardownWorktree(
   worktree: string,
   deps: Partial<TeardownDeps> = {},
+  keep: KeepRequest | null = null,
 ): TeardownResult {
   const { unlink, selfPath } = { ...DEFAULT_DEPS, ...deps };
   const result: TeardownResult = {
@@ -67,12 +86,13 @@ export function teardownWorktree(
     sources: [],
     removed: false,
     registered: true,
+    kept: null,
   };
   let main = '';
   try {
     if (existsSync(worktree)) {
       main = requireWorktreeRoot(worktree, 'preconditions').main;
-      removeWorktree(worktree, main, { unlink, selfPath }, result);
+      removeWorktree(worktree, main, { unlink, selfPath }, keep, result);
     } else {
       main = pruneGoneWorktree();
     }
@@ -91,9 +111,11 @@ function removeWorktree(
   worktree: string,
   main: string,
   { unlink, selfPath }: TeardownDeps,
+  keep: KeepRequest | null,
   result: TeardownResult,
 ): void {
   assertGuards(worktree, main, selfPath);
+  if (keep !== null) result.kept = keepWork(worktree, keep);
   escapeCwd(worktree, main);
   const links = findLinks(worktree);
   baselineSources(worktree, links, result);
@@ -104,6 +126,42 @@ function removeWorktree(
   assertGone(worktree);
   result.removed = true;
   assertSourcesIntact(result, 'post-remove-recount');
+}
+
+/**
+ * Write {@link PATCH_FILE} (the binary diff from `keep.base` to every unignored file, staged in the
+ * worktree's own index first; skipped when empty) and the copy of `keep.report` into `keep.dir`.
+ * @throws StepFailure `keep` when `keep.base` is no commit, git fails, or a write fails.
+ */
+function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResult['kept']> {
+  const base = resolveCommit(worktree, keep.base, 'keep');
+  git(worktree, ['add', '-A'], 'keep');
+  const diff = runCaptured('git', ['-C', worktree, 'diff', '--cached', '--binary', base], {
+    cwd: process.cwd(),
+  });
+  if (diff.exitCode !== 0)
+    throw new StepFailure('keep', `git diff failed in ${worktree}`, diff.tail);
+  try {
+    mkdirSync(keep.dir, { recursive: true });
+    let patch: string | null = null;
+    if (diff.stdout !== '') {
+      patch = `${keep.dir}/${PATCH_FILE}`;
+      // execa strips the final newline, without which git apply reads the last hunk as corrupt.
+      writeFileSync(
+        patch,
+        `${diff.stdout}
+`,
+      );
+    }
+    let report: string | null = null;
+    if (keep.report !== undefined && existsSync(keep.report)) {
+      report = `${keep.dir}/${posix.basename(keep.report)}`;
+      copyFileSync(keep.report, report);
+    }
+    return { patch, report };
+  } catch (err) {
+    throw new StepFailure('keep', err instanceof Error ? err.message : String(err));
+  }
 }
 
 /**

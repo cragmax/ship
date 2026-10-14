@@ -105,9 +105,12 @@ export const TOOL_ENVELOPES = {
   })
     .required({ at: true })
     .extend({ errors: ERRORS }),
-  teardown: TeardownResultSchema.pick({ ...STATUS, removed: true, registered: true }).extend({
-    errors: ERRORS,
-  }),
+  teardown: TeardownResultSchema.pick({
+    ...STATUS,
+    removed: true,
+    registered: true,
+    kept: true,
+  }).extend({ errors: ERRORS }),
   'retire-run': RetireRunResultSchema.pick(STATUS).extend({ errors: ERRORS }),
   'sync-master': SyncMasterResultSchema.pick({
     ...STATUS,

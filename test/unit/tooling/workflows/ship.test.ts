@@ -94,6 +94,7 @@ const TEARDOWN_SHRANK = {
   reason: 'source-shrank',
   removed: false,
   registered: true,
+  kept: null,
   errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
 };
 
@@ -829,6 +830,81 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
+  describe('an unlanded attempt keeps its work outside the run root', () => {
+    // The cut's `at` (2026-09-29T10:00:00.000Z), made path-safe, tells a re-run's attempt apart.
+    const KEPT = 'C:/src/main/reports/kept/slice-7-1-2026-09-29T10-00-00-000Z';
+    const SLICE = 'C:/src/ph-runs/7/slice-7-1';
+    const teardownArgv = (run: FakeRun): readonly string[] | undefined =>
+      run.calls.find((c) => c.label === 'runner:teardown:7-1')?.argv;
+
+    it('asks the teardown of a blocked attempt to keep its patch from the slice base and its tdd report', async () => {
+      const run = fakeHooks(TDD_STALE);
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(teardownArgv(run)).toEqual([
+        'tooling/worktree.ts',
+        'teardown',
+        SLICE,
+        '--keep-to',
+        KEPT,
+        '--base',
+        'cut1',
+        '--report',
+        `${REPORT_DIR}/tdd-7-1.md`,
+      ]);
+    });
+
+    it('asks the teardown of a landed attempt to keep nothing', async () => {
+      const run = fakeHooks();
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(teardownArgv(run)).toEqual(['tooling/worktree.ts', 'teardown', SLICE]);
+    });
+
+    it('tells the tdd where its work is kept', async () => {
+      const run = fakeHooks(TDD_STALE);
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(promptOf(run, 'tdd:7-1').split('\n')).toContain(`Kept dir: ${KEPT}`);
+    });
+
+    it('names the kept paths, not the report dir, in the issue comment and the run report', async () => {
+      const kept = { patch: `${KEPT}/slice.patch`, report: `${KEPT}/tdd-7-1.md` };
+      const run = fakeHooks({
+        ...TDD_STALE,
+        'runner:teardown': {
+          exitCode: 0,
+          envelopePath: 'e.json',
+          status: 'ok',
+          errors: [],
+          removed: true,
+          registered: false,
+          kept,
+        },
+      });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      const posted = run.calls.find((c) => c.label === 'runner:post-issue-comment:7')?.prompt ?? '';
+      expect(posted.split('\n')).toContain(
+        `Run: branch \`ship/7\`, no pull request. Kept: patch \`${KEPT}/slice.patch\`, tdd report \`${KEPT}/tdd-7-1.md\`.`,
+      );
+      expect(posted).not.toContain('Report dir:');
+      expect(report.epics[0]?.issues).toEqual([
+        {
+          issue: 7,
+          outcome: 'blocked',
+          cite: 'see',
+          reason: expect.stringMatching(/BLOCKED/),
+          kept,
+        },
+      ]);
+    });
+  });
+
   describe('a blocked issue hears why', () => {
     const COMMENT_FILE = `${REPORT_DIR}/issue-comment-7.md`;
 
@@ -1501,7 +1577,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it('orders the tdd’s prompt: the slice, the issue’s lines, its report, the server-tier recipe, then the message template', async () => {
+  it('orders the tdd’s prompt: the slice, the issue’s lines, its report, its kept dir, the server-tier recipe, then the message template', async () => {
     const run = fakeHooks();
 
     await runShip(run.hooks, 'issues 7');
@@ -1519,6 +1595,7 @@ describe('runShip — what an attempt hands on', () => {
       'Issue file',
       'Issue command',
       'Report file',
+      'Kept dir',
       'Lease command',
       'Lease version',
       'Probe caps',
@@ -1881,6 +1958,7 @@ describe('runAttempt — how an attempt ends', () => {
           size: { files: 2, lines: 40 },
           halt: null,
           residue: null,
+          kept: null,
           startedAt: '2026-09-29T10:00:00.000Z',
         },
       ],
@@ -1892,6 +1970,7 @@ describe('runAttempt — how an attempt ends', () => {
           primary: { kind: 'harvest-conflict', issue: 7 },
           halt: null,
           residue: null,
+          kept: null,
           startedAt: '2026-09-29T10:00:00.000Z',
         },
       ],
@@ -1903,6 +1982,7 @@ describe('runAttempt — how an attempt ends', () => {
           primary: { kind: 'blocked', issue: 7, reason: 'cut-slice failed: worktree add failed' },
           halt: null,
           residue: null,
+          kept: null,
           startedAt: '2026-09-29T10:00:00.000Z',
         },
       ],

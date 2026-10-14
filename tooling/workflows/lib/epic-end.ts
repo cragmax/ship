@@ -45,6 +45,7 @@ import {
   runPlace,
   runTool,
   type BumpOutput,
+  type KeptWork,
   type PublishOutput,
   type ToolOutputs,
 } from './tool-calls.js';
@@ -70,6 +71,8 @@ export interface IssueReport {
   readonly commit?: string;
   /** Why, when it did not land. */
   readonly reason?: string;
+  /** Where its unlanded attempt's work was kept, when its teardown answered a `kept`. */
+  readonly kept?: KeptWork;
 }
 
 /** One issue the run blocked, and whether its reason reached the issue as a comment. */
@@ -289,8 +292,7 @@ async function commentBlockedStep(
     if (issue.outcome !== 'blocked') continue;
     const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
     const content = renderBlockedComment({
-      issue: issue.issue,
-      ...(issue.reason === undefined ? {} : { reason: issue.reason }),
+      ...issue,
       ...(pr === undefined ? {} : { pr }),
       branch: entry.branch,
       reportDir: entry.reportDir,

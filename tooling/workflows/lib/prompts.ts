@@ -108,6 +108,8 @@ export interface TddValues {
   readonly reportDir: string;
   /** The tdd's full report. */
   readonly reportPath: string;
+  /** Where the attempt's work and report are kept should it not land. */
+  readonly keptDir: string;
   /** Where the commit message goes; the commit and the landing both read it. */
   readonly messagePath: string;
   /** The commit message, its first line and closing keyword left as placeholders. */
@@ -365,6 +367,7 @@ export const PROMPTS = {
       `Slice base: ${values.base}`,
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
+      `Kept dir: ${values.keptDir}`,
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,

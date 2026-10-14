@@ -67,7 +67,7 @@ import {
 } from './worktree/schemas-run.js';
 import { stagedGuard } from './worktree/staged-set.js';
 import { syncMaster } from './worktree/sync-master.js';
-import { teardownWorktree } from './worktree/teardown.js';
+import { teardownWorktree, type KeepRequest } from './worktree/teardown.js';
 import { recordFailure, type ResultBase } from './worktree/types.js';
 
 /** A command line that cannot be dispatched — exit 2. */
@@ -145,9 +145,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   teardown: {
     schema: TeardownResultSchema,
     valueFlags: [],
+    optionFlags: ['--keep-to', '--base', '--report'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => teardownWorktree(args.target),
+    run: (args) => teardownWorktree(args.target, {}, keepFlags(args)),
   },
   harvest: {
     schema: HarvestResultSchema,
@@ -400,6 +401,27 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
   else if (rest.max === rest.min && rest.max > 0) expected += ` plus ${String(rest.max)} more`;
   else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
   throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
+}
+
+/**
+ * Read `teardown`'s keep flags: `--keep-to` and `--base` go together; `--report` needs them.
+ *
+ * @returns The request, its paths resolved ({@link toTarget}); `null` with none of the flags.
+ * @throws UsageError for any other combination.
+ */
+function keepFlags(args: ParsedArgs): KeepRequest | null {
+  const dir = args.values.get('--keep-to');
+  const base = args.values.get('--base');
+  const report = args.values.get('--report');
+  if (dir === undefined && base === undefined && report === undefined) return null;
+  if (dir === undefined || base === undefined) {
+    throw new UsageError('teardown --keep-to and --base go together; --report needs both');
+  }
+  return {
+    dir: toTarget(dir),
+    base,
+    ...(report === undefined ? {} : { report: toTarget(report) }),
+  };
 }
 
 /**

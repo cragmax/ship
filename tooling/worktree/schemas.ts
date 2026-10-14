@@ -193,6 +193,18 @@ export const TeardownResultSchema = ResultBaseSchema.extend({
   removed: z.boolean(),
   /** Whether git still lists the worktree after the command. */
   registered: z.boolean(),
+  /**
+   * What `--keep-to` kept, written before anything is removed; `null` without `--keep-to`, or
+   * when teardown stopped before keeping.
+   */
+  kept: z
+    .object({
+      /** The patch from `--base` to the worktree's files; `null` when they do not differ. */
+      patch: z.string().nullable(),
+      /** The copy of `--report`; `null` when none was given or it did not exist. */
+      report: z.string().nullable(),
+    })
+    .nullable(),
 });
 
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */

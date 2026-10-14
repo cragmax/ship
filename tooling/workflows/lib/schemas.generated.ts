@@ -526,8 +526,13 @@ export const TOOL_ENVELOPE_SCHEMAS = {
       },
       removed: { type: 'boolean' },
       registered: { type: 'boolean' },
+      kept: {
+        type: ['object', 'null'],
+        properties: { patch: { type: ['string', 'null'] }, report: { type: ['string', 'null'] } },
+        required: ['patch', 'report'],
+      },
     },
-    required: ['status', 'errors', 'removed', 'registered'],
+    required: ['status', 'errors', 'removed', 'registered', 'kept'],
   },
   'retire-run': {
     type: 'object',

@@ -280,8 +280,9 @@ describe('runResync — spent cleanup', () => {
       errors: [{ step: 'remove', message: 'busy' }],
       removed: false,
       registered: true,
+      kept: null,
     };
-    const teardown = { ...OK, removed: true, registered: false };
+    const teardown = { ...OK, removed: true, registered: false, kept: null };
     const run = resyncHooks({
       ...liveRuns({}, {}),
       'runner:teardown:spent-1': failed,
@@ -303,6 +304,7 @@ describe('runResync — spent cleanup', () => {
       errors: [{ step: 'unlink', message: 'node_modules lost files' }],
       removed: false,
       registered: true,
+      kept: null,
     };
     const run = resyncHooks({ ...liveRuns({}), 'runner:teardown': shrank });
 

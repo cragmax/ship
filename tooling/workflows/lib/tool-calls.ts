@@ -135,6 +135,9 @@ export type LandOutput = EnvelopeOutput<'land'>;
 /** `teardown`'s consumed fields. */
 export type TeardownOutput = EnvelopeOutput<'teardown'>;
 
+/** The paths a teardown kept a slice's work at, `null` for each it did not write. */
+export type KeptWork = NonNullable<TeardownOutput['kept']>;
+
 /** `retire-run`'s consumed fields. */
 export type RetireRunOutput = EnvelopeOutput<'retire-run'>;
 
