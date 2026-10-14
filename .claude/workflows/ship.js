@@ -29,7 +29,7 @@ const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   scout: { agentType: 'scout' },
   overlapEstimator: { agentType: 'overlap-estimator' },
-  tdd: { agentType: 'ship-tdd', model: 'opus' },
+  tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
   resolver: { agentType: 'reviewer', model: 'opus' },
