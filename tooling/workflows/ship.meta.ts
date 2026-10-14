@@ -11,8 +11,8 @@ import { MAX_SLICES, SHIP_PHASES } from './lib/stages.js';
 export const SHIP_META: WorkflowMeta = {
   name: 'ship',
   description:
-    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue planned, ' +
-    'authored, reviewed and landed on its epic branch in dependency order, then the epic end ' +
+    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue built from its ' +
+    'brief, reviewed and landed on its epic branch in dependency order, then the epic end ' +
     'and one pull request per epic.',
   // The main-loop model writes the launch call (given a bare `/ship 92`, it chose `issues 92`)
   // and reads this when deciding whether to resume a run.

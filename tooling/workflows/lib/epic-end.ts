@@ -580,8 +580,8 @@ function leaseTotals(
 }
 
 /**
- * Judge the landed change as one on the batch's final tree; never rejects. Profiled for an entry
- * with no epic. An issue that did not land forces `rejected`, whatever the review answered.
+ * Judge the landed change as one, once the test audit has landed; never rejects. Profiled for an
+ * entry with no epic. An issue that did not land forces `rejected`, whatever the review answered.
  */
 async function epicReviewStep(input: EpicEndInput): Promise<EpicReviewReport> {
   const { entry } = input;
