@@ -509,7 +509,7 @@ async function openPr(
     bodyPath,
     '--log',
     `${entry.reportDir}/publish.log`,
-    ...(found.state.epicReview?.verdict === 'rejected' ? ['--draft'] : []),
+    ...(draft(found.state.epicReview) ? ['--draft'] : []),
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
   const published = publishedPr(await runTool(hooks, 'publish', argv, place));
@@ -521,6 +521,11 @@ async function openPr(
     if ('failure' in posted) failures.push(posted.failure);
   }
   return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
+}
+
+/** Whether the PR opens as a draft: the epic review rejected the change, or judged nothing. */
+function draft(review: EpicReviewReport | undefined): boolean {
+  return review?.verdict === 'rejected' || review?.verdict === null;
 }
 
 /** What a PR body and an attached run's section report, but the PR writer's answer. */

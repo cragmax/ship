@@ -617,7 +617,7 @@ describe('runShip — the epic review', () => {
     expect(report.epics[0]).toMatchObject({ epicReview: { verdict: 'rejected' } });
   });
 
-  it('records a review that returned nothing as not run, and opens the PR ready', async () => {
+  it('records a review that returned nothing as not run, and opens the PR as a draft', async () => {
     const run = fakeHooks({ epicReview: null });
 
     await runShip(run.hooks, 'issues 7');
@@ -631,7 +631,7 @@ describe('runShip — the epic review', () => {
       '',
       '## Summary',
     ]);
-    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).not.toContain('--draft');
+    expect(run.calls.find((c) => c.label === 'runner:publish:list')?.argv).toContain('--draft');
   });
 });
 

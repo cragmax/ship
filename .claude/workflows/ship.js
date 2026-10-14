@@ -3473,7 +3473,7 @@ async function openPr(input, found, checked) {
     bodyPath,
     '--log',
     `${entry.reportDir}/publish.log`,
-    ...(found.state.epicReview?.verdict === 'rejected' ? ['--draft'] : []),
+    ...(draft(found.state.epicReview) ? ['--draft'] : []),
   ];
   const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
   const published = publishedPr(await runTool(hooks, 'publish', argv, place));
@@ -3485,6 +3485,9 @@ async function openPr(input, found, checked) {
     if ('failure' in posted) failures.push(posted.failure);
   }
   return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
+}
+function draft(review) {
+  return review?.verdict === 'rejected' || review?.verdict === null;
 }
 function bodyInput(input, found, checked) {
   const { entry } = input;

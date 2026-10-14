@@ -170,7 +170,7 @@ export interface PrBodyInput {
   readonly mainUntouched: boolean | null;
   /** The test audit's part. */
   readonly auditTests: AuditTestsReport;
-  /** The epic review's part: it leads the body, and `rejected` opens the PR as a draft. */
+  /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
   /** The overlap edges pre-flight added to the entry. */
   readonly overlap: OverlapRecord;
