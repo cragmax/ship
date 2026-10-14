@@ -23,7 +23,7 @@ describe('parseBlockedBySection — list-item forms', () => {
   });
 });
 
-// regression: real bodies (#504–#619) declare blockers with no list marker.
+// regression: real issue bodies declare blockers with no list marker.
 describe('parseBlockedBySection — marker-less lines', () => {
   it.each([
     ['#617 — depends on Slice 1 establishing `test/unit/tooling/manifest.test.ts`.', [617]],

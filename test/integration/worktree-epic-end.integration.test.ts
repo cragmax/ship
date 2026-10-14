@@ -897,7 +897,7 @@ describe('post-issue-comment', () => {
 });
 
 describe('usage errors', () => {
-  // #1059: the epic end's local server tier moved to PR CI
+  // The epic end has no local server tier: it runs in PR CI.
   it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
     const run = runCli(['server-tier', 'b', '--engine', 'paper', '--registry', 'r', '--log', 'l'], {
       cwd: root,

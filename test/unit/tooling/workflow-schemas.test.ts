@@ -66,7 +66,7 @@ const optionalOf = (schemas: Readonly<Record<string, JsonSchema>>) =>
 
 const WORKTREE_OPTIONAL = ['reason', 'stderrTail'];
 
-// The construct set the workflow runtime has been seen to accept (#1047).
+// The construct set the workflow runtime has been seen to accept.
 const ALLOWED_KEYS = ['description', 'enum', 'items', 'properties', 'required', 'type'];
 const ALLOWED_TYPES = ['array', 'boolean', 'integer', 'null', 'object', 'string'];
 
@@ -126,7 +126,7 @@ describe('consumed fields are required', () => {
     });
   });
 
-  // Hand-written: a probe record's measured duration, whole seconds (#1086).
+  // Hand-written: a probe record's measured duration, whole seconds.
   it.each<'planCard' | 'tdd'>(['planCard', 'tdd'])(
     'requires the %s probe record’s duration in whole seconds',
     (name) => {
