@@ -424,6 +424,41 @@ describe('runShip — one issue from launch to PR', () => {
     });
   });
 
+  it('runs the Manifest TSDoc review after the reviewer on a slice changing src/, the test review reading its amend', async () => {
+    const files = ['src/fluent/wrapped-bot/types.ts', 'test/unit/x.test.ts'];
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files },
+      manifestTsdoc: { verdict: 'fixed', sha: 'slice2m', summary: 'sharpened walkTo' },
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => AFTER_BUILD_CALL.test(l))).toEqual([
+      'tdd:7-1',
+      'diffReview:7-1',
+      'reviewer:7-1',
+      'manifestTsdoc:7-1',
+      'testReview:7-1',
+      'runner:land:7-1',
+      'runner:teardown:7-1',
+    ]);
+    const call = run.calls.find((c) => c.label === 'manifestTsdoc:7-1');
+    expect({ agentType: call?.agentType, model: call?.model, effort: call?.effort }).toEqual({
+      agentType: 'manifest-tsdoc',
+      model: 'opus',
+      effort: 'high',
+    });
+    expect(promptOf(run, 'manifestTsdoc:7-1').split('\n')).toEqual([
+      'Issue: #7',
+      'Slice worktree: C:/src/ph-runs/7/slice-7-1',
+      'Slice base: cut1',
+      'Slice commit: slice2',
+      'Changed files: src/fluent/wrapped-bot/types.ts, test/unit/x.test.ts',
+      `Report file: ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+    ]);
+    expect(promptOf(run, 'testReview:7-1').split('\n')).toContain('Slice commit: slice2m');
+  });
+
   it('hands each command its paths from the envelopes before it', async () => {
     const run = fakeHooks();
 
@@ -1141,7 +1176,8 @@ describe('runShip — an attempt through the build', () => {
   );
 });
 
-const AFTER_BUILD_CALL = /^(tdd|diffReview|reviewer|testReview|runner:(land|teardown)):\d/;
+const AFTER_BUILD_CALL =
+  /^(tdd|diffReview|reviewer|manifestTsdoc|testReview|runner:(land|teardown)):\d/;
 const UP_TO_REVIEW = ['tdd:7-1', 'diffReview:7-1', 'reviewer:7-1'];
 const UP_TO_LAND = [...UP_TO_REVIEW, 'testReview:7-1', 'runner:land:7-1'];
 const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
@@ -1167,6 +1203,15 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     },
     [...UP_TO_REVIEW, 'runner:teardown:7-1'],
     'a stage threw: runtime crashed',
+  ],
+  [
+    'blocked by the Manifest TSDoc review',
+    {
+      tdd: { ...TDD_GREEN, files: ['src/fluent/wrapped-bot/types.ts'] },
+      manifestTsdoc: { verdict: 'blocked', sha: '', summary: 'a hook failure would not clear' },
+    },
+    [...UP_TO_REVIEW, 'manifestTsdoc:7-1', 'runner:teardown:7-1'],
+    'manifest tsdoc: a hook failure would not clear',
   ],
   [
     'blocked by the test reviewer',
@@ -1984,6 +2029,7 @@ describe('runAttempt — how an attempt ends', () => {
               summary: 'renamed a helper',
               leaseLines: [],
             },
+            manifestTsdoc: 'no src/ change',
             testReview: {
               verdict: 'hardened',
               sha: 'slice3',
@@ -2171,6 +2217,7 @@ describe('agent-call tiers', () => {
       tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
       diffReview: { agentType: 'diff-reviewer', model: 'opus' },
       reviewer: { agentType: 'reviewer', model: 'opus' },
+      manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       testReview: { agentType: 'ship-test-review', model: 'opus' },
       critic: { agentType: 'critic' },

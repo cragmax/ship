@@ -33,6 +33,7 @@ export const STAGES = {
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
+  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },

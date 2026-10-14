@@ -1147,6 +1147,15 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
+  manifestTsdoc: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'summary'],
+  },
   testReview: {
     type: 'object',
     properties: {

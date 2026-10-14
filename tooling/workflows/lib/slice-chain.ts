@@ -20,6 +20,8 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 import {
   AGENT_CALLS,
   type DiffReviewOutput,
+  type ManifestTsdocOutput,
+  type ManifestTsdocSkip,
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
@@ -179,8 +181,13 @@ interface ReviewedSlice extends DiffReviewedSlice {
   readonly review: ReviewOutput;
 }
 
+/** A Manifest-TSDoc-reviewed slice: its answer, or why it was skipped; `sha` its amend. */
+interface TsdocReviewedSlice extends ReviewedSlice {
+  readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
+}
+
 /** An authored slice: the test reviewer's answer, or why it was skipped; `sha` the last amend. */
-interface AuthoredSlice extends ReviewedSlice {
+interface AuthoredSlice extends TsdocReviewedSlice {
   readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
@@ -229,7 +236,8 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const built = await atBoundary(provisioned, at, tddStage);
   const diffReviewed = await atBoundary(built, at, diffReviewStage);
   const reviewed = await atBoundary(diffReviewed, at, reviewStage);
-  return atBoundary(reviewed, at, testReviewStage);
+  const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
+  return atBoundary(tsdocReviewed, at, testReviewStage);
 }
 
 /** Pass a stop on; else stop for a halting entry; else run the next stage. */
@@ -346,10 +354,29 @@ async function reviewStage(s: DiffReviewedSlice): Promise<Step<ReviewedSlice>> {
 }
 
 /**
+ * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the tdd
+ * changed a path under `src/`; `sha` its amend.
+ */
+async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<TsdocReviewedSlice>> {
+  const { at } = s;
+  if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
+    return { next: { ...s, manifestTsdoc: 'no src/ change' } };
+  }
+  const values = {
+    ...sliceCommitValues(s),
+    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+  };
+  const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
+  return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
+}
+
+/**
  * Harden the tests on the slice's final shape, unless {@link testReviewSkip} names a reason; `sha`
  * its amend.
  */
-async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
+async function testReviewStage(s: TsdocReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
   const skip = await testReviewSkip(s);
   if (skip !== null) return { next: { ...s, testReview: skip } };
@@ -368,7 +395,7 @@ async function testReviewStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
  * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
  * `base..sha` comment-only, leaving no code path uncompared. A failed proof runs it.
  */
-async function testReviewSkip(s: ReviewedSlice): Promise<TestReviewSkip | null> {
+async function testReviewSkip(s: TsdocReviewedSlice): Promise<TestReviewSkip | null> {
   if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
   if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
   const { at } = s;
@@ -404,10 +431,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, diffReview, review, testReview } = s;
+    const { tdd, diffReview, review, manifestTsdoc, testReview } = s;
     return {
       kind: 'landed',
-      work: { tdd, diffReview, review, testReview },
+      work: { tdd, diffReview, review, manifestTsdoc, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

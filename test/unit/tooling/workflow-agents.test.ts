@@ -9,6 +9,7 @@ describe('workflow agents', () => {
     expect([...agentTypes].sort((a, b) => a.localeCompare(b))).toEqual([
       'critic',
       'diff-reviewer',
+      'manifest-tsdoc',
       'overlap-estimator',
       'pr-writer',
       'resolve-index-conflicts',

@@ -32,6 +32,7 @@ const STAGES = {
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
+  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
@@ -668,6 +669,8 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   reviewer: (values) => sliceReviewPrompt(values, values.findingsPath),
+  manifestTsdoc: (values) =>
+    [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
@@ -1853,6 +1856,15 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
+  manifestTsdoc: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'summary'],
+  },
   testReview: {
     type: 'object',
     properties: {
@@ -2288,6 +2300,12 @@ const AGENT_CALLS = {
       PROMPTS.reviewer(values),
       reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
     ),
+  manifestTsdoc: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.manifestTsdoc(values),
+      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
+    ),
   testReview: (hooks, values, tag) =>
     askAgent(
       hooks,
@@ -2663,6 +2681,7 @@ function retroLines(retro) {
 }
 function issueSection(landed) {
   const diff = landed.diffReview;
+  const tsdoc = landed.manifestTsdoc;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
@@ -2670,6 +2689,9 @@ function issueSection(landed) {
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
+    typeof tsdoc === 'string'
+      ? `- Manifest TSDoc: skipped — ${tsdoc}`
+      : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
     typeof test === 'string'
       ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
@@ -2762,7 +2784,8 @@ async function authorSlice(cut) {
   const built = await atBoundary(provisioned, at, tddStage);
   const diffReviewed = await atBoundary(built, at, diffReviewStage);
   const reviewed = await atBoundary(diffReviewed, at, reviewStage);
-  return atBoundary(reviewed, at, testReviewStage);
+  const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
+  return atBoundary(tsdocReviewed, at, testReviewStage);
 }
 async function atBoundary(step, at, stage) {
   if ('stop' in step) return step;
@@ -2847,6 +2870,20 @@ async function reviewStage(s) {
   if (review.verdict === 'blocked') return { stop: blocked(at, `review: ${review.summary}`) };
   return { next: { ...s, review, sha: review.sha } };
 }
+async function manifestTsdocStage(s) {
+  const { at } = s;
+  if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
+    return { next: { ...s, manifestTsdoc: 'no src/ change' } };
+  }
+  const values = {
+    ...sliceCommitValues(s),
+    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+  };
+  const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
+  return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
+}
 async function testReviewStage(s) {
   const { at } = s;
   const skip = await testReviewSkip(s);
@@ -2891,10 +2928,10 @@ async function landSlice(s) {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, diffReview, review, testReview } = s;
+    const { tdd, diffReview, review, manifestTsdoc, testReview } = s;
     return {
       kind: 'landed',
-      work: { tdd, diffReview, review, testReview },
+      work: { tdd, diffReview, review, manifestTsdoc, testReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

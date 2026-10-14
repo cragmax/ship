@@ -23,6 +23,7 @@ import type {
   CriticOutputSchema,
   DiffReviewOutputSchema,
   EstimatedPairSchema,
+  ManifestTsdocOutputSchema,
   OverlapEstimateSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
@@ -41,6 +42,7 @@ import {
   PROMPTS,
   type CriticValues,
   type DiffReviewValues,
+  type ManifestTsdocValues,
   type OverlapValues,
   type PrWriterValues,
   type ResolverValues,
@@ -83,6 +85,12 @@ export type DiffReviewOutput = z.infer<typeof DiffReviewOutputSchema>;
 /** The reviewer's answer. */
 export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 
+/** The Manifest TSDoc review's answer. */
+export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
+
+/** Why a slice's Manifest TSDoc review was skipped: it changed nothing under `src/`. */
+export type ManifestTsdocSkip = 'no src/ change';
+
 /** The test reviewer's answer. */
 export type TestReviewOutput = z.infer<typeof TestReviewOutputSchema>;
 
@@ -100,6 +108,8 @@ export interface SliceWork {
   readonly diffReview: DiffReviewOutput;
   /** The reviewer's answer. */
   readonly review: ReviewOutput;
+  /** The Manifest TSDoc review's answer, or why it was skipped. */
+  readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
   /** The test reviewer's answer, or why it was skipped. */
   readonly testReview: TestReviewOutput | TestReviewSkip;
 }
@@ -188,6 +198,12 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.reviewer(values),
       reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+    ),
+  manifestTsdoc: (hooks: WorkflowHooks, values: ManifestTsdocValues, tag: string) =>
+    askAgent<ManifestTsdocOutput>(
+      hooks,
+      PROMPTS.manifestTsdoc(values),
+      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
   testReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
     askAgent<TestReviewOutput>(

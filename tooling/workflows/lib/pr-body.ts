@@ -676,6 +676,7 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   const diff = landed.diffReview;
+  const tsdoc = landed.manifestTsdoc;
   const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
@@ -683,6 +684,9 @@ function issueSection(landed: LandedIssue): string[] {
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Diff review: ${String(diff.rules)} rules, ${String(diff.plan)} plan findings`,
     `- Review: ${landed.review.verdict} — ${landed.review.summary}`,
+    typeof tsdoc === 'string'
+      ? `- Manifest TSDoc: skipped — ${tsdoc}`
+      : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
     typeof test === 'string'
       ? `- Test review: skipped — ${test}`
       : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,

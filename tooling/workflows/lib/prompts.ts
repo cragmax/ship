@@ -144,6 +144,12 @@ export interface SliceReviewValues extends SliceCommitValues {
   readonly lease: LeaseValues;
 }
 
+/** The Manifest TSDoc review's values: the slice's, and where its report goes. */
+export interface ManifestTsdocValues extends SliceCommitValues {
+  /** The full report. */
+  readonly reportPath: string;
+}
+
 /** The reviewer's values: the slice's, and the diff review's findings. */
 export interface ReviewerValues extends SliceReviewValues {
   /** The diff review's findings file. */
@@ -344,6 +350,8 @@ export const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   reviewer: (values: ReviewerValues): string => sliceReviewPrompt(values, values.findingsPath),
+  manifestTsdoc: (values: ManifestTsdocValues): string =>
+    [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   resolver: (values: ResolverValues): string =>
     [

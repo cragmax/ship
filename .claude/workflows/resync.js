@@ -71,6 +71,7 @@ const STAGES = {
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   diffReview: { agentType: 'diff-reviewer', model: 'opus' },
   reviewer: { agentType: 'reviewer', model: 'opus' },
+  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   testReview: { agentType: 'ship-test-review', model: 'opus' },
   critic: { agentType: 'critic' },
@@ -240,6 +241,8 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
     ].join('\n'),
   reviewer: (values) => sliceReviewPrompt(values, values.findingsPath),
+  manifestTsdoc: (values) =>
+    [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
@@ -1425,6 +1428,15 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
+  manifestTsdoc: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+    },
+    required: ['verdict', 'sha', 'summary'],
+  },
   testReview: {
     type: 'object',
     properties: {
@@ -1830,6 +1842,12 @@ const AGENT_CALLS = {
       hooks,
       PROMPTS.reviewer(values),
       reviewOptions('reviewer', tag, AGENT_OUTPUT_SCHEMAS.review, values.files),
+    ),
+  manifestTsdoc: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.manifestTsdoc(values),
+      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
   testReview: (hooks, values, tag) =>
     askAgent(

@@ -284,6 +284,8 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   diffReview: DIFF_REVIEW_OK,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
   reviewer: { verdict: 'fixed', sha: 'slice2', summary: 'renamed a helper', leaseLines: [] },
+  // Clean: no amend, so the reviewer's sha stands.
+  manifestTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
   testReview: {
     verdict: 'hardened',
     sha: 'slice3',

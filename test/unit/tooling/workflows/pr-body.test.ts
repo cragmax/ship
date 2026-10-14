@@ -48,6 +48,7 @@ const work = (fields: {
   probes?: SliceWork['tdd']['probes'];
   diffReview?: SliceWork['diffReview'];
   review?: SliceWork['review'];
+  manifestTsdoc?: SliceWork['manifestTsdoc'];
   testReview?: SliceWork['testReview'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
@@ -69,6 +70,11 @@ const work = (fields: {
     sha: 's2',
     summary: 'renamed a helper',
     leaseLines: [],
+  },
+  manifestTsdoc: fields.manifestTsdoc ?? {
+    verdict: 'fixed',
+    sha: 's2m',
+    summary: 'sharpened walkTo',
   },
   testReview:
     fields.testReview === undefined
@@ -111,6 +117,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
+    manifestTsdoc: 'no src/ change',
     testReview: 'trivial surface',
   }),
 };
@@ -326,6 +333,8 @@ describe('renderPrBody', () => {
       '- Issue: #7, landed as c7',
       '- Issue: #8, landed as c8',
       '- Review: fixed — renamed a helper',
+      '- Manifest TSDoc: fixed — sharpened walkTo',
+      '- Manifest TSDoc: skipped — no src/ change',
       '- Test review: hardened, 1 surviving mutants — pinned the bound',
       '- Test review: skipped — trivial surface',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',

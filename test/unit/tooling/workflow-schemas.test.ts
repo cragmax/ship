@@ -115,6 +115,7 @@ describe('consumed fields are required', () => {
       tdd: ['reason'],
       diffReview: [],
       review: [],
+      manifestTsdoc: [],
       testReview: [],
       resolver: [],
       critic: [],

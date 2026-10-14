@@ -169,6 +169,16 @@ export const ReviewOutputSchema = z.object({
   leaseLines: z.array(z.string()),
 });
 
+/** The Manifest TSDoc review's answer. */
+export const ManifestTsdocOutputSchema = z.object({
+  /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
+  verdict: z.enum(['clean', 'fixed', 'blocked']),
+  /** The slice's commit after any amend. */
+  sha: z.string(),
+  /** The outcome, one line. */
+  summary: z.string(),
+});
+
 /** The test reviewer's answer. */
 export const TestReviewOutputSchema = z.object({
   /** `clean`: nothing to harden; `hardened`: tests amended in; `blocked`: the slice cannot land. */
@@ -256,6 +266,7 @@ export const AGENT_OUTPUTS = {
   tdd: TddOutputSchema,
   diffReview: DiffReviewOutputSchema,
   review: ReviewOutputSchema,
+  manifestTsdoc: ManifestTsdocOutputSchema,
   testReview: TestReviewOutputSchema,
   resolver: ResolverOutputSchema,
   critic: CriticOutputSchema,
