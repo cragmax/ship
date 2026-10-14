@@ -65,9 +65,12 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'tdd:7-1',
       'specReview:7-1',
       'standardsReview:7-1',
-      'testReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
+      'runner:cut-slice:audit-tests',
+      'runner:provision:audit-tests',
+      'auditTests:list',
+      'runner:teardown:audit-tests',
       'runner:sync-master:list',
       'runner:bump:list',
       'retro:list',
@@ -278,6 +281,20 @@ describe('runShip --attach — the epic end', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8 --attach ship/epic-9');
 
+    expect(callOf(run, 'runner:cut-slice:audit-tests')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'cut-slice',
+      BATCH,
+      '--audit-tests',
+      '--attached-run',
+      '2',
+    ]);
+    expect(promptLines(run, 'auditTests:list')).toEqual(
+      expect.arrayContaining([
+        'Epic range: tip9..HEAD',
+        `Report file: ${ATTACH_REPORTS}/audit-tests.md`,
+      ]),
+    );
     expect(callOf(run, 'runner:cut-slice:critic')?.argv).toEqual([
       'tooling/worktree.ts',
       'cut-slice',

@@ -13,12 +13,12 @@ export const meta = {
     {
       title: 'Issues',
       detail:
-        'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
+        'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
     },
     {
       title: 'Epic end',
       detail:
-        'per epic: critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+        'per epic: test audit, critic, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     },
   ],
 };
@@ -35,7 +35,7 @@ const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  testReview: { agentType: 'ship-test-review', model: 'opus' },
+  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
   prWriter: { agentType: 'pr-writer' },
@@ -63,12 +63,13 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'per epic: test audit, critic, master sync, version bump, retro and PR writer ' +
+      '(concurrently), ' +
       'master check, pull request',
   },
 ];
@@ -661,12 +662,20 @@ const PROMPTS = {
   standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  auditTests: (values) =>
+    [
+      `Audit slice: ${values.slice}`,
+      `Slice base: ${values.base}`,
+      `Epic range: ${values.range}`,
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
     ].join('\n'),
   critic: (values) =>
     [
@@ -1891,17 +1900,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary'],
   },
-  testReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened', 'blocked'] },
-      sha: { type: 'string' },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
-  },
   resolver: {
     type: 'object',
     properties: {
@@ -1909,6 +1907,27 @@ const AGENT_OUTPUT_SCHEMAS = {
       summary: { type: 'string' },
     },
     required: ['verdict', 'summary'],
+  },
+  auditTests: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'hardened'] },
+      sha: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      survivors: { type: 'integer' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
   },
   critic: {
     type: 'object',
@@ -2339,17 +2358,17 @@ const AGENT_CALLS = {
       PROMPTS.manifestTsdoc(values),
       agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
-  testReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
-    ),
   resolver: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
+    ),
+  auditTests: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.auditTests(values),
+      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
   critic: (hooks, values, tag) =>
     askAgent(
@@ -2487,7 +2506,7 @@ function commitMessageTemplate(issue) {
 function issueMessage(subject, cite) {
   return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
-function criticCommitMessage(commit) {
+function epicEndCommitMessage(commit) {
   return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 function prTitle(input) {
@@ -2496,15 +2515,11 @@ function prTitle(input) {
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 function sliceLeaseLines(work) {
-  const roles = [
+  return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
     { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
-  if (typeof work.testReview !== 'string') {
-    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
-  }
-  return roles;
 }
 function renderPrBody(input) {
   return prBody(input, new Set());
@@ -2598,6 +2613,7 @@ function runReportLines(input, moved = new Set()) {
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
+    ...section('Test audit', auditTestsLines(input.auditTests)),
     ...section('Critic', criticLines(input.critic)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
@@ -2647,6 +2663,24 @@ function landedLine(landed) {
 }
 function section(heading, lines, depth = 2) {
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
+}
+function auditTestsLines(audit) {
+  const outcome = {
+    clean: 'no changes',
+    landed: `landed as ${audit.commit ?? '?'}`,
+    dropped: `changes dropped — ${audit.reason ?? 'no reason named'}`,
+    'not-run': `not run — ${audit.reason ?? 'no reason named'}`,
+    skipped: `skipped — ${audit.reason ?? 'no reason named'}`,
+  }[audit.outcome];
+  const { answer } = audit;
+  return [
+    `- Outcome: ${outcome}`,
+    ...(answer === null
+      ? []
+      : [
+          `- Audit: ${answer.verdict}, ${String(answer.survivors)} surviving mutants — ${answer.summary}`,
+        ]),
+  ];
 }
 function criticLines(critic) {
   const outcome = {
@@ -2715,7 +2749,6 @@ function retroLines(retro) {
 }
 function issueSection(landed) {
   const tsdoc = landed.manifestTsdoc;
-  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
@@ -2725,9 +2758,6 @@ function issueSection(landed) {
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
       : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
-    typeof test === 'string'
-      ? `- Test review: skipped — ${test}`
-      : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
@@ -2817,8 +2847,7 @@ async function authorSlice(cut) {
   const built = await atBoundary(provisioned, at, tddStage);
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
-  const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
-  return atBoundary(tsdocReviewed, at, testReviewStage);
+  return atBoundary(reviewed, at, manifestTsdocStage);
 }
 async function atBoundary(step, at, stage) {
   if ('stop' in step) return step;
@@ -2924,31 +2953,6 @@ async function manifestTsdocStage(s) {
   if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
   return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
 }
-async function testReviewStage(s) {
-  const { at } = s;
-  const skip = await testReviewSkip(s);
-  if (skip !== null) return { next: { ...s, testReview: skip } };
-  const out = await AGENT_CALLS.testReview(
-    at.ctx.hooks,
-    sliceReviewValues(s, 'test-review'),
-    at.tag,
-  );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
-  return { next: { ...s, testReview: out, sha: out.sha } };
-}
-async function testReviewSkip(s) {
-  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
-  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
-  const { at } = s;
-  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
-  const proven =
-    out !== null &&
-    out.exitCode === 0 &&
-    out.notCompared !== undefined &&
-    isTrivialSurface(out.notCompared);
-  return proven ? 'comment-only' : null;
-}
 async function landSlice(s) {
   const { at } = s;
   if (at.ctx.isHalting()) return notLanded(haltedStop(at));
@@ -2968,10 +2972,10 @@ async function landSlice(s) {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, standardsReview, manifestTsdoc, testReview } = s;
+    const { tdd, specReview, standardsReview, manifestTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, standardsReview, manifestTsdoc, testReview },
+      work: { tdd, specReview, standardsReview, manifestTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -3047,84 +3051,129 @@ function errorText(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
-const CRITIC_TAG = 'critic';
+async function auditTestsStep(input) {
+  const skip = await auditTestsSkip(input);
+  if (skip !== null) return { outcome: 'skipped', reason: skip, answer: null, halt: null };
+  const { hooks, entry } = input;
+  return endSliceStep(input, {
+    tag: 'audit-tests',
+    name: 'test audit',
+    server: true,
+    ask: (slice, base, projectDir) => {
+      const values = {
+        slice,
+        base,
+        range: `${entry.base}..HEAD`,
+        issues: input.landed.map((l) => l.issue),
+        reportDir: entry.reportDir,
+        reportPath: `${entry.reportDir}/audit-tests.md`,
+        lease: { main: entry.main, projectDir, registry: entry.registry },
+      };
+      return AGENT_CALLS.auditTests(hooks, values, entry.tag);
+    },
+    landing: (out) => (out.verdict === 'clean' ? null : out),
+  });
+}
+async function auditTestsSkip(input) {
+  const files = input.landed.flatMap((l) => l.tdd.files);
+  if (isTrivialSurface(files)) return 'trivial surface';
+  if (files.some((path) => path.startsWith('test/'))) return null;
+  const { hooks, entry } = input;
+  const head = input.landed.at(-1)?.commit ?? 'HEAD';
+  const place = runPlace(entry.reportDir, 'audit-tests');
+  const out = await runTool(hooks, 'comment-only', [`${entry.base}..${head}`], place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
+}
 async function criticStep(input) {
   if (input.landed.length < 2) return { outcome: 'skipped', findings: [], halt: null };
   const { hooks, entry } = input;
-  const place = runPlace(entry.reportDir, CRITIC_TAG);
-  const argv = [entry.batch, '--critic', ...attachedRunArgs(entry)];
+  const { answer, ...result } = await endSliceStep(input, {
+    tag: 'critic',
+    name: 'critic',
+    server: false,
+    ask: (slice) => {
+      const values = {
+        slice,
+        range: `${entry.base}..HEAD`,
+        landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit })),
+        reportPath: `${entry.reportDir}/critic.md`,
+      };
+      return AGENT_CALLS.critic(hooks, values, entry.tag);
+    },
+    landing: (out) => (out.outcome === 'clean' ? null : out),
+  });
+  return { ...result, findings: answer?.findings ?? [] };
+}
+async function endSliceStep(input, agent) {
+  const { hooks, entry } = input;
+  const place = runPlace(entry.reportDir, agent.tag);
+  const argv = [entry.batch, `--${agent.tag}`, ...attachedRunArgs(entry)];
   const cut = await runTool(hooks, 'cut-slice', argv, place).catch(() => null);
   const slice = typeof cut?.slice === 'string' ? cut.slice : null;
   const base = cut?.base;
   if (cut?.status !== 'ok' || slice === null || typeof base !== 'string') {
-    return criticTornDown(input, slice, criticNotRun(envelopeProblem('cut-slice', cut)));
+    return tornDown(input, agent, slice, notRun(envelopeProblem('cut-slice', cut)));
   }
-  const result = await criticInSlice(input, slice, base).catch((err) =>
-    criticNotRun(`the critic step threw: ${err instanceof Error ? err.message : String(err)}`),
+  const result = await inSlice(input, agent, slice, base).catch((err) =>
+    notRun(`the ${agent.name} step threw: ${err instanceof Error ? err.message : String(err)}`),
   );
-  return criticTornDown(input, slice, result);
+  return tornDown(input, agent, slice, result);
 }
-async function criticInSlice(input, slice, base) {
+async function inSlice(input, agent, slice, base) {
   const { hooks, entry } = input;
-  const argv = [slice, '--batch', entry.batch];
-  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, CRITIC_TAG));
-  if (prov?.status !== 'ok') return criticNotRun(envelopeProblem('provision', prov));
-  const values = {
-    slice,
-    range: `${entry.base}..HEAD`,
-    landed: input.landed.map((l) => ({ issue: l.issue, commit: l.commit })),
-    reportPath: `${entry.reportDir}/critic.md`,
-  };
-  const out = await AGENT_CALLS.critic(hooks, values, entry.tag);
-  if (out === null) return criticNotRun('the critic returned nothing');
-  if (out.outcome === 'clean') return { outcome: 'clean', findings: out.findings, halt: null };
-  if (out.sha === '') {
-    return {
-      outcome: 'dropped',
-      reason: 'the critic applied no commit',
-      findings: out.findings,
-      halt: null,
-    };
+  const argv = [slice, '--batch', entry.batch, ...(agent.server ? ['--server'] : [])];
+  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, agent.tag));
+  const projectDir = prov?.env?.PH_PROJECT_DIR;
+  if (prov?.status !== 'ok' || typeof projectDir !== 'string') {
+    return notRun(envelopeProblem('provision', prov));
   }
-  return criticLand(input, out, base);
+  const out = await agent.ask(slice, base, projectDir);
+  if (out === null) return notRun(`the ${agent.name} returned nothing`);
+  const landing = agent.landing(out);
+  if (landing === null) return { outcome: 'clean', answer: out, halt: null };
+  if (landing.sha === '') {
+    const reason = `the ${agent.name} applied no commit`;
+    return { outcome: 'dropped', reason, answer: out, halt: null };
+  }
+  return land(input, agent, out, { ...landing, base });
 }
-async function criticLand(input, out, base) {
+async function land(input, agent, answer, commit) {
   const { hooks, entry } = input;
-  const messagePath = `${entry.reportDir}/commit-critic.txt`;
+  const messagePath = `${entry.reportDir}/commit-${agent.tag}.txt`;
   const argv = [
     entry.batch,
-    out.sha,
+    commit.sha,
     '--base',
-    base,
+    commit.base,
     '--message-file',
     messagePath,
     '--log',
-    `${entry.reportDir}/land-critic.log`,
+    `${entry.reportDir}/land-${agent.tag}.log`,
   ];
-  const write = { path: messagePath, content: criticCommitMessage(out.commit) };
-  const place = runPlace(entry.reportDir, CRITIC_TAG, write);
-  const land = await runTool(hooks, 'land', argv, place).catch(() => null);
-  const kind = classifyLanding(land);
-  if (kind === 'committed' && typeof land?.commit === 'string') {
-    return { outcome: 'landed', commit: land.commit, findings: out.findings, halt: null };
+  const write = { path: messagePath, content: epicEndCommitMessage(commit.commit) };
+  const place = runPlace(entry.reportDir, agent.tag, write);
+  const out = await runTool(hooks, 'land', argv, place).catch(() => null);
+  const kind = classifyLanding(out);
+  if (kind === 'committed' && typeof out?.commit === 'string') {
+    return { outcome: 'landed', commit: out.commit, answer, halt: null };
   }
-  const reason = envelopeProblem('land', land);
-  return {
-    outcome: 'dropped',
-    reason,
-    findings: out.findings,
-    halt: kind === 'halt' ? reason : null,
-  };
+  const reason = envelopeProblem('land', out);
+  return { outcome: 'dropped', reason, answer, halt: kind === 'halt' ? reason : null };
 }
-async function criticTornDown(input, slice, result) {
+async function tornDown(input, agent, slice, result) {
   if (slice === null) return result;
-  const place = runPlace(input.entry.reportDir, CRITIC_TAG);
+  const place = runPlace(input.entry.reportDir, agent.tag);
   const teardown = await runTool(input.hooks, 'teardown', [slice], place).catch(() => null);
   const halt = teardownEvent(teardown, input.entry.epic);
   return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
 }
-function criticNotRun(reason) {
-  return { outcome: 'not-run', reason, findings: [], halt: null };
+function notRun(reason) {
+  return { outcome: 'not-run', reason, answer: null, halt: null };
 }
 
 const NO_LAUNCH = 'no launch snapshot of master to check against';
@@ -3245,6 +3294,7 @@ async function epicEnd(input) {
     mainUntouched: await mainAtEnd(input, state),
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
+    ...(state.auditTests === undefined ? {} : { auditTests: state.auditTests }),
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
@@ -3316,10 +3366,14 @@ async function postIssueComment(hooks, issue, argv, place) {
 }
 async function shipSteps(input, state) {
   const { hooks, entry } = input;
-  const critic = await criticStep(input);
-  const { halt, ...criticReport } = critic;
+  const { halt: auditHalt, ...auditTests } = await auditTestsStep(input);
+  state.auditTests = auditTests;
+  state.leases = leaseTotals(input.landed, auditTests);
+  if (auditHalt !== null) {
+    return { outcome: 'halted', message: `the test audit halted the epic: ${auditHalt}` };
+  }
+  const { halt, ...criticReport } = await criticStep(input);
   state.critic = criticReport;
-  state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
@@ -3445,19 +3499,24 @@ function bodyInput(input, found, checked) {
     bump: found.bump,
     masterCheck: checked.masterCheck,
     mainUntouched: checked.mainUntouched,
+    auditTests: found.state.auditTests ?? {
+      outcome: 'not-run',
+      reason: 'no test audit step',
+      answer: null,
+    },
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
+    leases: found.state.leases ?? leaseTotals(input.landed, null),
     retro: found.state.retro ?? null,
   };
 }
-function leaseTotals(landed) {
-  return aggregateLeaseTimings(
-    landed.flatMap((l) =>
-      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
-    ),
+function leaseTotals(landed, audit) {
+  const slices = landed.flatMap((l) =>
+    sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
   );
+  const ended = (audit?.answer?.leaseLines ?? []).map((line) => ({ issue: null, line }));
+  return aggregateLeaseTimings([...slices, ...ended]);
 }
 async function retroStep(input, report) {
   const { entry } = input;

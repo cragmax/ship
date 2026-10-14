@@ -19,6 +19,7 @@ import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
 
 import type {
+  AuditTestsOutput,
   CommitSpec,
   CriticFinding,
   OverlapConfidence,
@@ -57,8 +58,8 @@ export interface LandedIssue extends SliceWork {
 
 /** A slice's lease lines from one agent role. */
 export interface RoleLeaseLines {
-  /** The agent whose lease runs printed them: `tdd`, `review` or `test-review`. */
-  readonly role: 'tdd' | 'spec-review' | 'standards-review' | 'test-review';
+  /** The agent whose lease runs printed them. */
+  readonly role: 'tdd' | 'spec-review' | 'standards-review';
   /** Its `with-lease:` lines, as the agent transcribed them. */
   readonly lines: readonly string[];
 }
@@ -114,6 +115,22 @@ export interface ScheduleEntry {
   readonly size: SliceSize | null;
 }
 
+/** The test audit's part of an epic end. */
+export interface AuditTestsReport {
+  /**
+   * `clean`: nothing hardened; `landed`: its commit landed ({@link AuditTestsReport.commit});
+   * `dropped`: its commit did not land; `not-run`: it could not run; `skipped`: no code to audit.
+   * The last three carry {@link AuditTestsReport.reason}.
+   */
+  readonly outcome: 'clean' | 'landed' | 'dropped' | 'not-run' | 'skipped';
+  /** The batch commit, when `landed`. */
+  readonly commit?: string;
+  /** Why, when `dropped`, `not-run` or `skipped`. */
+  readonly reason?: string;
+  /** Its answer; `null` when it gave none. */
+  readonly answer: AuditTestsOutput | null;
+}
+
 /** The critic's part of an epic end. */
 export interface CriticReport {
   /**
@@ -154,6 +171,8 @@ export interface PrBodyInput {
    * read before the push; `null` when a read failed.
    */
   readonly mainUntouched: boolean | null;
+  /** The test audit's part. */
+  readonly auditTests: AuditTestsReport;
   /** The critic's part. */
   readonly critic: CriticReport;
   /** The overlap edges pre-flight added to the entry. */
@@ -241,7 +260,7 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
 /**
  * A commit's first line.
  *
- * @param commit - The tdd's or the critic's proposal.
+ * @param commit - The tdd's, the test audit's or the critic's proposal.
  * @returns `<type>(<scope>): <subject>`, neutralised whole.
  */
 export function subjectLine(commit: CommitSpec): string {
@@ -269,13 +288,14 @@ function issueMessage(subject: string, cite: string): string {
 }
 
 /**
- * The critic commit's message: it closes and cites no issue.
+ * An epic-end slice stage's commit message (the test audit's, the critic's): it closes and cites
+ * no issue.
  *
- * @param commit - The critic's first line.
+ * @param commit - The stage's first line.
  * @returns The subject line, a blank line and {@link CO_AUTHOR_TRAILER},
  *   newline-terminated.
  */
-export function criticCommitMessage(commit: CommitSpec): string {
+export function epicEndCommitMessage(commit: CommitSpec): string {
   return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 
@@ -292,25 +312,20 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
 }
 
 /**
- * A slice's lease lines by role: the one reader of each agent's `leaseLines`.
+ * A slice's lease lines by role: the one reader of each slice agent's `leaseLines`.
  *
- * @param work - The slice's tdd, slice review and test-review answers.
- * @returns The tdd's, the spec review's, the standards review's, then the test review's; no
- *   test-review entry when it was skipped (a `TestReviewSkip` reason); lines unparsed and
+ * @param work - The slice's tdd and slice review answers.
+ * @returns The tdd's, the spec review's, then the standards review's; lines unparsed and
  *   unfiltered.
  */
 export function sliceLeaseLines(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>,
 ): RoleLeaseLines[] {
-  const roles: RoleLeaseLines[] = [
+  return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
     { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
-  if (typeof work.testReview !== 'string') {
-    roles.push({ role: 'test-review', lines: work.testReview.leaseLines });
-  }
-  return roles;
 }
 
 /**
@@ -499,6 +514,7 @@ function runReportLines(
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
+    ...section('Test audit', auditTestsLines(input.auditTests)),
     ...section('Critic', criticLines(input.critic)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
@@ -595,6 +611,26 @@ function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): s
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 
+/** The test audit's outcome line, then its answer's line when it gave one. */
+function auditTestsLines(audit: AuditTestsReport): string[] {
+  const outcome = {
+    clean: 'no changes',
+    landed: `landed as ${audit.commit ?? '?'}`,
+    dropped: `changes dropped — ${audit.reason ?? 'no reason named'}`,
+    'not-run': `not run — ${audit.reason ?? 'no reason named'}`,
+    skipped: `skipped — ${audit.reason ?? 'no reason named'}`,
+  }[audit.outcome];
+  const { answer } = audit;
+  return [
+    `- Outcome: ${outcome}`,
+    ...(answer === null
+      ? []
+      : [
+          `- Audit: ${answer.verdict}, ${String(answer.survivors)} surviving mutants — ${answer.summary}`,
+        ]),
+  ];
+}
+
 /** The critic's outcome line, then one line per finding. */
 function criticLines(critic: CriticReport): string[] {
   const outcome = {
@@ -677,7 +713,6 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   const tsdoc = landed.manifestTsdoc;
-  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
@@ -687,9 +722,6 @@ function issueSection(landed: LandedIssue): string[] {
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
       : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
-    typeof test === 'string'
-      ? `- Test review: skipped — ${test}`
-      : `- Test review: ${test.verdict}, ${String(test.survivors)} surviving mutants — ${test.summary}`,
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
@@ -718,9 +750,7 @@ function durationText(seconds: number): string {
  * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
-function sliceLeaseText(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview' | 'testReview'>,
-): string {
+function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

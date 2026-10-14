@@ -1,8 +1,8 @@
 /**
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
- * at least one landed ({@link epicEnd}): the critic, the master sync, the version bump, then the
- * retro and the PR writer concurrently, then the publish task; an entry that halted or landed
- * nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs exactly once per entry.
+ * at least one landed ({@link epicEnd}): the test audit, the critic, the master sync, the version
+ * bump, then the retro and the PR writer concurrently, then the publish task; an entry that halted
+ * or landed nothing gets its unshipped end ({@link unshippedEpicEnd}). The retro runs once.
  *
  * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
  * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
@@ -10,7 +10,7 @@
  *
  * The master sync and the publish task each run as one task of the run's repo lock
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
- * at once; the critic, the bump, the retro and the PR writer run outside it.
+ * at once; the test audit, the critic, the bump, the retro and the PR writer run outside it.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -20,7 +20,7 @@ import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timi
 
 import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from './agent-calls.js';
 import type { CommitQueue } from './commit-queue.js';
-import { criticStep } from './critic-step.js';
+import { auditTestsStep, criticStep } from './end-slice-step.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import { checkMasterStep, type MasterCheck, type PassedMasterCheck } from './master-check.js';
 import {
@@ -30,6 +30,7 @@ import {
   renderAttachedSection,
   renderBlockedComment,
   sliceLeaseLines,
+  type AuditTestsReport,
   type CriticReport,
   type LandedIssue,
   type PrBodyInput,
@@ -91,7 +92,7 @@ export interface EpicReport {
   /** The entry's feature branch; empty when it was never cut. */
   readonly branch: string;
   /**
-   * `pr`: opened; `halted`: a landing (the critic's included) or a slice
+   * `pr`: opened; `halted`: a landing (the test audit's and the critic's included) or a slice
    * teardown left the batch unverified; `nothing-landed`: no issue landed,
    * so no epic end but the retro and, unattached, its own cleanup; `stopped`:
    * its cut or its epic end failed ({@link EpicReport.message}).
@@ -134,6 +135,8 @@ export interface EpicReport {
    * retire-run, left behind, one line each.
    */
   readonly residue: readonly string[];
+  /** The test audit's part; absent without an epic end. */
+  readonly auditTests?: AuditTestsReport;
   /** The critic's part; absent without an epic end. */
   readonly critic?: CriticReport;
   /** The retro's findings, `null` when it returned none; absent for an entry never cut. */
@@ -172,6 +175,7 @@ export interface EpicEndInput {
 
 /** What an epic end learnt, step by step. */
 interface EndState {
+  auditTests?: AuditTestsReport;
   critic?: CriticReport;
   leases?: LeaseAggregate;
   retro?: readonly RetroFinding[] | null;
@@ -212,6 +216,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     mainUntouched: await mainAtEnd(input, state),
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
+    ...(state.auditTests === undefined ? {} : { auditTests: state.auditTests }),
     ...(state.critic === undefined ? {} : { critic: state.critic }),
     retro: state.retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
@@ -319,15 +324,20 @@ async function postIssueComment(
 }
 
 /**
- * The shipping path up to the pull request — critic, sync, bump, the retro and (unattached runs
- * only) the PR writer concurrently, then the publish task — filling in `state` as steps report.
+ * The shipping path up to the pull request — test audit, critic, sync, bump, the retro and
+ * (unattached runs only) the PR writer concurrently, then the publish task — filling in `state` as
+ * steps report.
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
-  const critic = await criticStep(input);
-  const { halt, ...criticReport } = critic;
+  const { halt: auditHalt, ...auditTests } = await auditTestsStep(input);
+  state.auditTests = auditTests;
+  state.leases = leaseTotals(input.landed, auditTests);
+  if (auditHalt !== null) {
+    return { outcome: 'halted', message: `the test audit halted the epic: ${auditHalt}` };
+  }
+  const { halt, ...criticReport } = await criticStep(input);
   state.critic = criticReport;
-  state.leases = leaseTotals(input.landed);
   if (halt !== null) return { outcome: 'halted', message: `the critic halted the epic: ${halt}` };
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
@@ -531,25 +541,33 @@ function bodyInput(
     bump: found.bump,
     masterCheck: checked.masterCheck,
     mainUntouched: checked.mainUntouched,
+    auditTests: found.state.auditTests ?? {
+      outcome: 'not-run',
+      reason: 'no test audit step',
+      answer: null,
+    },
     critic: found.state.critic ?? { outcome: 'not-run', reason: 'no critic step', findings: [] },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
+    leases: found.state.leases ?? leaseTotals(input.landed, null),
     retro: found.state.retro ?? null,
   };
 }
 
 /**
- * The entry's lease totals: every landed slice's release lines, the tdd's, the
- * review's and the test review's alike ({@link sliceLeaseLines}), each counted
- * in its engine's and its issue's totals with no role breakdown.
+ * The entry's lease totals: every landed slice's release lines, the tdd's and the
+ * reviews' alike ({@link sliceLeaseLines}), each counted in its engine's and its
+ * issue's totals with no role breakdown; then the test audit's, in its engine's only.
  */
-function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
-  return aggregateLeaseTimings(
-    landed.flatMap((l) =>
-      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
-    ),
+function leaseTotals(
+  landed: readonly LandedIssue[],
+  audit: AuditTestsReport | null,
+): LeaseAggregate {
+  const slices = landed.flatMap((l) =>
+    sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
   );
+  const ended = (audit?.answer?.leaseLines ?? []).map((line) => ({ issue: null, line }));
+  return aggregateLeaseTimings([...slices, ...ended]);
 }
 
 /** Run the retro over the entry's report: its findings, `null` when it returned none or threw. */

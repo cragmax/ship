@@ -28,7 +28,7 @@ An unattended run leaves a report directory per entry: the issues' text, reviews
 - retries and requeues — an issue with more than one attempt, and why (a harvest conflict, an agent that died);
 - blocked stages, and the reason each gave — and a blocked issue whose comment did not post (the run report's `issueComments`, a `problem` per failed post);
 - probes that hit their cap or stayed inconclusive, and how many each issue ran — the tdd reports;
-- a lease wait longer than its hold (the lease lines in the tdd, spec-review, standards-review and test-review reports);
+- a lease wait longer than its hold (the lease lines in the tdd, spec-review, standards-review and audit-tests reports);
 - deviations from the issue the tdd or a slice review recorded;
 - tool refusals in the envelopes under `<report dir>/tool/`;
 - teardown residue.

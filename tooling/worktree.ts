@@ -40,6 +40,7 @@ import { provisionBatch } from './worktree/provision-batch.js';
 import { publish } from './worktree/publish.js';
 import { publishPushOnly } from './worktree/publish-push.js';
 import { retireRun } from './worktree/retire-run.js';
+import type { EpicEndSlice } from './worktree/run-layout.js';
 import {
   CommitResultSchema,
   guardEnvelope,
@@ -243,7 +244,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: CutSliceResultSchema,
     valueFlags: [],
     optionFlags: ['--issue', '--attempt', '--attached-run'],
-    switchFlags: ['--critic'],
+    switchFlags: ['--audit-tests', '--critic'],
     rest: NO_REST,
     run: (args) => {
       const run = args.values.get('--attached-run');
@@ -449,20 +450,26 @@ function batchSelection(
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
 }
 
+/** `cut-slice`'s epic-end stage switches, each named after its stage. */
+const EPIC_END_SLICES: readonly EpicEndSlice[] = ['audit-tests', 'critic'];
+
 /**
- * Read `cut-slice`'s slice: exactly one of `--critic` and `--issue N --attempt K`.
+ * Read `cut-slice`'s slice: exactly one of an epic-end stage switch and `--issue N --attempt K`.
  *
- * @throws UsageError when both or neither is given, when one of `--issue`
- *   and `--attempt` comes without the other, or a number is bad.
+ * @throws UsageError when not exactly one is given, `--issue` and `--attempt` part, or a number
+ *   is bad.
  */
 function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
   const issue = args.values.get('--issue');
   const attempt = args.values.get('--attempt');
-  const critic = args.switches.has('--critic');
-  if (critic === (issue !== undefined || attempt !== undefined)) {
-    throw new UsageError('cut-slice takes exactly one of --critic and --issue N --attempt K');
+  const stages = EPIC_END_SLICES.filter((stage) => args.switches.has(`--${stage}`));
+  if (stages.length + (issue !== undefined || attempt !== undefined ? 1 : 0) !== 1) {
+    throw new UsageError(
+      'cut-slice takes exactly one of --audit-tests, --critic and --issue N --attempt K',
+    );
   }
-  if (critic) return { critic: true };
+  const [stage] = stages;
+  if (stage !== undefined) return { stage };
   if (issue === undefined || attempt === undefined) {
     throw new UsageError('cut-slice --issue and --attempt go together');
   }

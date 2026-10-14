@@ -24,8 +24,6 @@ import {
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
-  type TestReviewOutput,
-  type TestReviewSkip,
 } from './agent-calls.js';
 import {
   landingEvent,
@@ -37,7 +35,6 @@ import {
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage, commitMessageTemplate, type SliceSize } from './pr-body.js';
 import type { LeaseValues, SliceCommitValues, SliceReviewValues } from './prompts.js';
-import { isTrivialSurface } from './stages.js';
 import { envelopeProblem, runPlace, runTool, type ToolPlace } from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
@@ -180,14 +177,12 @@ interface ReviewedSlice extends SpecReviewedSlice {
   readonly standardsReview: ReviewOutput;
 }
 
-/** A Manifest-TSDoc-reviewed slice: its answer, or why it was skipped; `sha` its amend. */
-interface TsdocReviewedSlice extends ReviewedSlice {
+/**
+ * An authored slice, ready to land: the Manifest TSDoc review's answer, or why it was skipped;
+ * `sha` its last amend.
+ */
+interface AuthoredSlice extends ReviewedSlice {
   readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
-}
-
-/** An authored slice: the test reviewer's answer, or why it was skipped; `sha` the last amend. */
-interface AuthoredSlice extends TsdocReviewedSlice {
-  readonly testReview: TestReviewOutput | TestReviewSkip;
 }
 
 /**
@@ -228,15 +223,14 @@ async function openSlice(at: AttemptId): Promise<Opened> {
   return cutStage(at);
 }
 
-/** Run the provision through the test review, each stage at a boundary that sees a halt. */
+/** Run the provision through the Manifest TSDoc review, each at a boundary that sees a halt. */
 async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
-  const tsdocReviewed = await atBoundary(reviewed, at, manifestTsdocStage);
-  return atBoundary(tsdocReviewed, at, testReviewStage);
+  return atBoundary(reviewed, at, manifestTsdocStage);
 }
 
 /** Pass a stop on; else stop for a halting entry; else run the next stage. */
@@ -356,7 +350,7 @@ async function standardsReviewStage(s: SpecReviewedSlice): Promise<Step<Reviewed
  * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the tdd
  * changed a path under `src/`; `sha` its amend.
  */
-async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<TsdocReviewedSlice>> {
+async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
   if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
     return { next: { ...s, manifestTsdoc: 'no src/ change' } };
@@ -369,42 +363,6 @@ async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<TsdocReviewedS
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
   return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
-}
-
-/**
- * Harden the tests on the slice's final shape, unless {@link testReviewSkip} names a reason; `sha`
- * its amend.
- */
-async function testReviewStage(s: TsdocReviewedSlice): Promise<Step<AuthoredSlice>> {
-  const { at } = s;
-  const skip = await testReviewSkip(s);
-  if (skip !== null) return { next: { ...s, testReview: skip } };
-  const out = await AGENT_CALLS.testReview(
-    at.ctx.hooks,
-    sliceReviewValues(s, 'test-review'),
-    at.tag,
-  );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
-  return { next: { ...s, testReview: out, sha: out.sha } };
-}
-
-/**
- * Why the test review is skipped, `null` when it runs: `'trivial surface'` when the tdd's files
- * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
- * `base..sha` comment-only, leaving no code path uncompared. A failed proof runs it.
- */
-async function testReviewSkip(s: TsdocReviewedSlice): Promise<TestReviewSkip | null> {
-  if (isTrivialSurface(s.tdd.files)) return 'trivial surface';
-  if (s.tdd.files.some((path) => path.startsWith('test/'))) return null;
-  const { at } = s;
-  const out = await runTool(at.ctx.hooks, 'comment-only', [`${s.base}..${s.sha}`], at.place);
-  const proven =
-    out !== null &&
-    out.exitCode === 0 &&
-    out.notCompared !== undefined &&
-    isTrivialSurface(out.notCompared);
-  return proven ? 'comment-only' : null;
 }
 
 /**
@@ -430,10 +388,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, standardsReview, manifestTsdoc, testReview } = s;
+    const { tdd, specReview, standardsReview, manifestTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, standardsReview, manifestTsdoc, testReview },
+      work: { tdd, specReview, standardsReview, manifestTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -509,7 +467,7 @@ function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   };
 }
 
-/** A slice review's or the test reviewer's prompt input, `report` its report's file-name prefix. */
+/** A slice review's prompt input, `report` its report's file-name prefix. */
 function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
   return {
     ...sliceCommitValues(s),

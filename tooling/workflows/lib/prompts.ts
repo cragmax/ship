@@ -132,10 +132,7 @@ export interface SliceCommitValues {
   readonly files: readonly string[];
 }
 
-/**
- * A slice review's and the test reviewer's values: the slice's, and where its
- * server-tier runs lease from.
- */
+/** A slice review's values: the slice's, and where its server-tier runs lease from. */
 export interface SliceReviewValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;
@@ -147,6 +144,24 @@ export interface SliceReviewValues extends SliceCommitValues {
 export interface ManifestTsdocValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;
+}
+
+/** `PROMPTS.auditTests`' input: the epic's range, audited in a slice of its own. */
+export interface AuditTestsValues {
+  /** The audit's slice worktree, cut from the batch head. */
+  readonly slice: string;
+  /** The commit the slice was cut at: its one commit's parent. */
+  readonly base: string;
+  /** The epic's landed range, `<batch base>..HEAD`. */
+  readonly range: string;
+  /** The landed issues, in landing order: their texts are under the report dir. */
+  readonly issues: readonly number[];
+  /** The run's report directory. */
+  readonly reportDir: string;
+  /** The full report. */
+  readonly reportPath: string;
+  /** The lease command's values. */
+  readonly lease: LeaseValues;
 }
 
 /** `PROMPTS.critic`'s input: the epic's landed range, reviewed in a slice of its own. */
@@ -341,12 +356,20 @@ export const PROMPTS = {
   standardsReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   manifestTsdoc: (values: ManifestTsdocValues): string =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  testReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   resolver: (values: ResolverValues): string =>
     [
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  auditTests: (values: AuditTestsValues): string =>
+    [
+      `Audit slice: ${values.slice}`,
+      `Slice base: ${values.base}`,
+      `Epic range: ${values.range}`,
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
     ].join('\n'),
   critic: (values: CriticValues): string =>
     [

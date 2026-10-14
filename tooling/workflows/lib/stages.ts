@@ -21,8 +21,8 @@ export interface StageRow {
 }
 
 /**
- * Every stage the workflow runs an agent for; each stage's job is its agent file's. The `critic`
- * works in a slice of its own.
+ * Every stage the workflow runs an agent for; each stage's job is its agent file's. The
+ * `auditTests` and `critic` stages each work in a slice of their own.
  */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
@@ -33,7 +33,7 @@ export const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  testReview: { agentType: 'ship-test-review', model: 'opus' },
+  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
   prWriter: { agentType: 'pr-writer' },
@@ -62,9 +62,9 @@ export const PROBES_PER_ISSUE = 3;
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
 
 /**
- * Whether a slice changes no code: test review is skipped for it.
+ * Whether a change touches no code: the epic-end test audit is skipped for it.
  *
- * @param files - The slice commit's changed paths, repository-relative.
+ * @param files - The changed paths, repository-relative.
  * @returns `true` when no path is under `src/`, `tooling/` or `test/` (an
  *   empty list included).
  */
@@ -91,12 +91,13 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'per epic: test audit, critic, master sync, version bump, retro and PR writer ' +
+      '(concurrently), ' +
       'master check, pull request',
   },
 ];

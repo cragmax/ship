@@ -1,8 +1,8 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]` — cut an unattended
- * run's feature branch and batch worktree, and one slice worktree, at the places `run-layout.ts`
- * names (ADR-0045).
+ * `cut-slice <batch> (--issue N --attempt K | --audit-tests | --critic) [--attached-run R]` —
+ * cut an unattended run's feature branch and batch worktree, and one slice worktree, at the places
+ * `run-layout.ts` names (ADR-0045).
  *
  * Invariant, both commands: every guard runs before the first mutation — a `git worktree add -b`
  * — so a refusal leaves the repository's branches, worktree list and every checkout as they were.
@@ -27,11 +27,12 @@ import {
 } from './git.js';
 import { assertLinkedWorktree } from './harvest.js';
 import {
-  criticSliceLayout,
+  epicEndSliceLayout,
   RUN_BASE_BRANCH,
   runLayout,
   runSlugOf,
   sliceLayout,
+  type EpicEndSlice,
 } from './run-layout.js';
 import type { CutBatchResult, CutSliceResult } from './types-run.js';
 import { Refusal, recordFailure } from './types.js';
@@ -40,8 +41,10 @@ import { Refusal, recordFailure } from './types.js';
 export interface CutSliceInput {
   /** The batch worktree, absolute with forward slashes. */
   readonly batch: string;
-  /** Which slice: an issue attempt (attempt 1 for the first), or the epic end's critic. */
-  readonly slice: { readonly issue: number; readonly attempt: number } | { readonly critic: true };
+  /** Which slice: an issue attempt (attempt 1 for the first), or an epic-end stage's. */
+  readonly slice:
+    | { readonly issue: number; readonly attempt: number }
+    | { readonly stage: EpicEndSlice };
   /** The attached run whose slice this is, naming it `a<R>-…`; absent for an unattached run. */
   readonly attachedRun?: number;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
@@ -92,10 +95,10 @@ export function cutBatch(input: {
 }
 
 /**
- * Cut a slice branch — an issue attempt's, or the epic end's critic's — at
+ * Cut a slice branch — an issue attempt's, or an epic-end stage's — at
  * the batch `HEAD` and check it out beside the batch. An attached run's
  * slice is named `a<R>-…` (`run-layout.ts`), so it never collides with an
- * earlier run's leftover branch of the same issue attempt or critic.
+ * earlier run's leftover branch of the same issue attempt or stage.
  *
  * @returns The envelope: `ok` with the branch, base and slice path;
  *   `refused` (harvest's linked-worktree reasons, `not-run-batch`,
@@ -117,8 +120,8 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
     const slug = assertRunBatch(batch);
     const run = input.attachedRun ?? null;
     const slice =
-      'critic' in input.slice
-        ? criticSliceLayout(batch, slug, run)
+      'stage' in input.slice
+        ? epicEndSliceLayout(batch, slug, input.slice.stage, run)
         : sliceLayout(batch, slug, input.slice.issue, input.slice.attempt, run);
     assertBranchFree(batch, slice.branch);
     assertPathFree(slice.path);

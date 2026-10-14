@@ -653,25 +653,25 @@ describe('cut-slice', () => {
     expect(r.json).toMatchObject({ status: 'refused', reason: 'not-run-batch' });
   });
 
-  it(
-    'cuts the critic slice slice/<slug>/critic at the batch HEAD, stamping the envelope',
+  it.each(['audit-tests', 'critic'])(
+    'cuts the %s slice slice/<slug>/<stage> at the batch HEAD, stamping the envelope',
     TIMEOUT,
-    () => {
+    (stage) => {
       const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
       const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
 
-      const r = runCli<CutSliceResult>(['cut-slice', batch, '--critic']);
+      const r = runCli<CutSliceResult>(['cut-slice', batch, `--${stage}`]);
 
       expect(r.code).toBe(0);
-      const slice = `${main}/.claude/worktrees/ship-epic-900-critic`;
+      const slice = `${main}/.claude/worktrees/ship-epic-900-${stage}`;
       expect(r.json).toMatchObject({
         status: 'ok',
-        branch: 'slice/epic-900/critic',
+        branch: `slice/epic-900/${stage}`,
         base: head,
         slice,
         at: expect.stringMatching(ISO_INSTANT),
       });
-      expect(branchOf(slice)).toBe('slice/epic-900/critic');
+      expect(branchOf(slice)).toBe(`slice/epic-900/${stage}`);
       expect(headSha(slice)).toBe(head);
     },
   );
@@ -1110,6 +1110,10 @@ describe('usage errors', () => {
     {
       name: 'cut-slice with --critic and an issue attempt',
       args: ['cut-slice', 'b', '--critic', '--issue', '4', '--attempt', '1'],
+    },
+    {
+      name: 'cut-slice with --audit-tests and --critic',
+      args: ['cut-slice', 'b', '--audit-tests', '--critic'],
     },
     { name: 'cut-slice with neither selector', args: ['cut-slice', 'b'] },
     {

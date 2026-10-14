@@ -91,7 +91,7 @@ export const IssueOverlapSchema = z.object({
   areaMap: z.enum(['read', 'unavailable']),
 });
 
-/** A commit message's first line, as the tdd or the critic proposes it. */
+/** A commit message's first line, as the tdd, the test audit or the critic proposes it. */
 export const CommitSpecSchema = z.object({
   /** `feat`, `fix`, `refactor`, `test`, `docs` or `chore`. */
   type: z.string(),
@@ -188,20 +188,6 @@ export const ManifestTsdocOutputSchema = z.object({
   summary: z.string(),
 });
 
-/** The test reviewer's answer. */
-export const TestReviewOutputSchema = z.object({
-  /** `clean`: nothing to harden; `hardened`: tests amended in; `blocked`: the slice cannot land. */
-  verdict: z.enum(['clean', 'hardened', 'blocked']),
-  /** The slice's commit after any amend. */
-  sha: z.string(),
-  /** Mutants still surviving on the final shape. */
-  survivors: z.int(),
-  /** The outcome, one line. */
-  summary: z.string(),
-  /** Every `with-lease:` release line its lease runs printed, verbatim, one per lease. */
-  leaseLines: z.array(z.string()),
-});
-
 /** The doc-index resolver's answer. */
 export const ResolverOutputSchema = z.object({
   /** `resolved`: every pending path edited clean; `unresolvable`: not. */
@@ -210,9 +196,27 @@ export const ResolverOutputSchema = z.object({
   summary: z.string(),
 });
 
+/** The epic-end test audit's answer. */
+export const AuditTestsOutputSchema = z.object({
+  /** `clean`: nothing hardened, no commit; `hardened`: one commit in the audit slice. */
+  verdict: z.enum(['clean', 'hardened']),
+  /** The commit; empty when `clean`. */
+  sha: z.string(),
+  /** Its changed paths. */
+  files: z.array(z.string()),
+  /** Its first line. */
+  commit: CommitSpecSchema,
+  /** Mutants still surviving on the epic's final tree. */
+  survivors: z.int(),
+  /** The outcome, one line. */
+  summary: z.string(),
+  /** Every `with-lease:` release line its lease runs printed, verbatim, one per lease. */
+  leaseLines: z.array(z.string()),
+});
+
 /** One finding of the critic. */
 export const CriticFindingSchema = z.object({
-  /** `duplication`, `helpers`, `drift` or `test-gaps`. */
+  /** `duplication`, `helpers` or `drift`. */
   lens: z.string(),
   /** The finding, one line. */
   summary: z.string(),
@@ -276,8 +280,8 @@ export const AGENT_OUTPUTS = {
   specReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,
   manifestTsdoc: ManifestTsdocOutputSchema,
-  testReview: TestReviewOutputSchema,
   resolver: ResolverOutputSchema,
+  auditTests: AuditTestsOutputSchema,
   critic: CriticOutputSchema,
   retro: RetroOutputSchema,
   prWriter: PrWriterOutputSchema,

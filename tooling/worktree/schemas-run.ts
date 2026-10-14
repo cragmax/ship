@@ -59,14 +59,14 @@ export const CutBatchResultSchema = ResultBaseSchema.extend({
 });
 
 /**
- * Envelope of `cut-slice <batch> (--issue N --attempt K | --critic) [--attached-run R]`;
- * `worktree` is the batch.
+ * Envelope of `cut-slice <batch> (--issue N --attempt K | --audit-tests | --critic)`, with an
+ * optional `--attached-run R`; `worktree` is the batch.
  */
 export const CutSliceResultSchema = ResultBaseSchema.extend({
   /**
    * The slice branch created, short form: `slice/<slug>/<N>-<K>` or
-   * `slice/<slug>/critic`; with `--attached-run R`, `slice/<slug>/a<R>-<N>-<K>`
-   * or `slice/<slug>/a<R>-critic`.
+   * `slice/<slug>/<stage>`; with `--attached-run R`, `slice/<slug>/a<R>-<N>-<K>`
+   * or `slice/<slug>/a<R>-<stage>`.
    */
   branch: z.string().nullable(),
   /** The batch `HEAD` the slice was cut at. */

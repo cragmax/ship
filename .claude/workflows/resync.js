@@ -73,7 +73,7 @@ const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  testReview: { agentType: 'ship-test-review', model: 'opus' },
+  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   critic: { agentType: 'critic' },
   retro: { agentType: 'retro', model: 'sonnet' },
   prWriter: { agentType: 'pr-writer' },
@@ -101,12 +101,13 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), test review, land',
+      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: critic, master sync, version bump, retro and PR writer (concurrently), ' +
+      'per epic: test audit, critic, master sync, version bump, retro and PR writer ' +
+      '(concurrently), ' +
       'master check, pull request',
   },
 ];
@@ -232,12 +233,20 @@ const PROMPTS = {
   standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  testReview: (values) => sliceReviewPrompt(values),
   resolver: (values) =>
     [
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
+    ].join('\n'),
+  auditTests: (values) =>
+    [
+      `Audit slice: ${values.slice}`,
+      `Slice base: ${values.base}`,
+      `Epic range: ${values.range}`,
+      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
     ].join('\n'),
   critic: (values) =>
     [
@@ -1462,17 +1471,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary'],
   },
-  testReview: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened', 'blocked'] },
-      sha: { type: 'string' },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'survivors', 'summary', 'leaseLines'],
-  },
   resolver: {
     type: 'object',
     properties: {
@@ -1480,6 +1478,27 @@ const AGENT_OUTPUT_SCHEMAS = {
       summary: { type: 'string' },
     },
     required: ['verdict', 'summary'],
+  },
+  auditTests: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'hardened'] },
+      sha: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+      commit: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          scope: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['type', 'scope', 'subject'],
+      },
+      survivors: { type: 'integer' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
   },
   critic: {
     type: 'object',
@@ -1881,17 +1900,17 @@ const AGENT_CALLS = {
       PROMPTS.manifestTsdoc(values),
       agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
     ),
-  testReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
-    ),
   resolver: (hooks, values, tag) =>
     askAgent(
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
+    ),
+  auditTests: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.auditTests(values),
+      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
   critic: (hooks, values, tag) =>
     askAgent(

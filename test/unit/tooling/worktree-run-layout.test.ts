@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { runSlug } from '../../../tooling/lib/run-slug.js';
 import {
   attachedRunReports,
-  criticSliceLayout,
+  epicEndSliceLayout,
   nextAttachedRun,
   RUN_BRANCH_PREFIX,
   runLayout,
@@ -71,15 +71,18 @@ describe('sliceLayout', () => {
   });
 });
 
-describe('criticSliceLayout', () => {
-  it('puts the epic end’s critic slice beside the batch, on slice/<slug>/critic', () => {
-    expect(
-      criticSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9'),
-    ).toEqual({
-      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-9-critic',
-      branch: 'slice/epic-9/critic',
-    });
-  });
+describe('epicEndSliceLayout', () => {
+  it.each(['audit-tests', 'critic'] as const)(
+    'puts the epic end’s %s slice beside the batch, on slice/<slug>/%s',
+    (stage) => {
+      expect(
+        epicEndSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9', stage),
+      ).toEqual({
+        path: `C:/src/paper-harness/.claude/worktrees/ship-epic-9-${stage}`,
+        branch: `slice/epic-9/${stage}`,
+      });
+    },
+  );
 });
 
 describe('attached runs', () => {
@@ -94,7 +97,7 @@ describe('attached runs', () => {
   });
 
   it('names an attached run’s critic ship-<head>-a<R>-critic on slice/<slug>/a<R>-critic', () => {
-    expect(criticSliceLayout(batch, slug, 2)).toEqual({
+    expect(epicEndSliceLayout(batch, slug, 'critic', 2)).toEqual({
       path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-critic',
       branch: 'slice/epic-1182/a2-critic',
     });
@@ -158,7 +161,8 @@ describe('attached runs', () => {
     for (const branch of [
       sliceLayout(batch, slug, 1190, 1, n).branch,
       sliceLayout(batch, slug, 1190, 2, n).branch,
-      criticSliceLayout(batch, slug, n).branch,
+      epicEndSliceLayout(batch, slug, 'audit-tests', n).branch,
+      epicEndSliceLayout(batch, slug, 'critic', n).branch,
     ]) {
       expect(taken).not.toContain(branch);
     }
