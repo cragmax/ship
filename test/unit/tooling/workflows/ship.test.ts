@@ -1241,6 +1241,12 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     'test review: the real x() fails its hardened bound test',
   ],
   [
+    'blocked by a test review that named no commit',
+    { testReview: { verdict: 'clean', sha: '', summary: 'every claim killed', leaseLines: [] } },
+    ['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'runner:teardown:7-1'],
+    'test review: no commit',
+  ],
+  [
     'blocked by the standards review',
     {
       standardsReview: {

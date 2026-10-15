@@ -3196,7 +3196,7 @@ function bodyInput(input, found, checked) {
     },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
+    leases: leaseTotals(input.landed),
     retro: found.state.retro ?? null,
   };
 }
@@ -3461,6 +3461,7 @@ async function manifestTsdocStage(s) {
 function afterReview(at, label, out, next) {
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
+  if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
 }
 async function landSlice(s) {

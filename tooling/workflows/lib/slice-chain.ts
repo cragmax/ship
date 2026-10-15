@@ -428,8 +428,8 @@ async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>
 }
 
 /**
- * Carry an amending stage's answer on: none stops the slice as died, a `blocked` one stops it with
- * `label` and its summary, else `next` folds it in and `sha` becomes its amend.
+ * Carry an amending stage's answer on: none stops the slice as died, a `blocked` one or one naming
+ * no commit stops it with `label`, else `next` folds it in and `sha` becomes its amend.
  */
 function afterReview<
   O extends { readonly verdict: string; readonly sha: string; readonly summary: string },
@@ -442,6 +442,7 @@ function afterReview<
 ): Step<T & { readonly sha: string }> {
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
+  if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
 }
 

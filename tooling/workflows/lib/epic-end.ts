@@ -611,7 +611,7 @@ function bodyInput(
     },
     overlap: input.overlap,
     schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed),
+    leases: leaseTotals(input.landed),
     retro: found.state.retro ?? null,
   };
 }
