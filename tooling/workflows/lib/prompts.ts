@@ -40,6 +40,11 @@ export interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
   /**
+   * The main checkout, absolute, the runner runs from whatever directory it starts in; absent
+   * before pre-flight's `preflight` call has named it, when the runner runs from its start.
+   */
+  readonly checkout?: string;
+  /**
    * The directory the runner makes the call's fresh envelope directory in;
    * a relative one resolves against the main checkout.
    */
@@ -335,6 +340,7 @@ export const PROMPTS = {
   runner: (values: RunnerValues): string =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
+      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),

@@ -106,7 +106,7 @@ async function attachStep(
   }
   if (attach.created) {
     const argv = [batch, '--report-dir', reportDir];
-    const prov = await runTool(hooks, 'provision-batch', argv, runPlace(reportDir, 'resync'));
+    const prov = await runTool(hooks, 'provision-batch', argv, runPlace({ reportDir }, 'resync'));
     if (prov?.status !== 'ok') return { stop: envelopeProblem('provision-batch', prov) };
   }
   return { batch, reportDir, pr: attach.pr };
@@ -119,7 +119,7 @@ async function pushStep(
   report: Omit<ResyncReport, 'status' | 'message'>,
 ): Promise<ResyncReport> {
   const argv = [attached.batch, '--push-only', '--log', `${attached.reportDir}/resync-push.log`];
-  const out = await runTool(hooks, 'publish', argv, runPlace(attached.reportDir, 'resync'));
+  const out = await runTool(hooks, 'publish', argv, runPlace(attached, 'resync'));
   if (out?.status !== 'ok') {
     return { ...report, status: 'stopped', message: envelopeProblem('publish', out) };
   }

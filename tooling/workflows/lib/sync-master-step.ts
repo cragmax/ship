@@ -57,6 +57,8 @@ export interface SyncStepContext {
   readonly reportDir: string;
   /** What tells the entry's calls from other entries' (`epic-1025`, `list`, `resync`). */
   readonly tag: string;
+  /** The main checkout, absolute; absent for `resync`, which has no pre-flight to name it. */
+  readonly main?: string;
 }
 
 /**
@@ -71,7 +73,7 @@ export async function syncMasterStep(
   hooks: WorkflowHooks,
   ctx: SyncStepContext,
 ): Promise<SyncStepResult> {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
   const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
   if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
     return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
@@ -104,7 +106,7 @@ async function resolveAndContinue(
     hooks,
     'sync-master',
     [ctx.batch, '--continue'],
-    runPlace(ctx.reportDir, `${ctx.tag}-continue`),
+    runPlace(ctx, `${ctx.tag}-continue`),
   );
   return syncVerdict(done, 'resolved');
 }

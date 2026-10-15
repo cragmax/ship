@@ -78,7 +78,7 @@ export async function checkMasterStep(
     hooks,
     'check-master',
     [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
-    runPlace(entry.reportDir, entry.tag),
+    runPlace(entry, entry.tag),
   );
   return checkOf(out);
 }

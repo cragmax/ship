@@ -230,7 +230,7 @@ export async function runAttempt(
 /** Who the attempt is, its tag `<issue>-<attempt>`. */
 function attemptId(ctx: EntryContext, issue: number, attempt: number): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag) };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx, tag) };
 }
 
 /** Re-check the issue, then cut its slice, each at a boundary that sees a halt. */
@@ -464,7 +464,7 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
   const message = commitMessage(at.issue, s.tdd);
-  const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
+  const place = runPlace(at.ctx, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
