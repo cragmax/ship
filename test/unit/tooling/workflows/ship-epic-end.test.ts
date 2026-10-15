@@ -1161,6 +1161,7 @@ describe('runShip — the PR body limit', () => {
     );
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
     expect(report.epics[0]).not.toHaveProperty('prReportComment');
+    expect(report.epics[0]).not.toHaveProperty('recovery');
   });
 
   it('posts no comment for a body within the limit', async () => {
@@ -1258,7 +1259,36 @@ describe('runShip — a failed publish’s recovery', () => {
     );
     expect(writtenFiles(run)).toEqual(expect.arrayContaining(namedFiles(recovery)));
     expect(namedFiles(recovery)).toHaveLength(3);
+    const lines = promptOf(run, 'runner:publish:list').split('\n');
+    const head = (file: string): string[] => {
+      const at = lines.indexOf(`Write first: ${REPORT_DIR}/${file}`);
+      return lines.slice(at, at + 3);
+    };
+    expect(head('pr-comment-schedule.md')).toEqual([
+      `Write first: ${REPORT_DIR}/pr-comment-schedule.md`,
+      '----- BEGIN FILE -----',
+      '## Schedule',
+    ]);
+    expect(head('pr-comment-retro-findings.md')).toEqual([
+      `Write first: ${REPORT_DIR}/pr-comment-retro-findings.md`,
+      '----- BEGIN FILE -----',
+      '## Retro findings',
+    ]);
     expect(labels(run).filter((l) => /^runner:(teardown|retire-run):list$/.test(l))).toEqual([]);
+  });
+
+  it('keeps --draft in the recovery’s publish command when the epic end opened a draft', async () => {
+    const run = fakeHooks({ epicReview: EPIC_REJECTED, 'runner:publish': PUBLISH_FAILED });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const recovery = report.epics[0]?.recovery ?? [];
+    expect(recovery).toEqual([
+      `npx tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
+      `Command: ${recovery[0] ?? ''}`,
+    );
   });
 });
 

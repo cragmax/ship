@@ -122,6 +122,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
         },
       ],
     });
+    expect(report.epics[0]).not.toHaveProperty('recovery');
   });
 });
 
