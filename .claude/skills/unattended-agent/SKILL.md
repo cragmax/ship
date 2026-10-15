@@ -22,6 +22,7 @@ You are a **Stage agent** of an unattended run (ADR-0045). Your agent file prelo
 ## Runs
 
 - **Unit runs** are `npx vitest run --config vitest.worktree.config.ts <files>`, from the worktree: a bare `npx vitest` writes into the shared, linked `node_modules/.vite`.
+- **Standalone integration files** (`@integrationTier standalone`) need no server: run them as `npx vitest run --config vitest.worktree.integration.config.ts <files>`, never through the `Lease command:`.
 - **Server-tier runs go through your prompt's `Lease command:` only**, its placeholders filled, never raw vitest against a fixed port. Copy each `with-lease: waited … held …` line it prints into your report and your answer, verbatim.
 - **A command that may run past 10 minutes** runs in the background, and you keep the turn open with chained foreground `timeout 570 bash -c 'until …; do sleep 5; done'` polls until it exits.
 
