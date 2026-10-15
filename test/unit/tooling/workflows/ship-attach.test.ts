@@ -359,7 +359,8 @@ describe('runShip --attach — the epic end', () => {
       message: 'publish refused (no-open-pr): ship/epic-9 has no open PR: closed (#9)',
       issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
     });
-    expect(labels(run).filter((l) => l.startsWith('retro'))).toEqual(['retro:list']);
+    // The retro ran before the refused push, then again over the stopped report.
+    expect(labels(run).filter((l) => l.startsWith('retro'))).toEqual(['retro:list', 'retro:list']);
   });
 
   it('stops a failed push with the push-only command, then the report post and the section append for the open PR, each file written', async () => {

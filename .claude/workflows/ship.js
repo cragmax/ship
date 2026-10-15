@@ -2956,8 +2956,10 @@ async function epicEnd(input) {
     message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
   }));
   const issueComments = await commentBlockedStep(input, published.pr);
-  if (state.retro === undefined)
-    state.retro = await retroStep(input, retroReport(input, published));
+  const retro =
+    published.outcome === 'pr' && state.retro !== undefined
+      ? state.retro
+      : await retroStep(input, retroReport(input, published, issueComments));
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -2968,7 +2970,7 @@ async function epicEnd(input) {
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
-    retro: state.retro,
+    retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
@@ -3280,7 +3282,7 @@ async function prWriterStep(input, upstream) {
   };
   return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
-function retroReport(input, published) {
+function retroReport(input, published, issueComments = []) {
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -3288,6 +3290,7 @@ function retroReport(input, published) {
     issues: input.issues,
     schedule: input.schedule,
     residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
 }
 async function mainAtEnd(input, state) {

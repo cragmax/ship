@@ -2,7 +2,7 @@
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
  * at least one landed ({@link epicEnd}): the epic review, the master sync, the version bump, the
  * retro and PR writer concurrently, then the publish task; an entry that halted or landed nothing
- * gets its unshipped end ({@link unshippedEpicEnd}). The retro runs once.
+ * gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
  * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
  * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
@@ -204,7 +204,7 @@ type Published = Pick<
  * Run the epic end.
  *
  * @returns Resolves to the entry's report; a step that throws stops the
- *   epic (`the epic end threw: …`), the retro still run.
+ *   epic (`the epic end threw: …`), the retro still run over the stopped report.
  */
 export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
   const state: EndState = {};
@@ -215,8 +215,10 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     }),
   );
   const issueComments = await commentBlockedStep(input, published.pr);
-  if (state.retro === undefined)
-    state.retro = await retroStep(input, retroReport(input, published));
+  const retro =
+    published.outcome === 'pr' && state.retro !== undefined
+      ? state.retro
+      : await retroStep(input, retroReport(input, published, issueComments));
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -227,7 +229,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
-    retro: state.retro,
+    retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
@@ -712,8 +714,15 @@ async function prWriterStep(
   return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 
-/** The report the retro reads on the shipping path; `published` is `pr` before the PR opens. */
-function retroReport(input: EpicEndInput, published: Published): EpicReport {
+/**
+ * The report the retro reads on the shipping path: `pr` before the PR opens, or a stopped epic
+ * end's final outcome with its blocked-issue comments.
+ */
+function retroReport(
+  input: EpicEndInput,
+  published: Published,
+  issueComments: readonly IssueComment[] = [],
+): EpicReport {
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -721,6 +730,7 @@ function retroReport(input: EpicEndInput, published: Published): EpicReport {
     issues: input.issues,
     schedule: input.schedule,
     residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
 }
 

@@ -82,6 +82,15 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 const promptOf = (run: FakeRun, label: string): string =>
   run.calls.find((c) => c.label === label)?.prompt ?? '';
 
+/** The run report each retro call read, in call order. */
+const retroReports = (run: FakeRun): Record<string, unknown>[] =>
+  run.calls
+    .filter((c) => c.label.startsWith('retro:'))
+    .map((c) => {
+      const line = c.prompt.split('\n').find((l) => l.startsWith('Run report (JSON): ')) ?? '';
+      return JSON.parse(line.slice('Run report (JSON): '.length)) as Record<string, unknown>;
+    });
+
 describe('runShip — the epic end runs no test audit', () => {
   it('starts the epic end with the epic review after the last landing, cutting no audit slice and reporting no Test audit', async () => {
     const run = fakeHooks(SEVEN_THEN_EIGHT);
@@ -351,6 +360,7 @@ describe('runShip — the retro', () => {
           pending: [],
         },
       },
+      'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
     ],
     [
       'a bump that threw',
@@ -359,19 +369,105 @@ describe('runShip — the retro', () => {
           throw new Error('runner crashed');
         },
       },
+      'the epic end threw: runner crashed',
     ],
   ])(
-    'runs once for an epic end stopped by %s, reading the stopped outcome',
-    async (_name, stop) => {
+    'runs once for an epic end stopped by %s, reading the stopped outcome and its message',
+    async (_name, stop, message) => {
       const run = fakeHooks({ ...stop, retro: { findings: [FINDING] } });
 
       const report = await runShip(run.hooks, 'issues 7');
 
       expect(labels(run).filter((l) => l.startsWith('retro'))).toEqual(['retro:list']);
-      expect(promptOf(run, 'retro:list')).toMatch(/^Run report \(JSON\): \{.*"outcome":"stopped"/m);
+      expect(retroReports(run)).toMatchObject([{ outcome: 'stopped', message }]);
       expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [FINDING] });
     },
   );
+
+  describe('on a shipping path that stops after it', () => {
+    const FIRST = { ...FINDING, title: 'first, over the pr report' };
+    const LAST = { ...FINDING, title: 'last, over the stopped report' };
+    const IN_TURN = { retro: inTurn({ findings: [FIRST] }, { findings: [LAST] }) };
+
+    it('re-runs over the master check’s failure, the entry keeping the re-run’s findings', async () => {
+      const run = fakeHooks({
+        ...IN_TURN,
+        ...masterMoved(
+          { move: 'rewound', current: 'older1' },
+          { move: 'equal', current: 'origin0' },
+        ),
+      });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
+      expect(retroReports(run).at(-1)).toMatchObject({
+        message:
+          'master check failed: local master rewound: launch local0, now older1 — restore it from local0',
+      });
+      expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
+    });
+
+    it('re-runs over a refused publish, its report carrying the recovery', async () => {
+      const run = fakeHooks({ ...IN_TURN, 'runner:publish': PUBLISH_FAILED });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
+      expect(retroReports(run).at(-1)).toMatchObject({
+        message: 'publish failed: the pre-push gate failed',
+        recovery: [
+          `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+        ],
+      });
+      expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
+    });
+
+    it('hands the re-run the blocked issue’s comment record', async () => {
+      const run = fakeHooks({
+        ...SEVEN_THEN_EIGHT,
+        ...IN_TURN,
+        'tdd:8-1': TDD_BLOCKED,
+        ...masterMoved(
+          { move: 'rewound', current: 'older1' },
+          { move: 'equal', current: 'origin0' },
+        ),
+      });
+
+      await runShip(run.hooks, 'issues 7 8');
+
+      expect(retroReports(run).map((r) => r.issueComments)).toEqual([
+        undefined,
+        [{ issue: 8, url: 'https://x/issues/7#issuecomment-2' }],
+      ]);
+    });
+
+    it('re-runs over a throw after the first retro, the last report giving the throw', async () => {
+      const run = fakeHooks({
+        ...IN_TURN,
+        'runner:publish': () => {
+          throw new Error('runner crashed');
+        },
+      });
+
+      const report = await runShip(run.hooks, 'issues 7');
+
+      expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
+      expect(retroReports(run).at(-1)).toMatchObject({
+        message: 'the epic end threw: runner crashed',
+      });
+      expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
+    });
+  });
+
+  it('runs once for a published entry, reading the pr outcome', async () => {
+    const run = fakeHooks({ retro: { findings: [FINDING] } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr']);
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', retro: [FINDING] });
+  });
 
   it('records a retro that returned nothing as null', async () => {
     const run = fakeHooks({ retro: null });
