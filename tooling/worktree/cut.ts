@@ -1,6 +1,6 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> (--issue N --attempt K | --audit-tests) [--attached-run R]` — cut an
+ * `cut-slice <batch> --issue N --attempt K [--attached-run R]` — cut an
  * unattended run's feature branch and batch worktree, and one slice worktree, at the places
  * `run-layout.ts` names (ADR-0045).
  *
@@ -26,13 +26,7 @@ import {
   samePath,
 } from './git.js';
 import { assertLinkedWorktree } from './harvest.js';
-import {
-  auditTestsSliceLayout,
-  RUN_BASE_BRANCH,
-  runLayout,
-  runSlugOf,
-  sliceLayout,
-} from './run-layout.js';
+import { RUN_BASE_BRANCH, runLayout, runSlugOf, sliceLayout } from './run-layout.js';
 import type { CutBatchResult, CutSliceResult } from './types-run.js';
 import { Refusal, recordFailure } from './types.js';
 
@@ -40,10 +34,8 @@ import { Refusal, recordFailure } from './types.js';
 export interface CutSliceInput {
   /** The batch worktree, absolute with forward slashes. */
   readonly batch: string;
-  /** Which slice: an issue attempt (attempt 1 for the first), or the epic end's test audit. */
-  readonly slice:
-    | { readonly issue: number; readonly attempt: number }
-    | { readonly auditTests: true };
+  /** Which issue attempt's slice (attempt 1 for the first). */
+  readonly slice: { readonly issue: number; readonly attempt: number };
   /** The attached run whose slice this is, naming it `a<R>-…`; absent for an unattached run. */
   readonly attachedRun?: number;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
@@ -94,10 +86,10 @@ export function cutBatch(input: {
 }
 
 /**
- * Cut a slice branch — an issue attempt's, or the epic end's test audit's — at
- * the batch `HEAD` and check it out beside the batch. An attached run's
- * slice is named `a<R>-…` (`run-layout.ts`), so it never collides with an
- * earlier run's leftover branch of the same issue attempt or test audit.
+ * Cut an issue attempt's slice branch at the batch `HEAD` and check it out
+ * beside the batch. An attached run's slice is named `a<R>-…`
+ * (`run-layout.ts`), so it never collides with an earlier run's leftover
+ * branch of the same issue attempt.
  *
  * @returns The envelope: `ok` with the branch, base and slice path;
  *   `refused` (harvest's linked-worktree reasons, `not-run-batch`,
@@ -118,10 +110,7 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
     assertLinkedWorktree(batch, selfPath);
     const slug = assertRunBatch(batch);
     const run = input.attachedRun ?? null;
-    const slice =
-      'auditTests' in input.slice
-        ? auditTestsSliceLayout(batch, slug, run)
-        : sliceLayout(batch, slug, input.slice.issue, input.slice.attempt, run);
+    const slice = sliceLayout(batch, slug, input.slice.issue, input.slice.attempt, run);
     assertBranchFree(batch, slice.branch);
     assertPathFree(slice.path);
     const base = resolveCommit(batch, 'HEAD', 'preconditions');

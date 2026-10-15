@@ -122,8 +122,8 @@ describe('retire-run', () => {
   it("deletes the run's slice branches, none of them in origin/master", TIMEOUT, () => {
     spentRun();
     sliceBranch('slice/7/1-1');
-    sliceBranch('slice/7/audit-tests');
-    for (const b of ['slice/7/1-1', 'slice/7/audit-tests']) {
+    sliceBranch('slice/7/2-1');
+    for (const b of ['slice/7/1-1', 'slice/7/2-1']) {
       expect(
         runIn(
           'git',
@@ -142,9 +142,9 @@ describe('retire-run', () => {
       branchDeleted: true,
       rootRemoved: true,
     });
-    expect(r.json.sliceBranches).toEqual(['slice/7/1-1', 'slice/7/audit-tests']);
+    expect(r.json.sliceBranches).toEqual(['slice/7/1-1', 'slice/7/2-1']);
     expect(branchResolves('slice/7/1-1')).toBe(false);
-    expect(branchResolves('slice/7/audit-tests')).toBe(false);
+    expect(branchResolves('slice/7/2-1')).toBe(false);
   });
 
   it("leaves another run's slice branches, a longer slug's included", TIMEOUT, () => {
@@ -166,8 +166,8 @@ describe('retire-run', () => {
   it('stops at delete-slice-branch with the run branch and run root kept', TIMEOUT, () => {
     spentRun();
     sliceBranch('slice/7/1-1');
-    sliceBranch('slice/7/audit-tests');
-    mustRun('git', ['worktree', 'add', '-q', `${root}/elsewhere`, 'slice/7/audit-tests'], main);
+    sliceBranch('slice/7/2-1');
+    mustRun('git', ['worktree', 'add', '-q', `${root}/elsewhere`, 'slice/7/2-1'], main);
 
     const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
 
@@ -176,7 +176,7 @@ describe('retire-run', () => {
     expect(r.json.errors[0]?.step).toBe('delete-slice-branch');
     expect(r.json.sliceBranches).toEqual(['slice/7/1-1']);
     expect(branchResolves('slice/7/1-1')).toBe(false);
-    expect(branchResolves('slice/7/audit-tests')).toBe(true);
+    expect(branchResolves('slice/7/2-1')).toBe(true);
     expect(branchResolves()).toBe(true);
     expect(existsSync(runRoot)).toBe(true);
   });

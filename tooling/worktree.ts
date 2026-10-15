@@ -244,7 +244,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     schema: CutSliceResultSchema,
     valueFlags: [],
     optionFlags: ['--issue', '--attempt', '--attached-run'],
-    switchFlags: ['--audit-tests'],
+    switchFlags: [],
     rest: NO_REST,
     run: (args) => {
       const run = args.values.get('--attached-run');
@@ -473,21 +473,15 @@ function batchSelection(
 }
 
 /**
- * Read `cut-slice`'s slice: exactly one of `--audit-tests` and `--issue N --attempt K`.
+ * Read `cut-slice`'s slice: `--issue N --attempt K`.
  *
- * @throws UsageError when both or neither is given, when one of `--issue`
- *   and `--attempt` comes without the other, or a number is bad.
+ * @throws UsageError when either is missing or a number is bad.
  */
 function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
   const issue = args.values.get('--issue');
   const attempt = args.values.get('--attempt');
-  const auditTests = args.switches.has('--audit-tests');
-  if (auditTests === (issue !== undefined || attempt !== undefined)) {
-    throw new UsageError('cut-slice takes exactly one of --audit-tests and --issue N --attempt K');
-  }
-  if (auditTests) return { auditTests: true };
   if (issue === undefined || attempt === undefined) {
-    throw new UsageError('cut-slice --issue and --attempt go together');
+    throw new UsageError('cut-slice takes --issue N --attempt K');
   }
   return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
 }

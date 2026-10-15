@@ -49,11 +49,11 @@ export interface RunLayout {
   readonly branch: string;
 }
 
-/** Where one slice lives: an issue attempt's, or the test audit's. */
+/** Where one issue attempt's slice lives. */
 export interface SliceLayout {
   /** The slice worktree, absolute with forward slashes. */
   readonly path: string;
-  /** The slice branch, short form (`slice/<slug>/<N>-<K>` or `slice/<slug>/audit-tests`). */
+  /** The slice branch, short form (`slice/<slug>/<N>-<K>`). */
   readonly branch: string;
 }
 
@@ -102,15 +102,6 @@ export function sliceBranchPrefix(slug: string): string {
 }
 
 /**
- * `<batch>-<id>` on `slice/<slug>/<id>`; when `run` (an attached run's number) is non-null,
- * this prefixes the id with `a<run>-` itself.
- */
-function sliceAt(batch: string, slug: string, id: string, run: number | null): SliceLayout {
-  const named = run === null ? id : `a${String(run)}-${id}`;
-  return { path: `${batch}-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
-}
-
-/**
  * The layout of attempt `attempt` of `issue`'s slice, a sibling of the batch.
  *
  * @param batch - The batch worktree ({@link RunLayout.batch}).
@@ -127,24 +118,9 @@ export function sliceLayout(
   attempt: number,
   run: number | null = null,
 ): SliceLayout {
-  return sliceAt(batch, slug, `${String(issue)}-${String(attempt)}`, run);
-}
-
-/**
- * The layout of the epic end's test-audit slice — one per run.
- *
- * @param batch - The batch worktree ({@link RunLayout.batch}).
- * @param run - The attached run's number; `null` (the default) for an
- *   unattached run.
- * @returns `<batch>-audit-tests` on `slice/<slug>/audit-tests`, or
- *   `<batch>-a<run>-audit-tests` on `slice/<slug>/a<run>-audit-tests` for an attached run.
- */
-export function auditTestsSliceLayout(
-  batch: string,
-  slug: string,
-  run: number | null = null,
-): SliceLayout {
-  return sliceAt(batch, slug, 'audit-tests', run);
+  const id = `${String(issue)}-${String(attempt)}`;
+  const named = run === null ? id : `a${String(run)}-${id}`;
+  return { path: `${batch}-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
 }
 
 /**

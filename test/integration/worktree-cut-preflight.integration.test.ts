@@ -451,7 +451,7 @@ describe('cut-batch --attach', () => {
     mkdirSync(`${main}/reports/ship-s/plans`, { recursive: true });
     writeFileSync(`${main}/reports/ship-s/pr-body.md`, 'body\n');
     mustRun('git', ['branch', 'slice/s/7-1'], main);
-    mustRun('git', ['branch', 'slice/s/audit-tests'], main);
+    mustRun('git', ['branch', 'slice/s/7-2'], main);
   }
 
   it(
@@ -481,7 +481,7 @@ describe('cut-batch --attach', () => {
       unattachedLeftovers();
       mkdirSync(`${main}/reports/ship-s/attach-1`);
       mustRun('git', ['branch', 'slice/s/a1-7-1'], main);
-      mustRun('git', ['branch', 'slice/s/a1-audit-tests'], main);
+      mustRun('git', ['branch', 'slice/s/a1-7-2'], main);
 
       const r = attachRun(OPEN_9);
 
@@ -640,7 +640,12 @@ describe('cut-slice', () => {
 
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--issue', '41', '--attempt', '1']);
 
-    expect(r.json).toMatchObject({ status: 'refused', reason: 'branch-exists', branch: null });
+    expect(r.json).toMatchObject({
+      status: 'refused',
+      reason: 'branch-exists',
+      branch: null,
+      at: expect.stringMatching(ISO_INSTANT),
+    });
     expect(repoState(main)).toEqual(before);
     expect(existsSync(`${main}/.claude/worktrees/ship-epic-900-41-1`)).toBe(false);
   });
@@ -653,87 +658,55 @@ describe('cut-slice', () => {
     expect(r.json).toMatchObject({ status: 'refused', reason: 'not-run-batch' });
   });
 
-  it(
-    'cuts the test-audit slice slice/<slug>/audit-tests at the batch HEAD, stamping the envelope',
-    TIMEOUT,
-    () => {
-      const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
-      const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
-
-      const r = runCli<CutSliceResult>(['cut-slice', batch, '--audit-tests']);
-
-      expect(r.code).toBe(0);
-      const slice = `${main}/.claude/worktrees/ship-epic-900-audit-tests`;
-      expect(r.json).toMatchObject({
-        status: 'ok',
-        branch: 'slice/epic-900/audit-tests',
-        base: head,
-        slice,
-        at: expect.stringMatching(ISO_INSTANT),
-      });
-      expect(branchOf(slice)).toBe('slice/epic-900/audit-tests');
-      expect(headSha(slice)).toBe(head);
-    },
-  );
-
-  it(
-    'cuts an attached run’s attempt and test-audit slices beside the earlier run’s, on a<R>- branches',
-    TIMEOUT,
-    () => {
-      const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
-      const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
-      mustRun('git', ['branch', 'slice/epic-900/41-1'], main);
-      mustRun('git', ['branch', 'slice/epic-900/audit-tests'], main);
-
-      const attempt = runCli<CutSliceResult>([
-        'cut-slice',
-        batch,
-        '--issue',
-        '41',
-        '--attempt',
-        '1',
-        '--attached-run',
-        '2',
-      ]);
-      const audit = runCli<CutSliceResult>([
-        'cut-slice',
-        batch,
-        '--audit-tests',
-        '--attached-run',
-        '2',
-      ]);
-
-      expect(attempt.code).toBe(0);
-      const slice = `${main}/.claude/worktrees/ship-epic-900-a2-41-1`;
-      expect(attempt.json).toMatchObject({
-        status: 'ok',
-        branch: 'slice/epic-900/a2-41-1',
-        base: head,
-        slice,
-      });
-      expect(branchOf(slice)).toBe('slice/epic-900/a2-41-1');
-      expect(audit.json).toMatchObject({
-        status: 'ok',
-        branch: 'slice/epic-900/a2-audit-tests',
-        slice: `${main}/.claude/worktrees/ship-epic-900-a2-audit-tests`,
-      });
-    },
-  );
-
-  it('refuses a second test-audit cut as branch-exists, stamped, cutting nothing', TIMEOUT, () => {
+  it('refuses --audit-tests as a usage error, cutting nothing', TIMEOUT, () => {
     const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
-    runCli<CutSliceResult>(['cut-slice', batch, '--audit-tests']);
     const before = repoState(main);
 
     const r = runCli<CutSliceResult>(['cut-slice', batch, '--audit-tests']);
 
-    expect(r.json).toMatchObject({
-      status: 'refused',
-      reason: 'branch-exists',
-      branch: null,
+    expect(r.code).toBe(2);
+    expect(r.json.errors).toEqual([{ step: 'usage', message: 'unknown flag --audit-tests' }]);
+    expect(repoState(main)).toEqual(before);
+    expect(existsSync(`${main}/.claude/worktrees/ship-epic-900-audit-tests`)).toBe(false);
+  });
+
+  it('names only the --issue N --attempt K form when no slice is given', TIMEOUT, () => {
+    const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+
+    const r = runCli<CutSliceResult>(['cut-slice', batch]);
+
+    expect(r.code).toBe(2);
+    expect(r.json.errors).toEqual([
+      { step: 'usage', message: 'cut-slice takes --issue N --attempt K' },
+    ]);
+  });
+
+  it('cuts an attached run’s attempt beside the earlier run’s, on an a<R>- branch', TIMEOUT, () => {
+    const batch = runCli<CutBatchResult>(['cut-batch', main, '--epic', '900']).json.batch ?? '';
+    const head = commitChanges(batch, { write: { 'landed.txt': 'landed\n' } }, 'landed');
+    mustRun('git', ['branch', 'slice/epic-900/41-1'], main);
+
+    const attempt = runCli<CutSliceResult>([
+      'cut-slice',
+      batch,
+      '--issue',
+      '41',
+      '--attempt',
+      '1',
+      '--attached-run',
+      '2',
+    ]);
+
+    expect(attempt.code).toBe(0);
+    const slice = `${main}/.claude/worktrees/ship-epic-900-a2-41-1`;
+    expect(attempt.json).toMatchObject({
+      status: 'ok',
+      branch: 'slice/epic-900/a2-41-1',
+      base: head,
+      slice,
       at: expect.stringMatching(ISO_INSTANT),
     });
-    expect(repoState(main)).toEqual(before);
+    expect(branchOf(slice)).toBe('slice/epic-900/a2-41-1');
   });
 });
 
@@ -919,7 +892,7 @@ describe('preflight (in-process)', () => {
 
   it('names every slice branch of every slug, slug by slug', TIMEOUT, async () => {
     mustRun('git', ['branch', 'slice/epic-1/1-1'], main);
-    mustRun('git', ['branch', 'slice/epic-2/audit-tests'], main);
+    mustRun('git', ['branch', 'slice/epic-2/3-2'], main);
     mustRun('git', ['branch', 'slice/epic-2/3-1'], main);
 
     const r = await preflightWith({ slugs: ['epic-1', 'epic-2'] });
@@ -927,7 +900,7 @@ describe('preflight (in-process)', () => {
     expect(r.problems.map((p) => p.message)).toEqual([
       'slice/epic-1/1-1 is left over from a run of ship/epic-1',
       'slice/epic-2/3-1 is left over from a run of ship/epic-2',
-      'slice/epic-2/audit-tests is left over from a run of ship/epic-2',
+      'slice/epic-2/3-2 is left over from a run of ship/epic-2',
     ]);
     expect(r.problems.every((p) => p.check === 'stale-slice-branch')).toBe(true);
   });
@@ -1107,11 +1080,6 @@ describe('usage errors', () => {
       name: 'cut-slice with attached run 0',
       args: ['cut-slice', 'b', '--issue', '4', '--attempt', '1', '--attached-run', '0'],
     },
-    {
-      name: 'cut-slice with --audit-tests and an issue attempt',
-      args: ['cut-slice', 'b', '--audit-tests', '--issue', '4', '--attempt', '1'],
-    },
-    { name: 'cut-slice with neither selector', args: ['cut-slice', 'b'] },
     {
       name: 'cut-batch with --attach and --epic',
       args: ['cut-batch', 'm', '--attach', 'ship/s', '--epic', '9'],

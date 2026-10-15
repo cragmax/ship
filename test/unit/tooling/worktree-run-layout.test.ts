@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { runSlug } from '../../../tooling/lib/run-slug.js';
 import {
   attachedRunReports,
-  auditTestsSliceLayout,
   nextAttachedRun,
   RUN_BRANCH_PREFIX,
   runLayout,
@@ -71,17 +70,6 @@ describe('sliceLayout', () => {
   });
 });
 
-describe('auditTestsSliceLayout', () => {
-  it('puts the epic end’s test-audit slice beside the batch, on slice/<slug>/audit-tests', () => {
-    expect(
-      auditTestsSliceLayout('C:/src/paper-harness/.claude/worktrees/ship-epic-9', 'epic-9'),
-    ).toEqual({
-      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-9-audit-tests',
-      branch: 'slice/epic-9/audit-tests',
-    });
-  });
-});
-
 describe('attached runs', () => {
   const batch = 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182';
   const slug = 'epic-1182';
@@ -90,13 +78,6 @@ describe('attached runs', () => {
     expect(sliceLayout(batch, slug, 1190, 1, 2)).toEqual({
       path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-1190-1',
       branch: 'slice/epic-1182/a2-1190-1',
-    });
-  });
-
-  it('names an attached run’s test audit ship-<head>-a<R>-audit-tests on slice/<slug>/a<R>-audit-tests', () => {
-    expect(auditTestsSliceLayout(batch, slug, 2)).toEqual({
-      path: 'C:/src/paper-harness/.claude/worktrees/ship-epic-1182-a2-audit-tests',
-      branch: 'slice/epic-1182/a2-audit-tests',
     });
   });
 
@@ -114,22 +95,14 @@ describe('attached runs', () => {
     { name: 'nothing left', reports: [], branches: [], run: 1 },
     {
       name: 'only the unattached run’s leftovers',
-      reports: [
-        'tool',
-        'plans',
-        'issues',
-        'pr-body.md',
-        'audit-tests.md',
-        'publish.log',
-        'pool-registry.batch.json',
-      ],
-      branches: ['1183-1', '1184-1', '1184-2', 'audit-tests'],
+      reports: ['tool', 'plans', 'issues', 'pr-body.md', 'publish.log', 'pool-registry.batch.json'],
+      branches: ['1183-1', '1184-1', '1184-2'],
       run: 1,
     },
     {
       name: 'attached run 1’s folder and branches',
       reports: ['tool', 'attach-1'],
-      branches: ['1183-1', 'audit-tests', 'a1-1190-1', 'a1-audit-tests'],
+      branches: ['1183-1', 'a1-1190-1', 'a1-1191-1'],
       run: 2,
     },
     { name: 'run 1’s branches without its folder', reports: [], branches: ['a1-1190-1'], run: 2 },
@@ -148,7 +121,7 @@ describe('attached runs', () => {
   it('gives a second attached run names none of an earlier run’s leftovers collide with', () => {
     const left = {
       reports: ['tool', 'plans', 'attach-1'],
-      branches: ['1190-1', 'audit-tests', 'a1-1190-1', 'a1-1190-2', 'a1-audit-tests'],
+      branches: ['1190-1', 'a1-1190-1', 'a1-1190-2'],
     };
 
     const n = nextAttachedRun(left);
@@ -158,7 +131,6 @@ describe('attached runs', () => {
     for (const branch of [
       sliceLayout(batch, slug, 1190, 1, n).branch,
       sliceLayout(batch, slug, 1190, 2, n).branch,
-      auditTestsSliceLayout(batch, slug, n).branch,
     ]) {
       expect(taken).not.toContain(branch);
     }
