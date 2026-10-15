@@ -113,6 +113,7 @@ describe('consumed fields are required', () => {
       'append-pr-body': WORKTREE_OPTIONAL,
       'post-pr-comment': WORKTREE_OPTIONAL,
       'post-issue-comment': WORKTREE_OPTIONAL,
+      'changed-files': WORKTREE_OPTIONAL,
     });
   });
 

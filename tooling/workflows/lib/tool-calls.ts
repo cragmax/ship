@@ -45,7 +45,8 @@ export type ToolName =
   | 'publish'
   | 'append-pr-body'
   | 'post-pr-comment'
-  | 'post-issue-comment';
+  | 'post-issue-comment'
+  | 'changed-files';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's and comment-only's. */
 export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check' | 'comment-only'>;
@@ -191,6 +192,9 @@ export type PostPrCommentOutput = EnvelopeOutput<'post-pr-comment'>;
 /** `post-issue-comment`'s consumed fields. */
 export type PostIssueCommentOutput = EnvelopeOutput<'post-issue-comment'>;
 
+/** `changed-files`' consumed fields. */
+export type ChangedFilesOutput = EnvelopeOutput<'changed-files'>;
+
 /** Each tool's output type. */
 export interface ToolOutputs {
   preflight: PreflightOutput;
@@ -212,6 +216,7 @@ export interface ToolOutputs {
   'append-pr-body': AppendPrBodyOutput;
   'post-pr-comment': PostPrCommentOutput;
   'post-issue-comment': PostIssueCommentOutput;
+  'changed-files': ChangedFilesOutput;
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
@@ -241,6 +246,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
   'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
+  'changed-files': [WORKTREE_CLI, 'changed-files'],
 };
 
 /** A string property's schema. */
@@ -366,6 +372,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
   'post-issue-comment': envelopeSchema('post-issue-comment'),
+  'changed-files': envelopeSchema('changed-files'),
 };
 
 /**

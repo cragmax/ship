@@ -13,6 +13,7 @@ import {
   LAND_OK,
   LIVE_RUNS_NONE,
   liveRuns,
+  OK,
   PREFLIGHT_OK,
   REPORT_DIR,
   TDD_BLOCKED,
@@ -365,8 +366,10 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:provision:7-1',
       'tdd:7-1',
       'specReview:7-1',
+      'runner:changed-files:7-1',
       'testReview:7-1',
       'standardsReview:7-1',
+      'runner:changed-files:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
       'epicReview:list',
@@ -1306,6 +1309,20 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     'manifest tsdoc: a hook failure would not clear',
   ],
   [
+    'blocked by a failed re-read of the spec review’s amend',
+    {
+      'runner:changed-files': {
+        ...OK,
+        exitCode: 1,
+        status: 'failed',
+        files: [],
+        errors: [{ step: 'resolve', message: 'git rev-parse spec1 failed' }],
+      },
+    },
+    ['tdd:7-1', 'specReview:7-1', 'runner:teardown:7-1'],
+    'spec review: changed-files failed: git rev-parse spec1 failed',
+  ],
+  [
     'blocked by a landing refused as more than one commit',
     {
       'runner:land': {
@@ -1766,6 +1783,117 @@ describe('runShip — the slice test review', () => {
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
       '- Test review: skipped — trivial surface',
     );
+  });
+});
+
+describe('runShip — the slice’s changed files after an amend', () => {
+  /** The `Changed files:` line of a call's prompt; fails the test when there is no such call. */
+  const filesSeenBy = (run: FakeRun, label: string): string | undefined =>
+    promptOf(run, label)
+      .split('\n')
+      .find((l) => l.startsWith('Changed files: '));
+
+  it('re-reads the amended commit’s changed files after each fixed review, every later stage reading them', async () => {
+    // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md.
+    const run = fakeHooks({
+      'runner:changed-files': inTurn(
+        { ...OK, files: ['src/y.ts', 'test/unit/tooling/x.test.ts', 'tooling/x.ts'] },
+        { ...OK, files: ['docs/y.md', 'src/y.ts', 'test/unit/tooling/x.test.ts', 'tooling/x.ts'] },
+      ),
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv),
+    ).toEqual([
+      ['tooling/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'cut1'],
+      ['tooling/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'cut1'],
+    ]);
+    expect(filesSeenBy(run, 'specReview:7-1')).toBe(
+      'Changed files: tooling/x.ts, test/unit/tooling/x.test.ts',
+    );
+    expect(filesSeenBy(run, 'standardsReview:7-1')).toBe(
+      'Changed files: src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
+    );
+    // The tdd changed no src/ path: only the amend's src/y.ts runs the Manifest TSDoc review.
+    expect(filesSeenBy(run, 'manifestTsdoc:7-1')).toBe(
+      'Changed files: docs/y.md, src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
+    );
+  });
+
+  it('re-reads the test review’s amend, the standards review reading its changed files', async () => {
+    const run = fakeHooks({
+      specReview: { verdict: 'clean', sha: 'slice1', summary: 'ok', leaseLines: [] },
+      testReview: { verdict: 'fixed', sha: 'test1', summary: 'pinned a bound', leaseLines: [] },
+      'runner:changed-files': inTurn(
+        { ...OK, files: ['test/unit/tooling/x.test.ts', 'test/unit/y.test.ts', 'tooling/x.ts'] },
+        { ...OK, files: ['test/unit/tooling/x.test.ts', 'test/unit/y.test.ts', 'tooling/x.ts'] },
+      ),
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv[3]),
+    ).toEqual(['test1', 'slice2']);
+    expect(filesSeenBy(run, 'standardsReview:7-1')).toBe(
+      'Changed files: test/unit/tooling/x.test.ts, test/unit/y.test.ts, tooling/x.ts',
+    );
+  });
+
+  it('runs the test review on a slice whose tdd changed no test, once the spec review’s amend adds one', async () => {
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files: ['tooling/x.ts'] },
+      // A proof that would skip the test review, were it still asked.
+      'runner:comment-only': { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
+      'runner:changed-files': inTurn({ ...OK, files: ['test/unit/x.test.ts', 'tooling/x.ts'] }),
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(runner:(comment-only|changed-files)|testReview):7-1/.test(l)),
+    ).toEqual(['runner:changed-files:7-1', 'testReview:7-1', 'runner:changed-files:7-1']);
+  });
+
+  it('re-reads nothing when every review answers clean', async () => {
+    const clean = (sha: string) => ({ verdict: 'clean', sha, summary: 'ok', leaseLines: [] });
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files: ['src/x.ts', 'test/unit/x.test.ts'] },
+      specReview: clean('slice1'),
+      testReview: clean('slice1'),
+      standardsReview: clean('slice1'),
+      manifestTsdoc: { verdict: 'fixed', sha: 'slice1m', summary: 'sharpened x' },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(labels(run).filter((l) => l.startsWith('runner:changed-files'))).toEqual([]);
+    expect(filesSeenBy(run, 'manifestTsdoc:7-1')).toBe(
+      'Changed files: src/x.ts, test/unit/x.test.ts',
+    );
+    expect(report.epics[0]?.issues).toEqual([
+      { issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' },
+    ]);
+  });
+
+  it('retries the issue when the re-read’s runner returns nothing, then blocks it', async () => {
+    const run = fakeHooks({ 'runner:changed-files': null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(
+      labels(run).filter((l) => /^(runner:(changed-files|teardown)|testReview):7-/.test(l)),
+    ).toEqual([
+      'runner:changed-files:7-1',
+      'runner:teardown:7-1',
+      'runner:changed-files:7-2',
+      'runner:teardown:7-2',
+    ]);
+    expect(report.epics[0]?.issues).toEqual([
+      { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+    ]);
   });
 });
 

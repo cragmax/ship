@@ -1674,6 +1674,57 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'url'],
   },
+  'changed-files': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'merge-in-progress',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'branch-unmerged',
+          'not-run-root',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['status', 'errors', 'files'],
+  },
   'post-issue-comment': {
     type: 'object',
     properties: {
@@ -2043,6 +2094,7 @@ const TOOL_COMMANDS = {
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
   'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
+  'changed-files': [WORKTREE_CLI, 'changed-files'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -2139,6 +2191,7 @@ const TOOL_SCHEMAS = {
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
   'post-issue-comment': envelopeSchema('post-issue-comment'),
+  'changed-files': envelopeSchema('changed-files'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -3413,7 +3466,7 @@ async function tddStage(s) {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...s, tdd, sha: tdd.sha } };
+  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files } };
 }
 async function specReviewStage(s) {
   const { at } = s;
@@ -3422,7 +3475,7 @@ async function specReviewStage(s) {
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  return afterReview(at, 'spec review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 async function testReviewStage(s) {
   const { at } = s;
@@ -3433,10 +3486,10 @@ async function testReviewStage(s) {
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  return afterReview(at, 'test review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 async function testSkip(s) {
-  const { files } = s.tdd;
+  const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
   if (files.some((path) => path.startsWith('test/'))) return null;
   const range = `${s.base}..${s.sha}`;
@@ -3455,11 +3508,14 @@ async function standardsReviewStage(s) {
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  return afterReview(at, 'standards review', out, (standardsReview) => ({ ...s, standardsReview }));
+  return afterAmend(s, 'standards review', out, (standardsReview) => ({
+    ...s,
+    standardsReview,
+  }));
 }
 async function manifestTsdocStage(s) {
   const { at } = s;
-  if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
+  if (!s.files.some((path) => path.startsWith('src/'))) {
     return { next: { ...s, manifestTsdoc: 'no src/ change' } };
   }
   const values = {
@@ -3474,6 +3530,18 @@ function afterReview(at, label, out, next) {
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
+}
+async function afterAmend(s, label, out, next) {
+  const { at } = s;
+  const step = afterReview(at, label, out, next);
+  if ('stop' in step || out?.verdict !== 'fixed') return step;
+  const argv = [s.slice, step.next.sha, '--base', s.base];
+  const read = await runTool(at.ctx.hooks, 'changed-files', argv, at.place);
+  if (read === null) return { stop: died(at) };
+  if (read.status !== 'ok' || read.files === undefined) {
+    return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
+  }
+  return { next: { ...step.next, files: read.files } };
 }
 async function landSlice(s) {
   const { at } = s;
@@ -3549,7 +3617,7 @@ function sliceCommitValues(s) {
     base: s.base,
     reportDir: s.at.ctx.reportDir,
     sha: s.sha,
-    files: s.tdd.files,
+    files: s.files,
   };
 }
 function sliceReviewValues(s, report) {

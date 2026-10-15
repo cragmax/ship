@@ -3,7 +3,7 @@
  * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
  * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
- * `post-pr-comment`.
+ * `post-pr-comment`; and of `changed-files`, the slice chain's re-read.
  * Each is the `z.infer` of its schema in `schemas-run.ts`, the canonical
  * home of the shapes and their field docs. The status semantics and error
  * classes are `types.ts`'s.
@@ -15,6 +15,7 @@ import type {
   AppendPrBodyResultSchema,
   AttachInfoSchema,
   BumpResultSchema,
+  ChangedFilesResultSchema,
   CheckMasterResultSchema,
   ConflictKindSchema,
   ConflictPathSchema,
@@ -89,3 +90,6 @@ export type MasterMove = z.infer<typeof MasterMoveSchema>;
 
 /** Envelope of `check-master <main> --local SHA --remote SHA --synced SHA`. */
 export type CheckMasterResult = z.infer<typeof CheckMasterResultSchema>;
+
+/** Envelope of `changed-files <worktree> <sha> --base <base>`. */
+export type ChangedFilesResult = z.infer<typeof ChangedFilesResultSchema>;

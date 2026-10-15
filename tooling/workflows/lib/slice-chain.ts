@@ -178,6 +178,12 @@ interface ProvisionedSlice extends CutSlice {
 interface BuiltSlice extends ProvisionedSlice {
   readonly tdd: TddOutput;
   readonly sha: string;
+  /**
+   * The slice commit's changed paths: the tdd's, then each slice review amend's, re-read
+   * ({@link afterAmend}). The Manifest TSDoc review's amend is not re-read: no stage reads
+   * them after it.
+   */
+  readonly files: readonly string[];
 }
 
 /** A spec-reviewed slice: the spec review's answer; `sha` its amend. */
@@ -350,7 +356,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...s, tdd, sha: tdd.sha } };
+  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files } };
 }
 
 /** Hold the slice to its issue, amending its commit with any fix; `sha` its amend. */
@@ -361,7 +367,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  return afterReview(at, 'spec review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 
 /**
@@ -377,7 +383,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  return afterReview(at, 'test review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
 /**
@@ -386,7 +392,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
  * its commit comment-only, leaving no code path uncompared. A failed proof reviews them.
  */
 async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
-  const { files } = s.tdd;
+  const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
   if (files.some((path) => path.startsWith('test/'))) return null;
   const range = `${s.base}..${s.sha}`;
@@ -407,16 +413,19 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  return afterReview(at, 'standards review', out, (standardsReview) => ({ ...s, standardsReview }));
+  return afterAmend(s, 'standards review', out, (standardsReview) => ({
+    ...s,
+    standardsReview,
+  }));
 }
 
 /**
- * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the tdd
- * changed a path under `src/`; `sha` its amend.
+ * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the slice
+ * changes a path under `src/`; `sha` its amend.
  */
 async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
-  if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
+  if (!s.files.some((path) => path.startsWith('src/'))) {
     return { next: { ...s, manifestTsdoc: 'no src/ change' } };
   }
   const values = {
@@ -444,6 +453,29 @@ function afterReview<
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
+}
+
+/**
+ * {@link afterReview}, then for a `fixed` answer the amended commit's changed paths, re-read from
+ * git in place of the slice's `files`. A runner that returns nothing stops the slice as died; a
+ * failed re-read stops it blocked, naming the read, never keeping the stale list.
+ */
+async function afterAmend<T extends BuiltSlice>(
+  s: BuiltSlice,
+  label: string,
+  out: ReviewOutput | null,
+  next: (out: ReviewOutput) => T,
+): Promise<Step<T>> {
+  const { at } = s;
+  const step = afterReview(at, label, out, next);
+  if ('stop' in step || out?.verdict !== 'fixed') return step;
+  const argv = [s.slice, step.next.sha, '--base', s.base];
+  const read = await runTool(at.ctx.hooks, 'changed-files', argv, at.place);
+  if (read === null) return { stop: died(at) };
+  if (read.status !== 'ok' || read.files === undefined) {
+    return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
+  }
+  return { next: { ...step.next, files: read.files } };
 }
 
 /**
@@ -541,7 +573,7 @@ function leaseValues(s: ProvisionedSlice): LeaseValues {
  * The slice's one commit as the stages after the tdd are handed it.
  *
  * @returns The issue, the slice, its base, the report dir, the current
- *   commit and the tdd's changed paths.
+ *   commit and its changed paths.
  */
 function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   return {
@@ -550,7 +582,7 @@ function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
     base: s.base,
     reportDir: s.at.ctx.reportDir,
     sha: s.sha,
-    files: s.tdd.files,
+    files: s.files,
   };
 }
 
