@@ -35,7 +35,7 @@ export interface FileToWrite {
   readonly content: string;
 }
 
-/** The runner's values: one command, where its envelope goes, and a file to write first. */
+/** The runner's values: one command, where its envelope goes, and the files to write first. */
 export interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
@@ -46,8 +46,8 @@ export interface RunnerValues {
   readonly envelopeDir: string;
   /** The envelope's file-name stem, `[a-z0-9-]` only: `<name>.json`, `.err` and `.exit`. */
   readonly envelopeName: string;
-  /** A file the command reads, written before it runs. */
-  readonly write?: FileToWrite;
+  /** The files the command or a later one reads, written before it runs, in order. */
+  readonly write?: readonly FileToWrite[];
 }
 
 /** `issue-readiness`'s values: the run set, and an attached run's PR head. */
@@ -345,7 +345,7 @@ export const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
-      ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
+      ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
     ].join('\n'),
   issueReadiness: (values: IssueReadinessValues): string =>
     [

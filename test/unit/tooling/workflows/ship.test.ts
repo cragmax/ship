@@ -1924,7 +1924,7 @@ describe('runAttempt — how an attempt ends', () => {
     base: 'base0',
     reportDir: REPORT_DIR,
     registry: 'registry.json',
-    attachedRun: null,
+    attached: null,
     hooks: run.hooks,
     queue: createCommitQueue(),
     isHalting: () => halting,

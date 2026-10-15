@@ -11,6 +11,7 @@ import {
   GATE_OK,
   inTurn,
   LAND_OK,
+  masterMoved,
   readyVerdict,
   REPORT_DIR,
   TDD_BLOCKED,
@@ -745,11 +746,14 @@ describe('runShip — the bump', () => {
  * The PR body the publish call writes, line for line.
  *
  * @param run - The fake run.
- * @returns The lines after the publish prompt's begin marker.
+ * @returns The lines of the publish prompt's first file block.
  */
 const bodyOf = (run: FakeRun): string[] => {
   const lines = promptOf(run, 'runner:publish:list').split('\n');
-  return lines.slice(lines.indexOf('----- BEGIN FILE -----') + 1);
+  return lines.slice(
+    lines.indexOf('----- BEGIN FILE -----') + 1,
+    lines.indexOf('----- END FILE -----'),
+  );
 };
 
 describe('runShip — the PR writer', () => {
@@ -1198,6 +1202,116 @@ describe('runShip — the PR body limit', () => {
     expect(labels(run).filter((l) => l.startsWith('runner:post-pr-comment'))).toEqual([]);
     expect(report.epics[0]?.outcome).toBe('stopped');
     expect(report.epics[0]).not.toHaveProperty('prReportComment');
+  });
+});
+
+const PUBLISH_FAILED = {
+  exitCode: 1,
+  envelopePath: 'e.json',
+  status: 'failed',
+  errors: [{ step: 'push', message: 'the pre-push gate failed' }],
+  pushed: false,
+  pr: null,
+  mergeable: null,
+};
+
+/** Every file a run's runner prompts write first, by path. */
+const writtenFiles = (run: FakeRun): string[] =>
+  run.calls.flatMap((c) =>
+    c.prompt
+      .split('\n')
+      .filter((l) => l.startsWith('Write first: '))
+      .map((l) => l.slice('Write first: '.length)),
+  );
+
+/** The files a recovery's commands name: each word after a `--*-file` flag. */
+const namedFiles = (commands: readonly string[]): string[] =>
+  commands.flatMap((c) =>
+    [...c.matchAll(/--(?:body|comment|section)-file (\S+)/g)].map((m) => m[1] ?? ''),
+  );
+
+describe('runShip — a failed publish’s recovery', () => {
+  it('stops the epic with the publish command it ran and one post-pr-comment per moved section, each file written', async () => {
+    const run = fakeHooks({
+      retro: {
+        findings: [
+          { title: 'big', evidence: 'e'.repeat(66_000), kind: 'genuine', suggestion: 's' },
+        ],
+      },
+      'runner:publish': PUBLISH_FAILED,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const recovery = report.epics[0]?.recovery ?? [];
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'stopped',
+      message: 'publish failed: the pre-push gate failed',
+    });
+    expect(recovery).toEqual([
+      `npx tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
+      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
+      `Command: ${recovery[0] ?? ''}`,
+    );
+    expect(writtenFiles(run)).toEqual(expect.arrayContaining(namedFiles(recovery)));
+    expect(namedFiles(recovery)).toHaveLength(3);
+    expect(labels(run).filter((l) => /^runner:(teardown|retire-run):list$/.test(l))).toEqual([]);
+  });
+});
+
+describe('runShip — a stop before the publish carries no recovery', () => {
+  it.each([
+    [
+      'a master sync code conflict',
+      {
+        'runner:sync-master': {
+          exitCode: 1,
+          envelopePath: 'e.json',
+          status: 'refused',
+          reason: 'code-conflict',
+          errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+          outcome: null,
+          commit: null,
+          upstream: null,
+          conflicts: [],
+          version: null,
+          pending: [],
+        },
+      },
+      'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
+    ],
+    [
+      'a failed bump',
+      {
+        'runner:bump': {
+          exitCode: 1,
+          envelopePath: 'e.json',
+          status: 'failed',
+          errors: [{ step: 'commit', message: 'the hook failed' }],
+          kind: 'minor',
+          from: '1.0.0',
+          to: '1.1.0',
+          commit: null,
+        },
+      },
+      'bump failed: the hook failed',
+    ],
+    [
+      'a failed master check',
+      masterMoved({ move: 'rewound', current: 'older1' }, { move: 'equal', current: 'origin0' }),
+      'master check failed: local master rewound: launch local0, now older1 — restore it from local0',
+    ],
+  ])('stops on %s with its message alone', async (_name, stop, message) => {
+    const run = fakeHooks(stop);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]).toMatchObject({ outcome: 'stopped', message });
+    expect(report.epics[0]).not.toHaveProperty('recovery');
+    expect(labels(run).filter((l) => l.startsWith('runner:publish'))).toEqual([]);
   });
 });
 

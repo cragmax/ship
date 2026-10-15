@@ -21,7 +21,7 @@ import type { GateVerdict, IssueCheck } from '../../lib/run-gate.js';
 import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
 import type { JsonSchema, WorkflowHooks } from './hooks.types.js';
-import { PROMPTS, type FileToWrite } from './prompts.js';
+import { PROMPTS, shellWord, type FileToWrite } from './prompts.js';
 import { TOOL_ENVELOPE_SCHEMAS } from './schemas.generated.js';
 import { agentOptions } from './stages.js';
 
@@ -62,8 +62,8 @@ export interface ToolPlace {
    * (`7-1`, `paper`): the label becomes `runner:<tool>:<tag>`.
    */
   readonly tag?: string;
-  /** A file the command reads, written by the runner before it runs. */
-  readonly write?: FileToWrite;
+  /** The files the command or a later one reads, written by the runner before it runs. */
+  readonly write?: readonly FileToWrite[];
 }
 
 /**
@@ -77,11 +77,11 @@ export const PRE_CUT: ToolPlace = { dir: TOOL_ENVELOPE_DIR };
  *
  * @param reportDir - The run's report directory.
  * @param tag - The call's {@link ToolPlace.tag}.
- * @param write - A file to write first.
- * @returns `<reportDir>/tool`, the tag and the file.
+ * @param write - The files to write first.
+ * @returns `<reportDir>/tool`, the tag and the files.
  */
-export function runPlace(reportDir: string, tag: string, write?: FileToWrite): ToolPlace {
-  return { dir: `${reportDir}/tool`, tag, ...(write === undefined ? {} : { write }) };
+export function runPlace(reportDir: string, tag: string, ...write: FileToWrite[]): ToolPlace {
+  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
 
 /** Fields every tool output carries. */
@@ -354,7 +354,7 @@ export async function runTool<N extends ToolName>(
   place: ToolPlace = PRE_CUT,
 ): Promise<ToolOutputs[N] | null> {
   const prompt = PROMPTS.runner({
-    argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
+    argv: toolWords(name, argv),
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
@@ -368,6 +368,24 @@ export async function runTool<N extends ToolName>(
     ),
   );
   return typeof out === 'object' && out !== null ? (out as ToolOutputs[N]) : null;
+}
+
+/** A tool call's command words, as the runner runs them from the main checkout. */
+function toolWords(name: ToolName, argv: readonly string[]): string[] {
+  return ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+
+/** The word a {@link toolCommandLine} leaves unquoted, for a person to fill: the PR's number. */
+export const PR_PLACEHOLDER = '<pr>';
+
+/**
+ * A tool call's command line, as {@link runTool}'s runner runs it: each word quoted for bash, but
+ * {@link PR_PLACEHOLDER}.
+ */
+export function toolCommandLine(name: ToolName, argv: readonly string[]): string {
+  return toolWords(name, argv)
+    .map((word) => (word === PR_PLACEHOLDER ? word : shellWord(word)))
+    .join(' ');
 }
 
 /**
