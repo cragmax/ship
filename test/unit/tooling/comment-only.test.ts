@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   findMojibake,
@@ -19,6 +19,9 @@ import {
 import { StepFailure } from '../../../tooling/worktree/types.js';
 import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
 import { mustRun, runIn } from '../../helpers/worktree-fixture.js';
+
+// A test spawning git or the CLI through tsx runs near 5s under the gate's parallel load.
+vi.setConfig({ testTimeout: 20_000 });
 
 const BASE = [
   '/**',
