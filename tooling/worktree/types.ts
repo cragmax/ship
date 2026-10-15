@@ -34,6 +34,7 @@ import type {
   StepErrorSchema,
   TeardownResultSchema,
   TsserverRestartSchema,
+  TsserverSkipReasonSchema,
   WarmMemberSchema,
 } from './schemas.js';
 
@@ -69,6 +70,9 @@ export type TeardownResult = z.infer<typeof TeardownResultSchema>;
 
 /** What `teardown`'s restart of its session's tsserver did. */
 export type TsserverRestart = z.infer<typeof TsserverRestartSchema>;
+
+/** Why `teardown` skipped the restart. */
+export type TsserverSkipReason = z.infer<typeof TsserverSkipReasonSchema>;
 
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */
 export type RetireRunResult = z.infer<typeof RetireRunResultSchema>;

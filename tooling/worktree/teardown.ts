@@ -55,7 +55,7 @@ export interface TeardownDeps {
 const DEFAULT_DEPS: TeardownDeps = {
   unlink: unlinkLink,
   selfPath: import.meta.filename,
-  restartTsserver: () => restartSessionTsserver(),
+  restartTsserver: restartSessionTsserver,
 };
 
 /** What to keep before the worktree goes: `--keep-to <dir> --base <sha> [--report <file>]`. */

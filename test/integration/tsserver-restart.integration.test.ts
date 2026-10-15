@@ -14,6 +14,7 @@ import { createInterface } from 'node:readline';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { isPidAlive } from '../../src/contracts/index.js';
 import { restartSessionTsserver } from '../../tooling/worktree/tsserver-restart.js';
 
 const WIN32 = process.platform === 'win32';
@@ -66,15 +67,6 @@ function killQuietly(pid: number): void {
   }
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function pidOf(child: ChildProcess): number {
   if (child.pid === undefined) throw new Error('the process did not start');
   return child.pid;
@@ -109,9 +101,9 @@ describe.skipIf(!WIN32)('restartSessionTsserver against real processes', () => {
     });
 
     expect(record).toEqual({ outcome: 'restarted', session, killed: [pids.semantic] });
-    await expect.poll(() => alive(pids.semantic)).toBe(false);
-    expect(alive(pids.syntax)).toBe(true);
-    expect(alive(pidOf(outside))).toBe(true);
-    expect(alive(session)).toBe(true);
+    await expect.poll(() => isPidAlive(pids.semantic)).toBe(false);
+    expect(isPidAlive(pids.syntax)).toBe(true);
+    expect(isPidAlive(pidOf(outside))).toBe(true);
+    expect(isPidAlive(session)).toBe(true);
   });
 });

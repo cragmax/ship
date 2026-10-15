@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { describeError } from '../lib/describe-error.js';
 import { runCaptured } from './exec.js';
-import type { TsserverRestart } from './types.js';
+import type { TsserverRestart, TsserverSkipReason } from './types.js';
 
 /** One row of the process table. */
 export interface ProcessEntry {
@@ -104,10 +104,7 @@ function killAll(
 }
 
 /** A skip record. */
-export function skipped(
-  reason: Extract<TsserverRestart, { outcome: 'skipped' }>['reason'],
-  detail: string | null = null,
-): TsserverRestart {
+export function skipped(reason: TsserverSkipReason, detail: string | null = null): TsserverRestart {
   return { outcome: 'skipped', reason, detail };
 }
 

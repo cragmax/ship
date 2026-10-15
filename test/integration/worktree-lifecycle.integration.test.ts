@@ -30,8 +30,6 @@ import { unlinkLink } from '../../tooling/worktree/links.js';
 import { provisionBatch } from '../../tooling/worktree/provision-batch.js';
 import { provision } from '../../tooling/worktree/provision.js';
 import { teardownWorktree } from '../../tooling/worktree/teardown.js';
-import type * as TsserverRestartModule from '../../tooling/worktree/tsserver-restart.js';
-import { restartSessionTsserver } from '../../tooling/worktree/tsserver-restart.js';
 import type {
   ProvisionBatchResult,
   ProvisionResult,
@@ -53,13 +51,6 @@ import {
   type FixtureRepoOptions,
 } from '../helpers/worktree-fixture.js';
 import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
-
-// A spy that delegates to the real restart, which the test configs switch off; no test here can
-// reach the running session's tsserver.
-vi.mock('../../tooling/worktree/tsserver-restart.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof TsserverRestartModule>();
-  return { ...actual, restartSessionTsserver: vi.fn(actual.restartSessionTsserver) };
-});
 
 const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -456,41 +447,15 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   const RESTARTED: TsserverRestart = { outcome: 'restarted', session: 4242, killed: [4343, 4344] };
   const NOT_REMOVED: TsserverRestart = { outcome: 'skipped', reason: 'not-removed', detail: null };
 
-  /** A restart seam that counts its calls. */
-  function countingRestart(): { calls: () => number; restartTsserver: () => TsserverRestart } {
-    let calls = 0;
-    return {
-      calls: () => calls,
-      restartTsserver: () => {
-        calls += 1;
-        return RESTARTED;
-      },
-    };
-  }
-
   it('restarts once after removing a worktree and records the restart', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
-    const seam = countingRestart();
+    const restartTsserver = vi.fn(() => RESTARTED);
 
-    const down = teardownWorktree(toPosix(wt), { restartTsserver: seam.restartTsserver });
-
-    expect(down.removed, JSON.stringify(down)).toBe(true);
-    expect(seam.calls()).toBe(1);
-    expect(down.tsserverRestart).toEqual(RESTARTED);
-  });
-
-  it('restarts through restartSessionTsserver by default', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
-    const wt = addWorktree(main, join(root, 'wt'), 'wt');
-    const restart = vi.mocked(restartSessionTsserver);
-    restart.mockClear();
-    restart.mockReturnValueOnce(RESTARTED);
-
-    const down = teardownWorktree(toPosix(wt));
+    const down = teardownWorktree(toPosix(wt), { restartTsserver });
 
     expect(down.removed, JSON.stringify(down)).toBe(true);
-    expect(restart).toHaveBeenCalledOnce();
+    expect(restartTsserver).toHaveBeenCalledOnce();
     expect(down.tsserverRestart).toEqual(RESTARTED);
   });
 
@@ -501,58 +466,56 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
     const admin = mustRun('git', ['rev-parse', '--absolute-git-dir'], wt).trim();
     symlinkSync(admin, join(wt, 'admin-link'), 'junction');
-    const seam = countingRestart();
+    const restartTsserver = vi.fn(() => RESTARTED);
 
-    const down = teardownWorktree(toPosix(wt), { restartTsserver: seam.restartTsserver });
+    const down = teardownWorktree(toPosix(wt), { restartTsserver });
 
     expect(down.status, JSON.stringify(down)).toBe('failed');
     expect(down.errors[0]?.step).toBe('post-remove-recount');
     expect(down.removed).toBe(true);
-    expect(seam.calls()).toBe(1);
+    expect(restartTsserver).toHaveBeenCalledOnce();
     expect(down.tsserverRestart).toEqual(RESTARTED);
   });
 
   it('restarts nothing for an absent path', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
-    const seam = countingRestart();
+    const restartTsserver = vi.fn(() => RESTARTED);
     const cwd = process.cwd();
     let down: TeardownResult;
     try {
       process.chdir(main);
-      down = teardownWorktree(toPosix(join(root, 'gone')), {
-        restartTsserver: seam.restartTsserver,
-      });
+      down = teardownWorktree(toPosix(join(root, 'gone')), { restartTsserver });
     } finally {
       process.chdir(cwd);
     }
 
     expect(down.status, JSON.stringify(down)).toBe('ok');
-    expect(seam.calls()).toBe(0);
+    expect(restartTsserver).not.toHaveBeenCalled();
     expect(down.tsserverRestart).toEqual(NOT_REMOVED);
   });
 
   it('restarts nothing when teardown refuses', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
-    const seam = countingRestart();
+    const restartTsserver = vi.fn(() => RESTARTED);
 
-    const down = teardownWorktree(toPosix(main), { restartTsserver: seam.restartTsserver });
+    const down = teardownWorktree(toPosix(main), { restartTsserver });
 
     expect(down.reason).toBe('main-worktree');
-    expect(seam.calls()).toBe(0);
+    expect(restartTsserver).not.toHaveBeenCalled();
     expect(down.tsserverRestart).toEqual(NOT_REMOVED);
   });
 
   it('restarts nothing when teardown fails', TIMEOUT, () => {
     const main = makeFixtureRepo(root, template);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
-    const seam = countingRestart();
+    const restartTsserver = vi.fn(() => RESTARTED);
     const keep = { dir: toPosix(join(root, 'kept')), base: 'no-such-commit' };
 
-    const down = teardownWorktree(toPosix(wt), { restartTsserver: seam.restartTsserver }, keep);
+    const down = teardownWorktree(toPosix(wt), { restartTsserver }, keep);
 
     expect(down.status).toBe('failed');
     expect(existsSync(wt)).toBe(true);
-    expect(seam.calls()).toBe(0);
+    expect(restartTsserver).not.toHaveBeenCalled();
     expect(down.tsserverRestart).toEqual(NOT_REMOVED);
   });
 

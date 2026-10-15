@@ -15,6 +15,7 @@ const SEMANTIC_CMD =
 const SYNTAX_CMD =
   '"C:\\nodejs\\node.exe" C:/repo/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic';
 const LSP_CMD = '"C:\\nodejs\\node.exe" C:/npm/typescript-language-server/lib/cli.mjs --stdio';
+const TEARDOWN_CMD = 'node --import tsx tooling/worktree.ts teardown C:/wt';
 
 function proc(
   pid: number,
@@ -41,103 +42,91 @@ const TWO_SESSIONS: ProcessEntry[] = [
   proc(100, 4, 'claude.exe'),
   ...lspTree(100, 110),
   proc(140, 100, 'bash.exe'),
-  proc(150, 140, 'node.exe', 'node --import tsx tooling/worktree.ts teardown C:/wt'),
+  proc(150, 140, 'node.exe', TEARDOWN_CMD),
   proc(200, 4, 'claude.exe'),
   ...lspTree(200, 210),
 ];
 
-/** Deps over a fake process table; each kill is recorded, failing when `failing` names it. */
+// Session 320 was started from a Bash of session 300; each case adds the teardown under 320.
+const NESTED: ProcessEntry[] = [
+  proc(300, 4, 'claude.exe'),
+  ...lspTree(300, 310),
+  proc(305, 300, 'bash.exe'),
+  proc(320, 305, 'claude.exe'),
+  ...lspTree(320, 330),
+];
+
+/**
+ * Deps over a fake process table; each kill is recorded, failing when `failing` names it. Each
+ * `omit`ted seam falls back to production.
+ */
 function fakeDeps(
   table: readonly ProcessEntry[],
   over: Partial<RestartDeps> = {},
   failing: readonly number[] = [],
+  omit: readonly (keyof RestartDeps)[] = [],
 ): { deps: Partial<RestartDeps>; kills: number[] } {
   const kills: number[] = [];
-  return {
-    kills,
-    deps: {
-      disabled: false,
-      platform: 'win32',
-      selfPid: 150,
-      sessionImage: 'claude.exe',
-      listProcesses: () => table,
-      kill: (pid) => {
-        kills.push(pid);
-        if (failing.includes(pid))
-          throw Object.assign(new Error('Access is denied'), { code: 'EPERM' });
-      },
-      ...over,
+  const all: Partial<RestartDeps> = {
+    disabled: false,
+    platform: 'win32',
+    selfPid: 150,
+    sessionImage: 'claude.exe',
+    listProcesses: () => table,
+    kill: (pid) => {
+      kills.push(pid);
+      if (failing.includes(pid))
+        throw Object.assign(new Error('Access is denied'), { code: 'EPERM' });
     },
+    ...over,
   };
+  const deps = Object.fromEntries(
+    Object.entries(all).filter(([key]) => !omit.includes(key as keyof RestartDeps)),
+  ) as Partial<RestartDeps>;
+  return { kills, deps };
 }
 
 describe('restartSessionTsserver', () => {
-  it("kills only the session's semantic tsserver, sparing its syntax one and another session's", () => {
-    const { deps, kills } = fakeDeps(TWO_SESSIONS);
-
-    expect(restartSessionTsserver(deps)).toEqual({
-      outcome: 'restarted',
+  it.each([
+    {
+      name: "kills only the session's semantic tsserver, sparing its syntax one and another session's",
+      table: TWO_SESSIONS,
+      over: {},
       session: 100,
       killed: [112],
-    });
-    expect(kills).toEqual([112]);
-  });
-
-  it('finds the nearest claude.exe ancestor in a nested session', () => {
-    // Session 300 runs a Bash that started session 320; the teardown runs under 320.
-    const nested = [
-      proc(300, 4, 'claude.exe'),
-      ...lspTree(300, 310),
-      proc(305, 300, 'bash.exe'),
-      proc(320, 305, 'claude.exe'),
-      ...lspTree(320, 330),
-      proc(340, 320, 'bash.exe'),
-      proc(150, 340, 'node.exe', 'node --import tsx tooling/worktree.ts teardown C:/wt'),
-    ];
-    const { deps, kills } = fakeDeps(nested);
-
-    expect(restartSessionTsserver(deps)).toEqual({
-      outcome: 'restarted',
+    },
+    {
+      // The teardown runs under a Bash of session 320.
+      name: 'finds the nearest claude.exe ancestor in a nested session',
+      table: [...NESTED, proc(340, 320, 'bash.exe'), proc(150, 340, 'node.exe', TEARDOWN_CMD)],
+      over: {},
       session: 320,
       killed: [332],
-    });
-    expect(kills).toEqual([332]);
-  });
-
-  it("takes the teardown's own parent when it is the session", () => {
-    // Session 320 spawned the teardown directly, inside a Bash of session 300.
-    const nested = [
-      proc(300, 4, 'claude.exe'),
-      ...lspTree(300, 310),
-      proc(305, 300, 'bash.exe'),
-      proc(320, 305, 'claude.exe'),
-      ...lspTree(320, 330),
-      proc(150, 320, 'node.exe', 'node --import tsx tooling/worktree.ts teardown C:/wt'),
-    ];
-    const { deps, kills } = fakeDeps(nested);
-
-    expect(restartSessionTsserver(deps)).toEqual({
-      outcome: 'restarted',
+    },
+    {
+      // Session 320 spawned the teardown directly.
+      name: "takes the teardown's own parent when it is the session",
+      table: [...NESTED, proc(150, 320, 'node.exe', TEARDOWN_CMD)],
+      over: {},
       session: 320,
       killed: [332],
-    });
-    expect(kills).toEqual([332]);
-  });
-
-  it('matches the session and node image names case-insensitively', () => {
-    const table = TWO_SESSIONS.map((p) => {
-      if (p.pid === 100) return { ...p, name: 'Claude.EXE' };
-      if (p.pid === 112) return { ...p, name: 'NODE.EXE' };
-      return p;
-    });
-    const { deps, kills } = fakeDeps(table, { sessionImage: 'CLAUDE.exe' });
-
-    expect(restartSessionTsserver(deps)).toEqual({
-      outcome: 'restarted',
+    },
+    {
+      name: 'matches the session and node image names case-insensitively',
+      table: TWO_SESSIONS.map((p) => {
+        if (p.pid === 100) return { ...p, name: 'Claude.EXE' };
+        if (p.pid === 112) return { ...p, name: 'NODE.EXE' };
+        return p;
+      }),
+      over: { sessionImage: 'CLAUDE.exe' },
       session: 100,
       killed: [112],
-    });
-    expect(kills).toEqual([112]);
+    },
+  ])('$name', ({ table, over, session, killed }) => {
+    const { deps, kills } = fakeDeps(table, over);
+
+    expect(restartSessionTsserver(deps)).toEqual({ outcome: 'restarted', session, killed });
+    expect(kills).toEqual(killed);
   });
 
   it('records the pids killed when only some kills fail', () => {
@@ -190,32 +179,15 @@ describe('restartSessionTsserver', () => {
     expect(kills).toEqual([]);
   });
 
-  it('skips as lookup-failed, with the error, when the process table cannot be read', () => {
-    const { deps, kills } = fakeDeps(TWO_SESSIONS, {
-      listProcesses: () => {
-        throw new Error('process lookup exited 1: Get-CimInstance failed');
-      },
-    });
-
-    expect(restartSessionTsserver(deps)).toEqual({
-      outcome: 'skipped',
-      reason: 'lookup-failed',
-      detail: 'process lookup exited 1: Get-CimInstance failed',
-    });
-    expect(kills).toEqual([]);
-  });
-
   it('skips as lookup-failed when the PowerShell process lookup exits non-zero', () => {
     vi.mocked(runCaptured).mockReturnValueOnce({
       exitCode: 1,
       stdout: '',
       tail: 'Get-CimInstance : Access denied',
     });
-    const { deps, kills } = fakeDeps(TWO_SESSIONS);
-    const real = { ...deps };
-    delete real.listProcesses;
+    const { deps, kills } = fakeDeps(TWO_SESSIONS, {}, [], ['listProcesses']);
 
-    expect(restartSessionTsserver(real)).toEqual({
+    expect(restartSessionTsserver(deps)).toEqual({
       outcome: 'skipped',
       reason: 'lookup-failed',
       detail: 'process lookup exited 1: Get-CimInstance : Access denied',
@@ -229,11 +201,9 @@ describe('restartSessionTsserver', () => {
       stdout: '[{"ProcessId":"150","ParentProcessId":140,"Name":"node.exe","CommandLine":null}]',
       tail: '',
     });
-    const { deps, kills } = fakeDeps(TWO_SESSIONS);
-    const real = { ...deps };
-    delete real.listProcesses;
+    const { deps, kills } = fakeDeps(TWO_SESSIONS, {}, [], ['listProcesses']);
 
-    expect(restartSessionTsserver(real)).toMatchObject({
+    expect(restartSessionTsserver(deps)).toMatchObject({
       outcome: 'skipped',
       reason: 'lookup-failed',
     });
@@ -252,12 +222,10 @@ describe('restartSessionTsserver', () => {
   });
 
   it('is disabled by PH_TSSERVER_RESTART=off, which the test configs set', () => {
-    const { deps, kills } = fakeDeps(TWO_SESSIONS);
-    const fromEnv = { ...deps };
-    delete fromEnv.disabled;
+    const { deps, kills } = fakeDeps(TWO_SESSIONS, {}, [], ['disabled']);
 
     expect(process.env.PH_TSSERVER_RESTART).toBe('off');
-    expect(restartSessionTsserver(fromEnv)).toEqual({
+    expect(restartSessionTsserver(deps)).toEqual({
       outcome: 'skipped',
       reason: 'disabled',
       detail: null,
