@@ -365,7 +365,11 @@ export function fakeHooks(
   responses: Readonly<Record<string, unknown>> = {},
   options: FakeOptions = {},
 ): FakeRun {
-  const table: Readonly<Record<string, unknown>> = { ...HAPPY_PATH, ...responses };
+  const table: Readonly<Record<string, unknown>> = {
+    ...HAPPY_PATH,
+    'runner:changed-files': amendReread(responses['tdd']),
+    ...responses,
+  };
   const gate = options.gate ?? ((_call: RecordedCall, answer: unknown) => Promise.resolve(answer));
   const calls: RecordedCall[] = [];
   const phases: string[] = [];
@@ -410,6 +414,17 @@ export function fakeHooks(
     },
   };
   return { hooks, calls, phases, timeline, violations };
+}
+
+/**
+ * The default re-read of an amended slice commit: an amend that adds no path, so the tdd's files.
+ *
+ * @param tdd - The run's tdd answer, `undefined` for {@link TDD_GREEN}.
+ * @returns An `ok` `changed-files` answer.
+ */
+function amendReread(tdd: unknown): Readonly<Record<string, unknown>> {
+  const files = (tdd as { readonly files?: unknown } | null | undefined)?.files ?? TDD_FILES;
+  return { ...OK, files };
 }
 
 /**

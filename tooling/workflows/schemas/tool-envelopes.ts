@@ -27,6 +27,7 @@ import {
 import {
   AppendPrBodyResultSchema,
   BumpResultSchema,
+  ChangedFilesResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
@@ -132,6 +133,9 @@ export const TOOL_ENVELOPES = {
   }),
   'append-pr-body': AppendPrBodyResultSchema.pick({ ...STATUS }).extend({ errors: ERRORS }),
   'post-pr-comment': PostPrCommentResultSchema.pick({ ...STATUS, url: true }).extend({
+    errors: ERRORS,
+  }),
+  'changed-files': ChangedFilesResultSchema.pick({ ...STATUS, files: true }).extend({
     errors: ERRORS,
   }),
   'post-issue-comment': PostIssueCommentResultSchema.pick({ ...STATUS, url: true }).extend({

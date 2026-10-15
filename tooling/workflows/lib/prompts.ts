@@ -17,7 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
-import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
+import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from './stages.js';
 
 /** A live run's changed files, for `issue-overlap`'s judgment. */
 export interface LiveRunFiles {
@@ -39,6 +39,11 @@ export interface FileToWrite {
 export interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
+  /**
+   * The main checkout, absolute, the runner runs from whatever directory it starts in; absent
+   * before pre-flight's `preflight` call has named it, when the runner runs from its start.
+   */
+  readonly checkout?: string;
   /**
    * The directory the runner makes the call's fresh envelope directory in;
    * a relative one resolves against the main checkout.
@@ -278,7 +283,7 @@ function serverTierLines(lease: LeaseValues): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
 
@@ -335,6 +340,7 @@ export const PROMPTS = {
   runner: (values: RunnerValues): string =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
+      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),

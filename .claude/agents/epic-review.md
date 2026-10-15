@@ -23,7 +23,7 @@ You judge the epic's landed issues as one change, once the last slice has landed
 - `Epic file:`, `Epic command:` — with an epic only: where the epic's text goes, and the command that writes it; run it verbatim.
 - `Issue files:` — each landed issue's text, written by an earlier stage.
 - `Unlanded (JSON):` — each issue of the run that did not land: `issue`, `outcome`, and `reason` when known.
-- `Slice reports:` — the slice reviews' reports: the parked ledger.
+- `Slice reports:` — the slice reviews' reports: their `skipped` findings and the Manifest TSDoc reports' `DEFERRED:` lines are the parked ledger.
 - `Report file:` — where your report goes.
 
 ## Limits

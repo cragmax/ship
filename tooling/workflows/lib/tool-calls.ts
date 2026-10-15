@@ -45,7 +45,8 @@ export type ToolName =
   | 'publish'
   | 'append-pr-body'
   | 'post-pr-comment'
-  | 'post-issue-comment';
+  | 'post-issue-comment'
+  | 'changed-files';
 
 /** A worktree-CLI command the workflow runs: every tool but the run gate's and comment-only's. */
 export type WorktreeToolName = Exclude<ToolName, 'run-gate' | 'check' | 'comment-only'>;
@@ -64,6 +65,8 @@ export interface ToolPlace {
   readonly tag?: string;
   /** The files the command or a later one reads, written by the runner before it runs. */
   readonly write?: readonly FileToWrite[];
+  /** The main checkout the runner runs from, absolute; absent before `preflight` has named it. */
+  readonly checkout?: string;
 }
 
 /**
@@ -73,15 +76,42 @@ export interface ToolPlace {
 export const PRE_CUT: ToolPlace = { dir: TOOL_ENVELOPE_DIR };
 
 /**
+ * A {@link PRE_CUT} place with a tag and the checkout to run from.
+ *
+ * @param main - The main checkout, absolute; `undefined` before `preflight` has named it.
+ * @param tag - The call's {@link ToolPlace.tag}, if any.
+ */
+export function preCutPlace(main: string | undefined, tag?: string): ToolPlace {
+  return {
+    ...PRE_CUT,
+    ...(tag === undefined ? {} : { tag }),
+    ...(main === undefined ? {} : { checkout: main }),
+  };
+}
+
+/** A cut run, as {@link runPlace} places its calls. */
+export interface RunAt {
+  /** The run's report directory. */
+  readonly reportDir: string;
+  /** The main checkout, absolute; absent where no pre-flight named it (`resync`). */
+  readonly main?: string;
+}
+
+/**
  * The place of a call once its run is cut: under the run's report directory.
  *
- * @param reportDir - The run's report directory.
+ * @param at - The run's report directory and main checkout.
  * @param tag - The call's {@link ToolPlace.tag}.
  * @param write - The files to write first.
- * @returns `<reportDir>/tool`, the tag and the files.
+ * @returns `<reportDir>/tool`, the tag, the files and the checkout.
  */
-export function runPlace(reportDir: string, tag: string, ...write: FileToWrite[]): ToolPlace {
-  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
+export function runPlace(at: RunAt, tag: string, ...write: FileToWrite[]): ToolPlace {
+  return {
+    dir: `${at.reportDir}/tool`,
+    tag,
+    ...(write.length === 0 ? {} : { write }),
+    ...(at.main === undefined ? {} : { checkout: at.main }),
+  };
 }
 
 /** Fields every tool output carries. */
@@ -162,6 +192,9 @@ export type PostPrCommentOutput = EnvelopeOutput<'post-pr-comment'>;
 /** `post-issue-comment`'s consumed fields. */
 export type PostIssueCommentOutput = EnvelopeOutput<'post-issue-comment'>;
 
+/** `changed-files`' consumed fields. */
+export type ChangedFilesOutput = EnvelopeOutput<'changed-files'>;
+
 /** Each tool's output type. */
 export interface ToolOutputs {
   preflight: PreflightOutput;
@@ -183,6 +216,7 @@ export interface ToolOutputs {
   'append-pr-body': AppendPrBodyOutput;
   'post-pr-comment': PostPrCommentOutput;
   'post-issue-comment': PostIssueCommentOutput;
+  'changed-files': ChangedFilesOutput;
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
@@ -212,6 +246,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
   'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
+  'changed-files': [WORKTREE_CLI, 'changed-files'],
 };
 
 /** A string property's schema. */
@@ -337,6 +372,7 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
   'post-issue-comment': envelopeSchema('post-issue-comment'),
+  'changed-files': envelopeSchema('changed-files'),
 };
 
 /**
@@ -358,6 +394,7 @@ export async function runTool<N extends ToolName>(
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
+    ...(place.checkout === undefined ? {} : { checkout: place.checkout }),
   });
   const out = await hooks.agent(
     prompt,

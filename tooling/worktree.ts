@@ -25,6 +25,7 @@ import { toPosix } from './shared.js';
 import { RUN_BRANCH_SHAPE } from './workflows/lib/run-branch.js';
 import { appendPrBody } from './worktree/append-pr-body.js';
 import { bump } from './worktree/bump.js';
+import { changedFiles } from './worktree/changed-files.js';
 import { checkMaster } from './worktree/check-master.js';
 import { commit } from './worktree/commit.js';
 import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
@@ -55,6 +56,7 @@ import {
 import {
   AppendPrBodyResultSchema,
   BumpResultSchema,
+  ChangedFilesResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
@@ -330,6 +332,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         commentFile: pathFlag(args, '--comment-file'),
+      }),
+  },
+  'changed-files': {
+    schema: ChangedFilesResultSchema,
+    valueFlags: ['--base'],
+    switchFlags: [],
+    rest: { min: 1, max: 1 },
+    run: (args) =>
+      changedFiles({
+        worktree: args.target,
+        sha: args.rest[0] ?? '',
+        base: args.values.get('--base') ?? '',
       }),
   },
   'post-issue-comment': {

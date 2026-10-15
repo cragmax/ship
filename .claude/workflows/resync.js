@@ -80,7 +80,7 @@ const STAGES = {
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
-const PROBES_PER_ISSUE = 3;
+const PROBES_PER_STAGE = 3;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
@@ -169,7 +169,7 @@ function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
 const ISSUE_TEXT_JQ =
@@ -200,6 +200,7 @@ const PROMPTS = {
   runner: (values) =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
+      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
@@ -1244,6 +1245,57 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'url'],
   },
+  'changed-files': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'merge-in-progress',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'branch-unmerged',
+          'not-run-root',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['status', 'errors', 'files'],
+  },
   'post-issue-comment': {
     type: 'object',
     properties: {
@@ -1576,8 +1628,20 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function runPlace(reportDir, tag, ...write) {
-  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
+function preCutPlace(main, tag) {
+  return {
+    ...PRE_CUT,
+    ...(tag === undefined ? {} : { tag }),
+    ...(main === undefined ? {} : { checkout: main }),
+  };
+}
+function runPlace(at, tag, ...write) {
+  return {
+    dir: `${at.reportDir}/tool`,
+    tag,
+    ...(write.length === 0 ? {} : { write }),
+    ...(at.main === undefined ? {} : { checkout: at.main }),
+  };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -1601,6 +1665,7 @@ const TOOL_COMMANDS = {
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
   'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
+  'changed-files': [WORKTREE_CLI, 'changed-files'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -1697,6 +1762,7 @@ const TOOL_SCHEMAS = {
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
   'post-issue-comment': envelopeSchema('post-issue-comment'),
+  'changed-files': envelopeSchema('changed-files'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -1704,6 +1770,7 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
+    ...(place.checkout === undefined ? {} : { checkout: place.checkout }),
   });
   const out = await hooks.agent(
     prompt,
@@ -1731,7 +1798,7 @@ function envelopeProblem(tool, out) {
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
 }
 
-async function cleanupSpent(hooks, live) {
+async function cleanupSpent(hooks, live, main) {
   const report = {
     tornDown: [],
     retired: [],
@@ -1745,26 +1812,27 @@ async function cleanupSpent(hooks, live) {
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report);
+    await cleanupRun(hooks, run, report, main);
     if (report.stop !== null) break;
   }
   return report;
 }
-async function cleanupRun(hooks, run, report) {
+async function cleanupRun(hooks, run, report, main) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, run.branch, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
 }
-async function tearDownSpent(hooks, path, branch, report) {
-  const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
-  const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
+async function tearDownSpent(hooks, spent, report) {
+  const { path, branch } = spent;
+  const place = preCutPlace(
+    spent.main,
+    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
+  );
+  const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);
-    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
-      ...PRE_CUT,
-      tag,
-    });
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], place);
     if (retired?.status === 'ok') report.retired.push(branch);
     else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
@@ -1949,7 +2017,7 @@ const AGENT_CALLS = {
 };
 
 async function syncMasterStep(hooks, ctx) {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
   const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
   if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
     return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
@@ -1972,7 +2040,7 @@ async function resolveAndContinue(hooks, ctx, pending) {
     hooks,
     'sync-master',
     [ctx.batch, '--continue'],
-    runPlace(ctx.reportDir, `${ctx.tag}-continue`),
+    runPlace(ctx, `${ctx.tag}-continue`),
   );
   return syncVerdict(done, 'resolved');
 }
@@ -2049,14 +2117,14 @@ async function attachStep(hooks, branch) {
   }
   if (attach.created) {
     const argv = [batch, '--report-dir', reportDir];
-    const prov = await runTool(hooks, 'provision-batch', argv, runPlace(reportDir, 'resync'));
+    const prov = await runTool(hooks, 'provision-batch', argv, runPlace({ reportDir }, 'resync'));
     if (prov?.status !== 'ok') return { stop: envelopeProblem('provision-batch', prov) };
   }
   return { batch, reportDir, pr: attach.pr };
 }
 async function pushStep(hooks, attached, report) {
   const argv = [attached.batch, '--push-only', '--log', `${attached.reportDir}/resync-push.log`];
-  const out = await runTool(hooks, 'publish', argv, runPlace(attached.reportDir, 'resync'));
+  const out = await runTool(hooks, 'publish', argv, runPlace(attached, 'resync'));
   if (out?.status !== 'ok') {
     return { ...report, status: 'stopped', message: envelopeProblem('publish', out) };
   }

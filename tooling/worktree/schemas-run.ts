@@ -335,3 +335,12 @@ export const CheckMasterResultSchema = ResultBaseSchema.extend({
   /** `origin`'s `refs/heads/master`, read with `git ls-remote`; `null` until checked. */
   remote: MasterMoveSchema.nullable(),
 });
+
+/** Envelope of `changed-files <worktree> <sha> --base <base>`. */
+export const ChangedFilesResultSchema = ResultBaseSchema.extend({
+  /**
+   * Every path `base..sha` changes, repository-relative, both endpoints of a rename, in code-unit
+   * order; empty unless the command is `ok`.
+   */
+  files: z.array(z.string()),
+});

@@ -17,7 +17,7 @@
 import type { WorkflowHooks } from './hooks.types.js';
 import {
   envelopeProblem,
-  PRE_CUT,
+  preCutPlace,
   runTool,
   type LiveRunOutput,
   type LiveRunsOutput,
@@ -52,11 +52,13 @@ export interface CleanupReport {
  *
  * @param hooks - The workflow hooks.
  * @param live - `live-runs`' output; `null` when the runner returned none.
+ * @param main - The main checkout its calls run from; `undefined` where no pre-flight named it.
  * @returns Resolves to the report; never rejects on a tool's outcome.
  */
 export async function cleanupSpent(
   hooks: WorkflowHooks,
   live: LiveRunsOutput | null,
+  main?: string,
 ): Promise<CleanupReport> {
   const report: CleanupReport = {
     tornDown: [],
@@ -71,7 +73,7 @@ export async function cleanupSpent(
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report);
+    await cleanupRun(hooks, run, report, main);
     if (report.stop !== null) break;
   }
   return report;
@@ -87,11 +89,12 @@ async function cleanupRun(
   hooks: WorkflowHooks,
   run: LiveRunOutput,
   report: CleanupReport,
+  main: string | undefined,
 ): Promise<void> {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, run.branch, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
 }
 
 /**
@@ -101,18 +104,18 @@ async function cleanupRun(
  */
 async function tearDownSpent(
   hooks: WorkflowHooks,
-  path: string,
-  branch: string,
+  spent: { readonly path: string; readonly branch: string; readonly main: string | undefined },
   report: CleanupReport,
 ): Promise<void> {
-  const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
-  const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
+  const { path, branch } = spent;
+  const place = preCutPlace(
+    spent.main,
+    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
+  );
+  const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);
-    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
-      ...PRE_CUT,
-      tag,
-    });
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], place);
     if (retired?.status === 'ok') report.retired.push(branch);
     else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {

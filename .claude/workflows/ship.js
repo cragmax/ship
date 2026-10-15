@@ -42,7 +42,7 @@ const STAGES = {
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
-const PROBES_PER_ISSUE = 3;
+const PROBES_PER_STAGE = 3;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
@@ -598,7 +598,7 @@ function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
 const ISSUE_TEXT_JQ =
@@ -629,6 +629,7 @@ const PROMPTS = {
   runner: (values) =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
+      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
@@ -1673,6 +1674,57 @@ const TOOL_ENVELOPE_SCHEMAS = {
     },
     required: ['status', 'errors', 'url'],
   },
+  'changed-files': {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['ok', 'failed', 'refused', 'conflict'] },
+      reason: {
+        type: 'string',
+        enum: [
+          'self-hosted',
+          'main-worktree',
+          'report-dir-inside-worktree',
+          'links-remain',
+          'source-shrank',
+          'nested-worktree',
+          'batch-dirty',
+          'unregistered-worktree',
+          'staged-mismatch',
+          'merge-in-progress',
+          'slice-not-single-commit',
+          'not-main-worktree',
+          'not-run-batch',
+          'branch-exists',
+          'path-exists',
+          'branch-missing',
+          'branch-checked-out',
+          'branch-diverged',
+          'unpublished-commits',
+          'preflight-failed',
+          'slices-live',
+          'code-conflict',
+          'no-merge-in-progress',
+          'unresolved',
+          'nothing-to-bump',
+          'pr-exists',
+          'no-open-pr',
+          'branch-unmerged',
+          'not-run-root',
+          'master-not-forward',
+        ],
+      },
+      errors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { step: { type: 'string' }, message: { type: 'string' } },
+          required: ['step', 'message'],
+        },
+      },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['status', 'errors', 'files'],
+  },
   'post-issue-comment': {
     type: 'object',
     properties: {
@@ -2005,8 +2057,20 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function runPlace(reportDir, tag, ...write) {
-  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
+function preCutPlace(main, tag) {
+  return {
+    ...PRE_CUT,
+    ...(tag === undefined ? {} : { tag }),
+    ...(main === undefined ? {} : { checkout: main }),
+  };
+}
+function runPlace(at, tag, ...write) {
+  return {
+    dir: `${at.reportDir}/tool`,
+    tag,
+    ...(write.length === 0 ? {} : { write }),
+    ...(at.main === undefined ? {} : { checkout: at.main }),
+  };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -2030,6 +2094,7 @@ const TOOL_COMMANDS = {
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
   'post-pr-comment': [WORKTREE_CLI, 'post-pr-comment'],
   'post-issue-comment': [WORKTREE_CLI, 'post-issue-comment'],
+  'changed-files': [WORKTREE_CLI, 'changed-files'],
 };
 const STRING = { type: 'string' };
 const INTEGER = { type: 'integer' };
@@ -2126,6 +2191,7 @@ const TOOL_SCHEMAS = {
   'append-pr-body': envelopeSchema('append-pr-body'),
   'post-pr-comment': envelopeSchema('post-pr-comment'),
   'post-issue-comment': envelopeSchema('post-issue-comment'),
+  'changed-files': envelopeSchema('changed-files'),
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
@@ -2133,6 +2199,7 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
+    ...(place.checkout === undefined ? {} : { checkout: place.checkout }),
   });
   const out = await hooks.agent(
     prompt,
@@ -2416,7 +2483,7 @@ async function checkMasterStep(hooks, entry, launch, synced) {
     hooks,
     'check-master',
     [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
-    runPlace(entry.reportDir, entry.tag),
+    runPlace(entry, entry.tag),
   );
   return checkOf(out);
 }
@@ -2881,7 +2948,7 @@ function bumpText(bump) {
 }
 
 async function syncMasterStep(hooks, ctx) {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
   const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
   if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
     return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
@@ -2904,7 +2971,7 @@ async function resolveAndContinue(hooks, ctx, pending) {
     hooks,
     'sync-master',
     [ctx.batch, '--continue'],
-    runPlace(ctx.reportDir, `${ctx.tag}-continue`),
+    runPlace(ctx, `${ctx.tag}-continue`),
   );
   return syncVerdict(done, 'resolved');
 }
@@ -2942,8 +3009,10 @@ async function epicEnd(input) {
     message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
   }));
   const issueComments = await commentBlockedStep(input, published.pr);
-  if (state.retro === undefined)
-    state.retro = await retroStep(input, retroReport(input, published));
+  const retro =
+    published.outcome === 'pr' && state.retro !== undefined
+      ? state.retro
+      : await retroStep(input, retroReport(input, published, issueComments));
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -2954,7 +3023,7 @@ async function epicEnd(input) {
     ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
     residue: input.residue,
     ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
-    retro: state.retro,
+    retro,
     ...(state.leases === undefined ? {} : { leases: state.leases }),
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
@@ -2976,17 +3045,16 @@ async function unshippedEpicEnd(input, outcome) {
 }
 async function retireStep(input) {
   const { hooks, entry } = input;
-  const down = await runTool(
-    hooks,
-    'teardown',
-    [entry.batch],
-    runPlace(entry.reportDir, entry.tag),
-  ).catch(() => null);
+  const down = await runTool(hooks, 'teardown', [entry.batch], runPlace(entry, entry.tag)).catch(
+    () => null,
+  );
   if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
-  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
-    ...PRE_CUT,
-    tag: entry.tag,
-  }).catch(() => null);
+  const out = await runTool(
+    hooks,
+    'retire-run',
+    ['.', '--branch', entry.branch],
+    preCutPlace(entry.main, entry.tag),
+  ).catch(() => null);
   return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 async function commentBlockedStep(input, pr) {
@@ -3002,7 +3070,7 @@ async function commentBlockedStep(input, pr) {
       reportDir: entry.reportDir,
     });
     const argv = [entry.main, '--issue', String(issue.issue), '--comment-file', path];
-    const place = runPlace(entry.reportDir, String(issue.issue), { path, content });
+    const place = runPlace(entry, String(issue.issue), { path, content });
     comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
   }
   return comments;
@@ -3029,7 +3097,7 @@ async function shipSteps(input, state) {
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
   }
-  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
+  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   await hooks.parallel([
     async () => {
@@ -3076,7 +3144,7 @@ async function pushOntoPr(input, found, checked, attached) {
     },
   ];
   const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
-  const place = runPlace(entry.reportDir, entry.tag, ...files.map((f) => reportFile(entry, f)));
+  const place = runPlace(entry, entry.tag, ...files.map((f) => reportFile(entry, f)));
   const recovery = [
     toolCommandLine('publish', argv),
     ...files.map((f) => toolCommandLine(f.tool, prFileArgv(entry, String(attached.pr), f))),
@@ -3115,7 +3183,7 @@ function prFileArgv(entry, pr, file) {
 async function prFileStep(input, tool, pr, file) {
   const { hooks, entry } = input;
   const argv = prFileArgv(entry, String(pr), file);
-  const place = runPlace(entry.reportDir, entry.tag, reportFile(entry, file));
+  const place = runPlace(entry, entry.tag, reportFile(entry, file));
   try {
     const out = await runTool(hooks, tool, argv, place);
     return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
@@ -3153,7 +3221,7 @@ async function openPr(input, found, checked) {
     content: m.text,
   }));
   const place = runPlace(
-    entry.reportDir,
+    entry,
     entry.tag,
     { path: bodyPath, content: fitted.body },
     ...moved.map((file) => reportFile(entry, file)),
@@ -3267,7 +3335,7 @@ async function prWriterStep(input, upstream) {
   };
   return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
-function retroReport(input, published) {
+function retroReport(input, published, issueComments = []) {
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -3275,6 +3343,7 @@ function retroReport(input, published) {
     issues: input.issues,
     schedule: input.schedule,
     residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
   };
 }
 async function mainAtEnd(input, state) {
@@ -3283,12 +3352,7 @@ async function mainAtEnd(input, state) {
 }
 async function mainUntouched(input) {
   const { entry, launch } = input;
-  const out = await runTool(
-    input.hooks,
-    'preflight',
-    [entry.main],
-    runPlace(entry.reportDir, entry.tag),
-  );
+  const out = await runTool(input.hooks, 'preflight', [entry.main], runPlace(entry, entry.tag));
   const now = out?.snapshot;
   if (launch === null || now === undefined || now === null) return null;
   return now.head === launch.snapshot.head && now.dirty === launch.snapshot.dirty;
@@ -3310,7 +3374,7 @@ async function runAttempt(ctx, issue, attempt) {
 }
 function attemptId(ctx, issue, attempt) {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx.reportDir, tag) };
+  return { ctx, issue, attempt, tag, place: runPlace(ctx, tag) };
 }
 async function openSlice(at) {
   const ready = await atBoundary({ next: at }, at, recheckStage);
@@ -3402,7 +3466,7 @@ async function tddStage(s) {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...s, tdd, sha: tdd.sha } };
+  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files } };
 }
 async function specReviewStage(s) {
   const { at } = s;
@@ -3411,7 +3475,7 @@ async function specReviewStage(s) {
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  return afterReview(at, 'spec review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 async function testReviewStage(s) {
   const { at } = s;
@@ -3422,10 +3486,10 @@ async function testReviewStage(s) {
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  return afterReview(at, 'test review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 async function testSkip(s) {
-  const { files } = s.tdd;
+  const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
   if (files.some((path) => path.startsWith('test/'))) return null;
   const range = `${s.base}..${s.sha}`;
@@ -3444,11 +3508,14 @@ async function standardsReviewStage(s) {
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  return afterReview(at, 'standards review', out, (standardsReview) => ({ ...s, standardsReview }));
+  return afterAmend(s, 'standards review', out, (standardsReview) => ({
+    ...s,
+    standardsReview,
+  }));
 }
 async function manifestTsdocStage(s) {
   const { at } = s;
-  if (!s.tdd.files.some((path) => path.startsWith('src/'))) {
+  if (!s.files.some((path) => path.startsWith('src/'))) {
     return { next: { ...s, manifestTsdoc: 'no src/ change' } };
   }
   const values = {
@@ -3464,6 +3531,18 @@ function afterReview(at, label, out, next) {
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
 }
+async function afterAmend(s, label, out, next) {
+  const { at } = s;
+  const step = afterReview(at, label, out, next);
+  if ('stop' in step || out?.verdict !== 'fixed') return step;
+  const argv = [s.slice, step.next.sha, '--base', s.base];
+  const read = await runTool(at.ctx.hooks, 'changed-files', argv, at.place);
+  if (read === null) return { stop: died(at) };
+  if (read.status !== 'ok' || read.files === undefined) {
+    return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
+  }
+  return { next: { ...step.next, files: read.files } };
+}
 async function landSlice(s) {
   const { at } = s;
   if (at.ctx.isHalting()) return notLanded(haltedStop(at));
@@ -3478,7 +3557,7 @@ async function landSlice(s) {
     `${at.ctx.reportDir}/land-${at.tag}.log`,
   ];
   const message = commitMessage(at.issue, s.tdd);
-  const place = runPlace(at.ctx.reportDir, at.tag, { path: messagePath(at), content: message });
+  const place = runPlace(at.ctx, at.tag, { path: messagePath(at), content: message });
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
@@ -3538,7 +3617,7 @@ function sliceCommitValues(s) {
     base: s.base,
     reportDir: s.at.ctx.reportDir,
     sha: s.sha,
-    files: s.tdd.files,
+    files: s.files,
   };
 }
 function sliceReviewValues(s, report) {
@@ -3985,12 +4064,14 @@ function runSlug(selection) {
 
 async function runPreflight(hooks, args) {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const gate = await runTool(hooks, 'run-gate', [
-    args.selection,
-    ...args.numbers.map(String),
-    ...(args.exclude ? ['--exclude'] : []),
-  ]);
-  const live = await runTool(hooks, 'live-runs', ['.']);
+  const place = preCutPlace(typeof checks?.worktree === 'string' ? checks.worktree : undefined);
+  const gate = await runTool(
+    hooks,
+    'run-gate',
+    [args.selection, ...args.numbers.map(String), ...(args.exclude ? ['--exclude'] : [])],
+    place,
+  );
+  const live = await runTool(hooks, 'live-runs', ['.'], place);
   const kept = exemptSpentSlices(checks, live);
   const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(kept);
@@ -4232,7 +4313,7 @@ function toolError(out, what) {
   );
 }
 
-async function cleanupSpent(hooks, live) {
+async function cleanupSpent(hooks, live, main) {
   const report = {
     tornDown: [],
     retired: [],
@@ -4246,26 +4327,27 @@ async function cleanupSpent(hooks, live) {
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report);
+    await cleanupRun(hooks, run, report, main);
     if (report.stop !== null) break;
   }
   return report;
 }
-async function cleanupRun(hooks, run, report) {
+async function cleanupRun(hooks, run, report, main) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, target.path, run.branch, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
 }
-async function tearDownSpent(hooks, path, branch, report) {
-  const tag = `spent-${String(report.tornDown.length + report.residue.length + 1)}`;
-  const out = await runTool(hooks, 'teardown', [path], { ...PRE_CUT, tag });
+async function tearDownSpent(hooks, spent, report) {
+  const { path, branch } = spent;
+  const place = preCutPlace(
+    spent.main,
+    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
+  );
+  const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);
-    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], {
-      ...PRE_CUT,
-      tag,
-    });
+    const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], place);
     if (retired?.status === 'ok') report.retired.push(branch);
     else report.residue.push(`${branch}: ${envelopeProblem('retire-run', retired)}`);
   } else if (out?.status === 'refused' && out.reason === 'source-shrank') {
@@ -4303,7 +4385,7 @@ async function runShip(hooks, rawArgs) {
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
-  const cleanup = await cleanupSpent(hooks, pre.live);
+  const cleanup = await cleanupSpent(hooks, pre.live, pre.main?.worktree);
   if (cleanup.stop !== null) {
     return {
       ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
@@ -4321,7 +4403,8 @@ async function runShip(hooks, rawArgs) {
 }
 async function runEntries(hooks, graph, opts, attach) {
   const cuts = [];
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
+  const main = opts.launch?.worktree;
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -4340,10 +4423,10 @@ async function runEntries(hooks, graph, opts, attach) {
     return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
-async function cutEntry(hooks, entry, attach) {
+async function cutEntry(hooks, entry, attach, main) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
-  const cut = await runTool(hooks, 'cut-batch', argv, { ...PRE_CUT, tag });
+  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(main, tag));
   const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
@@ -4360,7 +4443,8 @@ async function cutEntry(hooks, entry, attach) {
   if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
-  const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
+  const at = { batch, reportDir, tag, main: worktree };
+  const found = await batchRegistry(hooks, cut.attach ?? null, at);
   if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
   const { registry } = found;
   return {
@@ -4390,7 +4474,7 @@ async function batchRegistry(hooks, attached, at) {
       : { registry: attached.registry };
   }
   const argv = [at.batch, '--report-dir', at.reportDir];
-  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at.reportDir, at.tag));
+  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at, at.tag));
   if (prov?.status !== 'ok' || !isText(prov.registry)) {
     return { stop: envelopeProblem('provision-batch', prov) };
   }

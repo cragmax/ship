@@ -33,10 +33,11 @@ import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
 import { PHASE_TITLES } from './lib/stages.js';
 import {
   envelopeProblem,
-  PRE_CUT,
+  preCutPlace,
   runPlace,
   runTool,
   type CutBatchOutput,
+  type RunAt,
 } from './lib/tool-calls.js';
 
 /** What the workflow returns. */
@@ -81,7 +82,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
-  const cleanup = await cleanupSpent(hooks, pre.live);
+  const cleanup = await cleanupSpent(hooks, pre.live, pre.main?.worktree);
   if (cleanup.stop !== null) {
     return {
       ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
@@ -110,7 +111,8 @@ async function runEntries(
   attach: string | null,
 ): Promise<EpicReport[]> {
   const cuts: EntryCut[] = [];
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
+  const main = opts.launch?.worktree;
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -138,10 +140,11 @@ async function cutEntry(
   hooks: WorkflowHooks,
   entry: RunSetEntry,
   attach: string | null,
+  main: string | undefined,
 ): Promise<EntryCut> {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
-  const cut = await runTool(hooks, 'cut-batch', argv, { ...PRE_CUT, tag });
+  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(main, tag));
   const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
@@ -158,7 +161,8 @@ async function cutEntry(
   if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
-  const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
+  const at = { batch, reportDir, tag, main: worktree };
+  const found = await batchRegistry(hooks, cut.attach ?? null, at);
   if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
   const { registry } = found;
   return {
@@ -191,7 +195,7 @@ function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
 async function batchRegistry(
   hooks: WorkflowHooks,
   attached: NonNullable<CutBatchOutput['attach']> | null,
-  at: { readonly batch: string; readonly reportDir: string; readonly tag: string },
+  at: RunAt & { readonly batch: string; readonly tag: string },
 ): Promise<{ readonly registry: string } | { readonly stop: string }> {
   if (attached !== null && !attached.created) {
     return attached.registry === null
@@ -199,7 +203,7 @@ async function batchRegistry(
       : { registry: attached.registry };
   }
   const argv = [at.batch, '--report-dir', at.reportDir];
-  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at.reportDir, at.tag));
+  const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at, at.tag));
   if (prov?.status !== 'ok' || !isText(prov.registry)) {
     return { stop: envelopeProblem('provision-batch', prov) };
   }

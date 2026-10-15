@@ -43,6 +43,7 @@ import type { ShipArgs } from './args.js';
 import type { WorkflowHooks } from './hooks.types.js';
 import type { IssueOverlapValues, LiveRunFiles } from './prompts.js';
 import {
+  preCutPlace,
   runTool,
   type GateOutput,
   type LiveRunsOutput,
@@ -168,12 +169,14 @@ export async function runPreflight(
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const gate = await runTool(hooks, 'run-gate', [
-    args.selection,
-    ...args.numbers.map(String),
-    ...(args.exclude ? ['--exclude'] : []),
-  ]);
-  const live = await runTool(hooks, 'live-runs', ['.']);
+  const place = preCutPlace(typeof checks?.worktree === 'string' ? checks.worktree : undefined);
+  const gate = await runTool(
+    hooks,
+    'run-gate',
+    [args.selection, ...args.numbers.map(String), ...(args.exclude ? ['--exclude'] : [])],
+    place,
+  );
+  const live = await runTool(hooks, 'live-runs', ['.'], place);
   const kept = exemptSpentSlices(checks, live);
   const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
   const main = mainSnapshot(kept);

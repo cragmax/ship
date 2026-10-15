@@ -248,7 +248,8 @@ describe('runShip — issues in flight at once', () => {
 
   const UP_TO_CUT = ['runner:check:8-1', 'runner:cut-slice:8-1'];
   const UP_TO_TDD = [...UP_TO_CUT, 'runner:provision:8-1', 'tdd:8-1'];
-  const UP_TO_SPEC_REVIEW = [...UP_TO_TDD, 'specReview:8-1'];
+  // The default reviews: a fixed spec review, re-read; a clean test review; a fixed standards one.
+  const UP_TO_SPEC_REVIEW = [...UP_TO_TDD, 'specReview:8-1', 'runner:changed-files:8-1'];
   it.each<[string, string[]]>([
     ['runner:check:8-1', ['runner:check:8-1']],
     ['runner:cut-slice:8-1', [...UP_TO_CUT, 'runner:teardown:8-1']],
@@ -258,7 +259,13 @@ describe('runShip — issues in flight at once', () => {
     ['testReview:8-1', [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'runner:teardown:8-1']],
     [
       'standardsReview:8-1',
-      [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'standardsReview:8-1', 'runner:teardown:8-1'],
+      [
+        ...UP_TO_SPEC_REVIEW,
+        'testReview:8-1',
+        'standardsReview:8-1',
+        'runner:changed-files:8-1',
+        'runner:teardown:8-1',
+      ],
     ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));
