@@ -13,7 +13,7 @@ export const meta = {
     {
       title: 'Issues',
       detail:
-        'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
+        'per issue, in dependency order: tdd, spec review, test review, standards review, Manifest TSDoc (src/ only), land',
     },
     {
       title: 'Epic end',
@@ -32,6 +32,7 @@ const STAGES = {
   issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+  testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
@@ -63,7 +64,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
+      'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
+      'Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -660,6 +662,13 @@ const PROMPTS = {
       }),
     ].join('\n'),
   specReview: (values) => sliceReviewPrompt(values),
+  testReview: (values) =>
+    [
+      ...sliceHeadLines(values),
+      `Issue file: ${issueFile(values.issue, values.reportDir)}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
+    ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
@@ -708,14 +717,16 @@ const PROMPTS = {
       `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
-function sliceCommitLines(values) {
+function sliceHeadLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
     `Slice commit: ${values.sha}`,
-    `Changed files: ${values.files.join(', ')}`,
   ];
+}
+function sliceCommitLines(values) {
+  return [...sliceHeadLines(values), `Changed files: ${values.files.join(', ')}`];
 }
 function sliceReviewPrompt(values) {
   return [
@@ -1895,6 +1906,16 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
+  testReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
+  },
   standardsReview: {
     type: 'object',
     properties: {
@@ -2376,6 +2397,12 @@ const AGENT_CALLS = {
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
+  testReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.testReview(values),
+      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
+    ),
   standardsReview: (hooks, values, tag) =>
     askAgent(
       hooks,
@@ -2553,9 +2580,11 @@ function prTitle(input) {
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 function sliceLeaseLines(work) {
+  const test = work.testReview;
   return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
+    ...(typeof test === 'string' ? [] : [{ role: 'test-review', lines: test.leaseLines }]),
     { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
 }
@@ -2796,11 +2825,15 @@ function retroLines(retro) {
 }
 function issueSection(landed) {
   const tsdoc = landed.manifestTsdoc;
+  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
+      : `- Test review: ${test.verdict} — ${test.summary}`,
     `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
@@ -2893,7 +2926,8 @@ async function authorSlice(cut) {
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
   const specReviewed = await atBoundary(built, at, specReviewStage);
-  const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
+  const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
+  const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
   return atBoundary(reviewed, at, manifestTsdocStage);
 }
 async function atBoundary(step, at, stage) {
@@ -2984,6 +3018,30 @@ async function specReviewStage(s) {
   if (out.verdict === 'blocked') return { stop: blocked(at, `spec review: ${out.summary}`) };
   return { next: { ...s, specReview: out, sha: out.sha } };
 }
+async function testReviewStage(s) {
+  const { at } = s;
+  const skip = await testSkip(at.ctx.hooks, s.tdd.files, `${s.base}..${s.sha}`, at.place);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
+  const out = await AGENT_CALLS.testReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'test-review'),
+    at.tag,
+  );
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
+  return { next: { ...s, testReview: out, sha: out.sha } };
+}
+async function testSkip(hooks, files, range, place) {
+  if (isTrivialSurface(files)) return 'trivial surface';
+  if (files.some((path) => path.startsWith('test/'))) return null;
+  const out = await runTool(hooks, 'comment-only', [range], place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
+}
 async function standardsReviewStage(s) {
   const { at } = s;
   const out = await AGENT_CALLS.standardsReview(
@@ -3028,10 +3086,10 @@ async function landSlice(s) {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, standardsReview, manifestTsdoc } = s;
+    const { tdd, specReview, testReview, standardsReview, manifestTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, standardsReview, manifestTsdoc },
+      work: { tdd, specReview, testReview, standardsReview, manifestTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:
@@ -3134,23 +3192,14 @@ async function auditTestsStep(input) {
   return tornDown(input, slice, result);
 }
 async function auditTestsSkip(input) {
-  const files = input.landed.flatMap((l) => l.tdd.files);
-  if (isTrivialSurface(files)) return 'trivial surface';
-  if (files.some((path) => path.startsWith('test/'))) return null;
   const { hooks, entry } = input;
   const head = input.landed.at(-1)?.commit ?? 'HEAD';
-  const out = await runTool(
+  return testSkip(
     hooks,
-    'comment-only',
-    [`${entry.base}..${head}`],
+    input.landed.flatMap((l) => l.tdd.files),
+    `${entry.base}..${head}`,
     runPlace(entry.reportDir, TAG),
   );
-  const proven =
-    out !== null &&
-    out.exitCode === 0 &&
-    out.notCompared !== undefined &&
-    isTrivialSurface(out.notCompared);
-  return proven ? 'comment-only' : null;
 }
 async function inSlice(input, slice, base) {
   const { hooks, entry } = input;
@@ -3632,7 +3681,9 @@ async function epicReviewStep(input) {
 function sliceReports(input, landed) {
   const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
   const tag = `${String(landed.issue)}-${String(attempt)}`;
-  const stages = ['spec-review', 'standards-review'];
+  const stages = ['spec-review'];
+  if (typeof landed.testReview !== 'string') stages.push('test-review');
+  stages.push('standards-review');
   if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }

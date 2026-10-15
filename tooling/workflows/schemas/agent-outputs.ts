@@ -166,7 +166,7 @@ export const TddOutputSchema = z.object({
   reason: z.string().exactOptional(),
 });
 
-/** A slice review's answer: the spec review's or the standards review's. */
+/** A slice review's answer: the spec review's, the test review's or the standards review's. */
 export const ReviewOutputSchema = z.object({
   /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
   verdict: z.enum(['clean', 'fixed', 'blocked']),
@@ -290,6 +290,7 @@ export const AGENT_OUTPUTS = {
   issueOverlap: IssueOverlapSchema,
   tdd: TddOutputSchema,
   specReview: ReviewOutputSchema,
+  testReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,
   manifestTsdoc: ManifestTsdocOutputSchema,
   resolver: ResolverOutputSchema,

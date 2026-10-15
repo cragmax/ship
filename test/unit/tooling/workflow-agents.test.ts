@@ -19,6 +19,7 @@ describe('workflow agents', () => {
       'spec-review',
       'standards-review',
       'tdd',
+      'test-review',
     ]);
   });
 });

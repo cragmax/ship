@@ -30,6 +30,7 @@ export const STAGES = {
   issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+  testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
@@ -62,7 +63,8 @@ export const PROBES_PER_ISSUE = 3;
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
 
 /**
- * Whether a change touches no code: the epic-end test audit is skipped for it.
+ * Whether a change touches no code: a slice's test review and the epic-end test audit are skipped
+ * for it.
  *
  * @param files - The changed paths, repository-relative.
  * @returns `true` when no path is under `src/`, `tooling/` or `test/` (an
@@ -91,7 +93,8 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
+      'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
+      'Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,

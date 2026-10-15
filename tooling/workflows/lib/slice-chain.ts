@@ -24,6 +24,7 @@ import {
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
+  type TestReviewSkip,
 } from './agent-calls.js';
 import {
   landingEvent,
@@ -35,6 +36,7 @@ import {
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage, commitMessageTemplate, type SliceSize } from './pr-body.js';
 import type { LeaseValues, SliceCommitValues, SliceReviewValues } from './prompts.js';
+import { isTrivialSurface } from './stages.js';
 import { envelopeProblem, runPlace, runTool, type KeptWork, type ToolPlace } from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
@@ -183,8 +185,13 @@ interface SpecReviewedSlice extends BuiltSlice {
   readonly specReview: ReviewOutput;
 }
 
+/** A test-reviewed slice: the test review's answer, or why it was skipped; `sha` its amend. */
+interface TestReviewedSlice extends SpecReviewedSlice {
+  readonly testReview: ReviewOutput | TestReviewSkip;
+}
+
 /** A reviewed slice: the standards review's answer too; `sha` its amend. */
-interface ReviewedSlice extends SpecReviewedSlice {
+interface ReviewedSlice extends TestReviewedSlice {
   readonly standardsReview: ReviewOutput;
 }
 
@@ -240,7 +247,8 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
   const specReviewed = await atBoundary(built, at, specReviewStage);
-  const reviewed = await atBoundary(specReviewed, at, standardsReviewStage);
+  const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
+  const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
   return atBoundary(reviewed, at, manifestTsdocStage);
 }
 
@@ -358,8 +366,48 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
   return { next: { ...s, specReview: out, sha: out.sha } };
 }
 
+/**
+ * Hold the slice's tests to the claims it makes, amending its commit with any test fix, unless
+ * {@link testSkip} names a reason; `sha` its amend.
+ */
+async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedSlice>> {
+  const { at } = s;
+  const skip = await testSkip(at.ctx.hooks, s.tdd.files, `${s.base}..${s.sha}`, at.place);
+  if (skip !== null) return { next: { ...s, testReview: skip } };
+  const out = await AGENT_CALLS.testReview(
+    at.ctx.hooks,
+    sliceReviewValues(s, 'test-review'),
+    at.tag,
+  );
+  if (out === null) return { stop: died(at) };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
+  return { next: { ...s, testReview: out, sha: out.sha } };
+}
+
+/**
+ * Why a change's tests go unreviewed, `null` when they are reviewed: `'trivial surface'` when
+ * `files` change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts`
+ * proves `range` comment-only, leaving no code path uncompared. A failed proof reviews them.
+ */
+export async function testSkip(
+  hooks: WorkflowHooks,
+  files: readonly string[],
+  range: string,
+  place: ToolPlace,
+): Promise<TestReviewSkip | null> {
+  if (isTrivialSurface(files)) return 'trivial surface';
+  if (files.some((path) => path.startsWith('test/'))) return null;
+  const out = await runTool(hooks, 'comment-only', [range], place);
+  const proven =
+    out !== null &&
+    out.exitCode === 0 &&
+    out.notCompared !== undefined &&
+    isTrivialSurface(out.notCompared);
+  return proven ? 'comment-only' : null;
+}
+
 /** Hold the slice to the repo's rules, amending its commit with any fix; `sha` its amend. */
-async function standardsReviewStage(s: SpecReviewedSlice): Promise<Step<ReviewedSlice>> {
+async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<ReviewedSlice>> {
   const { at } = s;
   const out = await AGENT_CALLS.standardsReview(
     at.ctx.hooks,
@@ -413,10 +461,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, standardsReview, manifestTsdoc } = s;
+    const { tdd, specReview, testReview, standardsReview, manifestTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, standardsReview, manifestTsdoc },
+      work: { tdd, specReview, testReview, standardsReview, manifestTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

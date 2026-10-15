@@ -357,7 +357,7 @@ describe('runShip — leftover slice branches', () => {
 });
 
 describe('runShip — one issue from launch to PR', () => {
-  it('runs the chain through the reviews before one land, tears the slice down before committed, then the epic end', async () => {
+  it('runs the chain through the reviews, the test review between the spec and standards reviews, before one land, tears the slice down before committed, then the epic end', async () => {
     const run = fakeHooks();
 
     const report = await runShip(run.hooks, 'issues 7');
@@ -374,6 +374,7 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:provision:7-1',
       'tdd:7-1',
       'specReview:7-1',
+      'testReview:7-1',
       'standardsReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
@@ -427,6 +428,7 @@ describe('runShip — one issue from launch to PR', () => {
     expect(labels(run).filter((l) => AFTER_BUILD_CALL.test(l))).toEqual([
       'tdd:7-1',
       'specReview:7-1',
+      'testReview:7-1',
       'standardsReview:7-1',
       'manifestTsdoc:7-1',
       'runner:land:7-1',
@@ -1220,8 +1222,8 @@ describe('runShip — an attempt through the build', () => {
 });
 
 const AFTER_BUILD_CALL =
-  /^(tdd|specReview|standardsReview|manifestTsdoc|runner:(land|teardown)):\d/;
-const UP_TO_REVIEW = ['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'];
+  /^(tdd|specReview|testReview|standardsReview|manifestTsdoc|runner:(land|teardown)):\d/;
+const UP_TO_REVIEW = ['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'];
 const UP_TO_LAND = [...UP_TO_REVIEW, 'runner:land:7-1'];
 const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[], string][] = [
   [
@@ -1236,6 +1238,19 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     },
     ['tdd:7-1', 'specReview:7-1', 'runner:teardown:7-1'],
     'spec review: criterion 2 needs a file outside the slice',
+  ],
+  [
+    'blocked by the test review',
+    {
+      testReview: {
+        verdict: 'blocked',
+        sha: '',
+        summary: 'the real x() fails its hardened bound test',
+        leaseLines: [],
+      },
+    },
+    ['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'runner:teardown:7-1'],
+    'test review: the real x() fails its hardened bound test',
   ],
   [
     'blocked by the standards review',
@@ -1324,7 +1339,7 @@ describe('runShip — an attempt after the build', () => {
     },
   );
 
-  it.each(['specReview', 'standardsReview'])(
+  it.each(['specReview', 'testReview', 'standardsReview'])(
     'retries the issue in a fresh slice when the %s returns nothing, then blocks it',
     async (agent) => {
       const run = fakeHooks({ [agent]: null });
@@ -1429,7 +1444,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['specReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
+  it.each(['specReview:7-1', 'testReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
     'hands %s the tdd’s lease recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
@@ -1462,20 +1477,23 @@ describe('runShip — what an attempt hands on', () => {
   // Hand-written: the probe allowance of the tdd, the slice reviews and the test audit.
   const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
-    'hands %s the probe caps, once',
-    async (label) => {
-      const run = fakeHooks();
+  it.each([
+    'tdd:7-1',
+    'specReview:7-1',
+    'testReview:7-1',
+    'standardsReview:7-1',
+    'auditTests:list',
+  ])('hands %s the probe caps, once', async (label) => {
+    const run = fakeHooks();
 
-      await runShip(run.hooks, 'issues 7');
+    await runShip(run.hooks, 'issues 7');
 
-      expect(
-        promptOf(run, label)
-          .split('\n')
-          .filter((l) => l.startsWith('Probe caps: ')),
-      ).toEqual([PROBE_CAPS]);
-    },
-  );
+    expect(
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Probe caps: ')),
+    ).toEqual([PROBE_CAPS]);
+  });
 
   it('hands no prompt any probe caps but those', async () => {
     const run = fakeHooks(TWO_ISSUES);
@@ -1530,7 +1548,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'])(
+  it.each(['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'])(
     'hands %s the slice worktree the cut named',
     async (label) => {
       const run = fakeHooks();
@@ -1541,7 +1559,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1'])(
+  it.each(['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'])(
     'hands %s the slice base the cut answered',
     async (label) => {
       const run = fakeHooks();
@@ -1577,6 +1595,27 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
+  it('orders the test review’s prompt as a slice review’s, with no changed files: the slice base is its fixed point', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const keys = promptOf(run, 'testReview:7-1')
+      .split('\n')
+      .map((l) => l.slice(0, l.indexOf(': ')));
+    expect(keys).toEqual([
+      'Issue',
+      'Slice worktree',
+      'Slice base',
+      'Slice commit',
+      'Issue file',
+      'Report file',
+      'Lease command',
+      'Lease version',
+      'Probe caps',
+    ]);
+  });
+
   it('orders the tdd’s prompt: the slice, the issue’s lines, its report, its kept dir, the server-tier recipe, then the message template', async () => {
     const run = fakeHooks();
 
@@ -1604,8 +1643,10 @@ describe('runShip — what an attempt hands on', () => {
 
   it.each([
     ['specReview:7-1', 'spec-review-7-1.md'],
+    ['testReview:7-1', 'test-review-7-1.md'],
     ['standardsReview:7-1', 'standards-review-7-1.md'],
     ['specReview:7-2', 'spec-review-7-2.md'],
+    ['testReview:7-2', 'test-review-7-2.md'],
     ['standardsReview:7-2', 'standards-review-7-2.md'],
   ])('hands %s its attempt’s own report file, %s', async (label, file) => {
     // A land conflict re-cuts the issue, so attempt 2's hand-off shows beside attempt 1's.
@@ -1629,6 +1670,94 @@ describe('runShip — what an attempt hands on', () => {
       labels(run).filter((l) => /^(tdd|specReview|standardsReview|runner:land):\d/.test(l)),
     ).toEqual(['tdd:7-1', 'specReview:7-1', 'standardsReview:7-1', 'runner:land:7-1']);
     expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2');
+  });
+});
+
+describe('runShip — the slice test review', () => {
+  it('runs the test-review agent at its tier on the spec review’s commit, handing its fixed sha to the standards review', async () => {
+    const run = fakeHooks({
+      testReview: { verdict: 'fixed', sha: 'test1', summary: 'pinned a bound', leaseLines: [] },
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    const call = run.calls.find((c) => c.label === 'testReview:7-1');
+    expect({ agentType: call?.agentType, model: call?.model, effort: call?.effort }).toEqual({
+      agentType: 'test-review',
+      model: 'opus',
+      effort: 'high',
+    });
+    const shaSeenBy = (label: string): string | undefined =>
+      promptOf(run, label)
+        .split('\n')
+        .find((l) => l.startsWith('Slice commit: '));
+    expect(shaSeenBy('testReview:7-1')).toBe('Slice commit: spec1');
+    expect(shaSeenBy('standardsReview:7-1')).toBe('Slice commit: test1');
+  });
+
+  it.each<[name: string, files: string[], proof: unknown, proofRuns: boolean, reviewRuns: boolean]>(
+    [
+      ['changes no code', ['docs/x.md', '.claude/agents/x.md'], null, false, false],
+      ['only adds tests', ['test/unit/x.test.ts'], null, false, true],
+      [
+        'changes code and tests',
+        ['tooling/x.ts', 'test/unit/x.test.ts'],
+        { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
+        false,
+        true,
+      ],
+      [
+        'proves its code change comment-only',
+        ['src/a.ts', 'eslint-suppressions.json'],
+        { exitCode: 0, envelopePath: 'e.json', notCompared: ['eslint-suppressions.json'] },
+        true,
+        false,
+      ],
+      [
+        'fails its comment-only proof',
+        ['src/a.ts'],
+        { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
+        true,
+        true,
+      ],
+      [
+        'leaves a code path uncompared',
+        ['tooling/x.ts', 'tooling/y.cts'],
+        { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/y.cts'] },
+        true,
+        true,
+      ],
+    ],
+  )('for a slice that %s', async (_name, files, proof, proofRuns, reviewRuns) => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof });
+
+    await runShip(run.hooks, 'issues 7');
+
+    const sliceCalls = labels(run).filter((l) => /^(runner:comment-only|testReview):7-1/.test(l));
+    expect(sliceCalls).toEqual([
+      ...(proofRuns ? ['runner:comment-only:7-1'] : []),
+      ...(reviewRuns ? ['testReview:7-1'] : []),
+    ]);
+    if (proofRuns) {
+      expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
+        'tooling/comment-only.ts',
+        '--json',
+        'cut1..spec1',
+      ]);
+    }
+  });
+
+  it('lands a slice whose test review was skipped, its section naming why', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.issues).toEqual([
+      { issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' },
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Test review: skipped — trivial surface',
+    );
   });
 });
 
@@ -1945,6 +2074,12 @@ describe('runAttempt — how an attempt ends', () => {
               summary: 'covered criterion 3',
               leaseLines: [],
             },
+            testReview: {
+              verdict: 'clean',
+              sha: 'spec1',
+              summary: 'every claim killed',
+              leaseLines: [],
+            },
             standardsReview: {
               verdict: 'fixed',
               sha: 'slice2',
@@ -2199,6 +2334,7 @@ describe('agent-call tiers', () => {
       issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
       tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
       specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+      testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
       manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },

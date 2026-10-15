@@ -234,9 +234,9 @@ describe('runShip — issues in flight at once', () => {
     const report = await done;
 
     expect(labels(run)).toContain('specReview:7-1');
-    expect(labels(run).filter((l) => /^(tdd|specReview|standardsReview):8-1$/.test(l))).toEqual([
-      'tdd:8-1',
-    ]);
+    expect(
+      labels(run).filter((l) => /^(tdd|specReview|testReview|standardsReview):8-1$/.test(l)),
+    ).toEqual(['tdd:8-1']);
     expect(report.epics[0]).toMatchObject({
       outcome: 'halted',
       issues: [
@@ -255,7 +255,11 @@ describe('runShip — issues in flight at once', () => {
     ['runner:provision:8-1', [...UP_TO_CUT, 'runner:provision:8-1', 'runner:teardown:8-1']],
     ['tdd:8-1', [...UP_TO_TDD, 'runner:teardown:8-1']],
     ['specReview:8-1', [...UP_TO_SPEC_REVIEW, 'runner:teardown:8-1']],
-    ['standardsReview:8-1', [...UP_TO_SPEC_REVIEW, 'standardsReview:8-1', 'runner:teardown:8-1']],
+    ['testReview:8-1', [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'runner:teardown:8-1']],
+    [
+      'standardsReview:8-1',
+      [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'standardsReview:8-1', 'runner:teardown:8-1'],
+    ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));
     const run = fakeHooks(

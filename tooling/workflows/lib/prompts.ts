@@ -118,8 +118,8 @@ export interface TddValues {
   readonly lease: LeaseValues;
 }
 
-/** A slice's one commit, as the stages after the tdd are handed it. */
-export interface SliceCommitValues {
+/** A slice's one commit, as the test review is handed it: no changed paths. */
+export interface SliceHeadValues {
   /** The issue. */
   readonly issue: number;
   /** The slice worktree. */
@@ -130,6 +130,10 @@ export interface SliceCommitValues {
   readonly reportDir: string;
   /** The slice's one commit. */
   readonly sha: string;
+}
+
+/** A slice's one commit, as the stages after the tdd but the test review are handed it. */
+export interface SliceCommitValues extends SliceHeadValues {
   /** Its changed paths. */
   readonly files: readonly string[];
 }
@@ -141,6 +145,12 @@ export interface SliceReviewValues extends SliceCommitValues {
   /** The lease command's values. */
   readonly lease: LeaseValues;
 }
+
+/**
+ * The test review's values: a slice review's but the changed paths, so the agent pins its own diff
+ * from the slice base.
+ */
+export type TestReviewValues = Omit<SliceReviewValues, 'files'>;
 
 /** The Manifest TSDoc review's values: the slice's, and where its report goes. */
 export interface ManifestTsdocValues extends SliceCommitValues {
@@ -375,6 +385,13 @@ export const PROMPTS = {
       }),
     ].join('\n'),
   specReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
+  testReview: (values: TestReviewValues): string =>
+    [
+      ...sliceHeadLines(values),
+      `Issue file: ${issueFile(values.issue, values.reportDir)}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
+    ].join('\n'),
   standardsReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   manifestTsdoc: (values: ManifestTsdocValues): string =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
@@ -424,14 +441,17 @@ export const PROMPTS = {
     ].join('\n'),
 };
 
-function sliceCommitLines(values: SliceCommitValues): string[] {
+function sliceHeadLines(values: SliceHeadValues): string[] {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
     `Slice commit: ${values.sha}`,
-    `Changed files: ${values.files.join(', ')}`,
   ];
+}
+
+function sliceCommitLines(values: SliceCommitValues): string[] {
+  return [...sliceHeadLines(values), `Changed files: ${values.files.join(', ')}`];
 }
 
 /** The prompt of a stage that reviews the slice's commit and may amend it. */

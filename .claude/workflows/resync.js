@@ -70,6 +70,7 @@ const STAGES = {
   issueOverlap: { agentType: 'issue-overlap', model: 'opus', effort: 'medium' },
   tdd: { agentType: 'tdd', model: 'opus', effort: 'medium' },
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
+  testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
@@ -101,7 +102,8 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.issues,
     detail:
-      'per issue, in dependency order: tdd, spec review, standards review, Manifest TSDoc (src/ only), land',
+      'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
+      'Manifest TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -231,6 +233,13 @@ const PROMPTS = {
       }),
     ].join('\n'),
   specReview: (values) => sliceReviewPrompt(values),
+  testReview: (values) =>
+    [
+      ...sliceHeadLines(values),
+      `Issue file: ${issueFile(values.issue, values.reportDir)}`,
+      `Report file: ${values.reportPath}`,
+      ...serverTierLines(values.lease),
+    ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
   manifestTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
@@ -279,14 +288,16 @@ const PROMPTS = {
       `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
-function sliceCommitLines(values) {
+function sliceHeadLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
     `Slice worktree: ${values.slice}`,
     `Slice base: ${values.base}`,
     `Slice commit: ${values.sha}`,
-    `Changed files: ${values.files.join(', ')}`,
   ];
+}
+function sliceCommitLines(values) {
+  return [...sliceHeadLines(values), `Changed files: ${values.files.join(', ')}`];
 }
 function sliceReviewPrompt(values) {
   return [
@@ -1466,6 +1477,16 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
+  testReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
+      sha: { type: 'string' },
+      summary: { type: 'string' },
+      leaseLines: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['verdict', 'sha', 'summary', 'leaseLines'],
+  },
   standardsReview: {
     type: 'object',
     properties: {
@@ -1917,6 +1938,12 @@ const AGENT_CALLS = {
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
+    ),
+  testReview: (hooks, values, tag) =>
+    askAgent(
+      hooks,
+      PROMPTS.testReview(values),
+      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks, values, tag) =>
     askAgent(

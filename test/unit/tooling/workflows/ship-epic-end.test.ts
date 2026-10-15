@@ -204,12 +204,15 @@ describe('runShip — the epic-end test audit', () => {
     });
   });
 
-  it('runs no test review in any slice', async () => {
+  it('runs a test review in every slice, and the audit once at the epic end', async () => {
     const run = fakeHooks(SEVEN_THEN_EIGHT);
 
     await runShip(run.hooks, 'issues 7 8');
 
-    expect(labels(run).filter((l) => /test-?review/i.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => /test-?review/i.test(l))).toEqual([
+      'testReview:7-1',
+      'testReview:8-1',
+    ]);
     expect(labels(run).filter((l) => l.startsWith('auditTests'))).toEqual(['auditTests:list']);
   });
 
@@ -335,7 +338,9 @@ describe('runShip — the epic-end test audit', () => {
 
     await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^(runner:comment-only|auditTests):/.test(l))).toEqual(
+    expect(
+      labels(run).filter((l) => /^(runner:comment-only|auditTests):(list|audit)/.test(l)),
+    ).toEqual(
       proofCalled ? ['runner:comment-only:audit-tests', 'auditTests:list'] : ['auditTests:list'],
     );
     expect(auditSection(run)).toContain('- Audit: hardened, 0 surviving mutants — pinned a bound');
@@ -498,7 +503,7 @@ describe('runShip — the epic review', () => {
       'Scope: profiled',
       `Issue files: ${REPORT_DIR}/issues/7.md, ${REPORT_DIR}/issues/8.md`,
       'Unlanded (JSON): []',
-      `Slice reports: ${[7, 8].flatMap((i) => [`${REPORT_DIR}/spec-review-${String(i)}-1.md`, `${REPORT_DIR}/standards-review-${String(i)}-1.md`]).join(', ')}`,
+      `Slice reports: ${[7, 8].flatMap((i) => [`${REPORT_DIR}/spec-review-${String(i)}-1.md`, `${REPORT_DIR}/test-review-${String(i)}-1.md`, `${REPORT_DIR}/standards-review-${String(i)}-1.md`]).join(', ')}`,
       `Report file: ${REPORT_DIR}/epic-review.md`,
     ]);
   });
@@ -531,7 +536,7 @@ describe('runShip — the epic review', () => {
     await runShip(run.hooks, 'issues 7');
 
     expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
-      `Slice reports: ${REPORT_DIR}/spec-review-7-2.md, ${REPORT_DIR}/standards-review-7-2.md`,
+      `Slice reports: ${REPORT_DIR}/spec-review-7-2.md, ${REPORT_DIR}/test-review-7-2.md, ${REPORT_DIR}/standards-review-7-2.md`,
     );
   });
 
@@ -541,7 +546,17 @@ describe('runShip — the epic review', () => {
     await runShip(run.hooks, 'issues 7');
 
     expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
-      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md, ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/test-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md, ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+    );
+  });
+
+  it('leaves the test review report out of the slice reports when that review was skipped', async () => {
+    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
+      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md`,
     );
   });
 
@@ -982,6 +997,35 @@ describe('runShip — the lease totals', () => {
         .filter((l) => l.startsWith('- Lease timings: ')),
     ).toEqual([
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; spec-review: folia@localhost:25703 waited 0.3s, held 8.5s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
+    ]);
+  });
+
+  it('counts a landed issue’s test-review lease under the issue, in a test-review role', async () => {
+    const run = fakeHooks({
+      testReview: {
+        verdict: 'fixed',
+        sha: 'test1',
+        summary: 'pinned a bound',
+        leaseLines: ['with-lease: waited 2.5s for folia@localhost:25712, held 33.0s'],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.leases).toEqual({
+      engines: [
+        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
+        { type: 'folia', leases: 1, waitedSeconds: 2.5, waitedMaxSeconds: 2.5, heldSeconds: 33 },
+      ],
+      issues: [{ issue: 7, waitedSeconds: 4, heldSeconds: 75 }],
+      unparsed: [],
+    });
+    expect(
+      promptOf(run, 'runner:publish:list')
+        .split('\n')
+        .filter((l) => l.startsWith('- Lease timings: ')),
+    ).toEqual([
+      '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; test-review: folia@localhost:25712 waited 2.5s, held 33s',
     ]);
   });
 

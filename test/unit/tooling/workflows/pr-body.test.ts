@@ -48,6 +48,7 @@ const work = (fields: {
   leaseLines?: string[];
   probes?: SliceWork['tdd']['probes'];
   specReview?: SliceWork['specReview'];
+  testReview?: SliceWork['testReview'];
   standardsReview?: SliceWork['standardsReview'];
   manifestTsdoc?: SliceWork['manifestTsdoc'];
   evidence?: TddEvidence;
@@ -68,6 +69,12 @@ const work = (fields: {
     verdict: 'fixed',
     sha: 's1s',
     summary: 'covered criterion 3',
+    leaseLines: [],
+  },
+  testReview: fields.testReview ?? {
+    verdict: 'clean',
+    sha: 's1s',
+    summary: 'every claim killed',
     leaseLines: [],
   },
   standardsReview: fields.standardsReview ?? {
@@ -142,6 +149,7 @@ const specReviewed = (leaseLines: string[]): SliceWork['specReview'] => ({
 });
 
 const STANDARDS_LEASE = 'with-lease: waited 0.5s for paper@localhost:25702, held 12.5s';
+const TEST_LEASE = 'with-lease: waited 2.5s for folia@localhost:25712, held 33.0s';
 
 const fixedReview = (leaseLines: string[]): SliceWork['standardsReview'] => ({
   verdict: 'fixed',
@@ -684,7 +692,7 @@ describe('renderPrBody', () => {
     expect(lines).toContain(`  - Folia ticks x: confirmed in ${text}`);
   });
 
-  it('renders the spec review, then the standards review, right after the issue line', () => {
+  it('renders the spec review, then the test review, then the standards review, right after the issue line', () => {
     const lines = renderPrBody({
       ...INPUT,
       landed: [
@@ -701,10 +709,61 @@ describe('renderPrBody', () => {
     }).split('\n');
     const at = lines.indexOf('- Issue: #11, landed as c11');
 
-    expect(lines.slice(at, at + 3)).toEqual([
+    expect(lines.slice(at, at + 4)).toEqual([
       '- Issue: #11, landed as c11',
       '- Spec review: clean — all met',
+      '- Test review: clean — every claim killed',
       '- Standards review: fixed — renamed a helper',
+    ]);
+  });
+
+  it.each<[string, SliceWork['testReview'], string]>([
+    [
+      'a fixed one',
+      { verdict: 'fixed', sha: 's1t', summary: 'pinned the bound', leaseLines: [] },
+      '- Test review: fixed — pinned the bound',
+    ],
+    [
+      'one skipped on a trivial surface',
+      'trivial surface',
+      '- Test review: skipped — trivial surface',
+    ],
+    ['one skipped as comment-only', 'comment-only', '- Test review: skipped — comment-only'],
+  ])('renders the test review line of %s', (_name, testReview, line) => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({ subject: 'review x', closes: 'fixes', testReview }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Test review: '))).toEqual([line]);
+  });
+
+  it('renders the test review’s lease timings between the spec and the standards review’s', () => {
+    const lines = renderPrBody({
+      ...INPUT,
+      landed: [
+        {
+          issue: 11,
+          commit: 'c11',
+          ...work({
+            subject: 'lease x',
+            closes: 'fixes',
+            specReview: specReviewed([REVIEW_LEASE]),
+            testReview: { verdict: 'fixed', sha: 's1t', summary: 'x', leaseLines: [TEST_LEASE] },
+            standardsReview: fixedReview([STANDARDS_LEASE]),
+          }),
+        },
+      ],
+    }).split('\n');
+
+    expect(lines.filter((l) => l.startsWith('- Lease timings: '))).toEqual([
+      '- Lease timings: spec-review: folia@localhost:25711 waited 1.2s, held 40.3s; test-review: folia@localhost:25712 waited 2.5s, held 33s; standards-review: paper@localhost:25702 waited 0.5s, held 12.5s',
     ]);
   });
 

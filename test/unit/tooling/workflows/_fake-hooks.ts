@@ -312,6 +312,8 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
   tdd: TDD_GREEN,
   // Each amending stage answers a new sha, so a stage that reads a stale one shows.
   specReview: { verdict: 'fixed', sha: 'spec1', summary: 'covered criterion 3', leaseLines: [] },
+  // Clean: no amend, so the spec review's sha reaches the standards review.
+  testReview: { verdict: 'clean', sha: 'spec1', summary: 'every claim killed', leaseLines: [] },
   standardsReview: {
     verdict: 'fixed',
     sha: 'slice2',

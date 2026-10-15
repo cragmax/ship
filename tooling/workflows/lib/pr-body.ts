@@ -59,7 +59,7 @@ export interface LandedIssue extends SliceWork {
 /** A slice's lease lines from one agent role. */
 export interface RoleLeaseLines {
   /** The agent whose lease runs printed them. */
-  readonly role: 'tdd' | 'spec-review' | 'standards-review';
+  readonly role: 'tdd' | 'spec-review' | 'test-review' | 'standards-review';
   /** Its `with-lease:` lines, as the agent transcribed them. */
   readonly lines: readonly string[];
 }
@@ -324,15 +324,17 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  * A slice's lease lines by role: the one reader of each slice agent's `leaseLines`.
  *
  * @param work - The slice's tdd and slice review answers.
- * @returns The tdd's, the spec review's, then the standards review's; lines unparsed and
- *   unfiltered.
+ * @returns The tdd's, the spec review's, the test review's, then the standards review's; no
+ *   test-review entry when it was skipped; lines unparsed and unfiltered.
  */
 export function sliceLeaseLines(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>,
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'standardsReview'>,
 ): RoleLeaseLines[] {
+  const test = work.testReview;
   return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
+    ...(typeof test === 'string' ? [] : [{ role: 'test-review' as const, lines: test.leaseLines }]),
     { role: 'standards-review', lines: work.standardsReview.leaseLines },
   ];
 }
@@ -738,11 +740,15 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   const tsdoc = landed.manifestTsdoc;
+  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
     `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
+    typeof test === 'string'
+      ? `- Test review: skipped — ${test}`
+      : `- Test review: ${test.verdict} — ${test.summary}`,
     `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
     typeof tsdoc === 'string'
       ? `- Manifest TSDoc: skipped — ${tsdoc}`
@@ -775,7 +781,9 @@ function durationText(seconds: number): string {
  * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
-function sliceLeaseText(work: Pick<SliceWork, 'tdd' | 'specReview' | 'standardsReview'>): string {
+function sliceLeaseText(
+  work: Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'standardsReview'>,
+): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

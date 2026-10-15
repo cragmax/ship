@@ -50,6 +50,7 @@ import {
   type RetroValues,
   type SliceReviewValues,
   type TddValues,
+  type TestReviewValues,
 } from './prompts.js';
 import { AGENT_OUTPUT_SCHEMAS } from './schemas.generated.js';
 import { agentOptions } from './stages.js';
@@ -84,8 +85,14 @@ export type TddEvidence = z.infer<typeof TddEvidenceSchema>;
 /** The tdd's answer. */
 export type TddOutput = z.infer<typeof TddOutputSchema>;
 
-/** A slice review's answer: the spec review's or the standards review's. */
+/** A slice review's answer: the spec review's, the test review's or the standards review's. */
 export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
+
+/**
+ * Why a slice's test review or the epic-end test audit was skipped: no code changed, or every
+ * code change is proven comment-only.
+ */
+export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
 /** The Manifest TSDoc review's answer. */
 export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
@@ -96,18 +103,14 @@ export type ManifestTsdocSkip = 'no src/ change';
 /** The epic-end test audit's answer. */
 export type AuditTestsOutput = z.infer<typeof AuditTestsOutputSchema>;
 
-/**
- * Why an epic's test audit was skipped: no code changed, or every code change proven
- * comment-only.
- */
-export type AuditTestsSkip = 'trivial surface' | 'comment-only';
-
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
   /** The tdd's answer: its commit line and cite among it. */
   readonly tdd: TddOutput;
   /** The spec review's answer. */
   readonly specReview: ReviewOutput;
+  /** The test review's answer, or why it was skipped. */
+  readonly testReview: ReviewOutput | TestReviewSkip;
   /** The standards review's answer. */
   readonly standardsReview: ReviewOutput;
   /** The Manifest TSDoc review's answer, or why it was skipped. */
@@ -192,6 +195,12 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
+    ),
+  testReview: (hooks: WorkflowHooks, values: TestReviewValues, tag: string) =>
+    askAgent<ReviewOutput>(
+      hooks,
+      PROMPTS.testReview(values),
+      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
     askAgent<ReviewOutput>(

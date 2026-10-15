@@ -122,6 +122,7 @@ describe('consumed fields are required', () => {
       issueOverlap: [],
       tdd: ['reason'],
       specReview: [],
+      testReview: [],
       standardsReview: [],
       manifestTsdoc: [],
       resolver: [],
