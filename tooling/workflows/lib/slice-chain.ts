@@ -361,9 +361,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `spec review: ${out.summary}`) };
-  return { next: { ...s, specReview: out, sha: out.sha } };
+  return afterReview(at, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 
 /**
@@ -372,32 +370,27 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
  */
 async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedSlice>> {
   const { at } = s;
-  const skip = await testSkip(at.ctx.hooks, s.tdd.files, `${s.base}..${s.sha}`, at.place);
+  const skip = await testSkip(s);
   if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
-  return { next: { ...s, testReview: out, sha: out.sha } };
+  return afterReview(at, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
 /**
- * Why a change's tests go unreviewed, `null` when they are reviewed: `'trivial surface'` when
- * `files` change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts`
- * proves `range` comment-only, leaving no code path uncompared. A failed proof reviews them.
+ * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files
+ * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
+ * its commit comment-only, leaving no code path uncompared. A failed proof reviews them.
  */
-async function testSkip(
-  hooks: WorkflowHooks,
-  files: readonly string[],
-  range: string,
-  place: ToolPlace,
-): Promise<TestReviewSkip | null> {
+async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
+  const { files } = s.tdd;
   if (isTrivialSurface(files)) return 'trivial surface';
   if (files.some((path) => path.startsWith('test/'))) return null;
-  const out = await runTool(hooks, 'comment-only', [range], place);
+  const range = `${s.base}..${s.sha}`;
+  const out = await runTool(s.at.ctx.hooks, 'comment-only', [range], s.at.place);
   const proven =
     out !== null &&
     out.exitCode === 0 &&
@@ -414,9 +407,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `standards review: ${out.summary}`) };
-  return { next: { ...s, standardsReview: out, sha: out.sha } };
+  return afterReview(at, 'standards review', out, (standardsReview) => ({ ...s, standardsReview }));
 }
 
 /**
@@ -433,9 +424,25 @@ async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>
     reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
+  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+}
+
+/**
+ * Carry an amending stage's answer on: none stops the slice as died, a `blocked` one stops it with
+ * `label` and its summary, else `next` folds it in and `sha` becomes its amend.
+ */
+function afterReview<
+  O extends { readonly verdict: string; readonly sha: string; readonly summary: string },
+  T,
+>(
+  at: AttemptId,
+  label: string,
+  out: O | null,
+  next: (out: O) => T,
+): Step<T & { readonly sha: string }> {
   if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
-  return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
+  return { next: { ...next(out), sha: out.sha } };
 }
 
 /**

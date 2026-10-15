@@ -2808,24 +2808,23 @@ function retroLines(retro) {
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 function issueSection(landed) {
-  const tsdoc = landed.manifestTsdoc;
-  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
-    typeof test === 'string'
-      ? `- Test review: skipped — ${test}`
-      : `- Test review: ${test.verdict} — ${test.summary}`,
-    `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
-    typeof tsdoc === 'string'
-      ? `- Manifest TSDoc: skipped — ${tsdoc}`
-      : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
+    reviewLine('Spec review', landed.specReview),
+    reviewLine('Test review', landed.testReview),
+    reviewLine('Standards review', landed.standardsReview),
+    reviewLine('Manifest TSDoc', landed.manifestTsdoc),
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
   ];
+}
+function reviewLine(label, out) {
+  return typeof out === 'string'
+    ? `- ${label}: skipped — ${out}`
+    : `- ${label}: ${out.verdict} — ${out.summary}`;
 }
 function probeLines(probes) {
   if (probes.length === 0) return ['- Probes: no probe needed'];
@@ -3412,27 +3411,25 @@ async function specReviewStage(s) {
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `spec review: ${out.summary}`) };
-  return { next: { ...s, specReview: out, sha: out.sha } };
+  return afterReview(at, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 async function testReviewStage(s) {
   const { at } = s;
-  const skip = await testSkip(at.ctx.hooks, s.tdd.files, `${s.base}..${s.sha}`, at.place);
+  const skip = await testSkip(s);
   if (skip !== null) return { next: { ...s, testReview: skip } };
   const out = await AGENT_CALLS.testReview(
     at.ctx.hooks,
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `test review: ${out.summary}`) };
-  return { next: { ...s, testReview: out, sha: out.sha } };
+  return afterReview(at, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
-async function testSkip(hooks, files, range, place) {
+async function testSkip(s) {
+  const { files } = s.tdd;
   if (isTrivialSurface(files)) return 'trivial surface';
   if (files.some((path) => path.startsWith('test/'))) return null;
-  const out = await runTool(hooks, 'comment-only', [range], place);
+  const range = `${s.base}..${s.sha}`;
+  const out = await runTool(s.at.ctx.hooks, 'comment-only', [range], s.at.place);
   const proven =
     out !== null &&
     out.exitCode === 0 &&
@@ -3447,9 +3444,7 @@ async function standardsReviewStage(s) {
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `standards review: ${out.summary}`) };
-  return { next: { ...s, standardsReview: out, sha: out.sha } };
+  return afterReview(at, 'standards review', out, (standardsReview) => ({ ...s, standardsReview }));
 }
 async function manifestTsdocStage(s) {
   const { at } = s;
@@ -3461,9 +3456,12 @@ async function manifestTsdocStage(s) {
     reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
+  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+}
+function afterReview(at, label, out, next) {
   if (out === null) return { stop: died(at) };
-  if (out.verdict === 'blocked') return { stop: blocked(at, `manifest tsdoc: ${out.summary}`) };
-  return { next: { ...s, manifestTsdoc: out, sha: out.sha } };
+  if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
+  return { next: { ...next(out), sha: out.sha } };
 }
 async function landSlice(s) {
   const { at } = s;

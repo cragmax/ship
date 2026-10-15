@@ -290,6 +290,9 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 
+/** The slice agents' answers that carry lease lines. */
+type SliceLeaseWork = Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'standardsReview'>;
+
 /**
  * A slice's lease lines by role: the one reader of each slice agent's `leaseLines`.
  *
@@ -297,9 +300,7 @@ export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
  * @returns The tdd's, the spec review's, the test review's, then the standards review's; no
  *   test-review entry when it was skipped; lines unparsed and unfiltered.
  */
-export function sliceLeaseLines(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'standardsReview'>,
-): RoleLeaseLines[] {
+export function sliceLeaseLines(work: SliceLeaseWork): RoleLeaseLines[] {
   const test = work.testReview;
   return [
     { role: 'tdd', lines: work.tdd.leaseLines },
@@ -686,24 +687,25 @@ function retroLines(retro: readonly RetroFinding[] | null): string[] {
 
 /** One landed issue's run-report section; its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
-  const tsdoc = landed.manifestTsdoc;
-  const test = landed.testReview;
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
     '',
     `- Issue: #${String(landed.issue)}, landed as ${landed.commit}`,
-    `- Spec review: ${landed.specReview.verdict} — ${landed.specReview.summary}`,
-    typeof test === 'string'
-      ? `- Test review: skipped — ${test}`
-      : `- Test review: ${test.verdict} — ${test.summary}`,
-    `- Standards review: ${landed.standardsReview.verdict} — ${landed.standardsReview.summary}`,
-    typeof tsdoc === 'string'
-      ? `- Manifest TSDoc: skipped — ${tsdoc}`
-      : `- Manifest TSDoc: ${tsdoc.verdict} — ${tsdoc.summary}`,
+    reviewLine('Spec review', landed.specReview),
+    reviewLine('Test review', landed.testReview),
+    reviewLine('Standards review', landed.standardsReview),
+    reviewLine('Manifest TSDoc', landed.manifestTsdoc),
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
   ];
+}
+
+/** One review's line: its verdict and summary, or `skipped` and why when a reason stands in. */
+function reviewLine(label: string, out: { verdict: string; summary: string } | string): string {
+  return typeof out === 'string'
+    ? `- ${label}: skipped — ${out}`
+    : `- ${label}: ${out.verdict} — ${out.summary}`;
 }
 
 /** A slice's probe lines: one nested line per tdd probe record. */
@@ -728,9 +730,7 @@ function durationText(seconds: number): string {
  * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
-function sliceLeaseText(
-  work: Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'standardsReview'>,
-): string {
+function sliceLeaseText(work: SliceLeaseWork): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];

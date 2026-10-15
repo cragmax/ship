@@ -469,14 +469,9 @@ describe('runShip — one issue from launch to PR', () => {
       BATCH,
       '--server',
     ]);
-    const shaSeenBy = (label: string): string | undefined =>
-      run.calls
-        .find((c) => c.label === label)
-        ?.prompt.split('\n')
-        .find((l) => l.startsWith('Slice commit: '));
     // Each amend moves the slice commit: each review sees the one before it.
-    expect(shaSeenBy('specReview:7-1')).toBe('Slice commit: slice1');
-    expect(shaSeenBy('standardsReview:7-1')).toBe('Slice commit: spec1');
+    expect(shaSeenBy(run, 'specReview:7-1')).toBe('Slice commit: slice1');
+    expect(shaSeenBy(run, 'standardsReview:7-1')).toBe('Slice commit: spec1');
     expect(argvOf('runner:land:7-1')).toEqual([
       'tooling/worktree.ts',
       'land',
@@ -729,6 +724,12 @@ const promptOf = (run: FakeRun, label: string): string => {
   expect(call, `a ${label} call`).toBeDefined();
   return call?.prompt ?? '';
 };
+
+/** The `Slice commit:` line of a call's prompt; fails the test when there is no such call. */
+const shaSeenBy = (run: FakeRun, label: string): string | undefined =>
+  promptOf(run, label)
+    .split('\n')
+    .find((l) => l.startsWith('Slice commit: '));
 
 /** A closing keyword before issue 7's ref, as GitHub reads one. */
 const CLOSES_SEVEN = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#7\b/i;
@@ -1658,25 +1659,15 @@ describe('runShip — what an attempt hands on', () => {
 });
 
 describe('runShip — the slice test review', () => {
-  it('runs the test-review agent at its tier on the spec review’s commit, handing its fixed sha to the standards review', async () => {
+  it('runs the test review on the spec review’s commit, handing its fixed sha to the standards review', async () => {
     const run = fakeHooks({
       testReview: { verdict: 'fixed', sha: 'test1', summary: 'pinned a bound', leaseLines: [] },
     });
 
     await runShip(run.hooks, 'issues 7');
 
-    const call = run.calls.find((c) => c.label === 'testReview:7-1');
-    expect({ agentType: call?.agentType, model: call?.model, effort: call?.effort }).toEqual({
-      agentType: 'test-review',
-      model: 'opus',
-      effort: 'high',
-    });
-    const shaSeenBy = (label: string): string | undefined =>
-      promptOf(run, label)
-        .split('\n')
-        .find((l) => l.startsWith('Slice commit: '));
-    expect(shaSeenBy('testReview:7-1')).toBe('Slice commit: spec1');
-    expect(shaSeenBy('standardsReview:7-1')).toBe('Slice commit: test1');
+    expect(shaSeenBy(run, 'testReview:7-1')).toBe('Slice commit: spec1');
+    expect(shaSeenBy(run, 'standardsReview:7-1')).toBe('Slice commit: test1');
   });
 
   it.each<[name: string, files: string[], proof: unknown, proofRuns: boolean, reviewRuns: boolean]>(

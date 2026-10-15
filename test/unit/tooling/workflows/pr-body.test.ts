@@ -679,11 +679,7 @@ describe('renderPrBody', () => {
   });
 
   it.each<[string, SliceWork['testReview'], string]>([
-    [
-      'a fixed one',
-      { verdict: 'fixed', sha: 's1t', summary: 'pinned the bound', leaseLines: [] },
-      '- Test review: fixed — pinned the bound',
-    ],
+    ['a fixed one', fixedReview([]), '- Test review: fixed — renamed a helper'],
     [
       'one skipped on a trivial surface',
       'trivial surface',
@@ -716,7 +712,7 @@ describe('renderPrBody', () => {
             subject: 'lease x',
             closes: 'fixes',
             specReview: specReviewed([REVIEW_LEASE]),
-            testReview: { verdict: 'fixed', sha: 's1t', summary: 'x', leaseLines: [TEST_LEASE] },
+            testReview: fixedReview([TEST_LEASE]),
             standardsReview: fixedReview([STANDARDS_LEASE]),
           }),
         },
