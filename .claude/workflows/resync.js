@@ -201,7 +201,7 @@ const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
-      ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
+      ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
     ].join('\n'),
   issueReadiness: (values) =>
     [
@@ -1586,8 +1586,8 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function runPlace(reportDir, tag, write) {
-  return { dir: `${reportDir}/tool`, tag, ...(write === undefined ? {} : { write }) };
+function runPlace(reportDir, tag, ...write) {
+  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -1710,7 +1710,7 @@ const TOOL_SCHEMAS = {
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
-    argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
+    argv: toolWords(name, argv),
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
@@ -1724,6 +1724,15 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     ),
   );
   return typeof out === 'object' && out !== null ? out : null;
+}
+function toolWords(name, argv) {
+  return ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+const PR_PLACEHOLDER = '<pr>';
+function toolCommandLine(name, argv) {
+  return toolWords(name, argv)
+    .map((word) => (word === PR_PLACEHOLDER ? word : shellWord(word)))
+    .join(' ');
 }
 function envelopeProblem(tool, out) {
   if (out === null) return `the runner returned nothing for ${tool}`;

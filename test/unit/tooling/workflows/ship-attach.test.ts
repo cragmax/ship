@@ -106,7 +106,10 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       '--log',
       `${ATTACH_REPORTS}/publish.log`,
     ]);
-    expect(publish?.prompt.split('\n').filter((l) => l.startsWith('Write first:'))).toEqual([]);
+    expect(publish?.prompt.split('\n').filter((l) => l.startsWith('Write first:'))).toEqual([
+      `Write first: ${ATTACH_REPORTS}/pr-report-comment.md`,
+      `Write first: ${ATTACH_REPORTS}/pr-section.md`,
+    ]);
     expect(report).toMatchObject({
       status: 'done',
       epics: [
@@ -119,6 +122,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
         },
       ],
     });
+    expect(report.epics[0]).not.toHaveProperty('recovery');
   });
 });
 
@@ -373,6 +377,52 @@ describe('runShip --attach — the epic end', () => {
       issues: [{ issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' }],
     });
     expect(labels(run).filter((l) => l.startsWith('retro'))).toEqual(['retro:list']);
+  });
+
+  it('stops a failed push with the push-only command, then the report post and the section append for the open PR, each file written', async () => {
+    const run = fakeHooks({
+      ...ATTACHED,
+      'runner:publish': {
+        exitCode: 1,
+        envelopePath: 'e.json',
+        status: 'failed',
+        errors: [{ step: 'push', message: 'the pre-push gate failed' }],
+        pushed: false,
+        pr: null,
+        mergeable: null,
+      },
+    });
+
+    const report = await runShip(run.hooks, ARGS);
+
+    const recovery = report.epics[0]?.recovery ?? [];
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'stopped',
+      message: 'publish failed: the pre-push gate failed',
+    });
+    expect(recovery).toEqual([
+      `npx tsx tooling/worktree.ts publish ${BATCH} --push-only --log ${ATTACH_REPORTS}/publish.log`,
+      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr 9 --comment-file ${ATTACH_REPORTS}/pr-report-comment.md`,
+      `npx tsx tooling/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
+    ]);
+    const lines = promptLines(run, 'runner:publish:list');
+    expect(lines[0]).toBe(`Command: ${recovery[0] ?? ''}`);
+    const at = lines.indexOf(`Write first: ${ATTACH_REPORTS}/pr-report-comment.md`);
+    expect(lines.slice(at, at + 3)).toEqual([
+      `Write first: ${ATTACH_REPORTS}/pr-report-comment.md`,
+      '----- BEGIN FILE -----',
+      '<details><summary>Run report — attached run 2</summary>',
+    ]);
+    const from = lines.indexOf(`Write first: ${ATTACH_REPORTS}/pr-section.md`);
+    expect(lines.slice(from, from + 3)).toEqual([
+      `Write first: ${ATTACH_REPORTS}/pr-section.md`,
+      '----- BEGIN FILE -----',
+      '## Attached run 2',
+    ]);
+    expect(lines).toContain(`Run report: not posted to this PR; it is in \`${ATTACH_REPORTS}\`.`);
+    expect(labels(run).filter((l) => /^runner:(post-pr-comment|append-pr-body)/.test(l))).toEqual(
+      [],
+    );
   });
 });
 

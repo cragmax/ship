@@ -55,11 +55,16 @@ export interface EntrySetup {
   readonly reportDir: string;
   /** The trimmed pool registry. */
   readonly registry: string;
-  /**
-   * An attached run's number (`cut-batch --attach --attached-run`'s
-   * `attach.run`), which names its slices; `null` for an unattached run.
-   */
-  readonly attachedRun: number | null;
+  /** An attached run's number and open PR; `null` for an unattached run. */
+  readonly attached: AttachedRun | null;
+}
+
+/** An attached run, as `cut-batch --attach --attached-run` named it. */
+export interface AttachedRun {
+  /** Its number (`attach.run`), which names its slices. */
+  readonly run: number;
+  /** The open PR it lands on (`attach.pr`). */
+  readonly pr: number;
 }
 
 /** What an attempt runs against: its entry, its epic's queue and the drive's view of the entry. */
@@ -300,8 +305,8 @@ function keptDir(main: string, slice: string, startedAt: string | null): string 
 }
 
 /** The `cut-slice` words that name an attached run's slices: `--attached-run <R>`, or `[]`. */
-export function attachedRunArgs(entry: Pick<EntrySetup, 'attachedRun'>): string[] {
-  return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
+export function attachedRunArgs(entry: Pick<EntrySetup, 'attached'>): string[] {
+  return entry.attached === null ? [] : ['--attached-run', String(entry.attached.run)];
 }
 
 /** Provision the slice, its integration config included; its `PH_PROJECT_DIR` goes on. */

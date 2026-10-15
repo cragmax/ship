@@ -630,7 +630,7 @@ const PROMPTS = {
       `Command: ${values.argv.map(shellWord).join(' ')}`,
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
-      ...(values.write === undefined ? [] : verbatimBlock('Write first', values.write)),
+      ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
     ].join('\n'),
   issueReadiness: (values) =>
     [
@@ -2015,8 +2015,8 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function runPlace(reportDir, tag, write) {
-  return { dir: `${reportDir}/tool`, tag, ...(write === undefined ? {} : { write }) };
+function runPlace(reportDir, tag, ...write) {
+  return { dir: `${reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -2139,7 +2139,7 @@ const TOOL_SCHEMAS = {
 };
 async function runTool(hooks, name, argv, place = PRE_CUT) {
   const prompt = PROMPTS.runner({
-    argv: ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv],
+    argv: toolWords(name, argv),
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
@@ -2153,6 +2153,15 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     ),
   );
   return typeof out === 'object' && out !== null ? out : null;
+}
+function toolWords(name, argv) {
+  return ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+const PR_PLACEHOLDER = '<pr>';
+function toolCommandLine(name, argv) {
+  return toolWords(name, argv)
+    .map((word) => (word === PR_PLACEHOLDER ? word : shellWord(word)))
+    .join(' ');
 }
 function envelopeProblem(tool, out) {
   if (out === null) return `the runner returned nothing for ${tool}`;
@@ -2930,7 +2939,7 @@ function keptDir(main, slice, startedAt) {
   return `${main}/reports/kept/${name}${stamp}`;
 }
 function attachedRunArgs(entry) {
-  return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
+  return entry.attached === null ? [] : ['--attached-run', String(entry.attached.run)];
 }
 async function provisionStage(cut) {
   const { at } = cut;
@@ -3344,7 +3353,7 @@ async function unshippedEpicEnd(input, outcome) {
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
   const retro = await retroStep(input, report);
-  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  if (outcome === 'halted' || input.entry.attached !== null) return { ...report, retro };
   return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
 }
 async function retireStep(input) {
@@ -3414,7 +3423,7 @@ async function shipSteps(input, state) {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
     },
     async () => {
-      if (entry.attachedRun === null) state.writer = await prWriterStep(input, sync.upstream);
+      if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
   return publishStep(input, { sync, bump, state });
@@ -3433,20 +3442,35 @@ async function publishStep(input, found) {
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
     const checked = { masterCheck: check, mainUntouched: untouched };
-    if (input.entry.attachedRun !== null) {
-      return pushOntoPr(input, found, checked, input.entry.attachedRun);
+    if (input.entry.attached !== null) {
+      return pushOntoPr(input, found, checked, input.entry.attached);
     }
     return openPr(input, found, checked);
   });
 }
-async function pushOntoPr(input, found, checked, run) {
+const REPORT_COMMENT = { name: 'pr-report-comment.md', flag: '--comment-file' };
+const PR_SECTION = { name: 'pr-section.md', flag: '--section-file' };
+async function pushOntoPr(input, found, checked, attached) {
   const { hooks, entry } = input;
+  const base = { ...bodyInput(input, found, checked), run: attached.run };
+  const report = renderAttachedReport(base);
+  const files = [
+    { ...REPORT_COMMENT, tool: 'post-pr-comment', content: report },
+    {
+      ...PR_SECTION,
+      tool: 'append-pr-body',
+      content: renderAttachedSection({ ...base, reportComment: null }),
+    },
+  ];
   const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
-  const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
-  const published = publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, ...files.map((f) => reportFile(entry, f)));
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...files.map((f) => toolCommandLine(f.tool, prFileArgv(entry, String(attached.pr), f))),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
-  const base = { ...bodyInput(input, found, checked), run };
-  const posted = await postReportStep(input, published.pr, renderAttachedReport(base));
+  const posted = await postReportStep(input, published.pr, report);
   const reportComment = 'url' in posted ? posted.url : null;
   const section = renderAttachedSection({ ...base, reportComment });
   const failure = await appendSectionStep(input, published.pr, section);
@@ -3457,7 +3481,7 @@ async function pushOntoPr(input, found, checked, run) {
   };
 }
 async function postReportStep(input, pr, report) {
-  const file = { name: 'pr-report-comment.md', flag: '--comment-file', content: report };
+  const file = { ...REPORT_COMMENT, content: report };
   const posted = await prFileStep(input, 'post-pr-comment', pr, file);
   if ('failure' in posted) return posted;
   return typeof posted.ok.url === 'string'
@@ -3465,15 +3489,20 @@ async function postReportStep(input, pr, report) {
     : { failure: 'post-pr-comment ok without a url' };
 }
 async function appendSectionStep(input, pr, section) {
-  const file = { name: 'pr-section.md', flag: '--section-file', content: section };
+  const file = { ...PR_SECTION, content: section };
   const edited = await prFileStep(input, 'append-pr-body', pr, file);
   return 'failure' in edited ? edited.failure : null;
 }
+function reportFile(entry, file) {
+  return { path: `${entry.reportDir}/${file.name}`, content: file.content };
+}
+function prFileArgv(entry, pr, file) {
+  return [entry.batch, '--pr', pr, file.flag, `${entry.reportDir}/${file.name}`];
+}
 async function prFileStep(input, tool, pr, file) {
   const { hooks, entry } = input;
-  const path = `${entry.reportDir}/${file.name}`;
-  const argv = [entry.batch, '--pr', String(pr), file.flag, path];
-  const place = runPlace(entry.reportDir, entry.tag, { path, content: file.content });
+  const argv = prFileArgv(entry, String(pr), file);
+  const place = runPlace(entry.reportDir, entry.tag, reportFile(entry, file));
   try {
     const out = await runTool(hooks, tool, argv, place);
     return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
@@ -3481,10 +3510,10 @@ async function prFileStep(input, tool, pr, file) {
     return { failure: `${tool} threw: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
-function publishedPr(out) {
+function publishedPr(out, recovery) {
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
+    return { outcome: 'stopped', message: envelopeProblem('publish', out), recovery };
   }
   return { outcome: 'pr', pr: pr.number };
 }
@@ -3505,12 +3534,27 @@ async function openPr(input, found, checked) {
     `${entry.reportDir}/publish.log`,
     ...(draft(found.state.epicReview) ? ['--draft'] : []),
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
-  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  const moved = fitted.comments.map((m) => ({
+    name: m.file,
+    flag: '--comment-file',
+    content: m.text,
+  }));
+  const place = runPlace(
+    entry.reportDir,
+    entry.tag,
+    { path: bodyPath, content: fitted.body },
+    ...moved.map((file) => reportFile(entry, file)),
+  );
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...moved.map((file) =>
+      toolCommandLine('post-pr-comment', prFileArgv(entry, PR_PLACEHOLDER, file)),
+    ),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
   const failures = [];
-  for (const moved of fitted.comments) {
-    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+  for (const file of moved) {
     const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
     if ('failure' in posted) failures.push(posted.failure);
   }
@@ -4425,8 +4469,9 @@ async function cutEntry(hooks, entry, attach) {
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
-  const attachedRun = cut.attach?.run ?? null;
-  if (attach !== null && attachedRun === null) {
+  const attached =
+    typeof cut.attach?.run === 'number' ? { run: cut.attach.run, pr: cut.attach.pr } : null;
+  if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
   const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
@@ -4442,7 +4487,7 @@ async function cutEntry(hooks, entry, attach) {
       base,
       reportDir,
       registry,
-      attachedRun,
+      attached,
     },
   };
 }

@@ -37,13 +37,16 @@ import {
   type ScheduleEntry,
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
-import type { EntrySetup } from './slice-chain.js';
+import type { FileToWrite } from './prompts.js';
+import type { AttachedRun, EntrySetup } from './slice-chain.js';
 import { syncMasterStep, type SyncStepResult } from './sync-master-step.js';
 import {
   envelopeProblem,
+  PR_PLACEHOLDER,
   PRE_CUT,
   runPlace,
   runTool,
+  toolCommandLine,
   type BumpOutput,
   type KeptWork,
   type PublishOutput,
@@ -109,6 +112,12 @@ export interface EpicReport {
   readonly schedule: readonly ScheduleEntry[];
   /** What stopped or halted the entry, when its epic end says. */
   readonly message?: string;
+  /**
+   * After a failed publish only: the commands that finish the epic end by hand, in order, run
+   * from the main checkout; each file they name is in the report directory. A
+   * {@link PR_PLACEHOLDER} stands for the number of the PR the first one opens.
+   */
+  readonly recovery?: readonly string[];
   /**
    * Why an attached run's section was not appended to its PR's body — the
    * `append-pr-body` problem, or the call's throw — while the push stood;
@@ -191,7 +200,10 @@ interface EndState {
 }
 
 /** The epic end's outcome before the main-checkout look. */
-type Published = Pick<EpicReport, 'outcome' | 'pr' | 'message' | 'prBodyEdit' | 'prReportComment'>;
+type Published = Pick<
+  EpicReport,
+  'outcome' | 'pr' | 'message' | 'recovery' | 'prBodyEdit' | 'prReportComment'
+>;
 
 /**
  * Run the epic end.
@@ -252,7 +264,7 @@ export async function unshippedEpicEnd(
     ...(issueComments.length === 0 ? {} : { issueComments }),
   };
   const retro = await retroStep(input, report);
-  if (outcome === 'halted' || input.entry.attachedRun !== null) return { ...report, retro };
+  if (outcome === 'halted' || input.entry.attached !== null) return { ...report, retro };
   return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
 }
 
@@ -353,7 +365,7 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
     },
     async () => {
-      if (entry.attachedRun === null) state.writer = await prWriterStep(input, sync.upstream);
+      if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
   return publishStep(input, { sync, bump, state });
@@ -385,8 +397,8 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
     const checked = { masterCheck: check, mainUntouched: untouched };
-    if (input.entry.attachedRun !== null) {
-      return pushOntoPr(input, found, checked, input.entry.attachedRun);
+    if (input.entry.attached !== null) {
+      return pushOntoPr(input, found, checked, input.entry.attached);
     }
     return openPr(input, found, checked);
   });
@@ -398,6 +410,12 @@ interface Checked {
   readonly mainUntouched: boolean | null;
 }
 
+/** An attached run's report comment file, and the flag that hands it to `post-pr-comment`. */
+const REPORT_COMMENT = { name: 'pr-report-comment.md', flag: '--comment-file' } as const;
+
+/** An attached run's PR-body section file, and the flag that hands it to `append-pr-body`. */
+const PR_SECTION = { name: 'pr-section.md', flag: '--section-file' } as const;
+
 /**
  * Push an attached run's branch onto its open PR, then post its report and append its section: a
  * failed post or edit keeps the outcome `pr`, named in `prReportComment` / `prBodyEdit`; a failed
@@ -407,15 +425,28 @@ async function pushOntoPr(
   input: EpicEndInput,
   found: EndFindings,
   checked: Checked,
-  run: number,
+  attached: AttachedRun,
 ): Promise<Published> {
   const { hooks, entry } = input;
+  const base = { ...bodyInput(input, found, checked), run: attached.run };
+  const report = renderAttachedReport(base);
+  const files = [
+    { ...REPORT_COMMENT, tool: 'post-pr-comment', content: report },
+    {
+      ...PR_SECTION,
+      tool: 'append-pr-body',
+      content: renderAttachedSection({ ...base, reportComment: null }),
+    },
+  ] as const;
   const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
-  const out = await runTool(hooks, 'publish', argv, runPlace(entry.reportDir, entry.tag));
-  const published = publishedPr(out);
+  const place = runPlace(entry.reportDir, entry.tag, ...files.map((f) => reportFile(entry, f)));
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...files.map((f) => toolCommandLine(f.tool, prFileArgv(entry, String(attached.pr), f))),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
-  const base = { ...bodyInput(input, found, checked), run };
-  const posted = await postReportStep(input, published.pr, renderAttachedReport(base));
+  const posted = await postReportStep(input, published.pr, report);
   const reportComment = 'url' in posted ? posted.url : null;
   const section = renderAttachedSection({ ...base, reportComment });
   const failure = await appendSectionStep(input, published.pr, section);
@@ -435,7 +466,7 @@ async function postReportStep(
   pr: number,
   report: string,
 ): Promise<{ readonly url: string } | { readonly failure: string }> {
-  const file = { name: 'pr-report-comment.md', flag: '--comment-file', content: report };
+  const file = { ...REPORT_COMMENT, content: report };
   const posted = await prFileStep(input, 'post-pr-comment', pr, file);
   if ('failure' in posted) return posted;
   return typeof posted.ok.url === 'string'
@@ -452,9 +483,30 @@ async function appendSectionStep(
   pr: number,
   section: string,
 ): Promise<string | null> {
-  const file = { name: 'pr-section.md', flag: '--section-file', content: section };
+  const file = { ...PR_SECTION, content: section };
   const edited = await prFileStep(input, 'append-pr-body', pr, file);
   return 'failure' in edited ? edited.failure : null;
+}
+
+/** A file one of the open PR's file-fed tools reads: its name in the report dir, flag and text. */
+interface PrFile {
+  readonly name: string;
+  readonly flag: string;
+  readonly content: string;
+}
+
+/** A {@link PrFile} as the runner writes it: `<reportDir>/<name>`. */
+function reportFile(entry: Pick<EntrySetup, 'reportDir'>, file: PrFile): FileToWrite {
+  return { path: `${entry.reportDir}/${file.name}`, content: file.content };
+}
+
+/** The words of a PR file tool's call on the batch; `pr` may be {@link PR_PLACEHOLDER}. */
+function prFileArgv(
+  entry: Pick<EntrySetup, 'batch' | 'reportDir'>,
+  pr: string,
+  file: PrFile,
+): string[] {
+  return [entry.batch, '--pr', pr, file.flag, `${entry.reportDir}/${file.name}`];
 }
 
 /**
@@ -465,12 +517,11 @@ async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
   input: EpicEndInput,
   tool: N,
   pr: number,
-  file: { readonly name: string; readonly flag: string; readonly content: string },
+  file: PrFile,
 ): Promise<{ readonly ok: ToolOutputs[N] } | { readonly failure: string }> {
   const { hooks, entry } = input;
-  const path = `${entry.reportDir}/${file.name}`;
-  const argv = [entry.batch, '--pr', String(pr), file.flag, path];
-  const place = runPlace(entry.reportDir, entry.tag, { path, content: file.content });
+  const argv = prFileArgv(entry, String(pr), file);
+  const place = runPlace(entry.reportDir, entry.tag, reportFile(entry, file));
   try {
     const out = await runTool(hooks, tool, argv, place);
     return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
@@ -479,10 +530,11 @@ async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
   }
 }
 
-function publishedPr(out: PublishOutput | null): Published {
+/** A publish call's outcome: `pr`, or `stopped` with the `recovery` that finishes by hand. */
+function publishedPr(out: PublishOutput | null, recovery: readonly string[]): Published {
   const pr = out?.status === 'ok' ? out.pr : null;
   if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out) };
+    return { outcome: 'stopped', message: envelopeProblem('publish', out), recovery };
   }
   return { outcome: 'pr', pr: pr.number };
 }
@@ -513,12 +565,27 @@ async function openPr(
     `${entry.reportDir}/publish.log`,
     ...(draft(found.state.epicReview) ? ['--draft'] : []),
   ];
-  const place = runPlace(entry.reportDir, entry.tag, { path: bodyPath, content: fitted.body });
-  const published = publishedPr(await runTool(hooks, 'publish', argv, place));
+  const moved = fitted.comments.map((m) => ({
+    name: m.file,
+    flag: '--comment-file',
+    content: m.text,
+  }));
+  const place = runPlace(
+    entry.reportDir,
+    entry.tag,
+    { path: bodyPath, content: fitted.body },
+    ...moved.map((file) => reportFile(entry, file)),
+  );
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...moved.map((file) =>
+      toolCommandLine('post-pr-comment', prFileArgv(entry, PR_PLACEHOLDER, file)),
+    ),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
   const failures: string[] = [];
-  for (const moved of fitted.comments) {
-    const file = { name: moved.file, flag: '--comment-file', content: moved.text };
+  for (const file of moved) {
     const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
     if ('failure' in posted) failures.push(posted.failure);
   }

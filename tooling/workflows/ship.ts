@@ -153,8 +153,9 @@ async function cutEntry(
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
-  const attachedRun = cut.attach?.run ?? null;
-  if (attach !== null && attachedRun === null) {
+  const attached =
+    typeof cut.attach?.run === 'number' ? { run: cut.attach.run, pr: cut.attach.pr } : null;
+  if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
   const found = await batchRegistry(hooks, cut.attach ?? null, { batch, reportDir, tag });
@@ -170,7 +171,7 @@ async function cutEntry(
       base,
       reportDir,
       registry,
-      attachedRun,
+      attached,
     },
   };
 }
