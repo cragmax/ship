@@ -92,10 +92,31 @@ describe('retire-run', () => {
       errors: [],
       branchDeleted: true,
       rootRemoved: true,
+      rootAbsent: false,
     });
     expect(branchResolves()).toBe(false);
     expect(existsSync(runRoot)).toBe(false);
     expect(runCli<CutBatchResult>(['cut-batch', main, '--issues', '7']).json.status).toBe('ok');
+  });
+
+  it('retires a merged run with no run root, recording the root absent', TIMEOUT, () => {
+    spentRun();
+    sliceBranch('slice/7/1-1');
+    rmSync(runRoot, { recursive: true });
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    expect(r.code, JSON.stringify(r.json)).toBe(0);
+    expect(r.json).toMatchObject({
+      status: 'ok',
+      errors: [],
+      branchDeleted: true,
+      rootRemoved: false,
+      rootAbsent: true,
+    });
+    expect(r.json.sliceBranches).toEqual(['slice/7/1-1']);
+    expect(branchResolves('slice/7/1-1')).toBe(false);
+    expect(branchResolves()).toBe(false);
   });
 
   it("deletes the run's slice branches, none of them in origin/master", TIMEOUT, () => {
@@ -184,6 +205,28 @@ describe('retire-run', () => {
     expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 
+  it('refuses branch-unmerged with no run root, deleting nothing', TIMEOUT, () => {
+    cutRun();
+    commitChanges(batch, {}, 'ahead');
+    tearDown();
+    sliceBranch('slice/7/1-1');
+    rmSync(runRoot, { recursive: true });
+
+    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+    expect(r.code, JSON.stringify(r.json)).toBe(1);
+    expect(r.json).toMatchObject({
+      status: 'refused',
+      reason: 'branch-unmerged',
+      branchDeleted: false,
+      rootRemoved: false,
+    });
+    expect(r.json.errors[0]?.step).toBe('branch-guard');
+    expect(r.json.sliceBranches).toEqual([]);
+    expect(branchResolves()).toBe(true);
+    expect(branchResolves('slice/7/1-1')).toBe(true);
+  });
+
   it.each([
     {
       name: 'the branch is missing',
@@ -191,16 +234,6 @@ describe('retire-run', () => {
       step: 'branch-guard',
       removed: false,
       kept: false,
-    },
-    {
-      name: 'the run root is missing',
-      setup: () => {
-        spentRun();
-        rmSync(runRoot, { recursive: true });
-      },
-      step: 'internal',
-      removed: false,
-      kept: true,
     },
     {
       name: 'the branch is checked out elsewhere',

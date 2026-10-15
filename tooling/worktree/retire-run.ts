@@ -7,6 +7,7 @@
  * the folder guard: the run root's place ({@link assertRunRoot}), nested worktrees, links
  * ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed and the
  * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
+ * A missing run root skips the folder guard and the removal; the branches still go.
  * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream (PF-61).
  */
 
@@ -39,7 +40,8 @@ export interface RetireRunInput {
 /**
  * Retire the run on `branch`.
  *
- * @returns The envelope: `ok` with `rootRemoved`, `branchDeleted` and `sliceBranches`; `refused`
+ * @returns The envelope: `ok` with `rootRemoved` (or `rootAbsent`), `branchDeleted` and
+ *   `sliceBranches`; `refused`
  *   (`not-main-worktree`, `not-run-batch`, `branch-unmerged`, `not-run-root`, `nested-worktree`,
  *   `links-remain`) with nothing mutated and `sliceBranches` empty; or `failed` with the step, each
  *   flag and `sliceBranches` saying what was done before it.
@@ -53,6 +55,7 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     errors: [],
     branchDeleted: false,
     rootRemoved: false,
+    rootAbsent: false,
     sliceBranches: [],
   };
   try {
@@ -60,11 +63,13 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     const slug = attachSlug(branch);
     const root = runLayout(main, slug).reports;
     assertMerged(main, branch);
-    assertRunRoot(main, root);
-    assertNothingLive(main, root);
+    result.rootAbsent = !assertRunRoot(main, root);
+    if (!result.rootAbsent) assertNothingLive(main, root);
     deleteSliceBranches(main, slug, result.sliceBranches);
-    rmSync(root, { recursive: true, force: true });
-    result.rootRemoved = true;
+    if (!result.rootAbsent) {
+      rmSync(root, { recursive: true, force: true });
+      result.rootRemoved = true;
+    }
     git(main, ['branch', '-D', branch], 'delete-branch');
     result.branchDeleted = true;
   } catch (err) {
@@ -121,14 +126,15 @@ function assertMerged(main: string, branch: string): void {
  * Refuse `not-run-root` unless the run root is a real directory named `ship-*` directly under the
  * main checkout's {@link REPORTS_DIR}, so a path bug can remove one run's reports at most.
  *
- * @throws A filesystem error when the run root is missing.
+ * @returns `true` when it passes, `false` when it is missing; any other `lstat` error throws.
  */
-function assertRunRoot(main: string, root: string): void {
-  const stat = lstatSync(root);
+function assertRunRoot(main: string, root: string): boolean {
+  const stat = lstatSync(root, { throwIfNoEntry: false });
+  if (stat === undefined) return false;
   const placed =
     samePath(posix.dirname(root), `${main}/${REPORTS_DIR}`) &&
     posix.basename(root).startsWith('ship-');
-  if (placed && stat.isDirectory() && !stat.isSymbolicLink()) return;
+  if (placed && stat.isDirectory() && !stat.isSymbolicLink()) return true;
   throw new Refusal(
     'not-run-root',
     'folder-guard',

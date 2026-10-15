@@ -47,6 +47,7 @@ const teardown = (fields: Partial<TeardownOutput>): TeardownOutput => ({
   errors: [],
   removed: true,
   registered: false,
+  kept: null,
   ...fields,
 });
 
@@ -57,6 +58,7 @@ const TD_SHRANK = teardown({
   reason: 'source-shrank',
   removed: false,
   registered: true,
+  kept: null,
   errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
 });
 

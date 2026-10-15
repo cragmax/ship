@@ -17,6 +17,7 @@ const BAD_TEARDOWN = {
   sources: [{ path: 'C:/src/batch/node_modules', before: 3, after: 3 }],
   removed: 'yes',
   registered: false,
+  kept: null,
 };
 
 const REMOVED_PREFIX = /^envelope fails its schema: removed: /;

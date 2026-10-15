@@ -193,6 +193,18 @@ export const TeardownResultSchema = ResultBaseSchema.extend({
   removed: z.boolean(),
   /** Whether git still lists the worktree after the command. */
   registered: z.boolean(),
+  /**
+   * What `--keep-to` kept, written before anything is removed; `null` without `--keep-to`, or
+   * when teardown stopped before keeping.
+   */
+  kept: z
+    .object({
+      /** The patch from `--base` to the worktree's files; `null` when they do not differ. */
+      patch: z.string().nullable(),
+      /** The copy of `--report`; `null` when none was given or it did not exist. */
+      report: z.string().nullable(),
+    })
+    .nullable(),
 });
 
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */
@@ -201,6 +213,8 @@ export const RetireRunResultSchema = ResultBaseSchema.extend({
   branchDeleted: z.boolean(),
   /** Whether the run root, the run's report dir, was removed. */
   rootRemoved: z.boolean(),
+  /** Whether the folder guard found the run root missing, so there was none to remove. */
+  rootAbsent: z.boolean(),
   /** The slice branches (`slice/<slug>/…`) deleted, sorted; empty unless every guard passed. */
   sliceBranches: z.array(z.string()),
 });

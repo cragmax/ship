@@ -35,7 +35,7 @@ import {
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage, commitMessageTemplate, type SliceSize } from './pr-body.js';
 import type { LeaseValues, SliceCommitValues, SliceReviewValues } from './prompts.js';
-import { envelopeProblem, runPlace, runTool, type ToolPlace } from './tool-calls.js';
+import { envelopeProblem, runPlace, runTool, type KeptWork, type ToolPlace } from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
 export interface EntrySetup {
@@ -99,6 +99,8 @@ export type AttemptEnding = SliceOutcome & {
   readonly halt: EpicHaltEvent | null;
   /** What the teardown left behind; `null` when it was clean or had nothing to tear down. */
   readonly residue: string | null;
+  /** What the teardown kept of an unlanded slice's work; `null` when it answered no `kept`. */
+  readonly kept: KeptWork | null;
   /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut gave one. */
   readonly startedAt: string | null;
 };
@@ -144,11 +146,15 @@ interface CutTrace {
 /** No cut, or one that named nothing: nothing to tear down. */
 const NO_CUT: CutTrace = { slice: null, startedAt: null };
 
-/** A slice the cut made: its attempt, its worktree and the batch commit it was cut at. */
+/**
+ * A slice the cut made: its attempt, its worktree, the batch commit it was cut at, and where its
+ * work is kept should it not land.
+ */
 interface CutSlice extends CutTrace {
   readonly at: AttemptId;
   readonly slice: string;
   readonly base: string;
+  readonly keptDir: string;
 }
 
 /** The re-check and cut's answer: the cut slice, or the stop and what the cut named. */
@@ -277,7 +283,20 @@ async function cutStage(at: AttemptId): Promise<Opened> {
   if (out.status !== 'ok' || cut.slice === null || typeof out.base !== 'string') {
     return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
-  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt } };
+  const kept = keptDir(at.ctx.main, cut.slice, cut.startedAt);
+  return {
+    next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, keptDir: kept },
+  };
+}
+
+/**
+ * An unlanded slice's kept dir: `<main>/reports/kept/<slice dir name>-<startedAt made path-safe>`,
+ * outside every run root `retire-run` removes; `startedAt` tells a re-run's same-named slice apart.
+ */
+function keptDir(main: string, slice: string, startedAt: string | null): string {
+  const name = slice.slice(slice.lastIndexOf('/') + 1);
+  const stamp = startedAt === null ? '' : `-${startedAt.replace(/[:.]/gu, '-')}`;
+  return `${main}/reports/kept/${name}${stamp}`;
 }
 
 /** The `cut-slice` words that name an attached run's slices: `--attached-run <R>`, or `[]`. */
@@ -307,7 +326,8 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
     slice: s.slice,
     base: s.base,
     reportDir: at.ctx.reportDir,
-    reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
+    reportPath: tddReportPath(at),
+    keptDir: s.keptDir,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -415,18 +435,23 @@ function landThrew(at: AttemptId, err: unknown): SchedulerEvent {
 }
 
 /**
- * End the attempt: tear down the slice the cut named, then report; never rejects. A teardown call
- * that rejects is read as the runner returning nothing — residue, not a halt.
+ * End the attempt: tear down the slice the cut named — an unlanded slice the cut made keeping its
+ * work in its kept dir — then report; never rejects. A teardown call that rejects is read as the
+ * runner returning nothing — residue, not a halt.
  */
 async function endAttempt(
   at: AttemptId,
-  cut: CutTrace,
+  cut: CutTrace | CutSlice,
   outcome: SliceOutcome,
 ): Promise<AttemptNote> {
+  const keep =
+    outcome.kind === 'unlanded' && 'keptDir' in cut
+      ? ['--keep-to', cut.keptDir, '--base', cut.base, '--report', tddReportPath(at)]
+      : [];
   const teardown =
     cut.slice === null
       ? null
-      : await runTool(at.ctx.hooks, 'teardown', [cut.slice], at.place).catch(() => null);
+      : await runTool(at.ctx.hooks, 'teardown', [cut.slice, ...keep], at.place).catch(() => null);
   const teardownHalt = teardownEvent(teardown, at.ctx.epic);
   if (teardownHalt !== null) at.ctx.markHalting();
   const halt =
@@ -437,6 +462,7 @@ async function endAttempt(
     ...outcome,
     halt,
     residue: cut.slice === null ? null : teardownResidue(teardown),
+    kept: teardown?.kept ?? null,
     startedAt: cut.startedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
@@ -474,6 +500,11 @@ function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
     lease: leaseValues(s),
   };
+}
+
+/** The attempt's tdd report: `<reportDir>/tdd-<issue>-<attempt>.md`. */
+function tddReportPath(at: AttemptId): string {
+  return `${at.ctx.reportDir}/tdd-${at.tag}.md`;
 }
 
 /**

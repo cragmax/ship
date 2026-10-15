@@ -22,6 +22,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - `Issue file:` — where the issue's text goes: what to build.
 - `Issue command:` — the command that writes it; run it verbatim.
 - `Report file:` — where your full report goes.
+- `Kept dir:` — where an attempt that does not land keeps its work once you return: `slice.patch`, the diff from the slice base to every file git does not ignore, and a copy of your report under its own name. The attempt's end removes the worktree, and the run's end may remove the report file's directory.
 - `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
 - `Probe caps:` — minutes per probe and probes per issue.
@@ -55,7 +56,7 @@ Choose the commit's first line: a `type` and `scope` from `tooling/lib/commit-ms
 
 ## Output
 
-Write the full report to the report file: tests added, the proof each bites, the claim inventory (the `tdd` skill's § 4), lease lines, probes, deviations. Then return, per your output schema:
+Write the full report to the report file: tests added, the proof each bites, the claim inventory (the `tdd` skill's § 4), lease lines, probes, deviations. A report that leaves work behind (uncommitted, or for a next attempt) names it by its kept paths under `Kept dir:`, never by the worktree or the report file's directory. Then return, per your output schema:
 
 - `verdict` — `GREEN`; `PARTIAL` when tests were authored but some could not run (say which in `reason`); `BLOCKED` when you could not proceed (`reason`);
 - `sha` — `HEAD` (empty when `BLOCKED` before the commit);

@@ -165,6 +165,7 @@ describe('runShip — spent-run cleanup at launch', () => {
         errors: [{ step: 'remove', message: 'busy' }],
         removed: false,
         registered: true,
+        kept: null,
       },
       residue: `${SPENT_BATCH}: teardown failed: busy`,
     },
@@ -178,6 +179,7 @@ describe('runShip — spent-run cleanup at launch', () => {
         errors: [{ step: 'gate', message: 'a link remains' }],
         removed: false,
         registered: true,
+        kept: null,
       },
       residue: `${SPENT_BATCH}: teardown refused (links-remain): a link remains`,
     },
@@ -210,6 +212,7 @@ describe('runShip — spent-run cleanup at launch', () => {
       errors: [{ step: 'gate', message: 'node_modules lost files' }],
       removed: false,
       registered: true,
+      kept: null,
     };
     const run = fakeHooks({
       ...liveRuns({}),

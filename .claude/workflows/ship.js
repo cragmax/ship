@@ -652,6 +652,7 @@ const PROMPTS = {
       `Slice base: ${values.base}`,
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
+      `Kept dir: ${values.keptDir}`,
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
@@ -1243,8 +1244,13 @@ const TOOL_ENVELOPE_SCHEMAS = {
       },
       removed: { type: 'boolean' },
       registered: { type: 'boolean' },
+      kept: {
+        type: ['object', 'null'],
+        properties: { patch: { type: ['string', 'null'] }, report: { type: ['string', 'null'] } },
+        required: ['patch', 'report'],
+      },
     },
-    required: ['status', 'errors', 'removed', 'registered'],
+    required: ['status', 'errors', 'removed', 'registered', 'kept'],
   },
   'retire-run': {
     type: 'object',
@@ -2505,9 +2511,17 @@ function renderBlockedComment(input) {
     '',
     `**Not landed: blocked.** ${neutralText(input.reason ?? 'no reason recorded')}`,
     '',
-    `Run: ${run}. Report dir: \`${input.reportDir}\`.`,
+    `Run: ${run}. ${whereKept(input)}`,
     '',
   ].join('\n');
+}
+function whereKept(input) {
+  const { patch = null, report = null } = input.kept ?? {};
+  const parts = [
+    ...(patch === null ? [] : [`patch \`${patch}\``]),
+    ...(report === null ? [] : [`tdd report \`${report}\``]),
+  ];
+  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
 }
 function subjectLine(commit) {
   return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
@@ -2905,7 +2919,15 @@ async function cutStage(at) {
   if (out.status !== 'ok' || cut.slice === null || typeof out.base !== 'string') {
     return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
-  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt } };
+  const kept = keptDir(at.ctx.main, cut.slice, cut.startedAt);
+  return {
+    next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, keptDir: kept },
+  };
+}
+function keptDir(main, slice, startedAt) {
+  const name = slice.slice(slice.lastIndexOf('/') + 1);
+  const stamp = startedAt === null ? '' : `-${startedAt.replace(/[:.]/gu, '-')}`;
+  return `${main}/reports/kept/${name}${stamp}`;
 }
 function attachedRunArgs(entry) {
   return entry.attachedRun === null ? [] : ['--attached-run', String(entry.attachedRun)];
@@ -2929,7 +2951,8 @@ async function tddStage(s) {
     slice: s.slice,
     base: s.base,
     reportDir: at.ctx.reportDir,
-    reportPath: `${at.ctx.reportDir}/tdd-${at.tag}.md`,
+    reportPath: tddReportPath(at),
+    keptDir: s.keptDir,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -3018,10 +3041,14 @@ function landThrew(at, err) {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: `land threw: ${errorText(err)}` };
 }
 async function endAttempt(at, cut, outcome) {
+  const keep =
+    outcome.kind === 'unlanded' && 'keptDir' in cut
+      ? ['--keep-to', cut.keptDir, '--base', cut.base, '--report', tddReportPath(at)]
+      : [];
   const teardown =
     cut.slice === null
       ? null
-      : await runTool(at.ctx.hooks, 'teardown', [cut.slice], at.place).catch(() => null);
+      : await runTool(at.ctx.hooks, 'teardown', [cut.slice, ...keep], at.place).catch(() => null);
   const teardownHalt = teardownEvent(teardown, at.ctx.epic);
   if (teardownHalt !== null) at.ctx.markHalting();
   const halt =
@@ -3032,6 +3059,7 @@ async function endAttempt(at, cut, outcome) {
     ...outcome,
     halt,
     residue: cut.slice === null ? null : teardownResidue(teardown),
+    kept: teardown?.kept ?? null,
     startedAt: cut.startedAt,
   };
   return { kind: 'ended', issue: at.issue, ending };
@@ -3055,6 +3083,9 @@ function sliceReviewValues(s, report) {
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
     lease: leaseValues(s),
   };
+}
+function tddReportPath(at) {
+  return `${at.ctx.reportDir}/tdd-${at.tag}.md`;
 }
 function messagePath(at) {
   return `${at.ctx.reportDir}/commit-${at.tag}.txt`;
@@ -3338,8 +3369,7 @@ async function commentBlockedStep(input, pr) {
     if (issue.outcome !== 'blocked') continue;
     const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
     const content = renderBlockedComment({
-      issue: issue.issue,
-      ...(issue.reason === undefined ? {} : { reason: issue.reason }),
+      ...issue,
       ...(pr === undefined ? {} : { pr }),
       branch: entry.branch,
       reportDir: entry.reportDir,
@@ -3710,8 +3740,10 @@ function issueOutcome(issue, ending, committed, halted) {
       return committed
         ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
         : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
-    case 'unlanded':
-      return unlandedOutcome(issue, ending.primary, halted);
+    case 'unlanded': {
+      const outcome = unlandedOutcome(issue, ending.primary, halted);
+      return outcome === null || ending.kept === null ? outcome : { ...outcome, kept: ending.kept };
+    }
   }
 }
 function unlandedOutcome(issue, primary, halted) {

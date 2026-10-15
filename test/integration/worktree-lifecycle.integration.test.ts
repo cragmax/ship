@@ -41,6 +41,7 @@ import {
   isRegistered,
   listTree,
   makeFixtureRepo,
+  mustRun,
   porcelain,
   prepareTemplate,
   runCli,
@@ -48,6 +49,7 @@ import {
   seedBatch,
   type FixtureRepoOptions,
 } from '../helpers/worktree-fixture.js';
+import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 
 const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -357,6 +359,9 @@ describe('usage errors', () => {
   it.each([
     { name: 'an unknown subcommand', args: ['frobnicate', 'x'] },
     { name: 'provision without --batch', args: ['provision', 'x'] },
+    { name: 'teardown --keep-to without --base', args: ['teardown', 'x', '--keep-to', 'k'] },
+    { name: 'teardown --base without --keep-to', args: ['teardown', 'x', '--base', 'b'] },
+    { name: 'teardown --report without --keep-to', args: ['teardown', 'x', '--report', 'r'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
     expect(run.code).toBe(2);
@@ -552,6 +557,128 @@ describe('teardown with other worktrees nearby', () => {
     const branch = runIn('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/ship/run'], main);
     expect(branch.exitCode).toBe(0);
     expect(readFileSync(record, 'utf8')).toBe('the run record\n');
+  });
+});
+
+describe('teardown keeping an unlanded attempt’s work', () => {
+  /** `café` in Latin-1: text to git, invalid as UTF-8. */
+  const LATIN1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]);
+  const HOSTILE_DIFF_CONFIG = [
+    ['diff.noprefix', 'true'],
+    ['color.diff', 'always'],
+  ] as const;
+
+  /** A slice off `main` with its base, and a tdd report outside it, in a run root. */
+  function sliceWithReport(): { main: string; slice: string; base: string; report: string } {
+    const main = makeFixtureRepo(root, template);
+    const base = headSha(main);
+    const slice = addWorktree(main, join(root, 'slice'), 'slice-7-1');
+    const report = join(root, 'reports', 'ship-7', 'tdd-7-1.md');
+    mkdirSync(dirname(report), { recursive: true });
+    writeFileSync(report, '# tdd 7-1\nBLOCKED at the probe\n');
+    return { main, slice, base, report };
+  }
+
+  /** Run `teardown` on `slice`, keeping its work in `kept` against `base`, with `report`. */
+  function teardownKeeping(slice: string, kept: string, base: string, report: string) {
+    const args = ['teardown', slice, '--keep-to', kept, '--base', base, '--report', report];
+    return runCli<TeardownResult>(args);
+  }
+
+  it(
+    'writes a patch of the committed and uncommitted work that applies to the slice base, and copies the report, before removing the slice',
+    TIMEOUT,
+    () => {
+      const { main, slice, base, report } = sliceWithReport();
+      commitChanges(
+        slice,
+        { write: { 'committed.txt': 'committed on the slice branch\n' } },
+        'slice work',
+      );
+      writeFileSync(join(slice, 'vitest.config.ts'), 'export default { edited: true };\n');
+      writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+      writeFileSync(join(slice, 'latin1.txt'), LATIN1);
+      // regression: the user's diff config and a UTF-8 decode each broke git apply on the patch
+      for (const [key, value] of HOSTILE_DIFF_CONFIG) mustRun('git', ['config', key, value], main);
+      const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+      const down = teardownKeeping(slice, kept, base, report);
+
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+      expect(down.json.removed).toBe(true);
+      expect(existsSync(slice)).toBe(false);
+      expect(down.json.kept).toEqual({
+        patch: `${kept}/slice.patch`,
+        report: `${kept}/tdd-7-1.md`,
+      });
+      expect(readFileSync(`${kept}/tdd-7-1.md`, 'utf8')).toBe('# tdd 7-1\nBLOCKED at the probe\n');
+      mustRun('git', ['apply', `${kept}/slice.patch`], main);
+      expect(readFileSync(join(main, 'committed.txt'), 'utf8')).toBe(
+        'committed on the slice branch\n',
+      );
+      expect(readFileSync(join(main, 'vitest.config.ts'), 'utf8')).toBe(
+        'export default { edited: true };\n',
+      );
+      expect(readFileSync(join(main, 'untracked.txt'), 'utf8')).toBe('never staged\n');
+      expect(readFileSync(join(main, 'latin1.txt'))).toEqual(LATIN1);
+    },
+  );
+
+  it(
+    'writes no patch for a slice with no diff from its base, still copying the report',
+    TIMEOUT,
+    () => {
+      const { slice, base, report } = sliceWithReport();
+      const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+      const down = teardownKeeping(slice, kept, base, report);
+
+      expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+      expect(down.json.kept).toEqual({ patch: null, report: `${kept}/tdd-7-1.md` });
+      expect(existsSync(`${kept}/slice.patch`)).toBe(false);
+      expect(existsSync(slice)).toBe(false);
+    },
+  );
+
+  it('keeps the patch and no report when the tdd wrote none', TIMEOUT, () => {
+    const { slice, base, report } = sliceWithReport();
+    writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+    const unwritten = join(dirname(report), 'tdd-7-2.md');
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-2'));
+
+    const down = teardownKeeping(slice, kept, base, unwritten);
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(down.json.kept).toEqual({ patch: `${kept}/slice.patch`, report: null });
+    expect(existsSync(`${kept}/tdd-7-2.md`)).toBe(false);
+    expect(existsSync(slice)).toBe(false);
+  });
+
+  it('creates no kept dir when there is neither a diff nor a report', TIMEOUT, () => {
+    const { slice, base, report } = sliceWithReport();
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-3'));
+
+    const down = teardownKeeping(slice, kept, base, join(dirname(report), 'tdd-7-3.md'));
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(down.json.kept).toEqual({ patch: null, report: null });
+    expect(existsSync(kept)).toBe(false);
+  });
+
+  // regression: a keep that failed silently let teardown delete the work it was asked to keep
+  it('fails at keep and leaves the slice in place when the base is no commit', TIMEOUT, () => {
+    const { main, slice, report } = sliceWithReport();
+    writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+    const down = teardownKeeping(slice, kept, 'no-such-commit', report);
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('failed');
+    expect(down.json.errors[0]?.step).toBe('keep');
+    expect(down.json.removed).toBe(false);
+    expect(down.json.kept).toBeNull();
+    expect(readFileSync(join(slice, 'untracked.txt'), 'utf8')).toBe('never staged\n');
+    expect(isRegistered(main, slice)).toBe(true);
   });
 });
 

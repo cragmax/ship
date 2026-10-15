@@ -430,6 +430,7 @@ describe('runShip — the epic-end test audit', () => {
         reason: 'source-shrank',
         removed: false,
         registered: true,
+        kept: null,
         errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
       },
     });
@@ -1243,6 +1244,7 @@ describe('runShip — a nothing-landed run cleans up after itself', () => {
         errors: [{ step: 'remove', message: 'busy' }],
         removed: false,
         registered: true,
+        kept: null,
       },
       residue: `${BATCH}: teardown failed: busy`,
     },

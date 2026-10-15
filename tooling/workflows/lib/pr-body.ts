@@ -34,7 +34,7 @@ import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from './preflight.js';
 import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from './sync-master-step.js';
-import type { BumpOutput } from './tool-calls.js';
+import type { BumpOutput, KeptWork } from './tool-calls.js';
 
 /** A closing keyword, then any colons and whitespace. */
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
@@ -226,6 +226,8 @@ interface BlockedCommentInput {
   readonly branch: string;
   /** The run's report directory. */
   readonly reportDir: string;
+  /** Where the issue's unlanded attempt's work was kept, when any was. */
+  readonly kept?: KeptWork;
 }
 
 /**
@@ -237,7 +239,8 @@ interface BlockedCommentInput {
  * @returns A quote line saying the run changed nothing on the issue; the
  *   reason (`no reason recorded` without one) with every closing keyword
  *   defused ({@link neutralText}); then the run — `PR #N`, or its branch
- *   and `no pull request` — and the report dir; a trailing newline.
+ *   and `no pull request` — and the kept paths (`Kept: patch …, tdd report …`), or the report
+ *   dir when nothing was kept; a trailing newline.
  */
 export function renderBlockedComment(input: BlockedCommentInput): string {
   const run =
@@ -249,9 +252,19 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
     '',
     `**Not landed: blocked.** ${neutralText(input.reason ?? 'no reason recorded')}`,
     '',
-    `Run: ${run}. Report dir: \`${input.reportDir}\`.`,
+    `Run: ${run}. ${whereKept(input)}`,
     '',
   ].join('\n');
+}
+
+/** The blocked comment's pointer: the kept paths, or the report dir when nothing was kept. */
+function whereKept(input: BlockedCommentInput): string {
+  const { patch = null, report = null } = input.kept ?? {};
+  const parts = [
+    ...(patch === null ? [] : [`patch \`${patch}\``]),
+    ...(report === null ? [] : [`tdd report \`${report}\``]),
+  ];
+  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
 }
 
 /**
