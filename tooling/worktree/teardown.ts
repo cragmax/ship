@@ -29,12 +29,14 @@ import {
   samePath,
 } from './git.js';
 import { countSource, findLinks, isRealDir, unlinkLink } from './links.js';
+import { restartSessionTsserver, skipped } from './tsserver-restart.js';
 import {
   Refusal,
   recordFailure,
   StepFailure,
   type LinkRecord,
   type TeardownResult,
+  type TsserverRestart,
 } from './types.js';
 
 /** Seams of {@link teardownWorktree}. */
@@ -43,9 +45,18 @@ export interface TeardownDeps {
   readonly unlink: (path: string) => void;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath: string;
+  /**
+   * Restarts the session's tsserver once a worktree is removed (production:
+   * {@link restartSessionTsserver}).
+   */
+  readonly restartTsserver: () => TsserverRestart;
 }
 
-const DEFAULT_DEPS: TeardownDeps = { unlink: unlinkLink, selfPath: import.meta.filename };
+const DEFAULT_DEPS: TeardownDeps = {
+  unlink: unlinkLink,
+  selfPath: import.meta.filename,
+  restartTsserver: () => restartSessionTsserver(),
+};
 
 /** What to keep before the worktree goes: `--keep-to <dir> --base <sha> [--report <file>]`. */
 export interface KeepRequest {
@@ -77,7 +88,7 @@ export function teardownWorktree(
   deps: Partial<TeardownDeps> = {},
   keep: KeepRequest | null = null,
 ): TeardownResult {
-  const { unlink, selfPath } = { ...DEFAULT_DEPS, ...deps };
+  const { unlink, selfPath, restartTsserver } = { ...DEFAULT_DEPS, ...deps };
   const result: TeardownResult = {
     command: 'teardown',
     status: 'ok',
@@ -88,6 +99,7 @@ export function teardownWorktree(
     removed: false,
     registered: true,
     kept: null,
+    tsserverRestart: skipped('not-removed'),
   };
   let main = '';
   try {
@@ -101,6 +113,7 @@ export function teardownWorktree(
     recordFailure(result, err);
   }
   result.registered = main !== '' && listWorktrees(main).some((w) => samePath(w.path, worktree));
+  if (result.removed) result.tsserverRestart = restartTsserver();
   return result;
 }
 
@@ -111,7 +124,7 @@ export function teardownWorktree(
 function removeWorktree(
   worktree: string,
   main: string,
-  { unlink, selfPath }: TeardownDeps,
+  { unlink, selfPath }: Pick<TeardownDeps, 'unlink' | 'selfPath'>,
   keep: KeepRequest | null,
   result: TeardownResult,
 ): void {

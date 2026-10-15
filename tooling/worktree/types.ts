@@ -33,6 +33,7 @@ import type {
   StagedGuardResultSchema,
   StepErrorSchema,
   TeardownResultSchema,
+  TsserverRestartSchema,
   WarmMemberSchema,
 } from './schemas.js';
 
@@ -65,6 +66,9 @@ export type SourceCount = z.infer<typeof SourceCountSchema>;
 
 /** Envelope of `teardown <worktree>`. */
 export type TeardownResult = z.infer<typeof TeardownResultSchema>;
+
+/** What `teardown`'s restart of its session's tsserver did. */
+export type TsserverRestart = z.infer<typeof TsserverRestartSchema>;
 
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */
 export type RetireRunResult = z.infer<typeof RetireRunResultSchema>;
