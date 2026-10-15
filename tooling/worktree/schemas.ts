@@ -180,6 +180,40 @@ export const SourceCountSchema = z.object({
   after: z.int().nullable(),
 });
 
+/** Why the session's tsserver restart was skipped. */
+export const TsserverSkipReasonSchema = z.enum([
+  // The teardown removed no worktree.
+  'not-removed',
+  // `PH_TSSERVER_RESTART=off` is set.
+  'disabled',
+  // Not Windows: the burn the restart cures is Windows-only.
+  'not-windows',
+  // No `claude.exe` among the teardown's ancestors.
+  'no-session',
+  // No semantic tsserver among the session's descendants.
+  'no-tsserver',
+  // The process table could not be read; `detail` says why.
+  'lookup-failed',
+  // Every kill failed; `detail` names each pid and its error.
+  'kill-failed',
+]);
+
+/** What the teardown's restart of its Claude Code session's semantic tsserver did. */
+export const TsserverRestartSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('restarted'),
+    /** The session's `claude.exe` pid. */
+    session: z.int(),
+    /** The semantic tsservers killed. */
+    killed: z.array(z.int()).min(1),
+  }),
+  z.object({
+    outcome: z.literal('skipped'),
+    reason: TsserverSkipReasonSchema,
+    detail: z.string().nullable(),
+  }),
+]);
+
 /** Envelope of `teardown <worktree>`. */
 export const TeardownResultSchema = ResultBaseSchema.extend({
   /** Links removed from the worktree. */
@@ -205,6 +239,8 @@ export const TeardownResultSchema = ResultBaseSchema.extend({
       report: z.string().nullable(),
     })
     .nullable(),
+  /** The restart of the session's tsserver, attempted only when `removed`. */
+  tsserverRestart: TsserverRestartSchema,
 });
 
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */

@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { loadPoolRegistry } from '../../src/server-pool/index.js';
 import { toPosix } from '../../tooling/shared.js';
@@ -34,6 +34,7 @@ import type {
   ProvisionBatchResult,
   ProvisionResult,
   TeardownResult,
+  TsserverRestart,
 } from '../../tooling/worktree/types.js';
 import {
   addWorktree,
@@ -439,6 +440,98 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
       realpathSync(join(batch, 'node_modules')),
     );
     expect(isRegistered(main, slice)).toBe(true);
+  });
+});
+
+describe("teardown's tsserver restart (in-process, restart seam)", () => {
+  const RESTARTED: TsserverRestart = { outcome: 'restarted', session: 4242, killed: [4343, 4344] };
+  const NOT_REMOVED: TsserverRestart = { outcome: 'skipped', reason: 'not-removed', detail: null };
+
+  it('restarts once after removing a worktree and records the restart', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const wt = addWorktree(main, join(root, 'wt'), 'wt');
+    const restartTsserver = vi.fn(() => RESTARTED);
+
+    const down = teardownWorktree(toPosix(wt), { restartTsserver });
+
+    expect(down.removed, JSON.stringify(down)).toBe(true);
+    expect(restartTsserver).toHaveBeenCalledOnce();
+    expect(down.tsserverRestart).toEqual(RESTARTED);
+  });
+
+  // The link's source is the worktree's own git admin dir, which `git worktree remove` deletes:
+  // the gate passes, and only the post-remove recount sees the source gone.
+  it.skipIf(!WIN32)('restarts after a removal whose post-remove recount fails', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const wt = addWorktree(main, join(root, 'wt'), 'wt');
+    const admin = mustRun('git', ['rev-parse', '--absolute-git-dir'], wt).trim();
+    symlinkSync(admin, join(wt, 'admin-link'), 'junction');
+    const restartTsserver = vi.fn(() => RESTARTED);
+
+    const down = teardownWorktree(toPosix(wt), { restartTsserver });
+
+    expect(down.status, JSON.stringify(down)).toBe('failed');
+    expect(down.errors[0]?.step).toBe('post-remove-recount');
+    expect(down.removed).toBe(true);
+    expect(restartTsserver).toHaveBeenCalledOnce();
+    expect(down.tsserverRestart).toEqual(RESTARTED);
+  });
+
+  it('restarts nothing for an absent path', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const restartTsserver = vi.fn(() => RESTARTED);
+    const cwd = process.cwd();
+    let down: TeardownResult;
+    try {
+      process.chdir(main);
+      down = teardownWorktree(toPosix(join(root, 'gone')), { restartTsserver });
+    } finally {
+      process.chdir(cwd);
+    }
+
+    expect(down.status, JSON.stringify(down)).toBe('ok');
+    expect(restartTsserver).not.toHaveBeenCalled();
+    expect(down.tsserverRestart).toEqual(NOT_REMOVED);
+  });
+
+  it('restarts nothing when teardown refuses', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const restartTsserver = vi.fn(() => RESTARTED);
+
+    const down = teardownWorktree(toPosix(main), { restartTsserver });
+
+    expect(down.reason).toBe('main-worktree');
+    expect(restartTsserver).not.toHaveBeenCalled();
+    expect(down.tsserverRestart).toEqual(NOT_REMOVED);
+  });
+
+  it('restarts nothing when teardown fails', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const wt = addWorktree(main, join(root, 'wt'), 'wt');
+    const restartTsserver = vi.fn(() => RESTARTED);
+    const keep = { dir: toPosix(join(root, 'kept')), base: 'no-such-commit' };
+
+    const down = teardownWorktree(toPosix(wt), { restartTsserver }, keep);
+
+    expect(down.status).toBe('failed');
+    expect(existsSync(wt)).toBe(true);
+    expect(restartTsserver).not.toHaveBeenCalled();
+    expect(down.tsserverRestart).toEqual(NOT_REMOVED);
+  });
+
+  // The suite's own removals must never kill the tsserver of the session running it.
+  it('skips the restart in a CLI subprocess of the test suite', TIMEOUT, () => {
+    const main = makeFixtureRepo(root, template);
+    const wt = addWorktree(main, join(root, 'wt'), 'wt');
+
+    const down = runCli<TeardownResult>(['teardown', wt]);
+
+    expect(down.json.removed, JSON.stringify(down.json)).toBe(true);
+    expect(down.json.tsserverRestart).toEqual({
+      outcome: 'skipped',
+      reason: 'disabled',
+      detail: null,
+    });
   });
 });
 

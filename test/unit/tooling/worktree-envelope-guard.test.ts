@@ -18,6 +18,7 @@ const BAD_TEARDOWN = {
   removed: 'yes',
   registered: false,
   kept: null,
+  tsserverRestart: { outcome: 'skipped', reason: 'not-removed', detail: null },
 };
 
 const REMOVED_PREFIX = /^envelope fails its schema: removed: /;
