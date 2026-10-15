@@ -359,6 +359,7 @@ describe('usage errors', () => {
     { name: 'an unknown subcommand', args: ['frobnicate', 'x'] },
     { name: 'provision without --batch', args: ['provision', 'x'] },
     { name: 'teardown --keep-to without --base', args: ['teardown', 'x', '--keep-to', 'k'] },
+    { name: 'teardown --base without --keep-to', args: ['teardown', 'x', '--base', 'b'] },
     { name: 'teardown --report without --keep-to', args: ['teardown', 'x', '--report', 'r'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
@@ -636,6 +637,54 @@ describe('teardown keeping an unlanded attempt’s work', () => {
       expect(existsSync(slice)).toBe(false);
     },
   );
+
+  it('keeps the patch and no report when the tdd wrote none', TIMEOUT, () => {
+    const { slice, base, report } = sliceWithReport();
+    writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+    const unwritten = join(dirname(report), 'tdd-7-2.md');
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-2'));
+
+    const down = runCli<TeardownResult>([
+      'teardown',
+      slice,
+      '--keep-to',
+      kept,
+      '--base',
+      base,
+      '--report',
+      unwritten,
+    ]);
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(down.json.kept).toEqual({ patch: `${kept}/slice.patch`, report: null });
+    expect(existsSync(`${kept}/tdd-7-2.md`)).toBe(false);
+    expect(existsSync(slice)).toBe(false);
+  });
+
+  // regression: a keep that failed silently let teardown delete the work it was asked to keep
+  it('fails at keep and leaves the slice in place when the base is no commit', TIMEOUT, () => {
+    const { main, slice, report } = sliceWithReport();
+    writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
+
+    const down = runCli<TeardownResult>([
+      'teardown',
+      slice,
+      '--keep-to',
+      kept,
+      '--base',
+      'no-such-commit',
+      '--report',
+      report,
+    ]);
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('failed');
+    expect(down.json.errors[0]?.step).toBe('keep');
+    expect(down.json.removed).toBe(false);
+    expect(down.json.kept).toBeNull();
+    expect(readFileSync(join(slice, 'untracked.txt'), 'utf8')).toBe('never staged\n');
+    expect(isRegistered(main, slice)).toBe(true);
+  });
 });
 
 describe.skipIf(!WIN32)('provision', () => {

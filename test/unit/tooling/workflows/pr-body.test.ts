@@ -1670,6 +1670,14 @@ describe('renderBlockedComment', () => {
     );
   });
 
+  it('names only the kept tdd report when the attempt kept no patch', () => {
+    const kept = { patch: null, report: 'C:/main/reports/kept/slice-7-1/tdd-7-1.md' };
+
+    expect(renderBlockedComment({ ...BLOCKED, pr: 12, kept })).toContain(
+      'Run: PR #12. Kept: tdd report `C:/main/reports/kept/slice-7-1/tdd-7-1.md`.',
+    );
+  });
+
   it('says no reason was recorded when the report carries none', () => {
     const noReason = { issue: BLOCKED.issue, branch: BLOCKED.branch, reportDir: BLOCKED.reportDir };
 
