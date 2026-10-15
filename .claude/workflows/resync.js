@@ -80,7 +80,7 @@ const STAGES = {
 };
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
-const PROBES_PER_ISSUE = 3;
+const PROBES_PER_STAGE = 3;
 const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
 function isTrivialSurface(files) {
   return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
@@ -169,7 +169,7 @@ function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
 const ISSUE_TEXT_JQ =

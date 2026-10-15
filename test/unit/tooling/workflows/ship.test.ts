@@ -1512,8 +1512,8 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  // Hand-written: the probe allowance of the tdd and the slice reviews.
-  const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
+  // Hand-written: the probe allowance of each of the tdd and the slice reviews.
+  const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per stage';
 
   it.each(['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'])(
     'hands %s the probe caps, once',

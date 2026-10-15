@@ -25,7 +25,7 @@ You review ONE slice's commit against the repo's documented rules and amend your
 - `Report file:` — where your report goes.
 - `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
-- `Probe caps:` — minutes per probe and probes per issue.
+- `Probe caps:` — minutes per probe and probes per stage.
 
 ## Limits
 

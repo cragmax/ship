@@ -17,7 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
-import { PROBE_CAP_MINUTES, PROBES_PER_ISSUE } from './stages.js';
+import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from './stages.js';
 
 /** A live run's changed files, for `issue-overlap`'s judgment. */
 export interface LiveRunFiles {
@@ -283,7 +283,7 @@ function serverTierLines(lease: LeaseValues): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_ISSUE)} probes per issue`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
 

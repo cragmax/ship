@@ -52,8 +52,8 @@ export const MAX_SLICES = 4;
  */
 export const PROBE_CAP_MINUTES = 15;
 
-/** The most probes one issue's tdd and slice reviews may run. */
-export const PROBES_PER_ISSUE = 3;
+/** The most probes one stage of one slice (its tdd or one slice review) may run. */
+export const PROBES_PER_STAGE = 3;
 
 /** The paths whose change is not a trivial surface: code, tooling and tests. */
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];

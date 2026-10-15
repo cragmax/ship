@@ -25,7 +25,7 @@ You review ONE slice's tests against the claims its diff makes and amend your te
 - `Report file:` — where your report goes.
 - `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
-- `Probe caps:` — minutes per probe and probes per issue.
+- `Probe caps:` — minutes per probe and probes per stage.
 
 ## Limits
 
