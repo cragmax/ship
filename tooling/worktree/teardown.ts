@@ -17,6 +17,7 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { posix } from 'node:path';
 
+import { describeError } from '../lib/describe-error.js';
 import { runCaptured } from './exec.js';
 import {
   assertNotSelfHosted,
@@ -147,11 +148,7 @@ function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResu
     if (diff.stdout !== '') {
       patch = `${keep.dir}/${PATCH_FILE}`;
       // execa strips the final newline, without which git apply reads the last hunk as corrupt.
-      writeFileSync(
-        patch,
-        `${diff.stdout}
-`,
-      );
+      writeFileSync(patch, `${diff.stdout}\n`);
     }
     let report: string | null = null;
     if (keep.report !== undefined && existsSync(keep.report)) {
@@ -160,7 +157,7 @@ function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResu
     }
     return { patch, report };
   } catch (err) {
-    throw new StepFailure('keep', err instanceof Error ? err.message : String(err));
+    throw new StepFailure('keep', describeError(err));
   }
 }
 

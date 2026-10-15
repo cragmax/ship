@@ -154,7 +154,7 @@ interface CutSlice extends CutTrace {
   readonly at: AttemptId;
   readonly slice: string;
   readonly base: string;
-  readonly kept: string;
+  readonly keptDir: string;
 }
 
 /** The re-check and cut's answer: the cut slice, or the stop and what the cut named. */
@@ -284,7 +284,9 @@ async function cutStage(at: AttemptId): Promise<Opened> {
     return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
   const kept = keptDir(at.ctx.main, cut.slice, cut.startedAt);
-  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, kept } };
+  return {
+    next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, keptDir: kept },
+  };
 }
 
 /**
@@ -325,7 +327,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
     base: s.base,
     reportDir: at.ctx.reportDir,
     reportPath: tddReportPath(at),
-    keptDir: s.kept,
+    keptDir: s.keptDir,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -443,8 +445,8 @@ async function endAttempt(
   outcome: SliceOutcome,
 ): Promise<AttemptNote> {
   const keep =
-    outcome.kind === 'unlanded' && 'kept' in cut
-      ? ['--keep-to', cut.kept, '--base', cut.base, '--report', tddReportPath(at)]
+    outcome.kind === 'unlanded' && 'keptDir' in cut
+      ? ['--keep-to', cut.keptDir, '--base', cut.base, '--report', tddReportPath(at)]
       : [];
   const teardown =
     cut.slice === null

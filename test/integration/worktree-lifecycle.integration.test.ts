@@ -49,6 +49,7 @@ import {
   seedBatch,
   type FixtureRepoOptions,
 } from '../helpers/worktree-fixture.js';
+import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 
 const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -563,7 +564,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
   /** A slice off `main` with its base, and a tdd report outside it, in a run root. */
   function sliceWithReport(): { main: string; slice: string; base: string; report: string } {
     const main = makeFixtureRepo(root, template);
-    const base = mustRun('git', ['rev-parse', 'HEAD'], main).trim();
+    const base = headSha(main);
     const slice = addWorktree(main, join(root, 'slice'), 'slice-7-1');
     const report = join(root, 'reports', 'ship-7', 'tdd-7-1.md');
     mkdirSync(dirname(report), { recursive: true });
@@ -571,28 +572,27 @@ describe('teardown keeping an unlanded attempt’s work', () => {
     return { main, slice, base, report };
   }
 
+  /** Run `teardown` on `slice`, keeping its work in `kept` against `base`, with `report`. */
+  function teardownKeeping(slice: string, kept: string, base: string, report: string) {
+    const args = ['teardown', slice, '--keep-to', kept, '--base', base, '--report', report];
+    return runCli<TeardownResult>(args);
+  }
+
   it(
     'writes a patch of the committed and uncommitted work that applies to the slice base, and copies the report, before removing the slice',
     TIMEOUT,
     () => {
       const { main, slice, base, report } = sliceWithReport();
-      writeFileSync(join(slice, 'committed.txt'), 'committed on the slice branch\n');
-      mustRun('git', ['add', 'committed.txt'], slice);
-      mustRun('git', ['commit', '-q', '-m', 'slice work'], slice);
+      commitChanges(
+        slice,
+        { write: { 'committed.txt': 'committed on the slice branch\n' } },
+        'slice work',
+      );
       writeFileSync(join(slice, 'vitest.config.ts'), 'export default { edited: true };\n');
       writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
       const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
 
-      const down = runCli<TeardownResult>([
-        'teardown',
-        slice,
-        '--keep-to',
-        kept,
-        '--base',
-        base,
-        '--report',
-        report,
-      ]);
+      const down = teardownKeeping(slice, kept, base, report);
 
       expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
       expect(down.json.removed).toBe(true);
@@ -620,16 +620,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
       const { slice, base, report } = sliceWithReport();
       const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
 
-      const down = runCli<TeardownResult>([
-        'teardown',
-        slice,
-        '--keep-to',
-        kept,
-        '--base',
-        base,
-        '--report',
-        report,
-      ]);
+      const down = teardownKeeping(slice, kept, base, report);
 
       expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
       expect(down.json.kept).toEqual({ patch: null, report: `${kept}/tdd-7-1.md` });
@@ -644,16 +635,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
     const unwritten = join(dirname(report), 'tdd-7-2.md');
     const kept = toPosix(join(root, 'kept', 'ship-7-7-2'));
 
-    const down = runCli<TeardownResult>([
-      'teardown',
-      slice,
-      '--keep-to',
-      kept,
-      '--base',
-      base,
-      '--report',
-      unwritten,
-    ]);
+    const down = teardownKeeping(slice, kept, base, unwritten);
 
     expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
     expect(down.json.kept).toEqual({ patch: `${kept}/slice.patch`, report: null });
@@ -667,16 +649,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
     writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
     const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
 
-    const down = runCli<TeardownResult>([
-      'teardown',
-      slice,
-      '--keep-to',
-      kept,
-      '--base',
-      'no-such-commit',
-      '--report',
-      report,
-    ]);
+    const down = teardownKeeping(slice, kept, 'no-such-commit', report);
 
     expect(down.json.status, JSON.stringify(down.json)).toBe('failed');
     expect(down.json.errors[0]?.step).toBe('keep');

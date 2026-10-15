@@ -2920,7 +2920,9 @@ async function cutStage(at) {
     return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
   const kept = keptDir(at.ctx.main, cut.slice, cut.startedAt);
-  return { next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, kept } };
+  return {
+    next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, keptDir: kept },
+  };
 }
 function keptDir(main, slice, startedAt) {
   const name = slice.slice(slice.lastIndexOf('/') + 1);
@@ -2950,7 +2952,7 @@ async function tddStage(s) {
     base: s.base,
     reportDir: at.ctx.reportDir,
     reportPath: tddReportPath(at),
-    keptDir: s.kept,
+    keptDir: s.keptDir,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -3040,8 +3042,8 @@ function landThrew(at, err) {
 }
 async function endAttempt(at, cut, outcome) {
   const keep =
-    outcome.kind === 'unlanded' && 'kept' in cut
-      ? ['--keep-to', cut.kept, '--base', cut.base, '--report', tddReportPath(at)]
+    outcome.kind === 'unlanded' && 'keptDir' in cut
+      ? ['--keep-to', cut.keptDir, '--base', cut.base, '--report', tddReportPath(at)]
       : [];
   const teardown =
     cut.slice === null
