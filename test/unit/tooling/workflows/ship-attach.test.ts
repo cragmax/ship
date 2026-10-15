@@ -384,9 +384,9 @@ describe('runShip --attach — the epic end', () => {
       message: 'publish failed: the pre-push gate failed',
     });
     expect(recovery).toEqual([
-      `npx tsx tooling/worktree.ts publish ${BATCH} --push-only --log ${ATTACH_REPORTS}/publish.log`,
-      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr 9 --comment-file ${ATTACH_REPORTS}/pr-report-comment.md`,
-      `npx tsx tooling/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
+      `node --import tsx tooling/worktree.ts publish ${BATCH} --push-only --log ${ATTACH_REPORTS}/publish.log`,
+      `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr 9 --comment-file ${ATTACH_REPORTS}/pr-report-comment.md`,
+      `node --import tsx tooling/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
     ]);
     const lines = promptLines(run, 'runner:publish:list');
     expect(lines[0]).toBe(`Command: ${recovery[0] ?? ''}`);

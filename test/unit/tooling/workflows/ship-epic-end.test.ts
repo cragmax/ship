@@ -918,9 +918,9 @@ describe('runShip — a failed publish’s recovery', () => {
       message: 'publish failed: the pre-push gate failed',
     });
     expect(recovery).toEqual([
-      `npx tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
-      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
-      `npx tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
+      `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+      `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
+      `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
       `Command: ${recovery[0] ?? ''}`,
@@ -952,7 +952,7 @@ describe('runShip — a failed publish’s recovery', () => {
 
     const recovery = report.epics[0]?.recovery ?? [];
     expect(recovery).toEqual([
-      `npx tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
+      `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
       `Command: ${recovery[0] ?? ''}`,

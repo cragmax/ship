@@ -734,6 +734,33 @@ const shaSeenBy = (run: FakeRun, label: string): string | undefined =>
 /** A closing keyword before issue 7's ref, as GitHub reads one. */
 const CLOSES_SEVEN = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#7\b/i;
 
+describe('runShip — the runner’s command line', () => {
+  it('launches every tool as node --import tsx, run-gate, teardown and publish among them', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    const commandOf = (label: string): string | undefined =>
+      promptOf(run, label)
+        .split('\n')
+        .find((l) => l.startsWith('Command: '));
+    expect(commandOf('runner:run-gate')).toBe(
+      'Command: node --import tsx tooling/run-gate.ts issues 7',
+    );
+    expect(commandOf('runner:teardown:7-1')).toBe(
+      'Command: node --import tsx tooling/worktree.ts teardown C:/src/ph-runs/7/slice-7-1',
+    );
+    expect(commandOf('runner:publish:list')).toMatch(
+      /^Command: node --import tsx tooling\/worktree\.ts publish /,
+    );
+    const runners = run.calls.filter((c) => c.label.startsWith('runner:'));
+    expect(runners.length).toBeGreaterThan(3);
+    expect(
+      runners.filter((c) => !c.prompt.startsWith('Command: node --import tsx tooling/')),
+    ).toEqual([]);
+  });
+});
+
 describe('runShip — an attempt that does not land', () => {
   it('re-cuts attempt 2 and plans again after a land conflict, tearing attempt 1 down first', async () => {
     const run = fakeHooks({ 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });

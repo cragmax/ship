@@ -191,7 +191,7 @@ const WORKTREE_CLI = 'tooling/worktree.ts';
 /** The run gate's entry, relative to the main checkout. */
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
 
-/** Each tool's command words before its arguments, run with `npx tsx` from the main checkout. */
+/** Each tool's command words before its arguments, as {@link toolWords} launches them. */
 export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   preflight: [WORKTREE_CLI, 'preflight'],
   'run-gate': [RUN_GATE_CLI],
@@ -370,9 +370,12 @@ export async function runTool<N extends ToolName>(
   return typeof out === 'object' && out !== null ? (out as ToolOutputs[N]) : null;
 }
 
-/** A tool call's command words, as the runner runs them from the main checkout. */
+/**
+ * A tool call's command words, as the runner runs them from the main checkout: `node --import tsx`,
+ * never `npx tsx`, whose Git Bash shim orphans the tool from the session's process tree (PF-109).
+ */
 function toolWords(name: ToolName, argv: readonly string[]): string[] {
-  return ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
 }
 
 /** The word a {@link toolCommandLine} leaves unquoted, for a person to fill: the PR's number. */

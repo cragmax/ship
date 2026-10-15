@@ -1716,7 +1716,7 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
   return typeof out === 'object' && out !== null ? out : null;
 }
 function toolWords(name, argv) {
-  return ['npx', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
 }
 const PR_PLACEHOLDER = '<pr>';
 function toolCommandLine(name, argv) {

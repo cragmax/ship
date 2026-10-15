@@ -26,7 +26,7 @@ export interface RecordedCall {
   readonly model: string | undefined;
   /** Its `effort`, `undefined` when not given. */
   readonly effort: string | undefined;
-  /** The words after `npx tsx` on the prompt's `Command:` line, unquoted; `[]` without one. */
+  /** The words after `node --import tsx` on the prompt's `Command:` line, unquoted; else `[]`. */
   readonly argv: readonly string[];
   /** The prompt. */
   readonly prompt: string;
@@ -557,15 +557,16 @@ function tableKey(table: Readonly<Record<string, unknown>>, label: string): stri
 }
 
 /**
- * The words after `npx tsx` on a prompt's `Command:` line, each unquoted
+ * The words after `node --import tsx` on a prompt's `Command:` line, each unquoted
  * (a `'…'` span is one word, `'\''` a literal quote).
  *
  * @param prompt - The prompt.
  * @returns The words; `[]` when the prompt has no such line.
  */
 function commandWords(prompt: string): string[] {
-  const line = prompt.split('\n').find((l) => l.startsWith('Command: npx tsx '));
+  const line = prompt.split('\n').find((l) => l.startsWith('Command: node --import tsx '));
   if (line === undefined) return [];
-  const words = line.slice('Command: npx tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
+  const words =
+    line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
   return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
 }
