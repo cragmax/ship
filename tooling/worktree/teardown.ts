@@ -14,7 +14,7 @@
  * `git worktree prune` drops a still-registered entry.
  */
 
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { posix } from 'node:path';
 
 import { describeError } from '../lib/describe-error.js';
@@ -130,32 +130,59 @@ function removeWorktree(
 }
 
 /**
- * Write {@link PATCH_FILE} (the binary diff from `keep.base` to every unignored file, staged in the
- * worktree's own index first; skipped when empty) and the copy of `keep.report` into `keep.dir`.
- * @throws StepFailure `keep` when `keep.base` is no commit, git fails, or a write fails.
+ * The diff flags that fix the kept patch's format against the user's git config: `diff.noprefix`,
+ * `diff.mnemonicPrefix`, `diff.relative`, `color.diff` and `diff.external` would each make
+ * `git apply` refuse it.
+ */
+const PATCH_FORMAT = [
+  '--binary',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-relative',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+] as const;
+
+/**
+ * Write {@link PATCH_FILE} (the diff from `keep.base` to every unignored file, staged in the
+ * worktree's own index first) and the copy of `keep.report`, each only when it exists, into
+ * `keep.dir`, created only then. @throws StepFailure `keep` when the base, git or a write fails.
  */
 function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResult['kept']> {
   const base = resolveCommit(worktree, keep.base, 'keep');
   git(worktree, ['add', '-A'], 'keep');
-  const diff = runCaptured('git', ['-C', worktree, 'diff', '--cached', '--binary', base], {
+  const changed = indexDiffers(worktree, base);
+  const source = keep.report !== undefined && existsSync(keep.report) ? keep.report : null;
+  if (!changed && source === null) return { patch: null, report: null };
+  keepWrite(() => mkdirSync(keep.dir, { recursive: true }));
+  const patch = changed ? `${keep.dir}/${PATCH_FILE}` : null;
+  // git writes the file itself: a text diff of a non-UTF-8 file never passes through a decode.
+  if (patch !== null)
+    git(worktree, ['diff', '--cached', ...PATCH_FORMAT, `--output=${patch}`, base], 'keep');
+  return { patch, report: source === null ? null : copyInto(source, keep.dir) };
+}
+
+/** Copy `source` into `dir` under its own name. @throws StepFailure `keep` when the copy fails. */
+function copyInto(source: string, dir: string): string {
+  const to = `${dir}/${posix.basename(source)}`;
+  keepWrite(() => copyFileSync(source, to));
+  return to;
+}
+
+/** Whether the worktree's index differs from `base`. @throws StepFailure `keep` when git fails. */
+function indexDiffers(worktree: string, base: string): boolean {
+  const r = runCaptured('git', ['-C', worktree, 'diff', '--cached', '--quiet', base], {
     cwd: process.cwd(),
   });
-  if (diff.exitCode !== 0)
-    throw new StepFailure('keep', `git diff failed in ${worktree}`, diff.tail);
+  if (r.exitCode !== 0 && r.exitCode !== 1)
+    throw new StepFailure('keep', `git diff failed in ${worktree}`, r.tail);
+  return r.exitCode === 1;
+}
+
+/** Run `write`, a throw becoming a `keep` failure. */
+function keepWrite(write: () => unknown): void {
   try {
-    mkdirSync(keep.dir, { recursive: true });
-    let patch: string | null = null;
-    if (diff.stdout !== '') {
-      patch = `${keep.dir}/${PATCH_FILE}`;
-      // execa strips the final newline, without which git apply reads the last hunk as corrupt.
-      writeFileSync(patch, `${diff.stdout}\n`);
-    }
-    let report: string | null = null;
-    if (keep.report !== undefined && existsSync(keep.report)) {
-      report = `${keep.dir}/${posix.basename(keep.report)}`;
-      copyFileSync(keep.report, report);
-    }
-    return { patch, report };
+    write();
   } catch (err) {
     throw new StepFailure('keep', describeError(err));
   }

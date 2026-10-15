@@ -561,6 +561,13 @@ describe('teardown with other worktrees nearby', () => {
 });
 
 describe('teardown keeping an unlanded attempt’s work', () => {
+  /** `café` in Latin-1: text to git, invalid as UTF-8. */
+  const LATIN1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]);
+  const HOSTILE_DIFF_CONFIG = [
+    ['diff.noprefix', 'true'],
+    ['color.diff', 'always'],
+  ] as const;
+
   /** A slice off `main` with its base, and a tdd report outside it, in a run root. */
   function sliceWithReport(): { main: string; slice: string; base: string; report: string } {
     const main = makeFixtureRepo(root, template);
@@ -590,6 +597,9 @@ describe('teardown keeping an unlanded attempt’s work', () => {
       );
       writeFileSync(join(slice, 'vitest.config.ts'), 'export default { edited: true };\n');
       writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
+      writeFileSync(join(slice, 'latin1.txt'), LATIN1);
+      // regression: the user's diff config and a UTF-8 decode each broke git apply on the patch
+      for (const [key, value] of HOSTILE_DIFF_CONFIG) mustRun('git', ['config', key, value], main);
       const kept = toPosix(join(root, 'kept', 'ship-7-7-1'));
 
       const down = teardownKeeping(slice, kept, base, report);
@@ -610,6 +620,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
         'export default { edited: true };\n',
       );
       expect(readFileSync(join(main, 'untracked.txt'), 'utf8')).toBe('never staged\n');
+      expect(readFileSync(join(main, 'latin1.txt'))).toEqual(LATIN1);
     },
   );
 
@@ -641,6 +652,17 @@ describe('teardown keeping an unlanded attempt’s work', () => {
     expect(down.json.kept).toEqual({ patch: `${kept}/slice.patch`, report: null });
     expect(existsSync(`${kept}/tdd-7-2.md`)).toBe(false);
     expect(existsSync(slice)).toBe(false);
+  });
+
+  it('creates no kept dir when there is neither a diff nor a report', TIMEOUT, () => {
+    const { slice, base, report } = sliceWithReport();
+    const kept = toPosix(join(root, 'kept', 'ship-7-7-3'));
+
+    const down = teardownKeeping(slice, kept, base, join(dirname(report), 'tdd-7-3.md'));
+
+    expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+    expect(down.json.kept).toEqual({ patch: null, report: null });
+    expect(existsSync(kept)).toBe(false);
   });
 
   // regression: a keep that failed silently let teardown delete the work it was asked to keep
