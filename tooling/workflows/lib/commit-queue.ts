@@ -74,21 +74,14 @@ export function createCommitQueue(): CommitQueue {
 }
 
 /** What a landing did to the batch. */
-export type LandingClass = 'committed' | 'conflict' | 'blocked' | 'halt';
+type LandingClass = 'committed' | 'conflict' | 'blocked' | 'halt';
 
 /**
- * Classify a landing; `land` is `null` when the runner returned none.
- *
- * @returns `committed` for an `ok` carrying its commit; with the batch
- *   verified clean, `conflict` for a conflict and `blocked` for a refused
- *   `slice-not-single-commit` or a failed `commit` or `build` step that
- *   rolled back; otherwise `halt` — no output, a batch not verified clean,
- *   or any other outcome (`batch-dirty`, `main-worktree`,
- *   `unregistered-worktree`, `self-hosted`, `staged-mismatch`,
- *   `not-run-batch`; a failed `cherry-pick`, `rollback`, `preconditions` or
- *   `internal`).
+ * Classify a landing (`null`: no output): `committed` for an `ok` with its commit; on a clean
+ * batch, `conflict`, or `blocked` for `slice-not-single-commit` or a rolled-back `commit`/`build`
+ * step; anything else, a batch not verified clean included, is `halt`.
  */
-export function classifyLanding(land: LandOutput | null): LandingClass {
+function classifyLanding(land: LandOutput | null): LandingClass {
   if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
   if (land?.batchClean !== true) return 'halt';
   if (land.status === 'conflict') return 'conflict';

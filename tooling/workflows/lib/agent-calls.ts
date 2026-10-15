@@ -18,7 +18,6 @@ import type { z } from 'zod';
 
 import { runSetIssues } from '../../lib/run-set.js';
 import type {
-  AuditTestsOutputSchema,
   CommitSpecSchema,
   EpicReviewOutputSchema,
   EstimatedPairSchema,
@@ -40,7 +39,6 @@ import type {
 import type { AgentOptions, JsonSchema, WorkflowHooks } from './hooks.types.js';
 import {
   PROMPTS,
-  type AuditTestsValues,
   type EpicReviewValues,
   type IssueOverlapValues,
   type IssueReadinessValues,
@@ -73,7 +71,7 @@ export type LiveOverlap = z.infer<typeof LiveOverlapSchema>;
 /** `issue-overlap`'s answer. */
 export type IssueOverlap = z.infer<typeof IssueOverlapSchema>;
 
-/** A commit message's first line, as the tdd or the test audit proposes it. */
+/** A commit message's first line, as the tdd proposes it. */
 export type CommitSpec = z.infer<typeof CommitSpecSchema>;
 
 /** One probe the tdd ran, or chose not to finish. */
@@ -89,8 +87,8 @@ export type TddOutput = z.infer<typeof TddOutputSchema>;
 export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 
 /**
- * Why a slice's test review or the epic-end test audit was skipped: no code changed, or every
- * code change is proven comment-only.
+ * Why a slice's test review was skipped: no code changed, or every code change is proven
+ * comment-only.
  */
 export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
@@ -99,9 +97,6 @@ export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
 
 /** Why a slice's Manifest TSDoc review was skipped: it changed nothing under `src/`. */
 export type ManifestTsdocSkip = 'no src/ change';
-
-/** The epic-end test audit's answer. */
-export type AuditTestsOutput = z.infer<typeof AuditTestsOutputSchema>;
 
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
@@ -219,12 +214,6 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
-    ),
-  auditTests: (hooks: WorkflowHooks, values: AuditTestsValues, tag: string) =>
-    askAgent<AuditTestsOutput>(
-      hooks,
-      PROMPTS.auditTests(values),
-      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
   epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
     askAgent<EpicReviewOutput>(

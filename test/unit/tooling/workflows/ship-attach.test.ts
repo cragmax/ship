@@ -69,10 +69,6 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'standardsReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
-      'runner:cut-slice:audit-tests',
-      'runner:provision:audit-tests',
-      'auditTests:list',
-      'runner:teardown:audit-tests',
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
@@ -300,7 +296,7 @@ describe('runShip --attach — the epic end', () => {
     },
   );
 
-  it('audits and reviews this run’s slices from the attached tip, then pushes with no PR writer', async () => {
+  it('reviews this run’s slices from the attached tip, then pushes with no PR writer', async () => {
     const run = fakeHooks({
       ...ATTACHED,
       'runner:run-gate': {
@@ -315,20 +311,6 @@ describe('runShip --attach — the epic end', () => {
 
     const report = await runShip(run.hooks, 'issues 7 8 --attach ship/epic-9');
 
-    expect(callOf(run, 'runner:cut-slice:audit-tests')?.argv).toEqual([
-      'tooling/worktree.ts',
-      'cut-slice',
-      BATCH,
-      '--audit-tests',
-      '--attached-run',
-      '2',
-    ]);
-    expect(promptLines(run, 'auditTests:list')).toEqual(
-      expect.arrayContaining([
-        'Epic range: tip9..HEAD',
-        `Report file: ${ATTACH_REPORTS}/audit-tests.md`,
-      ]),
-    );
     expect(promptLines(run, 'epicReview:list')).toEqual(
       expect.arrayContaining([
         'Epic range: tip9..HEAD',

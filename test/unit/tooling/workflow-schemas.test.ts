@@ -126,7 +126,6 @@ describe('consumed fields are required', () => {
       standardsReview: [],
       manifestTsdoc: [],
       resolver: [],
-      auditTests: [],
       epicReview: [],
       retro: [],
       prWriter: [],

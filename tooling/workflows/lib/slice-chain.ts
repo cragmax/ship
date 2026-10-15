@@ -313,7 +313,7 @@ function keptDir(main: string, slice: string, startedAt: string | null): string 
 }
 
 /** The `cut-slice` words that name an attached run's slices: `--attached-run <R>`, or `[]`. */
-export function attachedRunArgs(entry: Pick<EntrySetup, 'attached'>): string[] {
+function attachedRunArgs(entry: Pick<EntrySetup, 'attached'>): string[] {
   return entry.attached === null ? [] : ['--attached-run', String(entry.attached.run)];
 }
 
@@ -389,7 +389,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
  * `files` change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts`
  * proves `range` comment-only, leaving no code path uncompared. A failed proof reviews them.
  */
-export async function testSkip(
+async function testSkip(
   hooks: WorkflowHooks,
   files: readonly string[],
   range: string,

@@ -1216,27 +1216,6 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'summary'],
   },
-  auditTests: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened'] },
-      sha: { type: 'string' },
-      files: { type: 'array', items: { type: 'string' } },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
-  },
   epicReview: {
     type: 'object',
     properties: {

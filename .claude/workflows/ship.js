@@ -18,7 +18,7 @@ export const meta = {
     {
       title: 'Epic end',
       detail:
-        'per epic: test audit, epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+        'per epic: epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     },
   ],
 };
@@ -36,7 +36,6 @@ const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
@@ -70,7 +69,7 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
+      'per epic: epic review, master sync, version bump, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },
@@ -677,15 +676,6 @@ const PROMPTS = {
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
-    ].join('\n'),
-  auditTests: (values) =>
-    [
-      `Audit slice: ${values.slice}`,
-      `Slice base: ${values.base}`,
-      `Epic range: ${values.range}`,
-      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
-      `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
     ].join('\n'),
   epicReview: (values) =>
     [
@@ -1943,27 +1933,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'summary'],
   },
-  auditTests: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened'] },
-      sha: { type: 'string' },
-      files: { type: 'array', items: { type: 'string' } },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
-  },
   epicReview: {
     type: 'object',
     properties: {
@@ -2312,7 +2281,7 @@ function aggregateLeaseTimings(samples) {
       continue;
     }
     leaseAddToEngine(engine, lease);
-    if (sample.issue !== null) leaseAddToIssue(issues, sample.issue, lease);
+    leaseAddToIssue(issues, sample.issue, lease);
   }
   return {
     engines: engines.map((e) => ({
@@ -2421,12 +2390,6 @@ const AGENT_CALLS = {
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
     ),
-  auditTests: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.auditTests(values),
-      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
-    ),
   epicReview: (hooks, values, tag) =>
     askAgent(
       hooks,
@@ -2442,6 +2405,51 @@ const AGENT_CALLS = {
       agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
+
+const NO_LAUNCH = 'no launch snapshot of master to check against';
+const NO_SYNCED = 'master sync named no origin/master sha to check against';
+async function checkMasterStep(hooks, entry, launch, synced) {
+  if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
+  if (synced === null) return { passed: false, local: null, remote: null, failure: NO_SYNCED };
+  const { master } = launch.snapshot;
+  const out = await runTool(
+    hooks,
+    'check-master',
+    [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
+    runPlace(entry.reportDir, entry.tag),
+  );
+  return checkOf(out);
+}
+function checkOf(out) {
+  const local = out?.local ?? null;
+  const remote = out?.remote ?? null;
+  if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
+    return { passed: true, local, remote };
+  }
+  return { passed: false, local, remote, failure: failureOf(out, local, remote) };
+}
+function failureOf(out, local, remote) {
+  const lines = [
+    ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
+    ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
+  ];
+  if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
+    return lines.join('; ');
+  }
+  return envelopeProblem('check-master', out);
+}
+function isForward(move) {
+  return (
+    move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
+  );
+}
+function moveLine(which, move) {
+  const synced = move.synced === null ? '' : `, synced ${move.synced}`;
+  return (
+    `${which} master ${move.move}: launch ${move.launch}${synced}, now ${move.current ?? 'deleted'}` +
+    ` — restore it from ${move.synced ?? move.launch}`
+  );
+}
 
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
@@ -2571,9 +2579,6 @@ function commitMessageTemplate(issue) {
 function issueMessage(subject, cite) {
   return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
-function epicEndCommitMessage(commit) {
-  return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
-}
 function prTitle(input) {
   const [only] = input.landed;
   if (input.landed.length === 1 && only !== undefined) return subjectLine(only.tdd.commit);
@@ -2682,7 +2687,6 @@ function runReportLines(input, moved = new Set()) {
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
-    ...section('Test audit', auditTestsLines(input.auditTests)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
@@ -2731,24 +2735,6 @@ function landedLine(landed) {
 }
 function section(heading, lines, depth = 2) {
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
-}
-function auditTestsLines(audit) {
-  const outcome = {
-    clean: 'no changes',
-    landed: `landed as ${audit.commit ?? '?'}`,
-    dropped: `changes dropped — ${audit.reason ?? 'no reason named'}`,
-    'not-run': `not run — ${audit.reason ?? 'no reason named'}`,
-    skipped: `skipped — ${audit.reason ?? 'no reason named'}`,
-  }[audit.outcome];
-  const { answer } = audit;
-  return [
-    `- Outcome: ${outcome}`,
-    ...(answer === null
-      ? []
-      : [
-          `- Audit: ${answer.verdict}, ${String(answer.survivors)} surviving mutants — ${answer.summary}`,
-        ]),
-  ];
 }
 function epicReviewLines(review) {
   const profiled = review.profiled ? ' (profiled)' : '';
@@ -2814,9 +2800,7 @@ function leaseLines(leases) {
       (t) =>
         `- #${String(t.issue)}: waited ${t.waitedSeconds.toFixed(1)}s, held ${t.heldSeconds.toFixed(1)}s`,
     ),
-    ...leases.unparsed.map(
-      (u) => `- unparsed${u.issue === null ? '' : ` (#${String(u.issue)})`}: ${u.line}`,
-    ),
+    ...leases.unparsed.map((u) => `- unparsed (#${String(u.issue)}): ${u.line}`),
   ];
 }
 function retroLines(retro) {
@@ -2895,6 +2879,420 @@ function bumpText(bump) {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
   if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
+}
+
+async function syncMasterStep(hooks, ctx) {
+  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
+  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
+  if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
+    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
+  }
+  return { ...syncVerdict(start, 'merged'), ...found };
+}
+async function resolveAndContinue(hooks, ctx, pending) {
+  if (pending.length === 0) {
+    return syncFailure(
+      `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
+    );
+  }
+  const values = { batch: ctx.batch, pending, reportPath: `${ctx.reportDir}/resolve.md` };
+  const answer = await AGENT_CALLS.resolver(hooks, values, ctx.tag);
+  if (answer?.verdict !== 'resolved') {
+    const said = answer === null ? 'returned nothing' : `said ${answer.summary}`;
+    return syncFailure(`the resolver ${said}; merge left in progress in ${ctx.batch}`);
+  }
+  const done = await runTool(
+    hooks,
+    'sync-master',
+    [ctx.batch, '--continue'],
+    runPlace(ctx.reportDir, `${ctx.tag}-continue`),
+  );
+  return syncVerdict(done, 'resolved');
+}
+function syncVerdict(out, merged) {
+  if (out?.status === 'ok' && out.outcome === 'up-to-date') {
+    return {
+      verdict: 'up-to-date',
+      commit: null,
+      upstream: out.upstream ?? null,
+      message: 'origin/master already merged',
+    };
+  }
+  if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
+    return {
+      verdict: merged,
+      commit: out.commit,
+      upstream: out.upstream ?? null,
+      message: `merged origin/master as ${out.commit}`,
+    };
+  }
+  const message = envelopeProblem('sync-master', out);
+  if (out?.status === 'refused' && out.reason === 'code-conflict') {
+    return { verdict: 'code-conflict', commit: null, upstream: null, message };
+  }
+  return syncFailure(message);
+}
+function syncFailure(message) {
+  return { verdict: 'failed', commit: null, upstream: null, message };
+}
+
+async function epicEnd(input) {
+  const state = {};
+  const published = await shipSteps(input, state).catch((err) => ({
+    outcome: 'stopped',
+    message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+  }));
+  const issueComments = await commentBlockedStep(input, published.pr);
+  if (state.retro === undefined)
+    state.retro = await retroStep(input, retroReport(input, published));
+  return {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    ...published,
+    issues: input.issues,
+    schedule: input.schedule,
+    mainUntouched: await mainAtEnd(input, state),
+    ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
+    residue: input.residue,
+    ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
+    retro: state.retro,
+    ...(state.leases === undefined ? {} : { leases: state.leases }),
+    ...(issueComments.length === 0 ? {} : { issueComments }),
+  };
+}
+async function unshippedEpicEnd(input, outcome) {
+  const issueComments = await commentBlockedStep(input, undefined);
+  const report = {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+    ...(issueComments.length === 0 ? {} : { issueComments }),
+  };
+  const retro = await retroStep(input, report);
+  if (outcome === 'halted' || input.entry.attached !== null) return { ...report, retro };
+  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
+}
+async function retireStep(input) {
+  const { hooks, entry } = input;
+  const down = await runTool(
+    hooks,
+    'teardown',
+    [entry.batch],
+    runPlace(entry.reportDir, entry.tag),
+  ).catch(() => null);
+  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
+  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
+    ...PRE_CUT,
+    tag: entry.tag,
+  }).catch(() => null);
+  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
+}
+async function commentBlockedStep(input, pr) {
+  const { entry } = input;
+  const comments = [];
+  for (const issue of input.issues) {
+    if (issue.outcome !== 'blocked') continue;
+    const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
+    const content = renderBlockedComment({
+      ...issue,
+      ...(pr === undefined ? {} : { pr }),
+      branch: entry.branch,
+      reportDir: entry.reportDir,
+    });
+    const argv = [entry.main, '--issue', String(issue.issue), '--comment-file', path];
+    const place = runPlace(entry.reportDir, String(issue.issue), { path, content });
+    comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
+  }
+  return comments;
+}
+async function postIssueComment(hooks, issue, argv, place) {
+  try {
+    const out = await runTool(hooks, 'post-issue-comment', argv, place);
+    if (out?.status !== 'ok') {
+      return { issue, url: null, problem: envelopeProblem('post-issue-comment', out) };
+    }
+    return typeof out.url === 'string'
+      ? { issue, url: out.url }
+      : { issue, url: null, problem: 'post-issue-comment ok without a url' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { issue, url: null, problem: `post-issue-comment threw: ${message}` };
+  }
+}
+async function shipSteps(input, state) {
+  const { hooks, entry } = input;
+  state.leases = leaseTotals(input.landed);
+  state.epicReview = await epicReviewStep(input);
+  const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
+  if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
+    return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
+  }
+  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
+  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
+  await hooks.parallel([
+    async () => {
+      state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
+    },
+    async () => {
+      if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
+    },
+  ]);
+  return publishStep(input, { sync, bump, state });
+}
+async function publishStep(input, found) {
+  return input.repoLock.enqueue(async () => {
+    const untouched = await mainUntouched(input);
+    found.state.mainUntouched = untouched;
+    const check = await checkMasterStep(
+      input.hooks,
+      input.entry,
+      input.launch,
+      found.sync.upstream,
+    );
+    found.state.masterCheck = check;
+    if (!check.passed)
+      return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
+    const checked = { masterCheck: check, mainUntouched: untouched };
+    if (input.entry.attached !== null) {
+      return pushOntoPr(input, found, checked, input.entry.attached);
+    }
+    return openPr(input, found, checked);
+  });
+}
+const REPORT_COMMENT = { name: 'pr-report-comment.md', flag: '--comment-file' };
+const PR_SECTION = { name: 'pr-section.md', flag: '--section-file' };
+async function pushOntoPr(input, found, checked, attached) {
+  const { hooks, entry } = input;
+  const base = { ...bodyInput(input, found, checked), run: attached.run };
+  const report = renderAttachedReport(base);
+  const files = [
+    { ...REPORT_COMMENT, tool: 'post-pr-comment', content: report },
+    {
+      ...PR_SECTION,
+      tool: 'append-pr-body',
+      content: renderAttachedSection({ ...base, reportComment: null }),
+    },
+  ];
+  const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
+  const place = runPlace(entry.reportDir, entry.tag, ...files.map((f) => reportFile(entry, f)));
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...files.map((f) => toolCommandLine(f.tool, prFileArgv(entry, String(attached.pr), f))),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const posted = await postReportStep(input, published.pr, report);
+  const reportComment = 'url' in posted ? posted.url : null;
+  const section = renderAttachedSection({ ...base, reportComment });
+  const failure = await appendSectionStep(input, published.pr, section);
+  return {
+    ...published,
+    ...('failure' in posted ? { prReportComment: posted.failure } : {}),
+    ...(failure === null ? {} : { prBodyEdit: failure }),
+  };
+}
+async function postReportStep(input, pr, report) {
+  const file = { ...REPORT_COMMENT, content: report };
+  const posted = await prFileStep(input, 'post-pr-comment', pr, file);
+  if ('failure' in posted) return posted;
+  return typeof posted.ok.url === 'string'
+    ? { url: posted.ok.url }
+    : { failure: 'post-pr-comment ok without a url' };
+}
+async function appendSectionStep(input, pr, section) {
+  const file = { ...PR_SECTION, content: section };
+  const edited = await prFileStep(input, 'append-pr-body', pr, file);
+  return 'failure' in edited ? edited.failure : null;
+}
+function reportFile(entry, file) {
+  return { path: `${entry.reportDir}/${file.name}`, content: file.content };
+}
+function prFileArgv(entry, pr, file) {
+  return [entry.batch, '--pr', pr, file.flag, `${entry.reportDir}/${file.name}`];
+}
+async function prFileStep(input, tool, pr, file) {
+  const { hooks, entry } = input;
+  const argv = prFileArgv(entry, String(pr), file);
+  const place = runPlace(entry.reportDir, entry.tag, reportFile(entry, file));
+  try {
+    const out = await runTool(hooks, tool, argv, place);
+    return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
+  } catch (err) {
+    return { failure: `${tool} threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+function publishedPr(out, recovery) {
+  const pr = out?.status === 'ok' ? out.pr : null;
+  if (pr === undefined || pr === null) {
+    return { outcome: 'stopped', message: envelopeProblem('publish', out), recovery };
+  }
+  return { outcome: 'pr', pr: pr.number };
+}
+async function openPr(input, found, checked) {
+  const { hooks, entry } = input;
+  const fitted = fitPrBody({
+    ...bodyInput(input, found, checked),
+    writer: found.state.writer ?? null,
+  });
+  const bodyPath = `${entry.reportDir}/pr-body.md`;
+  const argv = [
+    entry.batch,
+    '--title',
+    prTitle({ branch: entry.branch, landed: input.landed }),
+    '--body-file',
+    bodyPath,
+    '--log',
+    `${entry.reportDir}/publish.log`,
+    ...(draft(found.state.epicReview) ? ['--draft'] : []),
+  ];
+  const moved = fitted.comments.map((m) => ({
+    name: m.file,
+    flag: '--comment-file',
+    content: m.text,
+  }));
+  const place = runPlace(
+    entry.reportDir,
+    entry.tag,
+    { path: bodyPath, content: fitted.body },
+    ...moved.map((file) => reportFile(entry, file)),
+  );
+  const recovery = [
+    toolCommandLine('publish', argv),
+    ...moved.map((file) =>
+      toolCommandLine('post-pr-comment', prFileArgv(entry, PR_PLACEHOLDER, file)),
+    ),
+  ];
+  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
+  if (published.outcome !== 'pr' || published.pr === undefined) return published;
+  const failures = [];
+  for (const file of moved) {
+    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
+    if ('failure' in posted) failures.push(posted.failure);
+  }
+  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
+}
+function draft(review) {
+  return review?.verdict === 'rejected' || review?.verdict === null;
+}
+function bodyInput(input, found, checked) {
+  const { entry } = input;
+  return {
+    epic: entry.epic,
+    branch: entry.branch,
+    reportDir: entry.reportDir,
+    landed: input.landed,
+    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
+    sync: found.sync,
+    bump: found.bump,
+    masterCheck: checked.masterCheck,
+    mainUntouched: checked.mainUntouched,
+    epicReview: found.state.epicReview ?? {
+      verdict: null,
+      profiled: input.entry.epic === null,
+      notRun: 'no epic review step',
+      answer: null,
+    },
+    overlap: input.overlap,
+    schedule: input.schedule,
+    leases: found.state.leases ?? leaseTotals(input.landed),
+    retro: found.state.retro ?? null,
+  };
+}
+function leaseTotals(landed) {
+  return aggregateLeaseTimings(
+    landed.flatMap((l) =>
+      sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
+    ),
+  );
+}
+async function epicReviewStep(input) {
+  const { entry } = input;
+  const unlanded = input.issues.filter((i) => i.outcome !== 'landed');
+  const values = {
+    batch: entry.batch,
+    range: `${entry.base}..HEAD`,
+    epic: entry.epic,
+    issues: input.landed.map((l) => l.issue),
+    unlanded: unlanded.map((i) => ({
+      issue: i.issue,
+      outcome: i.outcome,
+      ...(i.reason === undefined ? {} : { reason: i.reason }),
+    })),
+    sliceReports: input.landed.flatMap((l) => sliceReports(input, l)),
+    reportDir: entry.reportDir,
+    reportPath: `${entry.reportDir}/epic-review.md`,
+  };
+  const answer = await AGENT_CALLS.epicReview(input.hooks, values, entry.tag).catch(() => null);
+  const forced =
+    unlanded.length === 0
+      ? {}
+      : { forced: `did not land: ${unlanded.map((i) => `#${String(i.issue)}`).join(', ')}` };
+  return {
+    verdict: unlanded.length > 0 ? 'rejected' : (answer?.verdict ?? null),
+    profiled: entry.epic === null,
+    ...forced,
+    ...(answer === null ? { notRun: 'the epic review returned nothing' } : {}),
+    answer,
+  };
+}
+function sliceReports(input, landed) {
+  const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
+  const tag = `${String(landed.issue)}-${String(attempt)}`;
+  const stages = ['spec-review'];
+  if (typeof landed.testReview !== 'string') stages.push('test-review');
+  stages.push('standards-review');
+  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
+}
+async function retroStep(input, report) {
+  const { entry } = input;
+  const values = { epic: entry.epic, reportDir: entry.reportDir, report };
+  const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
+  return out?.findings ?? null;
+}
+async function prWriterStep(input, upstream) {
+  const { entry } = input;
+  const values = {
+    epic: entry.epic,
+    batch: entry.batch,
+    range: `${upstream ?? entry.base}...HEAD`,
+    landed: input.landed.map((l) => ({
+      issue: l.issue,
+      commit: l.commit,
+      subject: l.tdd.commit.subject,
+    })),
+    reportDir: entry.reportDir,
+  };
+  return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
+}
+function retroReport(input, published) {
+  return {
+    epic: input.entry.epic,
+    branch: input.entry.branch,
+    ...published,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+  };
+}
+async function mainAtEnd(input, state) {
+  if (state.mainUntouched !== undefined) return state.mainUntouched;
+  return input.repoLock.enqueue(() => mainUntouched(input));
+}
+async function mainUntouched(input) {
+  const { entry, launch } = input;
+  const out = await runTool(
+    input.hooks,
+    'preflight',
+    [entry.main],
+    runPlace(entry.reportDir, entry.tag),
+  );
+  const now = out?.snapshot;
+  if (launch === null || now === undefined || now === null) return null;
+  return now.head === launch.snapshot.head && now.dirty === launch.snapshot.dirty;
 }
 
 const NO_CUT = { slice: null, startedAt: null };
@@ -3171,568 +3569,6 @@ function stageThrew(at, err) {
 }
 function errorText(err) {
   return err instanceof Error ? err.message : String(err);
-}
-
-const TAG = 'audit-tests';
-async function auditTestsStep(input) {
-  const skip = await auditTestsSkip(input);
-  if (skip !== null) return { outcome: 'skipped', reason: skip, answer: null, halt: null };
-  const { hooks, entry } = input;
-  const place = runPlace(entry.reportDir, TAG);
-  const argv = [entry.batch, '--audit-tests', ...attachedRunArgs(entry)];
-  const cut = await runTool(hooks, 'cut-slice', argv, place).catch(() => null);
-  const slice = typeof cut?.slice === 'string' ? cut.slice : null;
-  const base = cut?.base;
-  if (cut?.status !== 'ok' || slice === null || typeof base !== 'string') {
-    return tornDown(input, slice, notRun(envelopeProblem('cut-slice', cut)));
-  }
-  const result = await inSlice(input, slice, base).catch((err) =>
-    notRun(`the test audit step threw: ${err instanceof Error ? err.message : String(err)}`),
-  );
-  return tornDown(input, slice, result);
-}
-async function auditTestsSkip(input) {
-  const { hooks, entry } = input;
-  const head = input.landed.at(-1)?.commit ?? 'HEAD';
-  return testSkip(
-    hooks,
-    input.landed.flatMap((l) => l.tdd.files),
-    `${entry.base}..${head}`,
-    runPlace(entry.reportDir, TAG),
-  );
-}
-async function inSlice(input, slice, base) {
-  const { hooks, entry } = input;
-  const argv = [slice, '--batch', entry.batch, '--server'];
-  const prov = await runTool(hooks, 'provision', argv, runPlace(entry.reportDir, TAG));
-  const projectDir = prov?.env?.PH_PROJECT_DIR;
-  if (prov?.status !== 'ok' || typeof projectDir !== 'string') {
-    return notRun(envelopeProblem('provision', prov));
-  }
-  const values = {
-    slice,
-    base,
-    range: `${entry.base}..HEAD`,
-    issues: input.landed.map((l) => l.issue),
-    reportDir: entry.reportDir,
-    reportPath: `${entry.reportDir}/audit-tests.md`,
-    lease: { main: entry.main, projectDir, registry: entry.registry },
-  };
-  const out = await AGENT_CALLS.auditTests(hooks, values, entry.tag);
-  if (out === null) return notRun('the test audit returned nothing');
-  if (out.verdict === 'clean') return { outcome: 'clean', answer: out, halt: null };
-  if (out.sha === '') {
-    return {
-      outcome: 'dropped',
-      reason: 'the test audit applied no commit',
-      answer: out,
-      halt: null,
-    };
-  }
-  return land(input, out, base);
-}
-async function land(input, out, base) {
-  const { hooks, entry } = input;
-  const messagePath = `${entry.reportDir}/commit-${TAG}.txt`;
-  const argv = [
-    entry.batch,
-    out.sha,
-    '--base',
-    base,
-    '--message-file',
-    messagePath,
-    '--log',
-    `${entry.reportDir}/land-${TAG}.log`,
-  ];
-  const write = { path: messagePath, content: epicEndCommitMessage(out.commit) };
-  const place = runPlace(entry.reportDir, TAG, write);
-  const landed = await runTool(hooks, 'land', argv, place).catch(() => null);
-  const kind = classifyLanding(landed);
-  if (kind === 'committed' && typeof landed?.commit === 'string') {
-    return { outcome: 'landed', commit: landed.commit, answer: out, halt: null };
-  }
-  const reason = envelopeProblem('land', landed);
-  return { outcome: 'dropped', reason, answer: out, halt: kind === 'halt' ? reason : null };
-}
-async function tornDown(input, slice, result) {
-  if (slice === null) return result;
-  const place = runPlace(input.entry.reportDir, TAG);
-  const teardown = await runTool(input.hooks, 'teardown', [slice], place).catch(() => null);
-  const halt = teardownEvent(teardown, input.entry.epic);
-  return halt === null || result.halt !== null ? result : { ...result, halt: halt.reason };
-}
-function notRun(reason) {
-  return { outcome: 'not-run', reason, answer: null, halt: null };
-}
-
-const NO_LAUNCH = 'no launch snapshot of master to check against';
-const NO_SYNCED = 'master sync named no origin/master sha to check against';
-async function checkMasterStep(hooks, entry, launch, synced) {
-  if (launch === null) return { passed: false, local: null, remote: null, failure: NO_LAUNCH };
-  if (synced === null) return { passed: false, local: null, remote: null, failure: NO_SYNCED };
-  const { master } = launch.snapshot;
-  const out = await runTool(
-    hooks,
-    'check-master',
-    [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
-    runPlace(entry.reportDir, entry.tag),
-  );
-  return checkOf(out);
-}
-function checkOf(out) {
-  const local = out?.local ?? null;
-  const remote = out?.remote ?? null;
-  if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
-    return { passed: true, local, remote };
-  }
-  return { passed: false, local, remote, failure: failureOf(out, local, remote) };
-}
-function failureOf(out, local, remote) {
-  const lines = [
-    ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
-    ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
-  ];
-  if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
-    return lines.join('; ');
-  }
-  return envelopeProblem('check-master', out);
-}
-function isForward(move) {
-  return (
-    move !== null && (move.move === 'equal' || move.move === 'forward') && move.current !== null
-  );
-}
-function moveLine(which, move) {
-  const synced = move.synced === null ? '' : `, synced ${move.synced}`;
-  return (
-    `${which} master ${move.move}: launch ${move.launch}${synced}, now ${move.current ?? 'deleted'}` +
-    ` — restore it from ${move.synced ?? move.launch}`
-  );
-}
-
-async function syncMasterStep(hooks, ctx) {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx.reportDir, ctx.tag));
-  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
-  if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
-  }
-  return { ...syncVerdict(start, 'merged'), ...found };
-}
-async function resolveAndContinue(hooks, ctx, pending) {
-  if (pending.length === 0) {
-    return syncFailure(
-      `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
-    );
-  }
-  const values = { batch: ctx.batch, pending, reportPath: `${ctx.reportDir}/resolve.md` };
-  const answer = await AGENT_CALLS.resolver(hooks, values, ctx.tag);
-  if (answer?.verdict !== 'resolved') {
-    const said = answer === null ? 'returned nothing' : `said ${answer.summary}`;
-    return syncFailure(`the resolver ${said}; merge left in progress in ${ctx.batch}`);
-  }
-  const done = await runTool(
-    hooks,
-    'sync-master',
-    [ctx.batch, '--continue'],
-    runPlace(ctx.reportDir, `${ctx.tag}-continue`),
-  );
-  return syncVerdict(done, 'resolved');
-}
-function syncVerdict(out, merged) {
-  if (out?.status === 'ok' && out.outcome === 'up-to-date') {
-    return {
-      verdict: 'up-to-date',
-      commit: null,
-      upstream: out.upstream ?? null,
-      message: 'origin/master already merged',
-    };
-  }
-  if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
-    return {
-      verdict: merged,
-      commit: out.commit,
-      upstream: out.upstream ?? null,
-      message: `merged origin/master as ${out.commit}`,
-    };
-  }
-  const message = envelopeProblem('sync-master', out);
-  if (out?.status === 'refused' && out.reason === 'code-conflict') {
-    return { verdict: 'code-conflict', commit: null, upstream: null, message };
-  }
-  return syncFailure(message);
-}
-function syncFailure(message) {
-  return { verdict: 'failed', commit: null, upstream: null, message };
-}
-
-async function epicEnd(input) {
-  const state = {};
-  const published = await shipSteps(input, state).catch((err) => ({
-    outcome: 'stopped',
-    message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
-  }));
-  const issueComments = await commentBlockedStep(input, published.pr);
-  if (state.retro === undefined)
-    state.retro = await retroStep(input, retroReport(input, published));
-  return {
-    epic: input.entry.epic,
-    branch: input.entry.branch,
-    ...published,
-    issues: input.issues,
-    schedule: input.schedule,
-    mainUntouched: await mainAtEnd(input, state),
-    ...(state.masterCheck === undefined ? {} : { masterCheck: state.masterCheck }),
-    residue: input.residue,
-    ...(state.auditTests === undefined ? {} : { auditTests: state.auditTests }),
-    ...(state.epicReview === undefined ? {} : { epicReview: state.epicReview }),
-    retro: state.retro,
-    ...(state.leases === undefined ? {} : { leases: state.leases }),
-    ...(issueComments.length === 0 ? {} : { issueComments }),
-  };
-}
-async function unshippedEpicEnd(input, outcome) {
-  const issueComments = await commentBlockedStep(input, undefined);
-  const report = {
-    epic: input.entry.epic,
-    branch: input.entry.branch,
-    outcome,
-    issues: input.issues,
-    schedule: input.schedule,
-    residue: input.residue,
-    ...(issueComments.length === 0 ? {} : { issueComments }),
-  };
-  const retro = await retroStep(input, report);
-  if (outcome === 'halted' || input.entry.attached !== null) return { ...report, retro };
-  return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
-}
-async function retireStep(input) {
-  const { hooks, entry } = input;
-  const down = await runTool(
-    hooks,
-    'teardown',
-    [entry.batch],
-    runPlace(entry.reportDir, entry.tag),
-  ).catch(() => null);
-  if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
-  const out = await runTool(hooks, 'retire-run', ['.', '--branch', entry.branch], {
-    ...PRE_CUT,
-    tag: entry.tag,
-  }).catch(() => null);
-  return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
-}
-async function commentBlockedStep(input, pr) {
-  const { entry } = input;
-  const comments = [];
-  for (const issue of input.issues) {
-    if (issue.outcome !== 'blocked') continue;
-    const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
-    const content = renderBlockedComment({
-      ...issue,
-      ...(pr === undefined ? {} : { pr }),
-      branch: entry.branch,
-      reportDir: entry.reportDir,
-    });
-    const argv = [entry.main, '--issue', String(issue.issue), '--comment-file', path];
-    const place = runPlace(entry.reportDir, String(issue.issue), { path, content });
-    comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
-  }
-  return comments;
-}
-async function postIssueComment(hooks, issue, argv, place) {
-  try {
-    const out = await runTool(hooks, 'post-issue-comment', argv, place);
-    if (out?.status !== 'ok') {
-      return { issue, url: null, problem: envelopeProblem('post-issue-comment', out) };
-    }
-    return typeof out.url === 'string'
-      ? { issue, url: out.url }
-      : { issue, url: null, problem: 'post-issue-comment ok without a url' };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { issue, url: null, problem: `post-issue-comment threw: ${message}` };
-  }
-}
-async function shipSteps(input, state) {
-  const { hooks, entry } = input;
-  const { halt: auditHalt, ...auditTests } = await auditTestsStep(input);
-  state.auditTests = auditTests;
-  state.leases = leaseTotals(input.landed, auditTests);
-  if (auditHalt !== null) {
-    return { outcome: 'halted', message: `the test audit halted the epic: ${auditHalt}` };
-  }
-  state.epicReview = await epicReviewStep(input);
-  const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
-  if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
-    return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
-  }
-  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry.reportDir, entry.tag));
-  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  await hooks.parallel([
-    async () => {
-      state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
-    },
-    async () => {
-      if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
-    },
-  ]);
-  return publishStep(input, { sync, bump, state });
-}
-async function publishStep(input, found) {
-  return input.repoLock.enqueue(async () => {
-    const untouched = await mainUntouched(input);
-    found.state.mainUntouched = untouched;
-    const check = await checkMasterStep(
-      input.hooks,
-      input.entry,
-      input.launch,
-      found.sync.upstream,
-    );
-    found.state.masterCheck = check;
-    if (!check.passed)
-      return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
-    const checked = { masterCheck: check, mainUntouched: untouched };
-    if (input.entry.attached !== null) {
-      return pushOntoPr(input, found, checked, input.entry.attached);
-    }
-    return openPr(input, found, checked);
-  });
-}
-const REPORT_COMMENT = { name: 'pr-report-comment.md', flag: '--comment-file' };
-const PR_SECTION = { name: 'pr-section.md', flag: '--section-file' };
-async function pushOntoPr(input, found, checked, attached) {
-  const { hooks, entry } = input;
-  const base = { ...bodyInput(input, found, checked), run: attached.run };
-  const report = renderAttachedReport(base);
-  const files = [
-    { ...REPORT_COMMENT, tool: 'post-pr-comment', content: report },
-    {
-      ...PR_SECTION,
-      tool: 'append-pr-body',
-      content: renderAttachedSection({ ...base, reportComment: null }),
-    },
-  ];
-  const argv = [entry.batch, '--push-only', '--log', `${entry.reportDir}/publish.log`];
-  const place = runPlace(entry.reportDir, entry.tag, ...files.map((f) => reportFile(entry, f)));
-  const recovery = [
-    toolCommandLine('publish', argv),
-    ...files.map((f) => toolCommandLine(f.tool, prFileArgv(entry, String(attached.pr), f))),
-  ];
-  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
-  if (published.outcome !== 'pr' || published.pr === undefined) return published;
-  const posted = await postReportStep(input, published.pr, report);
-  const reportComment = 'url' in posted ? posted.url : null;
-  const section = renderAttachedSection({ ...base, reportComment });
-  const failure = await appendSectionStep(input, published.pr, section);
-  return {
-    ...published,
-    ...('failure' in posted ? { prReportComment: posted.failure } : {}),
-    ...(failure === null ? {} : { prBodyEdit: failure }),
-  };
-}
-async function postReportStep(input, pr, report) {
-  const file = { ...REPORT_COMMENT, content: report };
-  const posted = await prFileStep(input, 'post-pr-comment', pr, file);
-  if ('failure' in posted) return posted;
-  return typeof posted.ok.url === 'string'
-    ? { url: posted.ok.url }
-    : { failure: 'post-pr-comment ok without a url' };
-}
-async function appendSectionStep(input, pr, section) {
-  const file = { ...PR_SECTION, content: section };
-  const edited = await prFileStep(input, 'append-pr-body', pr, file);
-  return 'failure' in edited ? edited.failure : null;
-}
-function reportFile(entry, file) {
-  return { path: `${entry.reportDir}/${file.name}`, content: file.content };
-}
-function prFileArgv(entry, pr, file) {
-  return [entry.batch, '--pr', pr, file.flag, `${entry.reportDir}/${file.name}`];
-}
-async function prFileStep(input, tool, pr, file) {
-  const { hooks, entry } = input;
-  const argv = prFileArgv(entry, String(pr), file);
-  const place = runPlace(entry.reportDir, entry.tag, reportFile(entry, file));
-  try {
-    const out = await runTool(hooks, tool, argv, place);
-    return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
-  } catch (err) {
-    return { failure: `${tool} threw: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-function publishedPr(out, recovery) {
-  const pr = out?.status === 'ok' ? out.pr : null;
-  if (pr === undefined || pr === null) {
-    return { outcome: 'stopped', message: envelopeProblem('publish', out), recovery };
-  }
-  return { outcome: 'pr', pr: pr.number };
-}
-async function openPr(input, found, checked) {
-  const { hooks, entry } = input;
-  const fitted = fitPrBody({
-    ...bodyInput(input, found, checked),
-    writer: found.state.writer ?? null,
-  });
-  const bodyPath = `${entry.reportDir}/pr-body.md`;
-  const argv = [
-    entry.batch,
-    '--title',
-    prTitle({ branch: entry.branch, landed: input.landed }),
-    '--body-file',
-    bodyPath,
-    '--log',
-    `${entry.reportDir}/publish.log`,
-    ...(draft(found.state.epicReview) ? ['--draft'] : []),
-  ];
-  const moved = fitted.comments.map((m) => ({
-    name: m.file,
-    flag: '--comment-file',
-    content: m.text,
-  }));
-  const place = runPlace(
-    entry.reportDir,
-    entry.tag,
-    { path: bodyPath, content: fitted.body },
-    ...moved.map((file) => reportFile(entry, file)),
-  );
-  const recovery = [
-    toolCommandLine('publish', argv),
-    ...moved.map((file) =>
-      toolCommandLine('post-pr-comment', prFileArgv(entry, PR_PLACEHOLDER, file)),
-    ),
-  ];
-  const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
-  if (published.outcome !== 'pr' || published.pr === undefined) return published;
-  const failures = [];
-  for (const file of moved) {
-    const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
-    if ('failure' in posted) failures.push(posted.failure);
-  }
-  return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
-}
-function draft(review) {
-  return review?.verdict === 'rejected' || review?.verdict === null;
-}
-function bodyInput(input, found, checked) {
-  const { entry } = input;
-  return {
-    epic: entry.epic,
-    branch: entry.branch,
-    reportDir: entry.reportDir,
-    landed: input.landed,
-    unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
-    sync: found.sync,
-    bump: found.bump,
-    masterCheck: checked.masterCheck,
-    mainUntouched: checked.mainUntouched,
-    auditTests: found.state.auditTests ?? {
-      outcome: 'not-run',
-      reason: 'no test audit step',
-      answer: null,
-    },
-    epicReview: found.state.epicReview ?? {
-      verdict: null,
-      profiled: input.entry.epic === null,
-      notRun: 'no epic review step',
-      answer: null,
-    },
-    overlap: input.overlap,
-    schedule: input.schedule,
-    leases: found.state.leases ?? leaseTotals(input.landed, null),
-    retro: found.state.retro ?? null,
-  };
-}
-function leaseTotals(landed, audit) {
-  const slices = landed.flatMap((l) =>
-    sliceLeaseLines(l).flatMap((r) => r.lines.map((line) => ({ issue: l.issue, line }))),
-  );
-  const ended = (audit?.answer?.leaseLines ?? []).map((line) => ({ issue: null, line }));
-  return aggregateLeaseTimings([...slices, ...ended]);
-}
-async function epicReviewStep(input) {
-  const { entry } = input;
-  const unlanded = input.issues.filter((i) => i.outcome !== 'landed');
-  const values = {
-    batch: entry.batch,
-    range: `${entry.base}..HEAD`,
-    epic: entry.epic,
-    issues: input.landed.map((l) => l.issue),
-    unlanded: unlanded.map((i) => ({
-      issue: i.issue,
-      outcome: i.outcome,
-      ...(i.reason === undefined ? {} : { reason: i.reason }),
-    })),
-    sliceReports: input.landed.flatMap((l) => sliceReports(input, l)),
-    reportDir: entry.reportDir,
-    reportPath: `${entry.reportDir}/epic-review.md`,
-  };
-  const answer = await AGENT_CALLS.epicReview(input.hooks, values, entry.tag).catch(() => null);
-  const forced =
-    unlanded.length === 0
-      ? {}
-      : { forced: `did not land: ${unlanded.map((i) => `#${String(i.issue)}`).join(', ')}` };
-  return {
-    verdict: unlanded.length > 0 ? 'rejected' : (answer?.verdict ?? null),
-    profiled: entry.epic === null,
-    ...forced,
-    ...(answer === null ? { notRun: 'the epic review returned nothing' } : {}),
-    answer,
-  };
-}
-function sliceReports(input, landed) {
-  const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
-  const tag = `${String(landed.issue)}-${String(attempt)}`;
-  const stages = ['spec-review'];
-  if (typeof landed.testReview !== 'string') stages.push('test-review');
-  stages.push('standards-review');
-  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
-  return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
-}
-async function retroStep(input, report) {
-  const { entry } = input;
-  const values = { epic: entry.epic, reportDir: entry.reportDir, report };
-  const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
-  return out?.findings ?? null;
-}
-async function prWriterStep(input, upstream) {
-  const { entry } = input;
-  const values = {
-    epic: entry.epic,
-    batch: entry.batch,
-    range: `${upstream ?? entry.base}...HEAD`,
-    landed: input.landed.map((l) => ({
-      issue: l.issue,
-      commit: l.commit,
-      subject: l.tdd.commit.subject,
-    })),
-    reportDir: entry.reportDir,
-  };
-  return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
-}
-function retroReport(input, published) {
-  return {
-    epic: input.entry.epic,
-    branch: input.entry.branch,
-    ...published,
-    issues: input.issues,
-    schedule: input.schedule,
-    residue: input.residue,
-  };
-}
-async function mainAtEnd(input, state) {
-  if (state.mainUntouched !== undefined) return state.mainUntouched;
-  return input.repoLock.enqueue(() => mainUntouched(input));
-}
-async function mainUntouched(input) {
-  const { entry, launch } = input;
-  const out = await runTool(
-    input.hooks,
-    'preflight',
-    [entry.main],
-    runPlace(entry.reportDir, entry.tag),
-  );
-  const now = out?.snapshot;
-  if (launch === null || now === undefined || now === null) return null;
-  return now.head === launch.snapshot.head && now.dirty === launch.snapshot.dirty;
 }
 
 async function drive(input) {

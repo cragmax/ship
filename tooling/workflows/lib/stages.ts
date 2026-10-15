@@ -20,10 +20,7 @@ export interface StageRow {
   readonly effort?: Effort;
 }
 
-/**
- * Every stage the workflow runs an agent for; each stage's job is its agent file's. The
- * `auditTests` stage works in a slice of its own.
- */
+/** Every stage the workflow runs an agent for; each stage's job is its agent file's. */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   issueReadiness: { agentType: 'issue-readiness', model: 'opus', effort: 'medium' },
@@ -34,7 +31,6 @@ export const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
@@ -63,8 +59,7 @@ export const PROBES_PER_ISSUE = 3;
 const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
 
 /**
- * Whether a change touches no code: a slice's test review and the epic-end test audit are skipped
- * for it.
+ * Whether a change touches no code: a slice's test review is skipped for it.
  *
  * @param files - The changed paths, repository-relative.
  * @returns `true` when no path is under `src/`, `tooling/` or `test/` (an
@@ -99,7 +94,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
+      'per epic: epic review, master sync, version bump, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },

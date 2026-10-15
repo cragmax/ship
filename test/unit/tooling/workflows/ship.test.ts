@@ -132,7 +132,7 @@ const DOC_INDEX_CONFLICT = {
   },
 };
 
-// Two issues bring in issue-overlap (one pair), a hardening test audit and a retro finding.
+// Two issues bring in issue-overlap (one pair) and a retro finding.
 const TWO_ISSUES = {
   'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
   issueReadiness: {
@@ -143,15 +143,6 @@ const TWO_ISSUES = {
     pairs: [{ a: 7, b: 8, confidence: 'likely', shared: ['tooling/x.ts'], reason: 'both edit x' }],
     liveOverlaps: [],
     areaMap: 'read',
-  },
-  auditTests: {
-    verdict: 'hardened',
-    sha: 'audit1',
-    files: ['test/unit/tooling/x.test.ts'],
-    commit: { type: 'test', scope: 'build', subject: 'pin x' },
-    survivors: 0,
-    summary: 'pinned a bound',
-    leaseLines: [],
   },
   retro: {
     findings: [{ title: 't', evidence: 'e', kind: 'genuine', suggestion: 's' }],
@@ -378,10 +369,6 @@ describe('runShip — one issue from launch to PR', () => {
       'standardsReview:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
-      'runner:cut-slice:audit-tests',
-      'runner:provision:audit-tests',
-      'auditTests:list',
-      'runner:teardown:audit-tests',
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
@@ -1444,7 +1431,7 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['specReview:7-1', 'testReview:7-1', 'standardsReview:7-1', 'auditTests:list'])(
+  it.each(['specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'])(
     'hands %s the tdd’s lease recipe',
     async (label) => {
       // A provisioned project dir unlike the batch, so a recipe built from the batch shows.
@@ -1474,26 +1461,23 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  // Hand-written: the probe allowance of the tdd, the slice reviews and the test audit.
+  // Hand-written: the probe allowance of the tdd and the slice reviews.
   const PROBE_CAPS = 'Probe caps: 15 min per probe, 3 probes per issue';
 
-  it.each([
-    'tdd:7-1',
-    'specReview:7-1',
-    'testReview:7-1',
-    'standardsReview:7-1',
-    'auditTests:list',
-  ])('hands %s the probe caps, once', async (label) => {
-    const run = fakeHooks();
+  it.each(['tdd:7-1', 'specReview:7-1', 'testReview:7-1', 'standardsReview:7-1'])(
+    'hands %s the probe caps, once',
+    async (label) => {
+      const run = fakeHooks();
 
-    await runShip(run.hooks, 'issues 7');
+      await runShip(run.hooks, 'issues 7');
 
-    expect(
-      promptOf(run, label)
-        .split('\n')
-        .filter((l) => l.startsWith('Probe caps: ')),
-    ).toEqual([PROBE_CAPS]);
-  });
+      expect(
+        promptOf(run, label)
+          .split('\n')
+          .filter((l) => l.startsWith('Probe caps: ')),
+      ).toEqual([PROBE_CAPS]);
+    },
+  );
 
   it('hands no prompt any probe caps but those', async () => {
     const run = fakeHooks(TWO_ISSUES);
@@ -2338,7 +2322,6 @@ describe('agent-call tiers', () => {
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
       manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-      auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
       epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
       retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
       prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },

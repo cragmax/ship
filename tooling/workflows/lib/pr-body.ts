@@ -19,7 +19,6 @@ import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
 
 import type {
-  AuditTestsOutput,
   CommitSpec,
   EpicReviewOutput,
   OverlapConfidence,
@@ -115,22 +114,6 @@ export interface ScheduleEntry {
   readonly size: SliceSize | null;
 }
 
-/** The test audit's part of an epic end. */
-export interface AuditTestsReport {
-  /**
-   * `clean`: nothing hardened; `landed`: its commit landed ({@link AuditTestsReport.commit});
-   * `dropped`: its commit did not land; `not-run`: it could not run; `skipped`: no code to audit.
-   * The last three carry {@link AuditTestsReport.reason}.
-   */
-  readonly outcome: 'clean' | 'landed' | 'dropped' | 'not-run' | 'skipped';
-  /** The batch commit, when `landed`. */
-  readonly commit?: string;
-  /** Why, when `dropped`, `not-run` or `skipped`. */
-  readonly reason?: string;
-  /** Its answer; `null` when it gave none. */
-  readonly answer: AuditTestsOutput | null;
-}
-
 /** The epic review's part of an epic end. */
 export interface EpicReviewReport {
   /** The verdict; `null` when the review returned none and nothing forced one. */
@@ -168,8 +151,6 @@ export interface PrBodyInput {
    * read before the push; `null` when a read failed.
    */
   readonly mainUntouched: boolean | null;
-  /** The test audit's part. */
-  readonly auditTests: AuditTestsReport;
   /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
   /** The overlap edges pre-flight added to the entry. */
@@ -270,7 +251,7 @@ function whereKept(input: BlockedCommentInput): string {
 /**
  * A commit's first line.
  *
- * @param commit - The tdd's or the test audit's proposal.
+ * @param commit - The tdd's proposal.
  * @returns `<type>(<scope>): <subject>`, neutralised whole.
  */
 export function subjectLine(commit: CommitSpec): string {
@@ -295,17 +276,6 @@ export function commitMessageTemplate(issue: number): string {
 
 function issueMessage(subject: string, cite: string): string {
   return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
-}
-
-/**
- * The test audit's commit message: it closes and cites no issue.
- *
- * @param commit - The test audit's first line.
- * @returns The subject line, a blank line and {@link CO_AUTHOR_TRAILER},
- *   newline-terminated.
- */
-export function epicEndCommitMessage(commit: CommitSpec): string {
-  return [subjectLine(commit), '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 
 /**
@@ -529,7 +499,6 @@ function runReportLines(
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
     '',
-    ...section('Test audit', auditTestsLines(input.auditTests)),
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
@@ -625,26 +594,6 @@ function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): s
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
 
-/** The test audit's outcome line, then its answer's line when it gave one. */
-function auditTestsLines(audit: AuditTestsReport): string[] {
-  const outcome = {
-    clean: 'no changes',
-    landed: `landed as ${audit.commit ?? '?'}`,
-    dropped: `changes dropped — ${audit.reason ?? 'no reason named'}`,
-    'not-run': `not run — ${audit.reason ?? 'no reason named'}`,
-    skipped: `skipped — ${audit.reason ?? 'no reason named'}`,
-  }[audit.outcome];
-  const { answer } = audit;
-  return [
-    `- Outcome: ${outcome}`,
-    ...(answer === null
-      ? []
-      : [
-          `- Audit: ${answer.verdict}, ${String(answer.survivors)} surviving mutants — ${answer.summary}`,
-        ]),
-  ];
-}
-
 /**
  * The epic review's verdict line, `(profiled)` beside a profiled one; what forced it and why the
  * review gave no answer; then its answer: its summary, the criteria met of the total, each
@@ -725,9 +674,7 @@ function leaseLines(leases: LeaseAggregate): string[] {
       (t) =>
         `- #${String(t.issue)}: waited ${t.waitedSeconds.toFixed(1)}s, held ${t.heldSeconds.toFixed(1)}s`,
     ),
-    ...leases.unparsed.map(
-      (u) => `- unparsed${u.issue === null ? '' : ` (#${String(u.issue)})`}: ${u.line}`,
-    ),
+    ...leases.unparsed.map((u) => `- unparsed (#${String(u.issue)}): ${u.line}`),
   ];
 }
 

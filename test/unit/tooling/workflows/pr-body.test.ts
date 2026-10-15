@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
-  AuditTestsOutput,
   ProbeRecord,
   PrWriterOutput,
   SliceWork,
@@ -180,16 +179,6 @@ const WRITER: PrWriterOutput = {
   ramifications: '',
 };
 
-const AUDITED: AuditTestsOutput = {
-  verdict: 'hardened',
-  sha: 'a0',
-  files: ['test/unit/x.test.ts'],
-  commit: { type: 'test', scope: 'tools', subject: 'pin the x bound' },
-  survivors: 1,
-  summary: 'pinned the bound',
-  leaseLines: [],
-};
-
 const INPUT: PrBodyInput = {
   epic: 1025,
   branch: 'ship/epic-1025',
@@ -214,7 +203,6 @@ const INPUT: PrBodyInput = {
     remote: { launch: 'o0', synced: 'o0', current: 'o0', move: 'equal' },
   },
   mainUntouched: true,
-  auditTests: { outcome: 'landed', commit: 'a1', answer: AUDITED },
   epicReview: {
     verdict: 'accepted-with-open-items',
     profiled: false,
@@ -361,7 +349,6 @@ describe('renderPrBody', () => {
       '- Standards review: fixed — renamed a helper',
       '- Manifest TSDoc: fixed — sharpened walkTo',
       '- Manifest TSDoc: skipped — no src/ change',
-      '- Audit: hardened, 1 surviving mutants — pinned the bound',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
@@ -380,7 +367,9 @@ describe('renderPrBody', () => {
   it('reports the master sync, the bump, the master check, the main checkout and the report dir as the whole epic end', () => {
     const lines = body.split('\n');
 
-    expect(lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Test audit'))).toEqual([
+    expect(
+      lines.slice(lines.indexOf('## Epic end') + 1, lines.indexOf('## Overlap edges')),
+    ).toEqual([
       '',
       '- Master sync: merged at m1',
       '- Version bump: minor, 2.42.0 → 2.43.0',
@@ -398,11 +387,10 @@ describe('renderPrBody', () => {
     expect(renderPrBody({ ...INPUT, mainUntouched }).split('\n')).toContain(line);
   });
 
-  it('reports the test audit, overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
+  it('reports the overlap edges, schedule, lease timings and retro after the epic end, in that order', () => {
     const lines = body.split('\n');
     const sections = [
       '## Epic end',
-      '## Test audit',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',
@@ -412,7 +400,6 @@ describe('renderPrBody', () => {
     expect(sections.every((at) => at > -1)).toBe(true);
     expect([...sections].sort((a, b) => a - b)).toEqual(sections);
     for (const line of [
-      '- Outcome: landed as a1',
       '- #7 → #8 (likely): both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0; size none',
@@ -517,32 +504,6 @@ describe('renderPrBody', () => {
     expect(renderPrBody({ ...INPUT, landed: [ELEVEN] }).split('\n')).toContain(
       '- Lease timings: tdd: paper@localhost:25701 waited 38.9s on epic-911/slice-913-1 (pid 1234), held 27s',
     );
-  });
-
-  it.each<[string, PrBodyInput['auditTests'], string[]]>([
-    [
-      'a landed one, with its answer',
-      INPUT.auditTests,
-      ['- Outcome: landed as a1', '- Audit: hardened, 1 surviving mutants — pinned the bound'],
-    ],
-    [
-      'a comment-only skip',
-      { outcome: 'skipped', reason: 'comment-only', answer: null },
-      ['- Outcome: skipped — comment-only'],
-    ],
-    [
-      'a dropped commit',
-      { ...INPUT.auditTests, outcome: 'dropped', reason: 'land refused' },
-      [
-        '- Outcome: changes dropped — land refused',
-        '- Audit: hardened, 1 surviving mutants — pinned the bound',
-      ],
-    ],
-  ])('renders the test audit section for %s', (_name, auditTests, expected) => {
-    const lines = renderPrBody({ ...INPUT, auditTests }).split('\n');
-    const at = lines.indexOf('## Test audit');
-
-    expect(lines.slice(at + 2, lines.indexOf('', at + 2))).toEqual(expected);
   });
 
   it.each<[string, string[], SliceWork['specReview'], string]>([
@@ -775,15 +736,15 @@ describe('renderPrBody', () => {
           ...SEVEN,
           standardsReview: { ...SEVEN.standardsReview, summary: 'renamed, fixes #21' },
         },
-      ],
-      auditTests: {
-        outcome: 'clean',
-        answer: {
-          ...AUDITED,
-          summary:
-            'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
+        {
+          ...EIGHT,
+          specReview: {
+            ...EIGHT.specReview,
+            summary:
+              'resolves cragmax/paper-harness#22, closes https://github.com/cragmax/paper-harness/issues/23',
+          },
         },
-      },
+      ],
       epicReview: {
         ...INPUT.epicReview,
         notRun: 'fixed #24 then broke',
@@ -1056,7 +1017,6 @@ describe('renderPrBody — the fold', () => {
       OPENER,
       '## Landed issues',
       '## Epic end',
-      '## Test audit',
       '## Overlap edges',
       '## Schedule',
       '## Lease timings',

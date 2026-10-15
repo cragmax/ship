@@ -82,55 +82,14 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 const promptOf = (run: FakeRun, label: string): string =>
   run.calls.find((c) => c.label === label)?.prompt ?? '';
 
-const AUDIT_CUT = {
-  exitCode: 0,
-  envelopePath: 'e.json',
-  status: 'ok',
-  errors: [],
-  branch: 'slice/7-8/audit-tests',
-  base: 'batchhead',
-  slice: 'C:/src/ph-runs/7/slice-audit-tests',
-  at: '2026-09-29T10:30:00.000Z',
-};
-
-const AUDIT_HARDENED = {
-  verdict: 'hardened',
-  sha: 'audit1',
-  files: ['test/unit/tooling/x.test.ts'],
-  commit: { type: 'test', scope: 'build', subject: 'pin the x bound' },
-  survivors: 0,
-  summary: 'pinned a bound',
-  leaseLines: ['with-lease: waited 1.2s for folia@localhost:25711, held 40.3s'],
-};
-
-/** The run report's `## Test audit` section, its heading through its blank line. */
-const auditSection = (run: FakeRun): string[] => {
-  const lines = promptOf(run, 'runner:publish:list').split('\n');
-  const start = lines.indexOf('## Test audit');
-  return start === -1 ? [] : lines.slice(start, lines.indexOf('', start + 2) + 1);
-};
-
-describe('runShip — the epic-end test audit', () => {
-  it('audits the epic’s tests in its own slice after the last landing, landing its commit before the epic review', async () => {
-    const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      'runner:cut-slice:audit-tests': AUDIT_CUT,
-      auditTests: AUDIT_HARDENED,
-      'runner:land:audit-tests': { ...LAND_OK, commit: 'audit-landed' },
-    });
+describe('runShip — the epic end runs no test audit', () => {
+  it('starts the epic end with the epic review after the last landing, cutting no audit slice and reporting no Test audit', async () => {
+    const run = fakeHooks(SEVEN_THEN_EIGHT);
 
     const report = await runShip(run.hooks, 'issues 7 8');
 
     const all = labels(run);
-    expect(all.indexOf('runner:cut-slice:audit-tests')).toBeGreaterThan(
-      all.indexOf('runner:teardown:8-1'),
-    );
-    expect(all.slice(all.indexOf('runner:cut-slice:audit-tests'))).toEqual([
-      'runner:cut-slice:audit-tests',
-      'runner:provision:audit-tests',
-      'auditTests:list',
-      'runner:land:audit-tests',
-      'runner:teardown:audit-tests',
+    expect(all.slice(all.indexOf('runner:teardown:8-1') + 1)).toEqual([
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
@@ -140,315 +99,10 @@ describe('runShip — the epic-end test audit', () => {
       'runner:check-master:list',
       'runner:publish:list',
     ]);
-    expect(run.calls.find((c) => c.label === 'runner:cut-slice:audit-tests')?.argv).toEqual([
-      'tooling/worktree.ts',
-      'cut-slice',
-      BATCH,
-      '--audit-tests',
-    ]);
-    expect(run.calls.find((c) => c.label === 'runner:provision:audit-tests')?.argv).toEqual([
-      'tooling/worktree.ts',
-      'provision',
-      'C:/src/ph-runs/7/slice-audit-tests',
-      '--batch',
-      BATCH,
-      '--server',
-    ]);
-    const call = run.calls.find((c) => c.label === 'auditTests:list');
-    expect(call).toMatchObject({ agentType: 'audit-tests', model: 'opus', effort: 'high' });
-    const prompt = promptOf(run, 'auditTests:list').split('\n');
-    expect(prompt.slice(0, 5)).toEqual([
-      'Audit slice: C:/src/ph-runs/7/slice-audit-tests',
-      'Slice base: batchhead',
-      'Epic range: master0..HEAD',
-      `Issue files: ${REPORT_DIR}/issues/7.md, ${REPORT_DIR}/issues/8.md`,
-      `Report file: ${REPORT_DIR}/audit-tests.md`,
-    ]);
-    expect(prompt.find((l) => l.startsWith('Lease command: '))).toContain(
-      `PH_PROJECT_DIR=${BATCH}`,
-    );
-    const land = run.calls.find((c) => c.label === 'runner:land:audit-tests');
-    expect(land?.argv).toEqual([
-      'tooling/worktree.ts',
-      'land',
-      BATCH,
-      'audit1',
-      '--base',
-      'batchhead',
-      '--message-file',
-      `${REPORT_DIR}/commit-audit-tests.txt`,
-      '--log',
-      `${REPORT_DIR}/land-audit-tests.log`,
-    ]);
-    expect(land?.prompt).toContain(
-      [
-        `Write first: ${REPORT_DIR}/commit-audit-tests.txt`,
-        '----- BEGIN FILE -----',
-        'test(build): pin the x bound',
-        '',
-        'Co-Authored-By: Claude <noreply@anthropic.com>',
-        '----- END FILE -----',
-      ].join('\n'),
-    );
-    expect(land?.prompt).not.toMatch(/\b(?:fixes|see) #/);
-    expect(auditSection(run)).toEqual([
-      '## Test audit',
-      '',
-      '- Outcome: landed as audit-landed',
-      '- Audit: hardened, 0 surviving mutants — pinned a bound',
-      '',
-    ]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'pr',
-      auditTests: { outcome: 'landed', commit: 'audit-landed' },
-    });
-  });
-
-  it('runs a test review in every slice, and the audit once at the epic end', async () => {
-    const run = fakeHooks(SEVEN_THEN_EIGHT);
-
-    await runShip(run.hooks, 'issues 7 8');
-
-    expect(labels(run).filter((l) => /test-?review/i.test(l))).toEqual([
-      'testReview:7-1',
-      'testReview:8-1',
-    ]);
-    expect(labels(run).filter((l) => l.startsWith('auditTests'))).toEqual(['auditTests:list']);
-  });
-
-  it('lands nothing for a clean audit, and still tears its slice down', async () => {
-    const run = fakeHooks();
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run)).toContain('auditTests:list');
-    expect(labels(run)).not.toContain('runner:land:audit-tests');
-    expect(labels(run)).toContain('runner:teardown:audit-tests');
-    expect(auditSection(run)).toEqual([
-      '## Test audit',
-      '',
-      '- Outcome: no changes',
-      '- Audit: clean, 0 surviving mutants — nothing to harden',
-      '',
-    ]);
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'clean' } });
-  });
-
-  it('counts the audit’s lease lines in its engine’s totals, under no issue', async () => {
-    const run = fakeHooks({ auditTests: AUDIT_HARDENED });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(report.epics[0]?.leases).toEqual({
-      engines: [
-        { type: 'paper', leases: 1, waitedSeconds: 1.5, waitedMaxSeconds: 1.5, heldSeconds: 42 },
-        { type: 'folia', leases: 1, waitedSeconds: 1.2, waitedMaxSeconds: 1.2, heldSeconds: 40.3 },
-      ],
-      issues: [{ issue: 7, waitedSeconds: 1.5, heldSeconds: 42 }],
-      unparsed: [],
-    });
-  });
-
-  it('skips the audit for an epic that changes no code', async () => {
-    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['docs/x.md'] } });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run).filter((l) => l.includes('audit'))).toEqual([]);
-    expect(auditSection(run)).toEqual([
-      '## Test audit',
-      '',
-      '- Outcome: skipped — trivial surface',
-      '',
-    ]);
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'skipped' } });
-  });
-
-  it('skips the audit for an epic whose range is proven comment-only', async () => {
-    const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      tdd: { ...TDD_GREEN, files: ['src/a.ts', 'eslint-suppressions.json'] },
-      'runner:land': inTurn(LAND_OK, { ...LAND_OK, commit: 'landed2' }),
-      'runner:comment-only': {
-        exitCode: 0,
-        envelopePath: 'e.json',
-        notCompared: ['eslint-suppressions.json'],
-      },
-    });
-
-    await runShip(run.hooks, 'issues 7 8');
-
-    expect(labels(run).filter((l) => l.includes('audit'))).toEqual([
-      'runner:comment-only:audit-tests',
-    ]);
-    expect(run.calls.find((c) => c.label === 'runner:comment-only:audit-tests')?.argv).toEqual([
-      'tooling/comment-only.ts',
-      '--json',
-      'master0..landed2',
-    ]);
-    expect(auditSection(run)).toContain('- Outcome: skipped — comment-only');
-  });
-
-  it.each<[string, string[], unknown, boolean, boolean]>([
-    [
-      'a test/ path',
-      ['src/a.ts', 'test/unit/a.test.ts'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
-      false,
-      false,
-    ],
-    [
-      'a not-compared tooling/x.cts',
-      ['src/a.ts', 'tooling/x.cts'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: ['tooling/x.cts'] },
-      true,
-      false,
-    ],
-    [
-      'a not-compared src/b.js',
-      ['src/a.ts', 'src/b.js'],
-      { exitCode: 0, envelopePath: 'e.json', notCompared: ['src/b.js'] },
-      true,
-      false,
-    ],
-    [
-      'a proof exit of 1',
-      ['src/a.ts'],
-      { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
-      true,
-      false,
-    ],
-    [
-      'a proof exit of 2',
-      ['src/a.ts'],
-      {
-        exitCode: 2,
-        envelopePath: 'e.json',
-        stderrTail: 'comment-only: usage: comment-only [--cached] [<base>] | <base>..<head>',
-      },
-      true,
-      true,
-    ],
-    ['a runner that returned nothing', ['src/a.ts'], null, true, false],
-  ])('runs the audit on an epic with %s', async (_name, files, proof, proofCalled, offSchema) => {
-    const run = fakeHooks(
-      { tdd: { ...TDD_GREEN, files }, 'runner:comment-only': proof, auditTests: AUDIT_HARDENED },
-      { offSchema },
-    );
-
-    await runShip(run.hooks, 'issues 7');
-
-    expect(
-      labels(run).filter((l) => /^(runner:comment-only|auditTests):(list|audit)/.test(l)),
-    ).toEqual(
-      proofCalled ? ['runner:comment-only:audit-tests', 'auditTests:list'] : ['auditTests:list'],
-    );
-    expect(auditSection(run)).toContain('- Audit: hardened, 0 surviving mutants — pinned a bound');
-  });
-
-  it('halts the epic when the audit’s land leaves the batch unverified: no epic review, no master sync, no PR', async () => {
-    const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      auditTests: AUDIT_HARDENED,
-      'runner:land:audit-tests': LAND_BATCH_DIRTY,
-    });
-
-    const report = await runShip(run.hooks, 'issues 7 8');
-
-    expect(
-      labels(run).filter((l) => /^(epicReview|runner:(sync-master|bump|publish))/.test(l)),
-    ).toEqual([]);
-    expect(labels(run)).toContain('retro:list');
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'halted',
-      message: expect.stringMatching(/the test audit halted the epic: .*batch-dirty/),
-      auditTests: { outcome: 'dropped' },
-    });
-  });
-
-  it('records an audit that returned nothing as not run, and still opens the PR', async () => {
-    const run = fakeHooks({ auditTests: null });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(auditSection(run)).toEqual([
-      '## Test audit',
-      '',
-      '- Outcome: not run — the test audit returned nothing',
-      '',
-    ]);
-    expect(labels(run)).toContain('runner:teardown:audit-tests');
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'not-run' } });
-  });
-
-  it('drops an audit commit its land refuses on a clean batch, and still opens the PR', async () => {
-    const run = fakeHooks({
-      auditTests: AUDIT_HARDENED,
-      'runner:land:audit-tests': {
-        ...LAND_OK,
-        status: 'refused',
-        reason: 'slice-not-single-commit',
-        commit: null,
-        errors: [{ step: 'preconditions', message: 'the slice is 2 commits' }],
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(auditSection(run)).toContain(
-      '- Outcome: changes dropped — land refused (slice-not-single-commit): the slice is 2 commits',
-    );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'dropped' } });
-  });
-
-  it('records an audit whose slice could not be cut as not run, tearing nothing down, and still opens the PR', async () => {
-    const run = fakeHooks({
-      'runner:cut-slice:audit-tests': {
-        exitCode: 1,
-        envelopePath: 'e.json',
-        status: 'refused',
-        reason: 'branch-exists',
-        branch: null,
-        base: null,
-        slice: null,
-        errors: [{ step: 'preconditions', message: 'slice/7/audit-tests exists' }],
-        at: '2026-09-29T10:30:00.000Z',
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run).filter((l) => l.endsWith(':audit-tests'))).toEqual([
-      'runner:cut-slice:audit-tests',
-    ]);
-    expect(auditSection(run)).toContain(
-      '- Outcome: not run — cut-slice refused (branch-exists): slice/7/audit-tests exists',
-    );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', auditTests: { outcome: 'not-run' } });
-  });
-
-  it('halts the epic when the audit’s slice teardown leaves the batch unverified: no master sync, no PR', async () => {
-    const run = fakeHooks({
-      'runner:teardown:audit-tests': {
-        exitCode: 1,
-        envelopePath: 'e.json',
-        status: 'refused',
-        reason: 'source-shrank',
-        removed: false,
-        registered: true,
-        kept: null,
-        errors: [{ step: 'gate', message: 'node_modules lost 40 entries' }],
-      },
-    });
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'halted',
-      message: expect.stringMatching(/source-shrank/),
-      auditTests: { outcome: 'clean' },
-    });
+    expect(all.filter((l) => /audit/i.test(l))).toEqual([]);
+    expect(promptOf(run, 'runner:publish:list')).not.toContain('## Test audit');
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr' });
+    expect(report.epics[0]).not.toHaveProperty('auditTests');
   });
 });
 
@@ -480,18 +134,11 @@ const bodyHead = (run: FakeRun): string[] => {
 };
 
 describe('runShip — the epic review', () => {
-  it('judges the landed change on the batch after the test audit, before the master sync, with no slice', async () => {
+  it('judges the landed change on the batch, with no slice', async () => {
     const run = fakeHooks(SEVEN_THEN_EIGHT);
 
     await runShip(run.hooks, 'issues 7 8');
 
-    const all = labels(run);
-    expect(
-      all.slice(
-        all.indexOf('runner:teardown:audit-tests'),
-        all.indexOf('runner:sync-master:list') + 1,
-      ),
-    ).toEqual(['runner:teardown:audit-tests', 'epicReview:list', 'runner:sync-master:list']);
     expect(run.calls.find((c) => c.label === 'epicReview:list')).toMatchObject({
       agentType: 'epic-review',
       model: 'opus',
@@ -957,9 +604,9 @@ describe('runShip — the PR writer', () => {
 });
 
 describe('the epic-end phase', () => {
-  it('names the test audit first and the PR writer beside the retro in its detail', () => {
+  it('names the epic review first and the PR writer beside the retro in its detail', () => {
     expect(SHIP_PHASES.find((p) => p.title === PHASE_TITLES.epicEnd)?.detail).toBe(
-      'per epic: test audit, epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+      'per epic: epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
     );
   });
 });
@@ -1040,29 +687,6 @@ describe('runShip — the lease totals', () => {
         { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
       ],
       issues: [{ issue: 7, waitedSeconds: 2, heldSeconds: 54.5 }],
-      unparsed: [],
-    });
-  });
-
-  it('still totals the landed slices’ lease lines when the test audit halts the epic', async () => {
-    const run = fakeHooks({
-      ...SEVEN_THEN_EIGHT,
-      auditTests: { ...AUDIT_HARDENED, leaseLines: [] },
-      'runner:land:audit-tests': LAND_BATCH_DIRTY,
-    });
-
-    const report = await runShip(run.hooks, 'issues 7 8');
-
-    expect(report.epics[0]).toMatchObject({ outcome: 'halted' });
-    expect(report.epics[0]?.leases).toEqual({
-      engines: [
-        { type: 'paper', leases: 2, waitedSeconds: 3, waitedMaxSeconds: 1.5, heldSeconds: 84 },
-        { type: 'folia', leases: 0, waitedSeconds: 0, waitedMaxSeconds: 0, heldSeconds: 0 },
-      ],
-      issues: [
-        { issue: 7, waitedSeconds: 1.5, heldSeconds: 42 },
-        { issue: 8, waitedSeconds: 1.5, heldSeconds: 42 },
-      ],
       unparsed: [],
     });
   });

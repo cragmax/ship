@@ -74,7 +74,6 @@ const STAGES = {
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
-  auditTests: { agentType: 'audit-tests', model: 'opus', effort: 'high' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
@@ -108,7 +107,7 @@ const SHIP_PHASES = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: test audit, epic review, master sync, version bump, retro and PR writer ' +
+      'per epic: epic review, master sync, version bump, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },
@@ -248,15 +247,6 @@ const PROMPTS = {
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
-    ].join('\n'),
-  auditTests: (values) =>
-    [
-      `Audit slice: ${values.slice}`,
-      `Slice base: ${values.base}`,
-      `Epic range: ${values.range}`,
-      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
-      `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
     ].join('\n'),
   epicReview: (values) =>
     [
@@ -1514,27 +1504,6 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'summary'],
   },
-  auditTests: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'hardened'] },
-      sha: { type: 'string' },
-      files: { type: 'array', items: { type: 'string' } },
-      commit: {
-        type: 'object',
-        properties: {
-          type: { type: 'string' },
-          scope: { type: 'string' },
-          subject: { type: 'string' },
-        },
-        required: ['type', 'scope', 'subject'],
-      },
-      survivors: { type: 'integer' },
-      summary: { type: 'string' },
-      leaseLines: { type: 'array', items: { type: 'string' } },
-    },
-    required: ['verdict', 'sha', 'files', 'commit', 'survivors', 'summary', 'leaseLines'],
-  },
   epicReview: {
     type: 'object',
     properties: {
@@ -1962,12 +1931,6 @@ const AGENT_CALLS = {
       hooks,
       PROMPTS.resolver(values),
       agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
-    ),
-  auditTests: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.auditTests(values),
-      agentOptions('auditTests', tag, AGENT_OUTPUT_SCHEMAS.auditTests),
     ),
   epicReview: (hooks, values, tag) =>
     askAgent(

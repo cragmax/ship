@@ -158,24 +158,6 @@ export interface ManifestTsdocValues extends SliceCommitValues {
   readonly reportPath: string;
 }
 
-/** `PROMPTS.auditTests`' input: the epic's range, audited in a slice of its own. */
-export interface AuditTestsValues {
-  /** The audit's slice worktree, cut from the batch head. */
-  readonly slice: string;
-  /** The commit the slice was cut at: its one commit's parent. */
-  readonly base: string;
-  /** The epic's landed range, `<batch base>..HEAD`. */
-  readonly range: string;
-  /** The landed issues, in landing order: their texts are under the report dir. */
-  readonly issues: readonly number[];
-  /** The run's report directory. */
-  readonly reportDir: string;
-  /** The full report. */
-  readonly reportPath: string;
-  /** The lease command's values. */
-  readonly lease: LeaseValues;
-}
-
 /** An issue of the run that did not land, as the epic review is handed it. */
 export interface UnlandedValues {
   /** The issue. */
@@ -186,7 +168,7 @@ export interface UnlandedValues {
   readonly reason?: string;
 }
 
-/** `PROMPTS.epicReview`'s input: the run's landed change, once the test audit has landed. */
+/** `PROMPTS.epicReview`'s input: the run's landed change, once the last slice has landed. */
 export interface EpicReviewValues {
   /** The batch worktree, before the `origin/master` merge and the bump. */
   readonly batch: string;
@@ -400,15 +382,6 @@ export const PROMPTS = {
       `Batch worktree: ${values.batch}`,
       `Pending paths: ${values.pending.join(', ')}`,
       `Report file: ${values.reportPath}`,
-    ].join('\n'),
-  auditTests: (values: AuditTestsValues): string =>
-    [
-      `Audit slice: ${values.slice}`,
-      `Slice base: ${values.base}`,
-      `Epic range: ${values.range}`,
-      `Issue files: ${values.issues.map((issue) => issueFile(issue, values.reportDir)).join(', ')}`,
-      `Report file: ${values.reportPath}`,
-      ...serverTierLines(values.lease),
     ].join('\n'),
   epicReview: (values: EpicReviewValues): string =>
     [
