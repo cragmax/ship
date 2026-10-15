@@ -4,7 +4,17 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, liveRuns, OK, PREFLIGHT_OK, TDD_BLOCKED, type FakeRun } from './_fake-hooks.js';
+import {
+  BATCH,
+  DOC_INDEX_CONFLICT,
+  fakeHooks,
+  liveRuns,
+  OK,
+  PREFLIGHT_OK,
+  REPORT_DIR,
+  TDD_BLOCKED,
+  type FakeRun,
+} from './_fake-hooks.js';
 
 /** The main checkout pre-flight names: distinct from every other path the fakes answer. */
 const MAIN = 'D:/checkouts/main';
@@ -17,35 +27,9 @@ const AT_MAIN = {
     worktree: MAIN,
     branch: 'ship/7',
     base: 'master0',
-    batch: 'C:/src/ph-runs/7/batch',
-    reportDir: 'C:/src/ph-runs/7/reports',
+    batch: BATCH,
+    reportDir: REPORT_DIR,
     attach: null,
-  },
-};
-
-/** A doc-index conflict at the epic end: the start, the resolver, then `--continue`. */
-const DOC_INDEX_CONFLICT = {
-  'runner:sync-master:list': {
-    exitCode: 1,
-    envelopePath: 'e.json',
-    status: 'conflict',
-    outcome: 'needs-resolution',
-    commit: null,
-    upstream: null,
-    conflicts: [{ path: 'docs/adr/readme.md', kind: 'doc-index', landedBy: ['docs: theirs'] }],
-    version: null,
-    pending: ['docs/adr/readme.md'],
-    errors: [],
-  },
-  resolver: { verdict: 'resolved', summary: 'kept both rows' },
-  'runner:sync-master:list-continue': {
-    ...OK,
-    outcome: 'merged',
-    commit: 'merge1',
-    upstream: 'origin0',
-    conflicts: [],
-    version: null,
-    pending: [],
   },
 };
 

@@ -389,37 +389,41 @@ describe('runShip — the retro', () => {
     const LAST = { ...FINDING, title: 'last, over the stopped report' };
     const IN_TURN = { retro: inTurn({ findings: [FIRST] }, { findings: [LAST] }) };
 
-    it('re-runs over the master check’s failure, the entry keeping the re-run’s findings', async () => {
-      const run = fakeHooks({
-        ...IN_TURN,
-        ...masterMoved(
-          { move: 'rewound', current: 'older1' },
-          { move: 'equal', current: 'origin0' },
-        ),
-      });
+    it.each([
+      [
+        'the master check’s failure',
+        masterMoved({ move: 'rewound', current: 'older1' }, { move: 'equal', current: 'origin0' }),
+        {
+          message:
+            'master check failed: local master rewound: launch local0, now older1 — restore it from local0',
+        },
+      ],
+      [
+        'a refused publish, its report carrying the recovery',
+        { 'runner:publish': PUBLISH_FAILED },
+        {
+          message: 'publish failed: the pre-push gate failed',
+          recovery: [
+            `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+          ],
+        },
+      ],
+      [
+        'a throw after the first retro',
+        {
+          'runner:publish': () => {
+            throw new Error('runner crashed');
+          },
+        },
+        { message: 'the epic end threw: runner crashed' },
+      ],
+    ])('re-runs over %s, the entry keeping the re-run’s findings', async (_name, stop, last) => {
+      const run = fakeHooks({ ...IN_TURN, ...stop });
 
       const report = await runShip(run.hooks, 'issues 7');
 
       expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
-      expect(retroReports(run).at(-1)).toMatchObject({
-        message:
-          'master check failed: local master rewound: launch local0, now older1 — restore it from local0',
-      });
-      expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
-    });
-
-    it('re-runs over a refused publish, its report carrying the recovery', async () => {
-      const run = fakeHooks({ ...IN_TURN, 'runner:publish': PUBLISH_FAILED });
-
-      const report = await runShip(run.hooks, 'issues 7');
-
-      expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
-      expect(retroReports(run).at(-1)).toMatchObject({
-        message: 'publish failed: the pre-push gate failed',
-        recovery: [
-          `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
-        ],
-      });
+      expect(retroReports(run).at(-1)).toMatchObject(last);
       expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
     });
 
@@ -440,23 +444,6 @@ describe('runShip — the retro', () => {
         undefined,
         [{ issue: 8, url: 'https://x/issues/7#issuecomment-2' }],
       ]);
-    });
-
-    it('re-runs over a throw after the first retro, the last report giving the throw', async () => {
-      const run = fakeHooks({
-        ...IN_TURN,
-        'runner:publish': () => {
-          throw new Error('runner crashed');
-        },
-      });
-
-      const report = await runShip(run.hooks, 'issues 7');
-
-      expect(retroReports(run).map((r) => r.outcome)).toEqual(['pr', 'stopped']);
-      expect(retroReports(run).at(-1)).toMatchObject({
-        message: 'the epic end threw: runner crashed',
-      });
-      expect(report.epics[0]).toMatchObject({ outcome: 'stopped', retro: [LAST] });
     });
   });
 

@@ -1824,9 +1824,9 @@ async function cleanupRun(hooks, run, report, main) {
   else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
 }
 async function tearDownSpent(hooks, spent, report) {
-  const { path, branch } = spent;
+  const { path, branch, main } = spent;
   const place = preCutPlace(
-    spent.main,
+    main,
     `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
   );
   const out = await runTool(hooks, 'teardown', [path], place);

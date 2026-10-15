@@ -107,9 +107,9 @@ async function tearDownSpent(
   spent: { readonly path: string; readonly branch: string; readonly main: string | undefined },
   report: CleanupReport,
 ): Promise<void> {
-  const { path, branch } = spent;
+  const { path, branch, main } = spent;
   const place = preCutPlace(
-    spent.main,
+    main,
     `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
   );
   const out = await runTool(hooks, 'teardown', [path], place);

@@ -169,7 +169,7 @@ export async function runPreflight(
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const place = preCutPlace(typeof checks?.worktree === 'string' ? checks.worktree : undefined);
+  const place = preCutPlace(checks?.worktree ?? undefined);
   const gate = await runTool(
     hooks,
     'run-gate',

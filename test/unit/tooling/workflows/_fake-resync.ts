@@ -5,7 +5,14 @@
  * index for the resolver.
  */
 
-import { BATCH, fakeHooks, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
+import {
+  BATCH,
+  DOC_INDEX_MERGED,
+  DOC_INDEX_STOP,
+  fakeHooks,
+  REPORT_DIR,
+  type FakeRun,
+} from './_fake-hooks.js';
 
 /** Fields every `ok` worktree-CLI output carries. */
 export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
@@ -48,33 +55,11 @@ const RESYNC_OK: Readonly<Record<string, unknown>> = {
   'runner:publish': publishOk(true),
 };
 
-/** The doc index the conflict fakes stop on. */
-export const ADR_INDEX = 'docs/adr/readme.md';
-
 /** A `sync-master` start stopped on a doc index, the resolver, and the `--continue`. */
 export const DOC_INDEX_CONFLICT = {
-  'runner:sync-master:resync': {
-    exitCode: 1,
-    envelopePath: 'e.json',
-    status: 'conflict',
-    outcome: 'needs-resolution',
-    commit: null,
-    upstream: null,
-    conflicts: [{ path: ADR_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
-    version: null,
-    pending: [ADR_INDEX],
-    errors: [],
-  },
+  'runner:sync-master:resync': DOC_INDEX_STOP,
   resolver: { verdict: 'resolved', summary: 'kept both rows' },
-  'runner:sync-master:resync-continue': {
-    ...OK,
-    outcome: 'merged',
-    commit: 'merge1',
-    upstream: 'origin1',
-    conflicts: [],
-    version: null,
-    pending: [],
-  },
+  'runner:sync-master:resync-continue': DOC_INDEX_MERGED,
 };
 
 /**

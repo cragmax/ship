@@ -4064,7 +4064,7 @@ function runSlug(selection) {
 
 async function runPreflight(hooks, args) {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const place = preCutPlace(typeof checks?.worktree === 'string' ? checks.worktree : undefined);
+  const place = preCutPlace(checks?.worktree ?? undefined);
   const gate = await runTool(
     hooks,
     'run-gate',
@@ -4339,9 +4339,9 @@ async function cleanupRun(hooks, run, report, main) {
   else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
 }
 async function tearDownSpent(hooks, spent, report) {
-  const { path, branch } = spent;
+  const { path, branch, main } = spent;
   const place = preCutPlace(
-    spent.main,
+    main,
     `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
   );
   const out = await runTool(hooks, 'teardown', [path], place);

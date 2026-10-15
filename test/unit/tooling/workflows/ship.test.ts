@@ -6,7 +6,9 @@ import { STAGES, type StageName, type StageRow } from '../../../../tooling/workf
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
+  ADR_INDEX,
   BATCH,
+  DOC_INDEX_CONFLICT,
   fakeHooks,
   GATE_OK,
   inTurn,
@@ -100,38 +102,6 @@ const TEARDOWN_SHRANK = {
 };
 
 const TDD_STALE = { tdd: { ...TDD_BLOCKED, reason: 'x already exists at abc123' } };
-
-const ADR_INDEX = 'docs/adr/readme.md';
-
-// The two `sync-master` envelopes the CLI's own tests pin for a doc-index
-// conflict: the start stops for a resolver, `--continue` commits the merge.
-const DOC_INDEX_CONFLICT = {
-  'runner:sync-master:list': {
-    exitCode: 1,
-    envelopePath: 'e.json',
-    status: 'conflict',
-    outcome: 'needs-resolution',
-    commit: null,
-    upstream: null,
-    conflicts: [{ path: ADR_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
-    version: null,
-    pending: [ADR_INDEX],
-    errors: [],
-  },
-  resolver: { verdict: 'resolved', summary: 'kept both rows' },
-  'runner:sync-master:list-continue': {
-    exitCode: 0,
-    envelopePath: 'e.json',
-    status: 'ok',
-    outcome: 'merged',
-    commit: 'merge1',
-    upstream: 'origin1',
-    conflicts: [],
-    version: null,
-    pending: [],
-    errors: [],
-  },
-};
 
 // Two issues bring in issue-overlap (one pair) and a retro finding.
 const TWO_ISSUES = {
@@ -473,8 +443,8 @@ describe('runShip — one issue from launch to PR', () => {
       '--server',
     ]);
     // Each amend moves the slice commit: each review sees the one before it.
-    expect(shaSeenBy(run, 'specReview:7-1')).toBe('Slice commit: slice1');
-    expect(shaSeenBy(run, 'standardsReview:7-1')).toBe('Slice commit: spec1');
+    expect(lineSeenBy(run, 'specReview:7-1', 'Slice commit: ')).toBe('Slice commit: slice1');
+    expect(lineSeenBy(run, 'standardsReview:7-1', 'Slice commit: ')).toBe('Slice commit: spec1');
     expect(argvOf('runner:land:7-1')).toEqual([
       'tooling/worktree.ts',
       'land',
@@ -728,11 +698,11 @@ const promptOf = (run: FakeRun, label: string): string => {
   return call?.prompt ?? '';
 };
 
-/** The `Slice commit:` line of a call's prompt; fails the test when there is no such call. */
-const shaSeenBy = (run: FakeRun, label: string): string | undefined =>
+/** A call's prompt line starting with `prefix`; fails the test when there is no such call. */
+const lineSeenBy = (run: FakeRun, label: string, prefix: string): string | undefined =>
   promptOf(run, label)
     .split('\n')
-    .find((l) => l.startsWith('Slice commit: '));
+    .find((l) => l.startsWith(prefix));
 
 /** A closing keyword before issue 7's ref, as GitHub reads one. */
 const CLOSES_SEVEN = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\s:]*#7\b/i;
@@ -1716,8 +1686,8 @@ describe('runShip — the slice test review', () => {
 
     await runShip(run.hooks, 'issues 7');
 
-    expect(shaSeenBy(run, 'testReview:7-1')).toBe('Slice commit: spec1');
-    expect(shaSeenBy(run, 'standardsReview:7-1')).toBe('Slice commit: test1');
+    expect(lineSeenBy(run, 'testReview:7-1', 'Slice commit: ')).toBe('Slice commit: spec1');
+    expect(lineSeenBy(run, 'standardsReview:7-1', 'Slice commit: ')).toBe('Slice commit: test1');
   });
 
   it.each<[name: string, files: string[], proof: unknown, proofRuns: boolean, reviewRuns: boolean]>(
@@ -1787,12 +1757,6 @@ describe('runShip — the slice test review', () => {
 });
 
 describe('runShip — the slice’s changed files after an amend', () => {
-  /** The `Changed files:` line of a call's prompt; fails the test when there is no such call. */
-  const filesSeenBy = (run: FakeRun, label: string): string | undefined =>
-    promptOf(run, label)
-      .split('\n')
-      .find((l) => l.startsWith('Changed files: '));
-
   it('re-reads the amended commit’s changed files after each fixed review, every later stage reading them', async () => {
     // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md.
     const run = fakeHooks({
@@ -1810,14 +1774,14 @@ describe('runShip — the slice’s changed files after an amend', () => {
       ['tooling/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'cut1'],
       ['tooling/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'cut1'],
     ]);
-    expect(filesSeenBy(run, 'specReview:7-1')).toBe(
+    expect(lineSeenBy(run, 'specReview:7-1', 'Changed files: ')).toBe(
       'Changed files: tooling/x.ts, test/unit/tooling/x.test.ts',
     );
-    expect(filesSeenBy(run, 'standardsReview:7-1')).toBe(
+    expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
       'Changed files: src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
     );
     // The tdd changed no src/ path: only the amend's src/y.ts runs the Manifest TSDoc review.
-    expect(filesSeenBy(run, 'manifestTsdoc:7-1')).toBe(
+    expect(lineSeenBy(run, 'manifestTsdoc:7-1', 'Changed files: ')).toBe(
       'Changed files: docs/y.md, src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
     );
   });
@@ -1837,7 +1801,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
     expect(
       run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv[3]),
     ).toEqual(['test1', 'slice2']);
-    expect(filesSeenBy(run, 'standardsReview:7-1')).toBe(
+    expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
       'Changed files: test/unit/tooling/x.test.ts, test/unit/y.test.ts, tooling/x.ts',
     );
   });
@@ -1870,7 +1834,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(labels(run).filter((l) => l.startsWith('runner:changed-files'))).toEqual([]);
-    expect(filesSeenBy(run, 'manifestTsdoc:7-1')).toBe(
+    expect(lineSeenBy(run, 'manifestTsdoc:7-1', 'Changed files: ')).toBe(
       'Changed files: src/x.ts, test/unit/x.test.ts',
     );
     expect(report.epics[0]?.issues).toEqual([
