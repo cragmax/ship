@@ -130,15 +130,18 @@ function removeWorktree(
 }
 
 /**
- * The diff flags that fix the kept patch's format against the user's git config: `diff.noprefix`,
- * `diff.mnemonicPrefix`, `diff.relative`, `color.diff` and `diff.external` would each make
- * `git apply` refuse it.
+ * Pins the kept patch's format against the user's git config, which can otherwise strip its
+ * prefixes, colour it, drop its context or textconv it, each unappliable (unprobed beyond
+ * `diff.noprefix` and `color.diff`).
  */
 const PATCH_FORMAT = [
   '--binary',
   '--no-color',
   '--no-ext-diff',
+  '--no-textconv',
   '--no-relative',
+  '--unified=3',
+  '--submodule=short',
   '--src-prefix=a/',
   '--dst-prefix=b/',
 ] as const;
