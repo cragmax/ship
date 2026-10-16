@@ -34,7 +34,13 @@ import {
   type FakePrCreate,
   type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import { makeFixtureRepo, mustRun, runCli, runIn } from '../helpers/worktree-fixture.js';
+import {
+  makeFixtureRepo,
+  mustRun,
+  prebuildNpmTemplate,
+  runCli,
+  runIn,
+} from '../helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
@@ -52,6 +58,8 @@ const PRE_PUSH_NEEDS_BUILD = [
   'exit 1',
   '',
 ].join('\n');
+
+prebuildNpmTemplate();
 
 let root: string;
 

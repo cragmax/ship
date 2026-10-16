@@ -28,11 +28,14 @@ import {
   makeFixtureRepo,
   mustRun,
   porcelain,
+  prebuildNpmTemplate,
   runCli,
 } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook: commit refused';
+
+prebuildNpmTemplate();
 
 let root: string;
 // `bump` leaves its `freshLogDir` log in the OS temp dir for its caller.

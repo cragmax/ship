@@ -44,6 +44,7 @@ import {
   makeFixtureRepo,
   mustRun,
   porcelain,
+  prebuildNpmTemplate,
   runCli,
   runIn,
   seedBatch,
@@ -54,6 +55,8 @@ import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TIMEOUT = { timeout: 60_000 };
+
+prebuildNpmTemplate();
 
 let root: string;
 

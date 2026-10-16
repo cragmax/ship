@@ -5,7 +5,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -18,13 +18,21 @@ import {
   makeBareOrigin,
   makeGitRepo,
 } from '../helpers/worktree-fixture-git.js';
-import { makeFixtureRepo, mustRun, porcelain } from '../helpers/worktree-fixture.js';
+import {
+  copyTemplateRepo,
+  makeFixtureRepo,
+  mustRun,
+  porcelain,
+  prebuildNpmTemplate,
+} from '../helpers/worktree-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');
 const TIMEOUT = { timeout: 60_000 };
 // Git dates a commit to the second: a repo rebuilt this long after the first gets a new sha.
 const PAST_ONE_SECOND_MS = 1100;
+
+prebuildNpmTemplate();
 
 const roots: string[] = [];
 
@@ -123,6 +131,24 @@ describe('the template repos', () => {
 
     expect(child.status, `${child.stdout}${child.stderr}`).toBe(0);
     expect(readdirSync(temp).filter((name) => name.startsWith('ph-repo-templates-'))).toEqual([]);
+  });
+});
+
+describe('copyTemplateRepo', () => {
+  it('rebuilds a template whose first build threw', TIMEOUT, () => {
+    const key = 'build throws once';
+    expect(() => {
+      copyTemplateRepo(key, join(freshRoot(), 'a'), () => {
+        throw new Error('first build failed');
+      });
+    }).toThrow('first build failed');
+
+    const b = join(freshRoot(), 'b');
+    copyTemplateRepo(key, b, (dir) => {
+      writeFileSync(join(dir, 'base.txt'), 'base\n');
+    });
+
+    expect(mustRun('git', ['ls-files'], b).trim()).toBe('base.txt');
   });
 });
 

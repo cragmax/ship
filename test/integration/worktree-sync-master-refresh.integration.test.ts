@@ -24,7 +24,13 @@ import {
   withOriginAndBatch,
   type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import { makeFixtureRepo, mustRun, porcelain, runSyncMaster } from '../helpers/worktree-fixture.js';
+import {
+  makeFixtureRepo,
+  mustRun,
+  porcelain,
+  prebuildNpmTemplate,
+  runSyncMaster,
+} from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';
@@ -33,6 +39,8 @@ const BUILT = 'dist/index.js';
 // The npm fixture's `build` script fails while this file exists.
 const FAIL_BUILD = 'FAIL_BUILD';
 const LOCKFILE = 'package-lock.json';
+
+prebuildNpmTemplate();
 
 let root: string;
 
