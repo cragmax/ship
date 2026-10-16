@@ -1499,6 +1499,25 @@ describe('renderPrBody — tests at push', () => {
     ]);
   });
 
+  it('says the full standalone tier ran, the server tier left to the nightly, past 300 changed files', () => {
+    const paths = Array.from({ length: 301 }, (_, i) => `src/f${String(i)}.ts`);
+
+    expect(testsAtPush({ ...INPUT, pushed: { kind: 'resolved', paths } })).toEqual([
+      '## Tests at push',
+      '',
+      'The full standalone tier ran at push: 301 files changed, past the 300 `vitest related` takes; the full server tier runs in the next nightly after merge.',
+      '',
+    ]);
+  });
+
+  it('says targeted tests only at exactly 300 changed files', () => {
+    const paths = Array.from({ length: 300 }, (_, i) => `src/f${String(i)}.ts`);
+
+    expect(testsAtPush({ ...INPUT, pushed: { kind: 'resolved', paths } })[2]).toBe(
+      'Targeted tests only at push: no Platform-wide path changed; the full server tier runs in the next nightly after merge.',
+    );
+  });
+
   it('says it is not known, naming the failed read, when the pushed range was not read', () => {
     const pushed = { kind: 'unresolved', why: 'changed-files failed: bad revision' } as const;
 

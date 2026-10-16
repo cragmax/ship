@@ -2548,6 +2548,7 @@ const PLATFORM_WIDE_PATHS = [
   'package.json',
   'package-lock.json',
 ];
+const MAX_RELATED_FILES = 300;
 function isPlatformWide(path) {
   return PLATFORM_WIDE_PATHS.some((entry) =>
     entry.endsWith('/') ? path.startsWith(entry) : path === entry,
@@ -2754,15 +2755,20 @@ function testsAtPushLines(pushed) {
     return [`Not known: the pushed range could not be read (${pushed.why}).`];
   }
   const wide = pushed.paths.filter((path) => isPlatformWide(path));
-  if (wide.length === 0) {
+  if (wide.length > 0) {
+    const paths = wide.map((path) => codeSpan(path)).join(', ');
     return [
-      'Targeted tests only at push: no Platform-wide path changed; the full server tier runs in the next nightly after merge.',
+      `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
     ];
   }
-  const paths = wide.map((path) => codeSpan(path)).join(', ');
-  return [
-    `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
-  ];
+  const nightly = 'the full server tier runs in the next nightly after merge';
+  if (pushed.paths.length > MAX_RELATED_FILES) {
+    const count = String(pushed.paths.length);
+    return [
+      `The full standalone tier ran at push: ${count} files changed, past the ${String(MAX_RELATED_FILES)} \`vitest related\` takes; ${nightly}.`,
+    ];
+  }
+  return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
 function recordedItems(landed) {
   return landed.tdd.recorded

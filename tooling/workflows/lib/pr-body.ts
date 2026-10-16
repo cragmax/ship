@@ -18,7 +18,7 @@
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
-import { isPlatformWide } from '../../lib/platform-wide.js';
+import { isPlatformWide, MAX_RELATED_FILES } from '../../lib/platform-wide.js';
 import type { PushedChanges } from '../../lib/push-scope.js';
 
 import type {
@@ -442,24 +442,29 @@ function evidenceList(landed: readonly LandedIssue[]): string[] {
 }
 
 /**
- * The one line saying what pre-push ran on the push (ADR-0051): the full standalone and server
- * tiers, naming each Platform-wide path it changes; else targeted tests only, the full server tier
- * left to the nightly; or not known, naming the failed read.
+ * The one line saying what pre-push ran (ADR-0051): both tiers in full, naming the Platform-wide
+ * paths; else the standalone tier in full past {@link MAX_RELATED_FILES} files, or targeted
+ * tests, the server tier left to the nightly; or not known, naming the failed read.
  */
 function testsAtPushLines(pushed: PushedChanges): string[] {
   if (pushed.kind === 'unresolved') {
     return [`Not known: the pushed range could not be read (${pushed.why}).`];
   }
   const wide = pushed.paths.filter((path) => isPlatformWide(path));
-  if (wide.length === 0) {
+  if (wide.length > 0) {
+    const paths = wide.map((path) => codeSpan(path)).join(', ');
     return [
-      'Targeted tests only at push: no Platform-wide path changed; the full server tier runs in the next nightly after merge.',
+      `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
     ];
   }
-  const paths = wide.map((path) => codeSpan(path)).join(', ');
-  return [
-    `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
-  ];
+  const nightly = 'the full server tier runs in the next nightly after merge';
+  if (pushed.paths.length > MAX_RELATED_FILES) {
+    const count = String(pushed.paths.length);
+    return [
+      `The full standalone tier ran at push: ${count} files changed, past the ${String(MAX_RELATED_FILES)} \`vitest related\` takes; ${nightly}.`,
+    ];
+  }
+  return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
 
 /**
