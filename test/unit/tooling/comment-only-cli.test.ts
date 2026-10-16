@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,25 +12,7 @@ import { runIn } from '../../helpers/worktree-fixture.js';
 // A test spawning git or the CLI through tsx runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });
 
-const BASE = [
-  '/**',
-  ' * Header line one',
-  ' * line two',
-  ' */',
-  "import { x } from './y.js';",
-  '/** Doc for f.',
-  ' *  more doc */',
-  'export function f(a: number): string {',
-  '  // inline note',
-  "  const s = 'a // not comment';",
-  '  const t = `${a} // mid ${a} tail // end`;',
-  '  const r = /a\\/\\/b/u;',
-  '  /* block',
-  '     comment */',
-  '  return s + t + String(r) + x;',
-  '}',
-  '',
-].join('\n');
+const BASE = readFileSync(new URL('../../fixtures/comment-only/base.txt', import.meta.url), 'utf8');
 
 describe('comment-only CLI', () => {
   const CLI = fileURLToPath(new URL('../../../tooling/comment-only.ts', import.meta.url));

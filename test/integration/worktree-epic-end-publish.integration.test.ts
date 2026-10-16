@@ -6,19 +6,11 @@
  * @integrationTier standalone
  */
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { toPosix } from '../../tooling/shared.js';
 import type * as ExecModule from '../../tooling/worktree/exec.js';
@@ -31,23 +23,18 @@ import {
   advanceOrigin,
   commitChanges,
   headSha,
-  makeBareOrigin,
+  installHook,
   prependPath,
   readFakePrCreated,
   readFakePrViewCount,
   setFakePrViews,
+  withOriginAndBatch,
   writeFakeGh,
   type FakeGhResponse,
   type FakePrCreate,
+  type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import {
-  addWorktree,
-  makeFixtureRepo,
-  mustRun,
-  prepareTemplate,
-  runCli,
-  runIn,
-} from '../helpers/worktree-fixture.js';
+import { makeFixtureRepo, mustRun, runCli, runIn } from '../helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
@@ -66,18 +53,7 @@ const PRE_PUSH_NEEDS_BUILD = [
   '',
 ].join('\n');
 
-let templateRoot: string;
-let template: string;
 let root: string;
-
-beforeAll(() => {
-  templateRoot = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-tpl-')));
-  template = prepareTemplate(templateRoot);
-}, TIMEOUT.timeout);
-
-afterAll(() => {
-  rmSync(templateRoot, { recursive: true, force: true });
-});
 
 beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-')));
@@ -92,32 +68,14 @@ afterEach(() => {
   }
 });
 
-interface Run {
-  readonly main: string;
-  readonly bare: string;
-  readonly batch: string;
-}
-
 /** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
-function makeRun(branch = 'ship/r'): Run {
-  const main = makeFixtureRepo(root, template);
-  const bare = makeBareOrigin(root, main);
-  const batch = addWorktree(main, `${root}/batch`, branch);
-  return { main, bare, batch };
+function makeRun(branch = 'ship/r'): FixtureRun {
+  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
 }
 
 /** Whether the bare origin has the branch. */
 function onOrigin(bare: string, branch: string): boolean {
   return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], bare).exitCode === 0;
-}
-
-/** Point the fixture repo's hooks at `<root>/hooks`, holding one `name` hook running `script`. */
-function installHook(main: string, name: string, script: string): void {
-  const hooks = `${root}/hooks`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(`${hooks}/${name}`, script);
-  chmodSync(`${hooks}/${name}`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
 }
 
 describe('publish', () => {
@@ -208,7 +166,7 @@ describe('publish', () => {
   it('builds before pushing, so the pre-push gate sees a current dist', TIMEOUT, () => {
     const run = makeRun();
     commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
-    installHook(run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
+    installHook(root, run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
 
     const { r } = publish(run.batch);
 
@@ -294,7 +252,7 @@ describe('publish --push-only', () => {
   }
 
   /** A run whose batch pushed `ship/r` once, then committed one more change locally. */
-  function pushedThenAhead(): Run & { readonly pushed: string; readonly head: string } {
+  function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly head: string } {
     const run = makeRun();
     const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
     mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
@@ -304,7 +262,7 @@ describe('publish --push-only', () => {
 
   it('pushes a branch ahead of origin through pre-push and reads the open PR', TIMEOUT, () => {
     const run = pushedThenAhead();
-    installHook(run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
+    installHook(root, run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
 
     const { r, bin } = pushOnly(run.batch, OPEN_5);
 

@@ -6,41 +6,33 @@
  * @integrationTier standalone
  */
 
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPosix } from '../../tooling/shared.js';
-import type { SyncMasterResult } from '../../tooling/worktree/types-run.js';
 import {
   advanceOrigin,
   advanceOriginByMerge,
   commitChanges,
   gitPathList,
   headSha,
-  makeBareOrigin,
+  installHook,
   makeGitRepo,
-  stagedNames,
+  parents,
+  snapshot,
+  withOriginAndBatch,
+  type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, mustRun, porcelain, runCli, runIn } from '../helpers/worktree-fixture.js';
+import { addWorktree, porcelain, runSyncMaster } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';
 const HOOK_SAYS = 'fixture hook: commit refused';
 
 let root: string;
-// The CLI leaves its `freshLogDir` logs in the OS temp dir for its caller.
-const logDirs = new Set<string>();
 
 beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-')));
@@ -48,62 +40,21 @@ beforeEach(() => {
 
 afterEach(() => {
   try {
-    for (const dir of [root, ...logDirs]) rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   } catch {
     // Windows occasionally holds a lock on a just-used directory; the leak
     // is a bounded temp dir.
   }
-  logDirs.clear();
 });
 
-/** Run `sync-master` on the batch, recording the log dirs it leaves. */
-function sync(batch: string, ...flags: string[]): ReturnType<typeof runCli<SyncMasterResult>> {
-  const r = runCli<SyncMasterResult>(['sync-master', batch, ...flags]);
-  for (const log of r.json.logs) logDirs.add(dirname(log));
-  return r;
-}
-
-interface Run {
-  readonly main: string;
-  readonly bare: string;
-  readonly batch: string;
-}
-
 /** A repo with a bare origin and a batch worktree on `ship/r` cut from `master`. */
-function makeRun(base: Record<string, string>): Run {
-  const main = makeGitRepo(root, base);
-  const bare = makeBareOrigin(root, main);
-  const batch = addWorktree(main, `${root}/batch`, 'ship/r');
-  return { main, bare, batch };
-}
-
-/** The parents of a commit, in order. */
-function parents(dir: string, ref = 'HEAD'): string[] {
-  return mustRun('git', ['rev-list', '--parents', '-n', '1', ref], dir).trim().split(' ').slice(1);
-}
-
-/** HEAD, porcelain, staged set and merge state of a checkout — what "nothing mutated" compares. */
-function snapshot(dir: string): Record<string, unknown> {
-  return {
-    head: headSha(dir),
-    porcelain: porcelain(dir),
-    staged: stagedNames(dir),
-    merging: runIn('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], dir).exitCode === 0,
-  };
+function makeRun(base: Record<string, string>): FixtureRun {
+  return withOriginAndBatch(root, makeGitRepo(root, base));
 }
 
 /** A checkout's unmerged paths. */
 function unmerged(dir: string): string[] {
   return gitPathList(dir, ['diff', '--name-only', '--diff-filter=U', '-z']);
-}
-
-/** Point the fixture repo's hooks at a `pre-commit` that prints {@link HOOK_SAYS} and exits 1. */
-function installFailingHook(main: string): void {
-  const hooks = `${root}/hooks`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(`${hooks}/pre-commit`, `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
-  chmodSync(`${hooks}/pre-commit`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
 }
 
 /** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
@@ -117,7 +68,7 @@ describe('sync-master', () => {
     const ours = commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     const theirs = advanceOrigin(root, run.bare, { write: { 'docs/guide.md': 'master\n' } });
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', pending: [] });
@@ -134,7 +85,7 @@ describe('sync-master', () => {
     commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     const before = snapshot(run.batch);
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
@@ -150,9 +101,9 @@ describe('sync-master', () => {
     const run = makeRun({ 'notes.md': 'one\n', 'docs/guide.md': 'guide\n' });
     commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     const theirs = advanceOrigin(root, run.bare, { write: { 'docs/guide.md': 'master\n' } });
-    sync(run.batch);
+    runSyncMaster(run.batch);
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
@@ -170,7 +121,7 @@ describe('sync-master', () => {
     advanceOrigin(root, run.bare, { write: { 'notes.md': 'master\n' } }, 'docs: notes only');
     const before = snapshot(run.batch);
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({
@@ -196,7 +147,7 @@ describe('sync-master', () => {
       'Merge pull request #77 from fixture/ship-x',
     );
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict' });
     expect(r.json.conflicts[0]?.landedBy).toEqual(['Merge pull request #77 from fixture/ship-x']);
@@ -208,7 +159,7 @@ describe('sync-master', () => {
     const ours = commitChanges(run.batch, { write: { 'package.json': pkg('1.0.1-rc.1') } }, 'o');
     advanceOrigin(root, run.bare, { write: { 'package.json': pkg('1.1.0') } }, 'chore: theirs');
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'failed', outcome: null });
@@ -230,7 +181,7 @@ describe('sync-master', () => {
     advanceOrigin(root, run.bare, { write: { 'package.json': theirs } }, 'chore: theirs');
     const before = snapshot(run.batch);
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict' });
     expect(r.json.conflicts).toEqual([
@@ -251,7 +202,7 @@ describe('sync-master', () => {
       symlinkSync(join(run.batch, 'node_modules'), join(slice, 'node_modules'), 'junction');
       const before = { ...snapshot(run.batch), origin: headSha(run.batch, 'origin/master') };
 
-      const r = sync(run.batch);
+      const r = runSyncMaster(run.batch);
 
       expect(r.code).toBe(1);
       expect(r.json).toMatchObject({ status: 'refused', reason: 'slices-live' });
@@ -265,7 +216,7 @@ describe('sync-master', () => {
 
 describe('sync-master doc-index resolution', () => {
   /** A batch whose merge of origin/master stops on a `docs/adr/readme.md` conflict. */
-  function conflictedRun(): Run & { readonly ours: string; readonly theirs: string } {
+  function conflictedRun(): FixtureRun & { readonly ours: string; readonly theirs: string } {
     const run = makeRun({ [ADR_INDEX]: '# ADRs\n\n- base\n', 'notes.md': 'n\n' });
     const ours = commitChanges(run.batch, { write: { [ADR_INDEX]: '# ADRs\n\n- ours\n' } }, 'ours');
     const theirs = advanceOrigin(
@@ -280,7 +231,7 @@ describe('sync-master doc-index resolution', () => {
   it('stops for a resolver, then --continue stages by name and commits', TIMEOUT, () => {
     const run = conflictedRun();
 
-    const start = sync(run.batch);
+    const start = runSyncMaster(run.batch);
 
     expect(start.code).toBe(1);
     expect(start.json).toMatchObject({
@@ -294,7 +245,7 @@ describe('sync-master doc-index resolution', () => {
 
     // The resolver edits the file and never stages it.
     writeFileSync(join(run.batch, ADR_INDEX), '# ADRs\n\n- ours\n- theirs\n');
-    const done = sync(run.batch, '--continue');
+    const done = runSyncMaster(run.batch, '--continue');
 
     expect(done.code).toBe(0);
     expect(done.json).toMatchObject({
@@ -312,11 +263,11 @@ describe('sync-master doc-index resolution', () => {
 
   it('refuses --continue while markers remain, staging nothing', TIMEOUT, () => {
     const run = conflictedRun();
-    sync(run.batch);
+    runSyncMaster(run.batch);
     const resolved = '# ADRs\n\n- ours\n- theirs\n';
     writeFileSync(join(run.batch, ADR_INDEX), `${resolved}<<<<<<< HEAD\n=======\n>>>>>>> x\n`);
 
-    const r = sync(run.batch, '--continue');
+    const r = runSyncMaster(run.batch, '--continue');
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'refused', reason: 'unresolved', pending: [ADR_INDEX] });
@@ -326,11 +277,11 @@ describe('sync-master doc-index resolution', () => {
 
   it('aborts the merge when the commit hook fails', TIMEOUT, () => {
     const run = conflictedRun();
-    sync(run.batch);
+    runSyncMaster(run.batch);
     writeFileSync(join(run.batch, ADR_INDEX), '# ADRs\n\n- ours\n- theirs\n');
-    installFailingHook(run.main);
+    installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
-    const r = sync(run.batch, '--continue');
+    const r = runSyncMaster(run.batch, '--continue');
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
@@ -343,7 +294,7 @@ describe('sync-master doc-index resolution', () => {
     const run = makeRun({ 'notes.md': 'n\n' });
     const before = snapshot(run.batch);
 
-    const r = sync(run.batch, '--continue');
+    const r = runSyncMaster(run.batch, '--continue');
 
     expect(r.json).toMatchObject({ status: 'refused', reason: 'no-merge-in-progress' });
     expect(snapshot(run.batch)).toEqual(before);

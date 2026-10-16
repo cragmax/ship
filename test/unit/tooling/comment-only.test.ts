@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,25 +21,7 @@ import { mustRun } from '../../helpers/worktree-fixture.js';
 // A test spawning git runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });
 
-const BASE = [
-  '/**',
-  ' * Header line one',
-  ' * line two',
-  ' */',
-  "import { x } from './y.js';",
-  '/** Doc for f.',
-  ' *  more doc */',
-  'export function f(a: number): string {',
-  '  // inline note',
-  "  const s = 'a // not comment';",
-  '  const t = `${a} // mid ${a} tail // end`;',
-  '  const r = /a\\/\\/b/u;',
-  '  /* block',
-  '     comment */',
-  '  return s + t + String(r) + x;',
-  '}',
-  '',
-].join('\n');
+const BASE = readFileSync(new URL('../../fixtures/comment-only/base.txt', import.meta.url), 'utf8');
 
 const COMMENT_ONLY = [
   "import { x } from './y.js';",

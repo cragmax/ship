@@ -16,10 +16,12 @@ import { toPosix } from '../../tooling/shared.js';
 import type { LiveRunsResult } from '../../tooling/worktree/types.js';
 import type { CutBatchResult, CutSliceResult } from '../../tooling/worktree/types-run.js';
 import {
+  branchOf,
   commitChanges,
   headSha,
   makeGitRepo,
   prependPath,
+  repoState,
   writeFakeGh,
 } from '../helpers/worktree-fixture-git.js';
 import { addWorktree, mustRun, porcelain, runCli } from '../helpers/worktree-fixture.js';
@@ -46,21 +48,6 @@ afterEach(() => {
     // is a bounded temp dir.
   }
 });
-
-/** HEAD, porcelain, branches and worktree list of the fixture main — "nothing mutated". */
-function repoState(dir: string): Record<string, string> {
-  return {
-    head: headSha(dir),
-    porcelain: porcelain(dir),
-    branches: mustRun('git', ['branch', '--list', '--format=%(refname)'], dir),
-    worktrees: mustRun('git', ['worktree', 'list', '--porcelain'], dir),
-  };
-}
-
-/** The short branch a worktree has checked out. */
-function branchOf(dir: string): string {
-  return mustRun('git', ['rev-parse', '--abbrev-ref', 'HEAD'], dir).trim();
-}
 
 describe('cut-batch', () => {
   it('cuts ship/epic-E at master in .claude/worktrees, with its reports dir', TIMEOUT, () => {

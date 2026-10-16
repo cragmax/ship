@@ -7,38 +7,24 @@
  * @integrationTier standalone
  */
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPosix } from '../../tooling/shared.js';
-import type { SyncMasterResult } from '../../tooling/worktree/types-run.js';
 import {
   advanceOrigin,
   commitChanges,
   headSha,
-  makeBareOrigin,
-  stagedNames,
+  installHook,
+  parents,
+  snapshot,
+  withOriginAndBatch,
+  type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import {
-  addWorktree,
-  makeFixtureRepo,
-  mustRun,
-  porcelain,
-  prepareTemplate,
-  runCli,
-  runIn,
-} from '../helpers/worktree-fixture.js';
+import { makeFixtureRepo, mustRun, porcelain, runSyncMaster } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';
@@ -49,8 +35,6 @@ const FAIL_BUILD = 'FAIL_BUILD';
 const LOCKFILE = 'package-lock.json';
 
 let root: string;
-// The CLI leaves its `freshLogDir` logs in the OS temp dir for its caller.
-const logDirs = new Set<string>();
 
 beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-')));
@@ -58,41 +42,12 @@ beforeEach(() => {
 
 afterEach(() => {
   try {
-    for (const dir of [root, ...logDirs]) rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   } catch {
     // Windows occasionally holds a lock on a just-used directory; the leak
     // is a bounded temp dir.
   }
-  logDirs.clear();
 });
-
-/** Run `sync-master` on the batch, recording the log dirs it leaves. */
-function sync(batch: string, ...flags: string[]): ReturnType<typeof runCli<SyncMasterResult>> {
-  const r = runCli<SyncMasterResult>(['sync-master', batch, ...flags]);
-  for (const log of r.json.logs) logDirs.add(dirname(log));
-  return r;
-}
-
-interface Run {
-  readonly main: string;
-  readonly bare: string;
-  readonly batch: string;
-}
-
-/** The parents of a commit, in order. */
-function parents(dir: string, ref = 'HEAD'): string[] {
-  return mustRun('git', ['rev-list', '--parents', '-n', '1', ref], dir).trim().split(' ').slice(1);
-}
-
-/** HEAD, porcelain, staged set and merge state of a checkout — what "nothing mutated" compares. */
-function snapshot(dir: string): Record<string, unknown> {
-  return {
-    head: headSha(dir),
-    porcelain: porcelain(dir),
-    staged: stagedNames(dir),
-    merging: runIn('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], dir).exitCode === 0,
-  };
-}
 
 /**
  * Point the fixture repo's hooks at a `pre-commit` that appends `MERGE_HEAD`
@@ -101,15 +56,13 @@ function snapshot(dir: string): Record<string, unknown> {
  * @returns The log's path.
  */
 function recordCommits(main: string): string {
-  const hooks = `${root}/hooks`;
   const log = `${root}/pre-commit.log`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(
-    `${hooks}/pre-commit`,
+  installHook(
+    root,
+    main,
+    'pre-commit',
     `#!/bin/sh\ngit rev-parse -q --verify MERGE_HEAD >> "${log}"\nexit 0\n`,
   );
-  chmodSync(`${hooks}/pre-commit`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
   return log;
 }
 
@@ -136,24 +89,9 @@ function versionsOf(dir: string): { pkg: string; lock: string; lockRoot: string 
 }
 
 describe('sync-master batch refresh', () => {
-  let templateRoot: string;
-  let template: string;
-
-  beforeAll(() => {
-    templateRoot = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-tpl-')));
-    template = prepareTemplate(templateRoot);
-  }, TIMEOUT.timeout);
-
-  afterAll(() => {
-    rmSync(templateRoot, { recursive: true, force: true });
-  });
-
   /** An npm fixture (build script, `file:` dependency, lockfile) with a bare origin and a batch. */
-  function makeNpmRun(): Run {
-    const main = makeFixtureRepo(root, template);
-    const bare = makeBareOrigin(root, main);
-    const batch = addWorktree(main, `${root}/batch`, 'ship/r');
-    return { main, bare, batch };
+  function makeNpmRun(): FixtureRun {
+    return withOriginAndBatch(root, makeFixtureRepo(root));
   }
 
   /** Bump a checkout's version with `npm version` and commit both files. */
@@ -165,7 +103,7 @@ describe('sync-master batch refresh', () => {
   }
 
   /** Bump `master` in the main checkout and push it, moving `origin/master`. */
-  function bumpOrigin(run: Run, kind: string, message: string): string {
+  function bumpOrigin(run: FixtureRun, kind: string, message: string): string {
     const sha = bumpIn(run.main, kind, message);
     mustRun('git', ['push', '-q', 'origin', 'master'], run.main);
     return sha;
@@ -180,7 +118,7 @@ describe('sync-master batch refresh', () => {
     commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     advanceOrigin(root, run.bare, { write: { [c.changed]: 'master\n' } });
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
     expect(r.json.refreshed).toEqual({ ci: false, build: c.build });
@@ -196,7 +134,7 @@ describe('sync-master batch refresh', () => {
     const ours = commitChanges(run.batch, { write: { [LOCKFILE]: renamed('ours') } }, 'ours');
     const theirs = advanceOrigin(root, run.bare, { write: { [LOCKFILE]: renamed('theirs') } });
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', pending: [] });
@@ -216,7 +154,7 @@ describe('sync-master batch refresh', () => {
     const ours = bumpIn(run.batch, 'patch', 'chore: ours');
     const theirs = bumpOrigin(run, 'minor', 'chore: theirs');
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
     expect(r.json.conflicts).toEqual([
@@ -244,7 +182,7 @@ describe('sync-master batch refresh', () => {
     const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
     const hookLog = recordCommits(run.main);
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
     expect(r.json.version?.result).toBe('1.0.2');
@@ -260,7 +198,7 @@ describe('sync-master batch refresh', () => {
     commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     bumpOrigin(run, 'patch', 'chore: theirs');
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
     expect(r.json.version).toEqual({
@@ -280,7 +218,7 @@ describe('sync-master batch refresh', () => {
       write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'failed', outcome: 'merged' });
@@ -298,7 +236,7 @@ describe('sync-master batch refresh', () => {
       write: { [ADR_INDEX]: '- theirs\n', 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
-    const r = sync(run.batch);
+    const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });

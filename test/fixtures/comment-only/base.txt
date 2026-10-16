@@ -1,0 +1,16 @@
+/**
+ * Header line one
+ * line two
+ */
+import { x } from './y.js';
+/** Doc for f.
+ *  more doc */
+export function f(a: number): string {
+  // inline note
+  const s = 'a // not comment';
+  const t = `${a} // mid ${a} tail // end`;
+  const r = /a\/\/b/u;
+  /* block
+     comment */
+  return s + t + String(r) + x;
+}

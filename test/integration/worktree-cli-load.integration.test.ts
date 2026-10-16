@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { compareStrings, toPosix } from '../../tooling/shared.js';
+import { toPosix } from '../../tooling/shared.js';
 import { prependPath, writeFakeGh } from '../helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-fixture.js';
 
@@ -83,7 +83,7 @@ afterAll(() => {
   }
 });
 
-/** Run the CLI with `args` and return the command modules it loaded, sorted. */
+/** Run the CLI with `args` and return the command modules it loaded, in list order. */
 function loadedCommandModules(args: readonly string[]): { code: number; modules: string[] } {
   const log = join(root, `load-${String(++runs)}.log`);
   const { code } = runCli(args, { env: { ...env, PH_LOAD_LOG: log } });
@@ -93,7 +93,7 @@ function loadedCommandModules(args: readonly string[]): { code: number; modules:
       .map((url) => /\/tooling\/worktree\/([a-z-]+)\.ts$/u.exec(url)?.[1])
       .filter((name) => name !== undefined),
   );
-  return { code, modules: COMMAND_MODULES.filter((m) => loaded.has(m)).sort(compareStrings) };
+  return { code, modules: COMMAND_MODULES.filter((m) => loaded.has(m)) };
 }
 
 describe('worktree CLI module loading', () => {
@@ -103,38 +103,30 @@ describe('worktree CLI module loading', () => {
     expect(modules).toEqual([]);
   });
 
-  // Commands whose module imports no other command's module; `m` is a missing path.
-  it.each<[string, (m: string) => string[], string]>([
-    ['live-runs', (m) => ['live-runs', m], 'live-runs'],
-    ['teardown', (m) => ['teardown', m], 'teardown'],
-    ['provision', (m) => ['provision', m, '--batch', m], 'provision'],
-    ['provision-batch', (m) => ['provision-batch', m, '--report-dir', m], 'provision-batch'],
-    ['check-master', (m) => ['check-master', m, '--local', 'a', '--remote', 'b'], 'check-master'],
-    ['staged-guard', (m) => ['staged-guard', m, 'f.txt'], 'staged-set'],
+  // The expected set is the command module's own import graph; `m` is a missing path, and
+  // `commit` targets the cwd, the non-repo temp dir `runCli` starts in.
+  it.each<[string, (m: string) => string[], string[]]>([
+    ['live-runs', (m) => ['live-runs', m], ['live-runs']],
+    ['teardown', (m) => ['teardown', m], ['teardown']],
+    ['provision', (m) => ['provision', m, '--batch', m], ['provision']],
+    ['provision-batch', (m) => ['provision-batch', m, '--report-dir', m], ['provision-batch']],
+    ['check-master', (m) => ['check-master', m, '--local', 'a', '--remote', 'b'], ['check-master']],
+    ['staged-guard', (m) => ['staged-guard', m, 'f.txt'], ['staged-set']],
     [
       'append-pr-body',
       (m) => ['append-pr-body', m, '--pr', '1', '--section-file', `${m}/s.md`],
-      'append-pr-body',
+      ['append-pr-body'],
     ],
     [
       'post-pr-comment',
       (m) => ['post-pr-comment', m, '--pr', '1', '--comment-file', `${m}/c.md`],
-      'post-pr-comment',
+      ['post-pr-comment'],
     ],
     [
       'post-issue-comment',
       (m) => ['post-issue-comment', m, '--issue', '1', '--comment-file', `${m}/c.md`],
-      'post-issue-comment',
+      ['post-issue-comment'],
     ],
-  ])('%s loads only its own command module', TIMEOUT, (_name, argv, module) => {
-    const { code, modules } = loadedCommandModules(argv(`${root}/missing`));
-    expect(code).toBe(1);
-    expect(modules).toEqual([module]);
-  });
-
-  // Commands whose module imports other command modules: the expected set is the module's own
-  // import graph; `commit` targets the cwd, the non-repo temp dir `runCli` starts in.
-  it.each<[string, (m: string) => string[], string[]]>([
     ['harvest', (m) => ['harvest', m, 'abc'], ['harvest', 'staged-set']],
     [
       'land',

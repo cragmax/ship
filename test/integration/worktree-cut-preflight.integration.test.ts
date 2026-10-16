@@ -18,14 +18,16 @@ import { compareStrings, toPosix } from '../../tooling/shared.js';
 import { preflight, type WarmProbe } from '../../tooling/worktree/preflight.js';
 import type { PreflightResult } from '../../tooling/worktree/types-run.js';
 import {
+  addWorktreeAt,
   advanceOrigin,
   commitChanges,
+  commitOn,
   headSha,
   makeBareOrigin,
   makeGitRepo,
+  mergeOn,
   prependPath,
   writeFakeGh,
-  type Changes,
   type FakeGhResponse,
 } from '../helpers/worktree-fixture-git.js';
 import { addWorktree, mustRun, runCli } from '../helpers/worktree-fixture.js';
@@ -79,41 +81,6 @@ async function preflightWith(options: {
   } finally {
     process.env[key] = saved;
   }
-}
-
-/** Run `work` in a throwaway worktree on an existing branch, which is removed again. */
-function inThrowawayWorktree(branch: string, work: (dir: string) => string): string {
-  const tmp = mkdtempSync(join(root, 'wt-'));
-  rmSync(tmp, { recursive: true });
-  mustRun('git', ['worktree', 'add', '-q', tmp, branch], main);
-  const sha = work(tmp);
-  mustRun('git', ['worktree', 'remove', tmp], main);
-  return sha;
-}
-
-/** Commit `changes` on an existing branch through a throwaway worktree. */
-function commitOn(branch: string, changes: Changes, message: string): string {
-  return inThrowawayWorktree(branch, (dir) => commitChanges(dir, changes, message));
-}
-
-/** Check an existing branch out at `path`. */
-function addWorktreeAt(path: string, branch: string): void {
-  mustRun('git', ['worktree', 'add', '-q', path, branch], main);
-}
-
-/**
- * Advance `bare`'s master, then merge it into `branch` with `--no-ff`,
- * unpushed — a resync's merge. The merge runs in `checkout` when given (a
- * worktree already on `branch`), else in a throwaway worktree.
- */
-function mergeOn(bare: string, branch: string, checkout?: string): string {
-  advanceOrigin(root, bare, { write: { 'm.txt': 'm\n' } }, 'm');
-  mustRun('git', ['fetch', '-q', 'origin'], main);
-  const merge = (dir: string): string => {
-    mustRun('git', ['merge', '--no-ff', '-q', '-m', 'Merge origin/master', 'origin/master'], dir);
-    return headSha(dir);
-  };
-  return checkout === undefined ? inThrowawayWorktree(branch, merge) : merge(checkout);
 }
 
 describe('preflight (in-process)', () => {
@@ -317,7 +284,7 @@ describe('preflight (in-process)', () => {
 
     beforeEach(() => {
       mustRun('git', ['branch', 'ship/s'], main);
-      commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+      commitOn(main, 'ship/s', { write: { 's.txt': 's\n' } }, 's1');
       mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
     });
 
@@ -325,7 +292,7 @@ describe('preflight (in-process)', () => {
     function liveSlice(): void {
       const batch = `${main}/.claude/worktrees/ship-s`;
       const slice = `${main}/.claude/worktrees/ship-s-a1-7-1`;
-      addWorktreeAt(batch, 'ship/s');
+      addWorktreeAt(main, batch, 'ship/s');
       mkdirSync(`${batch}/node_modules/dep`, { recursive: true });
       addWorktree(main, slice, 'slice/s/a1-7-1');
       symlinkSync(`${batch}/node_modules`, `${slice}/node_modules`, 'junction');
@@ -333,7 +300,7 @@ describe('preflight (in-process)', () => {
 
     /** Commit one change of its own on `ship/s`, unpushed. */
     function unpublished(): void {
-      commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+      commitOn(main, 'ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
     }
 
     it('passes an open PR with no live slice and nothing unpublished', TIMEOUT, async () => {
@@ -400,7 +367,7 @@ describe('preflight (in-process)', () => {
     });
 
     it('passes a branch ahead of origin only by an unpushed merge', TIMEOUT, async () => {
-      mergeOn(`${root}/origin.git`, 'ship/s');
+      mergeOn(main, `${root}/origin.git`, 'ship/s');
       // Level local master with the origin/master the merge advanced: only the attach checks
       // are under test.
       mustRun('git', ['merge', '--ff-only', '-q', 'origin/master'], main);

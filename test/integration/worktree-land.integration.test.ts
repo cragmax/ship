@@ -7,15 +7,7 @@
  * @integrationTier standalone
  */
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +23,7 @@ import type { ResultBase } from '../../tooling/worktree/types.js';
 import {
   commitChanges,
   headSha,
+  installHook,
   makeGitRepo,
   stagedNames,
   type Changes,
@@ -116,15 +109,6 @@ function commitPaths(dir: string, sha: string): string[] {
 /** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
 function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
   return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
-}
-
-/** Point the fixture repo's hooks at a `pre-commit` that prints {@link HOOK_SAYS} and exits 1. */
-function installFailingHook(main: string): void {
-  const hooks = `${root}/hooks`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(`${hooks}/pre-commit`, `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
-  chmodSync(`${hooks}/pre-commit`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
 }
 
 /** The raw message of a commit, exactly as stored. */
@@ -218,7 +202,7 @@ describe('land', () => {
     const run = makeRun({ 'base.txt': 'base\n' });
     const sha = commitChanges(run.slice, { write: { 'added.txt': 'added\n' } }, 'slice');
     // The hook is installed only after the slice commit, so only land's commit runs it.
-    installFailingHook(run.main);
+    installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
     const r = land(run.batch, sha, run.cut);
 

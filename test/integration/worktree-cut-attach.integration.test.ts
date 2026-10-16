@@ -16,17 +16,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { toPosix } from '../../tooling/shared.js';
 import type { CutBatchResult } from '../../tooling/worktree/types-run.js';
 import {
+  addWorktreeAt,
   advanceOrigin,
+  branchOf,
   commitChanges,
+  commitOn,
   headSha,
   makeBareOrigin,
   makeGitRepo,
+  mergeOn,
   prependPath,
+  repoState,
   writeFakeGh,
-  type Changes,
   type FakeGhResponse,
 } from '../helpers/worktree-fixture-git.js';
-import { mustRun, porcelain, runCli } from '../helpers/worktree-fixture.js';
+import { mustRun, runCli } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 
@@ -50,56 +54,6 @@ afterEach(() => {
   }
 });
 
-/** HEAD, porcelain, branches and worktree list of the fixture main — "nothing mutated". */
-function repoState(dir: string): Record<string, string> {
-  return {
-    head: headSha(dir),
-    porcelain: porcelain(dir),
-    branches: mustRun('git', ['branch', '--list', '--format=%(refname)'], dir),
-    worktrees: mustRun('git', ['worktree', 'list', '--porcelain'], dir),
-  };
-}
-
-/** The short branch a worktree has checked out. */
-function branchOf(dir: string): string {
-  return mustRun('git', ['rev-parse', '--abbrev-ref', 'HEAD'], dir).trim();
-}
-
-/** Run `work` in a throwaway worktree on an existing branch, which is removed again. */
-function inThrowawayWorktree(branch: string, work: (dir: string) => string): string {
-  const tmp = mkdtempSync(join(root, 'wt-'));
-  rmSync(tmp, { recursive: true });
-  mustRun('git', ['worktree', 'add', '-q', tmp, branch], main);
-  const sha = work(tmp);
-  mustRun('git', ['worktree', 'remove', tmp], main);
-  return sha;
-}
-
-/** Commit `changes` on an existing branch through a throwaway worktree. */
-function commitOn(branch: string, changes: Changes, message: string): string {
-  return inThrowawayWorktree(branch, (dir) => commitChanges(dir, changes, message));
-}
-
-/** Check an existing branch out at `path`. */
-function addWorktreeAt(path: string, branch: string): void {
-  mustRun('git', ['worktree', 'add', '-q', path, branch], main);
-}
-
-/**
- * Advance `bare`'s master, then merge it into `branch` with `--no-ff`,
- * unpushed — a resync's merge. The merge runs in `checkout` when given (a
- * worktree already on `branch`), else in a throwaway worktree.
- */
-function mergeOn(bare: string, branch: string, checkout?: string): string {
-  advanceOrigin(root, bare, { write: { 'm.txt': 'm\n' } }, 'm');
-  mustRun('git', ['fetch', '-q', 'origin'], main);
-  const merge = (dir: string): string => {
-    mustRun('git', ['merge', '--no-ff', '-q', '-m', 'Merge origin/master', 'origin/master'], dir);
-    return headSha(dir);
-  };
-  return checkout === undefined ? inThrowawayWorktree(branch, merge) : merge(checkout);
-}
-
 describe('cut-batch --attach', () => {
   const BATCH = (): string => `${main}/.claude/worktrees/ship-s`;
   const OPEN_9 = { 'ship/s': { prs: [{ number: 9, state: 'OPEN' }] } };
@@ -115,7 +69,7 @@ describe('cut-batch --attach', () => {
    */
   function localBranch(): string {
     mustRun('git', ['branch', 'ship/s'], main);
-    const tip = commitOn('ship/s', { write: { 's.txt': 's\n' } }, 's1');
+    const tip = commitOn(main, 'ship/s', { write: { 's.txt': 's\n' } }, 's1');
     mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
     return tip;
   }
@@ -171,7 +125,7 @@ describe('cut-batch --attach', () => {
 
   it('reuses the batch already checked out at the layout path, mutating nothing', TIMEOUT, () => {
     mustRun('git', ['branch', 'ship/s'], main);
-    addWorktreeAt(BATCH(), 'ship/s');
+    addWorktreeAt(main, BATCH(), 'ship/s');
     const before = repoState(main);
 
     const r = attach(OPEN_9);
@@ -200,7 +154,7 @@ describe('cut-batch --attach', () => {
       branch: 'ship/s',
       setup: () => {
         localBranch();
-        addWorktreeAt(`${root}/elsewhere`, 'ship/s');
+        addWorktreeAt(main, `${root}/elsewhere`, 'ship/s');
       },
     },
     {
@@ -260,7 +214,7 @@ describe('cut-batch --attach', () => {
     localBranch();
     advanceOrigin(root, bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/s');
     // A merge, not a commit of its own: that would refuse unpublished-commits first.
-    const local = mergeOn(bare, 'ship/s');
+    const local = mergeOn(main, bare, 'ship/s');
 
     const r = attach(OPEN_9);
 
@@ -274,8 +228,8 @@ describe('cut-batch --attach', () => {
     { name: 'reused', reuse: true },
   ])('attaches a branch ahead of origin only by an unpushed merge, $name', TIMEOUT, ({ reuse }) => {
     localBranch();
-    if (reuse) addWorktreeAt(BATCH(), 'ship/s');
-    const local = reuse ? mergeOn(bare, 'ship/s', BATCH()) : mergeOn(bare, 'ship/s');
+    if (reuse) addWorktreeAt(main, BATCH(), 'ship/s');
+    const local = reuse ? mergeOn(main, bare, 'ship/s', BATCH()) : mergeOn(main, bare, 'ship/s');
 
     const r = attach(OPEN_9);
 
@@ -297,10 +251,10 @@ describe('cut-batch --attach', () => {
     ({ reuse }) => {
       localBranch();
       if (reuse) {
-        addWorktreeAt(BATCH(), 'ship/s');
+        addWorktreeAt(main, BATCH(), 'ship/s');
         commitChanges(BATCH(), { write: { 'l.txt': 'l\n' } }, 'l');
       } else {
-        commitOn('ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
+        commitOn(main, 'ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
       }
       const before = repoState(main);
 
@@ -411,7 +365,7 @@ describe('cut-batch --attach', () => {
     ({ written }) => {
       const registry = `${main}/reports/ship-s/pool-registry.batch.json`;
       mustRun('git', ['branch', 'ship/s'], main);
-      addWorktreeAt(BATCH(), 'ship/s');
+      addWorktreeAt(main, BATCH(), 'ship/s');
       if (written) {
         mkdirSync(`${main}/reports/ship-s`, { recursive: true });
         writeFileSync(registry, '[]\n');
@@ -441,7 +395,7 @@ describe('cut-batch --attach', () => {
     const rootRegistry = `${reports}/pool-registry.batch.json`;
     const attachedRegistry = `${reports}/attach-1/pool-registry.batch.json`;
     mustRun('git', ['branch', 'ship/s'], main);
-    addWorktreeAt(BATCH(), 'ship/s');
+    addWorktreeAt(main, BATCH(), 'ship/s');
     mkdirSync(`${reports}/attach-1`, { recursive: true });
     writeFileSync(attachedRegistry, '[]\n');
     utimesSync(attachedRegistry, attachedAt, attachedAt);
@@ -466,7 +420,7 @@ describe('cut-batch --attach', () => {
 
   it('refuses a batch entry whose directory is gone as branch-checked-out', TIMEOUT, () => {
     localBranch();
-    addWorktreeAt(BATCH(), 'ship/s');
+    addWorktreeAt(main, BATCH(), 'ship/s');
     rmSync(BATCH(), { recursive: true, force: true });
     const before = repoState(main);
 

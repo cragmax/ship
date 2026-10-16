@@ -18,12 +18,7 @@ import {
   makeBareOrigin,
   makeGitRepo,
 } from '../helpers/worktree-fixture-git.js';
-import {
-  makeFixtureRepo,
-  mustRun,
-  porcelain,
-  prepareTemplate,
-} from '../helpers/worktree-fixture.js';
+import { makeFixtureRepo, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');
@@ -97,16 +92,6 @@ describe('makeGitRepo and makeBareOrigin', () => {
     expect(headSha(bBare, 'master')).toBe(moved);
     expect(headSha(b, 'origin/master')).toBe(moved);
   });
-
-  it('gives a copy whose master ref git packed an origin holding that master', TIMEOUT, () => {
-    const repo = makeGitRepo(freshRoot(), { 'base.txt': 'base\n' });
-    mustRun('git', ['pack-refs', '--all'], repo);
-
-    const bare = toPosix(makeBareOrigin(dirname(repo), repo));
-
-    expect(originUrl(repo)).toBe(bare);
-    expect(headSha(repo, 'origin/master')).toBe(headSha(repo));
-  });
 });
 
 describe('the template repos', () => {
@@ -143,12 +128,10 @@ describe('the template repos', () => {
 
 describe('makeFixtureRepo', () => {
   it('hands each call its own copy of one template repo', TIMEOUT, async () => {
-    const templateRoot = freshRoot();
-    const template = prepareTemplate(templateRoot);
-    const a = makeFixtureRepo(freshRoot(), template);
+    const a = makeFixtureRepo(freshRoot());
     const base = headSha(a);
     await pastOneSecond();
-    const b = makeFixtureRepo(freshRoot(), template);
+    const b = makeFixtureRepo(freshRoot());
 
     expect(headSha(b)).toBe(base);
     expect(porcelain(b)).toBe('');

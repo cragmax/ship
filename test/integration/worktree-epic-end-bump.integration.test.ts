@@ -6,11 +6,11 @@
  * @integrationTier standalone
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { compareStrings, toPosix } from '../../tooling/shared.js';
 import type { BumpResult } from '../../tooling/worktree/types-run.js';
@@ -18,35 +18,25 @@ import {
   advanceOrigin,
   commitChanges,
   headSha,
-  makeBareOrigin,
+  installHook,
+  withOriginAndBatch,
   type Changes,
+  type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
 import {
   addWorktree,
   makeFixtureRepo,
   mustRun,
   porcelain,
-  prepareTemplate,
   runCli,
 } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook: commit refused';
 
-let templateRoot: string;
-let template: string;
 let root: string;
 // `bump` leaves its `freshLogDir` log in the OS temp dir for its caller.
 const logDirs = new Set<string>();
-
-beforeAll(() => {
-  templateRoot = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-tpl-')));
-  template = prepareTemplate(templateRoot);
-}, TIMEOUT.timeout);
-
-afterAll(() => {
-  rmSync(templateRoot, { recursive: true, force: true });
-});
 
 beforeEach(() => {
   root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-')));
@@ -62,18 +52,9 @@ afterEach(() => {
   logDirs.clear();
 });
 
-interface Run {
-  readonly main: string;
-  readonly bare: string;
-  readonly batch: string;
-}
-
 /** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
-function makeRun(branch = 'ship/r'): Run {
-  const main = makeFixtureRepo(root, template);
-  const bare = makeBareOrigin(root, main);
-  const batch = addWorktree(main, `${root}/batch`, branch);
-  return { main, bare, batch };
+function makeRun(branch = 'ship/r'): FixtureRun {
+  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
 }
 
 /** The `version` fields of a checkout's package.json and lockfile. */
@@ -84,15 +65,6 @@ function versions(dir: string): { pkg: string; lock: string; lockRoot: string } 
     packages: Record<string, { version: string }>;
   };
   return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
-}
-
-/** Point the fixture repo's hooks at `<root>/hooks`, holding one `name` hook running `script`. */
-function installHook(main: string, name: string, script: string): void {
-  const hooks = `${root}/hooks`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(`${hooks}/${name}`, script);
-  chmodSync(`${hooks}/${name}`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
 }
 
 /** Run `bump` on the batch, recording the log dir it leaves. */
@@ -273,7 +245,7 @@ describe('bump', () => {
   it('restores both files when the commit hook fails', TIMEOUT, () => {
     const run = makeRun();
     const head = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'fix(a): one');
-    installHook(run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
+    installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
     const r = runBump(run.batch);
 
