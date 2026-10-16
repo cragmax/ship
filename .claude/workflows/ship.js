@@ -2538,6 +2538,7 @@ const PLATFORM_WIDE_PATHS = [
   'tooling/integration-tiers.ts',
   'tooling/push-scope.ts',
   'tooling/lib/push-scope.ts',
+  'tooling/lib/platform-wide.ts',
   'lefthook.yml',
   '.lefthook/',
   'vitest.config.ts',
@@ -2547,44 +2548,10 @@ const PLATFORM_WIDE_PATHS = [
   'package.json',
   'package-lock.json',
 ];
-const MAX_RELATED_FILES = 300;
 function isPlatformWide(path) {
   return PLATFORM_WIDE_PATHS.some((entry) =>
     entry.endsWith('/') ? path.startsWith(entry) : path === entry,
   );
-}
-function isZeroSha(sha) {
-  return /^0+$/u.test(sha);
-}
-function pushedRanges(updates) {
-  return updates.flatMap((u) => {
-    if (isZeroSha(u.localSha)) return [];
-    return isZeroSha(u.remoteSha)
-      ? [`origin/master...${u.localSha}`]
-      : [`${u.remoteSha}..${u.localSha}`];
-  });
-}
-function decideTier(tier, changes, isPresent) {
-  if (changes.kind === 'unresolved') {
-    return { run: 'full', why: changes.why };
-  }
-  const platform = changes.paths.find(isPlatformWide);
-  if (platform !== undefined) return { run: 'full', why: `${platform} is a Platform-wide path` };
-  if (tier === 'server') {
-    return {
-      run: 'skip',
-      why: 'no Platform-wide path changed; npm run test:nightly runs it',
-    };
-  }
-  const files = changes.paths.filter(isPresent);
-  if (files.length === 0) return { run: 'skip', why: 'no changed file' };
-  if (files.length > MAX_RELATED_FILES) {
-    return {
-      run: 'full',
-      why: `${String(files.length)} changed files exceed the ${String(MAX_RELATED_FILES)} a related run takes`,
-    };
-  }
-  return { run: 'related', files };
 }
 
 function evidenceBullet(issue, evidence) {

@@ -18,7 +18,8 @@
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
-import { isPlatformWide, type PushedChanges } from '../../lib/push-scope.js';
+import { isPlatformWide } from '../../lib/platform-wide.js';
+import type { PushedChanges } from '../../lib/push-scope.js';
 
 import type {
   CommitSpec,
