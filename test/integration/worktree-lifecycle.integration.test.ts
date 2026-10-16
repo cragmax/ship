@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { loadPoolRegistry } from '../../src/server-pool/index.js';
 import { toPosix } from '../../tooling/shared.js';
@@ -44,7 +44,7 @@ import {
   makeFixtureRepo,
   mustRun,
   porcelain,
-  prepareTemplate,
+  prebuildNpmTemplate,
   runCli,
   runIn,
   seedBatch,
@@ -56,18 +56,9 @@ const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TIMEOUT = { timeout: 60_000 };
 
-let templateRoot: string;
-let template: string;
+prebuildNpmTemplate();
+
 let root: string;
-
-beforeAll(() => {
-  templateRoot = mkdtempSync(join(tmpdir(), 'ph-wt-template-'));
-  template = prepareTemplate(templateRoot);
-}, 120_000);
-
-afterAll(() => {
-  rmSync(templateRoot, { recursive: true, force: true });
-});
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'ph-wt-'));
@@ -90,7 +81,7 @@ interface Layout {
 
 /** A fixture main checkout plus a seeded batch worktree and one slice worktree. */
 function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
-  const main = makeFixtureRepo(root, template, options);
+  const main = makeFixtureRepo(root, options);
   const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
   seedBatch(batch);
   const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
@@ -186,7 +177,7 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
   });
 
   it('refuses to tear down the main worktree and leaves its links alone', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     seedBatch(main);
     const link = join(main, 'node_modules', 'linked-pkg');
     const before = listTree(main);
@@ -207,7 +198,7 @@ describe('provision-batch', () => {
     'installs, builds, creates the project-dir marker and writes the trimmed warm registry',
     TIMEOUT,
     () => {
-      const main = makeFixtureRepo(root, template);
+      const main = makeFixtureRepo(root);
       const batch = addWorktree(main, join(main, '.claude', 'worktrees', 'ship-b'), 'ship/batch');
       const reportDir = join(main, 'reports', 'ship-b');
 
@@ -293,7 +284,7 @@ describe('provision-batch', () => {
       step: 'registry',
     },
   ])('guards: $name', TIMEOUT, ({ arrange, status, reason, step }) => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const c = arrange(main, addWorktree(main, join(root, 'batch'), 'ship/batch'));
 
     const run = runCli<ProvisionBatchResult>([
@@ -311,7 +302,7 @@ describe('provision-batch', () => {
   });
 
   it('fails the post-check when the build output is not ignored', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template, { gitignore: gitignoreReplacing('dist/', null) });
+    const main = makeFixtureRepo(root, { gitignore: gitignoreReplacing('dist/', null) });
     const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
 
     const run = runCli<ProvisionBatchResult>([
@@ -331,7 +322,7 @@ describe('provision-batch', () => {
     'fails preconditions and never runs npm ci when the batch node_modules is a link',
     TIMEOUT,
     () => {
-      const main = makeFixtureRepo(root, template);
+      const main = makeFixtureRepo(root);
       const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
       const target = join(root, 'other-modules');
       mkdirSync(target);
@@ -448,7 +439,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   const NOT_REMOVED: TsserverRestart = { outcome: 'skipped', reason: 'not-removed', detail: null };
 
   it('restarts once after removing a worktree and records the restart', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
     const restartTsserver = vi.fn(() => RESTARTED);
 
@@ -462,7 +453,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   // The link's source is the worktree's own git admin dir, which `git worktree remove` deletes:
   // the gate passes, and only the post-remove recount sees the source gone.
   it.skipIf(!WIN32)('restarts after a removal whose post-remove recount fails', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
     const admin = mustRun('git', ['rev-parse', '--absolute-git-dir'], wt).trim();
     symlinkSync(admin, join(wt, 'admin-link'), 'junction');
@@ -478,7 +469,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   });
 
   it('restarts nothing for an absent path', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const restartTsserver = vi.fn(() => RESTARTED);
     const cwd = process.cwd();
     let down: TeardownResult;
@@ -495,7 +486,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   });
 
   it('restarts nothing when teardown refuses', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const restartTsserver = vi.fn(() => RESTARTED);
 
     const down = teardownWorktree(toPosix(main), { restartTsserver });
@@ -506,7 +497,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
   });
 
   it('restarts nothing when teardown fails', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
     const restartTsserver = vi.fn(() => RESTARTED);
     const keep = { dir: toPosix(join(root, 'kept')), base: 'no-such-commit' };
@@ -521,7 +512,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
 
   // The suite's own removals must never kill the tsserver of the session running it.
   it('skips the restart in a CLI subprocess of the test suite', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
 
     const down = runCli<TeardownResult>(['teardown', wt]);
@@ -537,7 +528,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
 
 describe('self-hosted guard on the provision commands (in-process)', () => {
   it('provision-batch refuses a CLI hosted inside the batch and installs nothing', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const batch = toPosix(addWorktree(main, join(root, 'batch'), 'ship/batch'));
     const reportDir = toPosix(join(root, 'reports'));
 
@@ -549,7 +540,7 @@ describe('self-hosted guard on the provision commands (in-process)', () => {
   });
 
   it('provision refuses a CLI hosted inside the slice and creates nothing', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const batch = toPosix(addWorktree(main, join(root, 'batch'), 'ship/batch'));
     const slice = toPosix(addWorktree(main, join(root, 'slice'), 'slice-1'));
     const before = listTree(slice);
@@ -571,9 +562,9 @@ describe('inherited git environment', () => {
     'tears down the named worktree despite a foreign GIT_DIR, as a git hook exports',
     TIMEOUT,
     () => {
-      const main = makeFixtureRepo(root, template);
+      const main = makeFixtureRepo(root);
       const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
-      const foreignMain = makeFixtureRepo(join(root, 'foreign'), template);
+      const foreignMain = makeFixtureRepo(join(root, 'foreign'));
       const foreignWt = addWorktree(foreignMain, join(root, 'foreign-wt'), 'other');
       const foreignGitDir = runIn(
         'git',
@@ -602,7 +593,7 @@ describe('inherited git environment', () => {
 
 describe('teardown with other worktrees nearby', () => {
   it('refuses while another registered worktree lies inside the target', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const outer = addWorktree(main, join(root, 'outer'), 'outer');
     const nested = addWorktree(main, join(outer, 'nested', 'inner'), 'inner');
     writeFileSync(join(nested, 'uncommitted.txt'), 'work in progress\n');
@@ -622,7 +613,7 @@ describe('teardown with other worktrees nearby', () => {
   });
 
   it('tears down a worktree beside a sibling whose name extends its own', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const wt = addWorktree(main, join(root, 'wt'), 'wt');
     const sibling = addWorktree(main, join(root, 'wt2'), 'wt2');
 
@@ -637,7 +628,7 @@ describe('teardown with other worktrees nearby', () => {
   });
 
   it('keeps a torn-down batch branch and the run record in the main checkout', TIMEOUT, () => {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const batch = addWorktree(main, join(main, '.claude', 'worktrees', 'ship-run'), 'ship/run');
     const record = join(main, 'reports', 'ship-run', 'run.md');
     mkdirSync(dirname(record), { recursive: true });
@@ -663,7 +654,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
 
   /** A slice off `main` with its base, and a tdd report outside it, in a run root. */
   function sliceWithReport(): { main: string; slice: string; base: string; report: string } {
-    const main = makeFixtureRepo(root, template);
+    const main = makeFixtureRepo(root);
     const base = headSha(main);
     const slice = addWorktree(main, join(root, 'slice'), 'slice-7-1');
     const report = join(root, 'reports', 'ship-7', 'tdd-7-1.md');

@@ -23,24 +23,7 @@ import type { z } from 'zod';
 import type { RunSelection } from './lib/run-slug.js';
 import { toPosix } from './shared.js';
 import { RUN_BRANCH_SHAPE } from './workflows/lib/run-branch.js';
-import { appendPrBody } from './worktree/append-pr-body.js';
-import { bump } from './worktree/bump.js';
-import { changedFiles } from './worktree/changed-files.js';
-import { checkMaster } from './worktree/check-master.js';
-import { commit } from './worktree/commit.js';
-import { cutBatch, cutSlice, type CutSliceInput } from './worktree/cut.js';
-import { attachBatch } from './worktree/cut-attach.js';
-import { harvest } from './worktree/harvest.js';
-import { land } from './worktree/land.js';
-import { liveRuns } from './worktree/live-runs.js';
-import { postIssueComment } from './worktree/post-issue-comment.js';
-import { postPrComment } from './worktree/post-pr-comment.js';
-import { preflight } from './worktree/preflight.js';
-import { provision } from './worktree/provision.js';
-import { provisionBatch } from './worktree/provision-batch.js';
-import { publish } from './worktree/publish.js';
-import { publishPushOnly } from './worktree/publish-push.js';
-import { retireRun } from './worktree/retire-run.js';
+import type { CutSliceInput } from './worktree/cut.js';
 import {
   CommitResultSchema,
   guardEnvelope,
@@ -67,9 +50,7 @@ import {
   PublishResultSchema,
   SyncMasterResultSchema,
 } from './worktree/schemas-run.js';
-import { stagedGuard } from './worktree/staged-set.js';
-import { syncMaster } from './worktree/sync-master.js';
-import { teardownWorktree, type KeepRequest } from './worktree/teardown.js';
+import type { KeepRequest } from './worktree/teardown.js';
 import { recordFailure, type ResultBase } from './worktree/types.js';
 
 /** A command line that cannot be dispatched — exit 2. */
@@ -101,8 +82,11 @@ interface CommandSpec {
   readonly cwdTarget?: true;
   /** The envelope schema `run`'s result must satisfy, in every mode of the command. */
   readonly schema: z.ZodType;
-  /** Run the command. */
-  readonly run: (args: ParsedArgs) => ResultBase | Promise<ResultBase>;
+  /**
+   * Run the command, importing its module only when called, so an invocation loads no other
+   * command's module unless its own command's module imports it.
+   */
+  readonly run: (args: ParsedArgs) => Promise<ResultBase>;
 }
 
 /** Arity of a command taking only its target. */
@@ -129,20 +113,24 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     valueFlags: ['--batch'],
     switchFlags: ['--server'],
     rest: NO_REST,
-    run: (args) =>
-      provision({
+    run: async (args) => {
+      const { provision } = await import('./worktree/provision.js');
+      return provision({
         slice: args.target,
         batch: pathFlag(args, '--batch'),
         server: args.switches.has('--server'),
-      }),
+      });
+    },
   },
   'provision-batch': {
     schema: ProvisionBatchResultSchema,
     valueFlags: ['--report-dir'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) =>
-      provisionBatch({ batch: args.target, reportDir: pathFlag(args, '--report-dir') }),
+    run: async (args) => {
+      const { provisionBatch } = await import('./worktree/provision-batch.js');
+      return provisionBatch({ batch: args.target, reportDir: pathFlag(args, '--report-dir') });
+    },
   },
   teardown: {
     schema: TeardownResultSchema,
@@ -150,28 +138,36 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--keep-to', '--base', '--report'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => teardownWorktree(args.target, {}, keepFlags(args)),
+    run: async (args) => {
+      const { teardownWorktree } = await import('./worktree/teardown.js');
+      return teardownWorktree(args.target, {}, keepFlags(args));
+    },
   },
   harvest: {
     schema: HarvestResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: { min: 1, max: 1 },
-    run: (args) => harvest({ batch: args.target, sha: args.rest[0] ?? '' }),
+    run: async (args) => {
+      const { harvest } = await import('./worktree/harvest.js');
+      return harvest({ batch: args.target, sha: args.rest[0] ?? '' });
+    },
   },
   land: {
     schema: LandResultSchema,
     valueFlags: ['--base', '--message-file', '--log'],
     switchFlags: [],
     rest: { min: 1, max: 1 },
-    run: (args) =>
-      land({
+    run: async (args) => {
+      const { land } = await import('./worktree/land.js');
+      return land({
         batch: args.target,
         sha: args.rest[0] ?? '',
         base: args.values.get('--base') ?? '',
         messageFile: pathFlag(args, '--message-file'),
         logFile: pathFlag(args, '--log'),
-      }),
+      });
+    },
   },
   // At least one file: an empty expected set never precedes a real commit,
   // and accepting it would let an empty-list bug pass on an empty index.
@@ -180,7 +176,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     valueFlags: [],
     switchFlags: [],
     rest: { min: 1, max: Infinity },
-    run: (args) => stagedGuard({ worktree: args.target, files: args.rest }),
+    run: async (args) => {
+      const { stagedGuard } = await import('./worktree/staged-set.js');
+      return stagedGuard({ worktree: args.target, files: args.rest });
+    },
   },
   commit: {
     schema: CommitResultSchema,
@@ -188,26 +187,34 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: { min: 1, max: Infinity },
     cwdTarget: true,
-    run: (args) =>
-      commit({
+    run: async (args) => {
+      const { commit } = await import('./worktree/commit.js');
+      return commit({
         worktree: args.target,
         messageFile: pathFlag(args, '--message-file'),
         files: args.rest,
-      }),
+      });
+    },
   },
   'retire-run': {
     schema: RetireRunResultSchema,
     valueFlags: ['--branch'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => retireRun({ main: args.target, branch: args.values.get('--branch') ?? '' }),
+    run: async (args) => {
+      const { retireRun } = await import('./worktree/retire-run.js');
+      return retireRun({ main: args.target, branch: args.values.get('--branch') ?? '' });
+    },
   },
   'live-runs': {
     schema: LiveRunsResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => liveRuns({ main: args.target }),
+    run: async (args) => {
+      const { liveRuns } = await import('./worktree/live-runs.js');
+      return liveRuns({ main: args.target });
+    },
   },
   preflight: {
     schema: PreflightResultSchema,
@@ -215,7 +222,8 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--attach', '--slug'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => {
+    run: async (args) => {
+      const { preflight } = await import('./worktree/preflight.js');
       const attach = args.values.get('--attach');
       const slug = args.values.get('--slug');
       return preflight({
@@ -231,15 +239,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--epic', '--issues', '--attach'],
     switchFlags: ['--attached-run'],
     rest: NO_REST,
-    run: (args) => {
+    run: async (args) => {
       const selection = batchSelection(args);
-      return 'attach' in selection
-        ? attachBatch({
-            main: args.target,
-            branch: selection.attach,
-            attachedRun: selection.attachedRun,
-          })
-        : cutBatch({ main: args.target, selection });
+      if ('attach' in selection) {
+        const { attachBatch } = await import('./worktree/cut-attach.js');
+        return attachBatch({
+          main: args.target,
+          branch: selection.attach,
+          attachedRun: selection.attachedRun,
+        });
+      }
+      const { cutBatch } = await import('./worktree/cut.js');
+      return cutBatch({ main: args.target, selection });
     },
   },
   'cut-slice': {
@@ -248,7 +259,8 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--issue', '--attempt', '--attached-run'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => {
+    run: async (args) => {
+      const { cutSlice } = await import('./worktree/cut.js');
       const run = args.values.get('--attached-run');
       return cutSlice({
         batch: args.target,
@@ -262,14 +274,20 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     valueFlags: [],
     switchFlags: ['--continue'],
     rest: NO_REST,
-    run: (args) => syncMaster({ batch: args.target, continue: args.switches.has('--continue') }),
+    run: async (args) => {
+      const { syncMaster } = await import('./worktree/sync-master.js');
+      return syncMaster({ batch: args.target, continue: args.switches.has('--continue') });
+    },
   },
   bump: {
     schema: BumpResultSchema,
     valueFlags: [],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) => bump({ batch: args.target }),
+    run: async (args) => {
+      const { bump } = await import('./worktree/bump.js');
+      return bump({ batch: args.target });
+    },
   },
   'check-master': {
     schema: CheckMasterResultSchema,
@@ -277,13 +295,15 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--synced'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) =>
-      checkMaster({
+    run: async (args) => {
+      const { checkMaster } = await import('./worktree/check-master.js');
+      return checkMaster({
         main: args.target,
         local: args.values.get('--local') ?? '',
         remote: args.values.get('--remote') ?? '',
         synced: args.values.get('--synced') ?? null,
-      }),
+      });
+    },
   },
   publish: {
     schema: PublishResultSchema,
@@ -291,16 +311,18 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     optionFlags: ['--title', '--body-file'],
     switchFlags: ['--push-only', '--draft'],
     rest: NO_REST,
-    run: (args) => {
+    run: async (args) => {
       const logFile = pathFlag(args, '--log');
       if (publishMode(args) === 'push-only') {
         const pollMs = pollMsFromEnv();
+        const { publishPushOnly } = await import('./worktree/publish-push.js');
         return publishPushOnly({
           batch: args.target,
           logFile,
           ...(pollMs === undefined ? {} : { pollMs }),
         });
       }
+      const { publish } = await import('./worktree/publish.js');
       return publish({
         batch: args.target,
         title: args.values.get('--title') ?? '',
@@ -315,48 +337,56 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     valueFlags: ['--pr', '--section-file'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) =>
-      appendPrBody({
+    run: async (args) => {
+      const { appendPrBody } = await import('./worktree/append-pr-body.js');
+      return appendPrBody({
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         sectionFile: pathFlag(args, '--section-file'),
-      }),
+      });
+    },
   },
   'post-pr-comment': {
     schema: PostPrCommentResultSchema,
     valueFlags: ['--pr', '--comment-file'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) =>
-      postPrComment({
+    run: async (args) => {
+      const { postPrComment } = await import('./worktree/post-pr-comment.js');
+      return postPrComment({
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         commentFile: pathFlag(args, '--comment-file'),
-      }),
+      });
+    },
   },
   'changed-files': {
     schema: ChangedFilesResultSchema,
     valueFlags: ['--base'],
     switchFlags: [],
     rest: { min: 1, max: 1 },
-    run: (args) =>
-      changedFiles({
+    run: async (args) => {
+      const { changedFiles } = await import('./worktree/changed-files.js');
+      return changedFiles({
         worktree: args.target,
         sha: args.rest[0] ?? '',
         base: args.values.get('--base') ?? '',
-      }),
+      });
+    },
   },
   'post-issue-comment': {
     schema: PostIssueCommentResultSchema,
     valueFlags: ['--issue', '--comment-file'],
     switchFlags: [],
     rest: NO_REST,
-    run: (args) =>
-      postIssueComment({
+    run: async (args) => {
+      const { postIssueComment } = await import('./worktree/post-issue-comment.js');
+      return postIssueComment({
         cwd: args.target,
         issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
         commentFile: pathFlag(args, '--comment-file'),
-      }),
+      });
+    },
   },
 };
 

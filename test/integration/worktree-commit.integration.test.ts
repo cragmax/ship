@@ -5,7 +5,7 @@
  * @integrationTier standalone
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +17,7 @@ import {
   commitChanges,
   gitPathList,
   headSha,
+  installHook,
   makeGitRepo,
   stagedNames,
 } from '../helpers/worktree-fixture-git.js';
@@ -41,12 +42,8 @@ afterEach(() => {
 });
 
 /** Point the repo's hooks at a `pre-commit` that prints {@link HOOK_SAYS} and exits `exit`. */
-function installHook(main: string, exit: number): void {
-  const hooks = `${root}/hooks`;
-  mkdirSync(hooks, { recursive: true });
-  writeFileSync(`${hooks}/pre-commit`, `#!/bin/sh\necho "${HOOK_SAYS}"\nexit ${String(exit)}\n`);
-  chmodSync(`${hooks}/pre-commit`, 0o755);
-  mustRun('git', ['config', 'core.hooksPath', hooks], main);
+function installExitHook(main: string, exit: number): void {
+  installHook(root, main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit ${String(exit)}\n`);
 }
 
 function writeMessage(text: string): string {
@@ -93,7 +90,7 @@ describe('commit', () => {
 
   it('keeps a passing hook output in the log, never in the envelope', TIMEOUT, () => {
     const main = makeGitRepo(root, { 'a.txt': 'a v1\n' });
-    installHook(main, 0);
+    installExitHook(main, 0);
     writeFileSync(join(main, 'a.txt'), 'a v2\n');
 
     const r = commitCli(main, ['a.txt']);
@@ -105,7 +102,7 @@ describe('commit', () => {
 
   it('makes no commit when the pre-commit hook fails, its output in the envelope', TIMEOUT, () => {
     const main = makeGitRepo(root, { 'a.txt': 'a v1\n' });
-    installHook(main, 1);
+    installExitHook(main, 1);
     writeFileSync(join(main, 'a.txt'), 'a v2\n');
     const before = headSha(main);
 
