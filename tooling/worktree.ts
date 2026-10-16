@@ -139,9 +139,8 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
-      const keep = keepFlags(args);
       const { teardownWorktree } = await import('./worktree/teardown.js');
-      return teardownWorktree(args.target, {}, keep);
+      return teardownWorktree(args.target, {}, keepFlags(args));
     },
   },
   harvest: {
@@ -224,14 +223,13 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
+      const { preflight } = await import('./worktree/preflight.js');
       const attach = args.values.get('--attach');
       const slug = args.values.get('--slug');
-      const slugs = slug === undefined ? {} : { slugs: slugList(slug) };
-      const { preflight } = await import('./worktree/preflight.js');
       return preflight({
         main: args.target,
         ...(attach === undefined ? {} : { attach }),
-        ...slugs,
+        ...(slug === undefined ? {} : { slugs: slugList(slug) }),
       });
     },
   },
@@ -243,16 +241,16 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const selection = batchSelection(args);
-      if (!('attach' in selection)) {
-        const { cutBatch } = await import('./worktree/cut.js');
-        return cutBatch({ main: args.target, selection });
+      if ('attach' in selection) {
+        const { attachBatch } = await import('./worktree/cut-attach.js');
+        return attachBatch({
+          main: args.target,
+          branch: selection.attach,
+          attachedRun: selection.attachedRun,
+        });
       }
-      const { attachBatch } = await import('./worktree/cut-attach.js');
-      return attachBatch({
-        main: args.target,
-        branch: selection.attach,
-        attachedRun: selection.attachedRun,
-      });
+      const { cutBatch } = await import('./worktree/cut.js');
+      return cutBatch({ main: args.target, selection });
     },
   },
   'cut-slice': {
@@ -262,11 +260,13 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
-      const run = args.values.get('--attached-run');
-      const slice = sliceFlag(args);
-      const attached = run === undefined ? {} : { attachedRun: positiveInt(run, '--attached-run') };
       const { cutSlice } = await import('./worktree/cut.js');
-      return cutSlice({ batch: args.target, slice, ...attached });
+      const run = args.values.get('--attached-run');
+      return cutSlice({
+        batch: args.target,
+        slice: sliceFlag(args),
+        ...(run === undefined ? {} : { attachedRun: positiveInt(run, '--attached-run') }),
+      });
     },
   },
   'sync-master': {
@@ -338,11 +338,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
-      const pr = positiveInt(args.values.get('--pr') ?? '', '--pr');
       const { appendPrBody } = await import('./worktree/append-pr-body.js');
       return appendPrBody({
         batch: args.target,
-        pr,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         sectionFile: pathFlag(args, '--section-file'),
       });
     },
@@ -353,11 +352,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
-      const pr = positiveInt(args.values.get('--pr') ?? '', '--pr');
       const { postPrComment } = await import('./worktree/post-pr-comment.js');
       return postPrComment({
         batch: args.target,
-        pr,
+        pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
         commentFile: pathFlag(args, '--comment-file'),
       });
     },
@@ -382,11 +380,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
-      const issue = positiveInt(args.values.get('--issue') ?? '', '--issue');
       const { postIssueComment } = await import('./worktree/post-issue-comment.js');
       return postIssueComment({
         cwd: args.target,
-        issue,
+        issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
         commentFile: pathFlag(args, '--comment-file'),
       });
     },
