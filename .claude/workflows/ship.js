@@ -2295,7 +2295,7 @@ function settleEvents(primary, halt, at) {
 }
 
 const LEASE_LINE =
-  /^with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
+  /^[ \t]*with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
 function formatLeaseLine(timing) {
   const waited = timing.waitedSeconds.toFixed(1);
   const held = timing.heldSeconds.toFixed(1);
