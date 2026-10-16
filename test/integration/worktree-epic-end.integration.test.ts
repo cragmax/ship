@@ -909,7 +909,7 @@ describe('post-issue-comment', () => {
 });
 
 describe('usage errors', () => {
-  // The epic end has no local server tier: it runs in PR CI.
+  // The epic end has no server-tier step: its push's pre-push hook runs the tier (ADR-0051).
   it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
     const run = runCli(['server-tier', 'b', '--engine', 'paper', '--registry', 'r', '--log', 'l'], {
       cwd: root,

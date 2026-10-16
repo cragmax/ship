@@ -4,9 +4,9 @@
  * retro and PR writer concurrently, then the publish task; an entry that halted or landed nothing
  * gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
- * No server-tier step runs here: the push's pre-push hook runs it, and a red tier refuses the push
- * (ADR-0045 decision 6). A code conflict, a failed sync, a failed bump or a throwing step stops
- * the epic; a bump finding the version already at its target commits nothing, and the end goes on.
+ * No server-tier step: pre-push runs it on a Platform-wide change; red refuses the push (ADR-0051).
+ * A code conflict, a failed sync, a failed bump or a throwing step stops the epic; a bump finding
+ * the version already at its target commits nothing, and the end goes on.
  *
  * The master sync and the publish task each run as one task of the run's repo lock
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
