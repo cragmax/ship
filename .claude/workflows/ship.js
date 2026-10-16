@@ -2522,6 +2522,39 @@ const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 const GH_BODY_LIMIT = 65_536;
 
+const PLATFORM_WIDE_PATHS = [
+  'docker/',
+  'ph-plugin/',
+  'src/fluent/ph-plugin-protocol.ts',
+  'src/rcon/',
+  'src/engine/bot/',
+  'src/engine/state/bot-list.ts',
+  'src/server-pool/',
+  'src/world-state-reset/',
+  'tooling/run-integration.ts',
+  'tooling/with-lease.ts',
+  'tooling/pool-partition.ts',
+  'tooling/build-ph-plugin.ts',
+  'tooling/integration-tiers.ts',
+  'tooling/push-scope.ts',
+  'tooling/lib/push-scope.ts',
+  'tooling/lib/platform-wide.ts',
+  'lefthook.yml',
+  '.lefthook/',
+  'vitest.config.ts',
+  'vitest.integration.config.ts',
+  'vitest.bodies.config.ts',
+  'test/helpers/',
+  'package.json',
+  'package-lock.json',
+];
+const MAX_RELATED_FILES = 300;
+function isPlatformWide(path) {
+  return PLATFORM_WIDE_PATHS.some((entry) =>
+    entry.endsWith('/') ? path.startsWith(entry) : path === entry,
+  );
+}
+
 function evidenceBullet(issue, evidence) {
   const ref = `#${String(issue)}`;
   if (evidence.kind === 'none') {
@@ -2682,6 +2715,7 @@ function prBody(input, moved) {
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Tests at push', testsAtPushLines(input.pushed)),
     ...section('Issues', issueListLines(input)),
     ...recordedSection(input.landed, 2),
     ...reportBlock(input, moved),
@@ -2698,6 +2732,7 @@ function renderAttachedSection(input) {
     '',
     ...section('Epic review', epicReviewLines(input.epicReview), 3),
     ...section('Evidence', evidenceList(input.landed), 3),
+    ...section('Tests at push', testsAtPushLines(input.pushed), 3),
     ...section('Issues', issueRefLines(input), 3),
     ...recordedSection(input.landed, 3),
     report,
@@ -2714,6 +2749,26 @@ function renderAttachedReport(input) {
 }
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+function testsAtPushLines(pushed) {
+  if (pushed.kind === 'unresolved') {
+    return [`Not known: the pushed range could not be read (${pushed.why}).`];
+  }
+  const wide = pushed.paths.filter((path) => isPlatformWide(path));
+  if (wide.length > 0) {
+    const paths = wide.map((path) => codeSpan(path)).join(', ');
+    return [
+      `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
+    ];
+  }
+  const nightly = 'the full server tier runs in the next nightly after merge';
+  if (pushed.paths.length > MAX_RELATED_FILES) {
+    const count = String(pushed.paths.length);
+    return [
+      `The full standalone tier ran at push: ${count} files changed, past the ${String(MAX_RELATED_FILES)} \`vitest related\` takes; ${nightly}.`,
+    ];
+  }
+  return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
 function recordedItems(landed) {
   return landed.tdd.recorded
@@ -3099,6 +3154,7 @@ async function shipSteps(input, state) {
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
+  const read = pushedPathsStep(input, sync.upstream);
   await hooks.parallel([
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
@@ -3107,7 +3163,22 @@ async function shipSteps(input, state) {
       if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
-  return publishStep(input, { sync, bump, state });
+  return publishStep(input, { sync, bump, pushed: await read, state });
+}
+async function pushedPathsStep(input, upstream) {
+  const { hooks, entry } = input;
+  const base = entry.attached === null ? (upstream ?? entry.base) : entry.base;
+  const argv = [entry.batch, 'HEAD', '--base', base];
+  try {
+    const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
+    if (read?.status === 'ok' && read.files !== undefined) {
+      return { kind: 'resolved', paths: read.files };
+    }
+    return { kind: 'unresolved', why: envelopeProblem('changed-files', read) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: 'unresolved', why: `changed-files threw: ${message}` };
+  }
 }
 async function publishStep(input, found) {
   return input.repoLock.enqueue(async () => {
@@ -3254,6 +3325,7 @@ function bodyInput(input, found, checked) {
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
     bump: found.bump,
+    pushed: found.pushed,
     masterCheck: checked.masterCheck,
     mainUntouched: checked.mainUntouched,
     epicReview: found.state.epicReview ?? {

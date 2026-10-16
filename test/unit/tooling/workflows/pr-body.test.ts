@@ -203,6 +203,7 @@ const INPUT: PrBodyInput = {
     remote: { launch: 'o0', synced: 'o0', current: 'o0', move: 'equal' },
   },
   mainUntouched: true,
+  pushed: { kind: 'resolved', paths: ['src/a.ts', 'tooling/x.ts'] },
   epicReview: {
     verdict: 'accepted-with-open-items',
     profiled: false,
@@ -1003,12 +1004,13 @@ describe('renderPrBody — the fold', () => {
   const body = renderPrBody(INPUT);
   const lines = body.split('\n');
 
-  it('leads with the Epic review, the Summary, the Evidence, the Merge Danger and the Issues list, folding the run report after them', () => {
+  it('leads with the Epic review, the Summary, the Evidence, the Merge Danger, the Tests at push and the Issues list, folding the run report after them', () => {
     const at = [
       '## Epic review',
       '## Summary',
       '## Evidence',
       '## Merge Danger',
+      '## Tests at push',
       '## Issues',
       OPENER,
       '## Landed issues',
@@ -1062,10 +1064,10 @@ const summaryOf = (writer: PrWriterOutput | null): string[] => {
   return lines.slice(lines.indexOf('## Summary'), lines.indexOf('## Evidence') + 1);
 };
 
-// From the Merge Danger heading through the Issues heading after it.
+// From the Merge Danger heading through the Tests at push heading after it.
 const dangerOf = (writer: PrWriterOutput | null): string[] => {
   const lines = renderPrBody({ ...INPUT, writer }).split('\n');
-  return lines.slice(lines.indexOf('## Merge Danger'), lines.indexOf('## Issues') + 1);
+  return lines.slice(lines.indexOf('## Merge Danger'), lines.indexOf('## Tests at push') + 1);
 };
 
 describe('renderPrBody — the PR writer’s sections', () => {
@@ -1126,7 +1128,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
     '',
     '**Blast Radius:** tooling',
     '',
-    '## Issues',
+    '## Tests at push',
   ];
 
   it.each<[string, PrWriterOutput, string[]]>([
@@ -1149,7 +1151,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
         '',
         'Old run reports stop parsing.',
         '',
-        '## Issues',
+        '## Tests at push',
       ],
     ],
     [
@@ -1164,7 +1166,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
         '',
         '**Blast Radius:** tooling',
         '',
-        '## Issues',
+        '## Tests at push',
       ],
     ],
     [
@@ -1179,7 +1181,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
         '',
         'Old run reports stop parsing.',
         '',
-        '## Issues',
+        '## Tests at push',
       ],
     ],
     ['neither', WRITER, NEITHER],
@@ -1201,7 +1203,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
         '',
         '**Blast Radius:** tooling',
         '',
-        '## Issues',
+        '## Tests at push',
       ],
     ],
   ])('renders the merge danger of %s', (_name, writer, expected) => {
@@ -1221,7 +1223,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
       '',
       'Unavailable — the PR writer returned nothing',
       '',
-      '## Issues',
+      '## Tests at push',
     ]);
   });
 
@@ -1466,6 +1468,68 @@ describe('fitPrBody', () => {
   });
 });
 
+describe('renderPrBody — tests at push', () => {
+  /** The body's `## Tests at push` section, heading to the blank line after its one line. */
+  const testsAtPush = (input: PrBodyInput): string[] => {
+    const lines = renderPrBody(input).split('\n');
+    const at = lines.indexOf('## Tests at push');
+    return lines.slice(at, at + 4);
+  };
+
+  it('says the full tiers ran at push, naming each Platform-wide path the push changes', () => {
+    const pushed = {
+      kind: 'resolved',
+      paths: ['package.json', 'ph-plugin/src/Main.java', 'src/a.ts', 'test/helpers/x.ts'],
+    } as const;
+
+    expect(testsAtPush({ ...INPUT, pushed })).toEqual([
+      '## Tests at push',
+      '',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `ph-plugin/src/Main.java`, `test/helpers/x.ts` changed.',
+      '',
+    ]);
+  });
+
+  it('says targeted tests only, the full server tier left to the nightly, when no Platform-wide path changed', () => {
+    expect(testsAtPush(INPUT)).toEqual([
+      '## Tests at push',
+      '',
+      'Targeted tests only at push: no Platform-wide path changed; the full server tier runs in the next nightly after merge.',
+      '',
+    ]);
+  });
+
+  it('says the full standalone tier ran, the server tier left to the nightly, past 300 changed files', () => {
+    const paths = Array.from({ length: 301 }, (_, i) => `src/f${String(i)}.ts`);
+
+    expect(testsAtPush({ ...INPUT, pushed: { kind: 'resolved', paths } })).toEqual([
+      '## Tests at push',
+      '',
+      'The full standalone tier ran at push: 301 files changed, past the 300 `vitest related` takes; the full server tier runs in the next nightly after merge.',
+      '',
+    ]);
+  });
+
+  it('says targeted tests only at exactly 300 changed files', () => {
+    const paths = Array.from({ length: 300 }, (_, i) => `src/f${String(i)}.ts`);
+
+    expect(testsAtPush({ ...INPUT, pushed: { kind: 'resolved', paths } })[2]).toBe(
+      'Targeted tests only at push: no Platform-wide path changed; the full server tier runs in the next nightly after merge.',
+    );
+  });
+
+  it('says it is not known, naming the failed read, when the pushed range was not read', () => {
+    const pushed = { kind: 'unresolved', why: 'changed-files failed: bad revision' } as const;
+
+    expect(testsAtPush({ ...INPUT, pushed })).toEqual([
+      '## Tests at push',
+      '',
+      'Not known: the pushed range could not be read (changed-files failed: bad revision).',
+      '',
+    ]);
+  });
+});
+
 describe('renderPrBody — overlap edges', () => {
   const overlapSection = (input: PrBodyInput): string[] => {
     const lines = renderPrBody(input).split('\n');
@@ -1547,9 +1611,9 @@ describe('renderAttachedSection', () => {
     ]);
     const evidence = lines.indexOf('### Evidence');
     expect(lines[evidence + 2]).toBe('- **#7** `test/unit/x.test.ts › rejects a stale lease`');
-    expect(lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Issues') - 1)).toEqual(
-      main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1),
-    );
+    expect(
+      lines.slice(lines.indexOf('### Evidence') + 2, lines.indexOf('### Tests at push') - 1),
+    ).toEqual(main.slice(main.indexOf('## Evidence') + 2, main.indexOf('## Merge Danger') - 1));
     expect(lines.slice(lines.indexOf('### Issues'))).toEqual([
       '### Issues',
       '',
@@ -1566,6 +1630,20 @@ describe('renderAttachedSection', () => {
     expect(lines).not.toContain('## Summary');
     expect(lines).not.toContain('## Merge Danger');
     expect(lines).not.toContain('- An explicit issue list');
+  });
+
+  it('says what pre-push ran on this run’s push under ### Tests at push, between its Evidence and its Issues', () => {
+    const lines = renderAttachedSection({
+      ...SECTION_INPUT,
+      pushed: { kind: 'resolved', paths: ['src/rcon/client.ts', 'tooling/x.ts'] },
+    }).split('\n');
+
+    expect(lines.slice(lines.indexOf('### Issues') - 4, lines.indexOf('### Issues'))).toEqual([
+      '### Tests at push',
+      '',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `src/rcon/client.ts` changed.',
+      '',
+    ]);
   });
 
   it('lists this run’s recorded values under ### Recorded between its Issues and the run-report line', () => {

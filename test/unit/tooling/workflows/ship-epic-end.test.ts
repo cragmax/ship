@@ -12,6 +12,7 @@ import {
   inTurn,
   LAND_OK,
   masterMoved,
+  OK,
   readyVerdict,
   REPORT_DIR,
   TDD_BLOCKED,
@@ -102,6 +103,7 @@ describe('runShip — the epic end runs no test audit', () => {
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
       'runner:preflight:list',
@@ -474,6 +476,7 @@ describe('runShip — the bump', () => {
     const all = labels(run);
     expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
       'runner:preflight:list',
@@ -501,6 +504,52 @@ const bodyOf = (run: FakeRun): string[] => {
   );
 };
 
+/** The `## Tests at push` section of the PR body the publish call writes. */
+const testsAtPush = (run: FakeRun): string[] => {
+  const body = bodyOf(run);
+  const at = body.indexOf('## Tests at push');
+  return at === -1 ? [] : body.slice(at, at + 4);
+};
+
+describe('runShip — the tests at push', () => {
+  it('reads the pushed range after the bump and names the Platform-wide paths it changes', async () => {
+    const run = fakeHooks({
+      'runner:changed-files:list': {
+        ...OK,
+        files: ['package.json', 'src/rcon/client.ts', 'tooling/x.ts'],
+      },
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(run.calls.find((c) => c.label === 'runner:changed-files:list')?.argv).toEqual([
+      'tooling/worktree.ts',
+      'changed-files',
+      BATCH,
+      'HEAD',
+      '--base',
+      'origin0',
+    ]);
+    expect(testsAtPush(run)).toEqual([
+      '## Tests at push',
+      '',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `src/rcon/client.ts` changed.',
+      '',
+    ]);
+  });
+
+  it('still opens the PR when the read returns nothing, saying the tests at push are not known', async () => {
+    const run = fakeHooks({ 'runner:changed-files:list': null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(testsAtPush(run)[2]).toBe(
+      'Not known: the pushed range could not be read (the runner returned nothing for changed-files).',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
+  });
+});
+
 describe('runShip — the PR writer', () => {
   it('writes the PR writer’s summary after the epic review and its merge danger after the Evidence', async () => {
     const run = fakeHooks();
@@ -524,7 +573,7 @@ describe('runShip — the PR writer', () => {
       '',
       '**Blast Radius:** tooling',
       '',
-      '## Issues',
+      '## Tests at push',
     ]);
     expect(d).toBeGreaterThan(body.indexOf('## Evidence'));
   });

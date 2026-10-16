@@ -11,12 +11,15 @@
  * section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, joins the closure.
+ * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, and
+ * `tooling/lib/push-scope.ts`, which names the Platform-wide paths, join the closure.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
+import { isPlatformWide, MAX_RELATED_FILES } from '../../lib/platform-wide.js';
+import type { PushedChanges } from '../../lib/push-scope.js';
 
 import type {
   CommitSpec,
@@ -153,6 +156,8 @@ export interface PrBodyInput {
   readonly mainUntouched: boolean | null;
   /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
+  /** The paths the push changes, which decide the tests pre-push runs on it (ADR-0051). */
+  readonly pushed: PushedChanges;
   /** The overlap edges pre-flight added to the entry. */
   readonly overlap: OverlapRecord;
   /** Each issue's schedule, in the entry's order. */
@@ -318,8 +323,8 @@ export function sliceLeaseLines(work: SliceLeaseWork): RoleLeaseLines[] {
  *   the PR writer's prose included: `## Epic review` per {@link epicReviewLines};
  *   `## Summary` per {@link summaryLines};
  *   `## Evidence` per {@link evidenceList}; `## Merge Danger` per {@link mergeDangerLines};
- *   `## Issues` per {@link issueListLines}; `## Recorded` per
- *   {@link recordedSection}; then the run report per {@link reportBlock}.
+ *   `## Tests at push` per {@link testsAtPushLines}; `## Issues` per {@link issueListLines};
+ *   `## Recorded` per {@link recordedSection}; then the run report per {@link reportBlock}.
  *   Each section per {@link section}.
  */
 export function renderPrBody(input: PrBodyInput): string {
@@ -375,6 +380,7 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
     ...section('Summary', summaryLines(input.writer)),
     ...section('Evidence', evidenceList(input.landed)),
     ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Tests at push', testsAtPushLines(input.pushed)),
     ...section('Issues', issueListLines(input)),
     ...recordedSection(input.landed, 2),
     ...reportBlock(input, moved),
@@ -386,7 +392,8 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
  * An attached run's section of the open PR's body, appended after the body already there:
  * markdown, neutralised whole but for this run's landed `fixes` issues. `## Attached run <R>`, a
  * blank line; `### Epic review` per {@link epicReviewLines}; `### Evidence` per
- * {@link evidenceList}; `### Issues` per {@link issueRefLines}, no container line; `### Recorded`
+ * {@link evidenceList}; `### Tests at push` per {@link testsAtPushLines}; `### Issues` per
+ * {@link issueRefLines}, no container line; `### Recorded`
  * per {@link recordedSection}; then one run-report line and a blank line —
  * `Run report: [PR comment](<url>)` with a `reportComment`, else
  * `Run report: not posted to this PR; it is in <reportDir>.`, the report dir in a code span.
@@ -403,6 +410,7 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
     '',
     ...section('Epic review', epicReviewLines(input.epicReview), 3),
     ...section('Evidence', evidenceList(input.landed), 3),
+    ...section('Tests at push', testsAtPushLines(input.pushed), 3),
     ...section('Issues', issueRefLines(input), 3),
     ...recordedSection(input.landed, 3),
     report,
@@ -431,6 +439,32 @@ export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportCo
 /** The Evidence section's lines: one bullet per landed issue, in landing order. */
 function evidenceList(landed: readonly LandedIssue[]): string[] {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
+}
+
+/**
+ * The one line saying what pre-push ran (ADR-0051): both tiers in full, naming the Platform-wide
+ * paths; else the standalone tier in full past {@link MAX_RELATED_FILES} files, or targeted
+ * tests, the server tier left to the nightly; or not known, naming the failed read.
+ */
+function testsAtPushLines(pushed: PushedChanges): string[] {
+  if (pushed.kind === 'unresolved') {
+    return [`Not known: the pushed range could not be read (${pushed.why}).`];
+  }
+  const wide = pushed.paths.filter((path) => isPlatformWide(path));
+  if (wide.length > 0) {
+    const paths = wide.map((path) => codeSpan(path)).join(', ');
+    return [
+      `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
+    ];
+  }
+  const nightly = 'the full server tier runs in the next nightly after merge';
+  if (pushed.paths.length > MAX_RELATED_FILES) {
+    const count = String(pushed.paths.length);
+    return [
+      `The full standalone tier ran at push: ${count} files changed, past the ${String(MAX_RELATED_FILES)} \`vitest related\` takes; ${nightly}.`,
+    ];
+  }
+  return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
 
 /**

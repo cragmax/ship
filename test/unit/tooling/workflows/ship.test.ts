@@ -345,6 +345,7 @@ describe('runShip — one issue from launch to PR', () => {
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
       'runner:preflight:list',
@@ -1833,7 +1834,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:changed-files'))).toEqual([]);
+    expect(labels(run).filter((l) => l.startsWith('runner:changed-files:7-'))).toEqual([]);
     expect(lineSeenBy(run, 'manifestTsdoc:7-1', 'Changed files: ')).toBe(
       'Changed files: src/x.ts, test/unit/x.test.ts',
     );

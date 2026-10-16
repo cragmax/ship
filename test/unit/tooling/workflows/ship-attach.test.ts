@@ -74,6 +74,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'epicReview:list',
       'runner:sync-master:list',
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'runner:preflight:list',
       'runner:check-master:list',
@@ -323,6 +324,7 @@ describe('runShip --attach — the epic end', () => {
     const all = labels(run);
     expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'runner:preflight:list',
       'runner:check-master:list',
@@ -331,6 +333,13 @@ describe('runShip --attach — the epic end', () => {
       'runner:append-pr-body:list',
     ]);
     expect(all.filter((l) => l.startsWith('prWriter'))).toEqual([]);
+    // The open PR's tip, not the synced origin/master: pre-push diffs the push from it.
+    expect(callOf(run, 'runner:changed-files:list')?.argv.slice(2)).toEqual([
+      BATCH,
+      'HEAD',
+      '--base',
+      'tip9',
+    ]);
     expect(report.epics[0]).toMatchObject({
       epic: null,
       branch: 'ship/epic-9',
@@ -576,6 +585,7 @@ describe('runShip --attach — the PR body section', () => {
     const all = labels(run);
     expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
       'runner:bump:list',
+      'runner:changed-files:list',
       'retro:list',
       'runner:preflight:list',
       'runner:check-master:list',
