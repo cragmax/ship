@@ -102,6 +102,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
     graph,
     { maxSlices: parsed.args.maxSlices, launch: pre.main, overlap },
     parsed.args.attach,
+    pre.checkout,
   );
   return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
@@ -116,9 +117,10 @@ async function runEntries(
   graph: RunGraph,
   opts: Pick<DriveInput, 'maxSlices' | 'launch' | 'overlap'>,
   attach: string | null,
+  main: string,
 ): Promise<EpicReport[]> {
   const cuts: EntryCut[] = [];
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -146,14 +148,14 @@ async function cutEntry(
   hooks: WorkflowHooks,
   entry: RunSetEntry,
   attach: string | null,
+  main: string,
 ): Promise<EntryCut> {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
   const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(tag));
-  const { worktree, branch, base, batch, reportDir } = cut ?? {};
+  const { branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
-    !isText(worktree) ||
     !isText(branch) ||
     !isText(base) ||
     !isText(batch) ||
@@ -175,7 +177,7 @@ async function cutEntry(
       epic: entry.epic,
       tag,
       branch,
-      main: worktree,
+      main,
       batch,
       base,
       reportDir,

@@ -6,9 +6,11 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
   BATCH,
+  checkoutLines,
   DOC_INDEX_CONFLICT,
   fakeHooks,
   liveRuns,
+  MAIN,
   OK,
   PREFLIGHT_OK,
   REPORT_DIR,
@@ -16,15 +18,11 @@ import {
   type FakeRun,
 } from './_fake-hooks.js';
 
-/** The main checkout pre-flight names: distinct from every other path the fakes answer. */
-const MAIN = 'D:/checkouts/main';
-
-/** Pre-flight and the cut both name {@link MAIN}, as the CLI does for one checkout. */
+/** Pre-flight names {@link MAIN}; the cut's envelope names no main checkout. */
 const AT_MAIN = {
   'runner:preflight': { ...PREFLIGHT_OK, worktree: MAIN },
   'runner:cut-batch': {
     ...OK,
-    worktree: MAIN,
     branch: 'ship/7',
     base: 'master0',
     batch: BATCH,
@@ -33,19 +31,9 @@ const AT_MAIN = {
   },
 };
 
-/** Each runner call's label and its prompt's `Checkout:` lines. */
-function checkouts(run: FakeRun): { label: string; checkout: string[] }[] {
-  return run.calls
-    .filter((c) => c.agentType === 'runner')
-    .map((c) => ({
-      label: c.label,
-      checkout: c.prompt.split('\n').filter((l) => l.startsWith('Checkout:')),
-    }));
-}
-
 /** Asserts the preflight call has no Checkout line and every later one names {@link MAIN}. */
 function laterLabelsAtMain(run: FakeRun): string[] {
-  const [first, ...later] = checkouts(run);
+  const [first, ...later] = checkoutLines(run, (c) => c.agentType === 'runner');
   expect(first).toEqual({ label: 'runner:preflight', checkout: [] });
   for (const call of later)
     expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
@@ -131,14 +119,9 @@ describe('runShip — every agent after pre-flight works from the main checkout'
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(report).toMatchObject({ status: 'done', epics: [{ outcome: 'pr' }] });
-    const agents = run.calls.filter((c) => c.agentType !== 'runner');
-    for (const call of agents) {
-      const lines = call.prompt.split('\n').filter((l) => l.startsWith('Checkout:'));
-      expect({ label: call.label, lines }).toEqual({
-        label: call.label,
-        lines: [`Checkout: ${MAIN}`],
-      });
-    }
+    const agents = checkoutLines(run, (c) => c.agentType !== 'runner');
+    for (const call of agents)
+      expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
     expect(agents.map((c) => c.label)).toEqual(
       expect.arrayContaining([
         'issueReadiness',

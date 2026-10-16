@@ -227,7 +227,6 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      worktree: { type: ['string', 'null'] },
       branch: { type: ['string', 'null'] },
       base: { type: ['string', 'null'] },
       batch: { type: ['string', 'null'] },
@@ -244,7 +243,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         required: ['created', 'fastForwarded', 'pr', 'run', 'registry'],
       },
     },
-    required: ['status', 'errors', 'worktree', 'branch', 'base', 'batch', 'reportDir', 'attach'],
+    required: ['status', 'errors', 'branch', 'base', 'batch', 'reportDir', 'attach'],
   },
   'provision-batch': {
     type: 'object',

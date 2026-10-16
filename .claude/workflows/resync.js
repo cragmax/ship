@@ -160,24 +160,27 @@ function verbatimBlock(title, file) {
   const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
   return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
 }
-function leaseCommand(lease) {
+const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
+function mainToolPrefix(lease, tool) {
   return [
     `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
     `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
     'npx tsx',
-    shellWord(`${lease.main}/tooling/with-lease.ts`),
+    shellWord(`${lease.main}/tooling/${tool}`),
+  ];
+}
+function leaseCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
-    '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
   ].join(' ');
 }
 function fullServerTierCommand(lease) {
   return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/tooling/run-integration.ts`),
-    'pool --no-standup --config vitest.worktree.integration.config.ts',
+    ...mainToolPrefix(lease, 'run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
 function serverTierLines(lease) {
@@ -533,7 +536,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      worktree: { type: ['string', 'null'] },
       branch: { type: ['string', 'null'] },
       base: { type: ['string', 'null'] },
       batch: { type: ['string', 'null'] },
@@ -550,7 +552,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
         required: ['created', 'fastForwarded', 'pr', 'run', 'registry'],
       },
     },
-    required: ['status', 'errors', 'worktree', 'branch', 'base', 'batch', 'reportDir', 'attach'],
+    required: ['status', 'errors', 'branch', 'base', 'batch', 'reportDir', 'attach'],
   },
   'provision-batch': {
     type: 'object',

@@ -268,6 +268,19 @@ function verbatimBlock(title: string, file: FileToWrite): string[] {
   return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
 }
 
+/** The vitest config a slice worktree's server-tier runs use. */
+const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
+
+/** `npx tsx` running the main checkout's `tooling/<tool>` with the slice's project and registry. */
+function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/tooling/${tool}`),
+  ];
+}
+
 /**
  * The lease command template a slice's server-tier runs use.
  *
@@ -276,13 +289,10 @@ function verbatimBlock(title: string, file: FileToWrite): string[] {
  */
 function leaseCommand(lease: LeaseValues): string {
   return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/tooling/with-lease.ts`),
+    ...mainToolPrefix(lease, 'with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
-    '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
   ].join(' ');
 }
 
@@ -294,11 +304,8 @@ function leaseCommand(lease: LeaseValues): string {
  */
 function fullServerTierCommand(lease: LeaseValues): string {
   return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/tooling/run-integration.ts`),
-    'pool --no-standup --config vitest.worktree.integration.config.ts',
+    ...mainToolPrefix(lease, 'run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
 

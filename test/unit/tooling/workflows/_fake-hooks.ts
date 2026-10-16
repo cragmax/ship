@@ -622,3 +622,23 @@ function commandWords(prompt: string): string[] {
     line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
   return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
 }
+
+/** The main checkout a checkout test binds: distinct from every other path the fakes answer. */
+export const MAIN = 'D:/checkouts/main';
+
+/**
+ * Each call `keep` takes, as its label and its prompt's `Checkout:` lines.
+ *
+ * @param run - The fake run.
+ * @param keep - Which calls to take; every call by default.
+ * @returns One entry per call taken, in call order.
+ */
+export function checkoutLines(
+  run: FakeRun,
+  keep: (call: RecordedCall) => boolean = () => true,
+): { label: string; checkout: string[] }[] {
+  return run.calls.filter(keep).map((c) => ({
+    label: c.label,
+    checkout: c.prompt.split('\n').filter((l) => l.startsWith('Checkout:')),
+  }));
+}

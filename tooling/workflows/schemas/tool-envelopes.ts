@@ -72,7 +72,6 @@ export const TOOL_ENVELOPES = {
   }),
   'cut-batch': CutBatchResultSchema.pick({
     ...STATUS,
-    worktree: true,
     branch: true,
     base: true,
     batch: true,

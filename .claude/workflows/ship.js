@@ -589,24 +589,27 @@ function verbatimBlock(title, file) {
   const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
   return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
 }
-function leaseCommand(lease) {
+const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
+function mainToolPrefix(lease, tool) {
   return [
     `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
     `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
     'npx tsx',
-    shellWord(`${lease.main}/tooling/with-lease.ts`),
+    shellWord(`${lease.main}/tooling/${tool}`),
+  ];
+}
+function leaseCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
-    '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
   ].join(' ');
 }
 function fullServerTierCommand(lease) {
   return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/tooling/run-integration.ts`),
-    'pool --no-standup --config vitest.worktree.integration.config.ts',
+    ...mainToolPrefix(lease, 'run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
 function serverTierLines(lease) {
@@ -962,7 +965,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      worktree: { type: ['string', 'null'] },
       branch: { type: ['string', 'null'] },
       base: { type: ['string', 'null'] },
       batch: { type: ['string', 'null'] },
@@ -979,7 +981,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
         required: ['created', 'fastForwarded', 'pr', 'run', 'registry'],
       },
     },
-    required: ['status', 'errors', 'worktree', 'branch', 'base', 'batch', 'reportDir', 'attach'],
+    required: ['status', 'errors', 'branch', 'base', 'batch', 'reportDir', 'attach'],
   },
   'provision-batch': {
     type: 'object',
@@ -4272,10 +4274,7 @@ function samePair(p, a, b) {
 }
 function mainSnapshot(checks) {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
-  if (typeof checks?.worktree !== 'string' || snapshot === undefined || snapshot === null) {
-    return null;
-  }
-  return { worktree: checks.worktree, snapshot };
+  return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 function dropWithDependents(graph, issues) {
   const inGraph = new Set(runSetIssues(graph.runSet));
@@ -4493,12 +4492,13 @@ async function runShip(hooks, rawArgs) {
     graph,
     { maxSlices: parsed.args.maxSlices, launch: pre.main, overlap },
     parsed.args.attach,
+    pre.checkout,
   );
   return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
-async function runEntries(hooks, graph, opts, attach) {
+async function runEntries(hooks, graph, opts, attach, main) {
   const cuts = [];
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -4517,14 +4517,13 @@ async function runEntries(hooks, graph, opts, attach) {
     return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
-async function cutEntry(hooks, entry, attach) {
+async function cutEntry(hooks, entry, attach, main) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
   const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(tag));
-  const { worktree, branch, base, batch, reportDir } = cut ?? {};
+  const { branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
-    !isText(worktree) ||
     !isText(branch) ||
     !isText(base) ||
     !isText(batch) ||
@@ -4546,7 +4545,7 @@ async function cutEntry(hooks, entry, attach) {
       epic: entry.epic,
       tag,
       branch,
-      main: worktree,
+      main,
       batch,
       base,
       reportDir,

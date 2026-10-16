@@ -144,8 +144,6 @@ export interface OverlapRecord {
 
 /** The main checkout at one moment, as `worktree.ts preflight` reports it. */
 export interface MainSnapshot {
-  /** The main checkout, absolute. */
-  readonly worktree: string;
   /**
    * Its `HEAD`, whether it had uncommitted changes, and the launch shas of local and `origin`'s
    * `master`.
@@ -347,16 +345,10 @@ function samePair(p: OverlapPair, a: number, b: number): boolean {
   return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 
-/**
- * The main checkout and its snapshot from `preflight`'s output; `null` unless the checks passed and
- * carry both.
- */
+/** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
 function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
-  if (typeof checks?.worktree !== 'string' || snapshot === undefined || snapshot === null) {
-    return null;
-  }
-  return { worktree: checks.worktree, snapshot };
+  return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 
 /**
