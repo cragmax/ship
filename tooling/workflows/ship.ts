@@ -30,6 +30,7 @@ import {
 } from './lib/preflight.js';
 import type { EntrySetup } from './lib/slice-chain.js';
 import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
+import { withCheckout } from './lib/prompts.js';
 import { PHASE_TITLES } from './lib/stages.js';
 import {
   envelopeProblem,
@@ -75,14 +76,20 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
   hooks.phase(PHASE_TITLES.preflight);
   const pre = await runPreflight(hooks, parsed.args);
-  if (pre.refusals.length > 0 || pre.graph === null || pre.overlap === null) {
+  if (
+    pre.refusals.length > 0 ||
+    pre.graph === null ||
+    pre.overlap === null ||
+    pre.checkout === null
+  ) {
     return refusedReport(pre.refusals, pre.dropped);
   }
   const { graph, overlap } = pre;
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
-  const cleanup = await cleanupSpent(hooks, pre.live, pre.main?.worktree);
+  const bound = withCheckout(hooks, pre.checkout);
+  const cleanup = await cleanupSpent(bound, pre.live);
   if (cleanup.stop !== null) {
     return {
       ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
@@ -91,7 +98,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   }
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(
-    hooks,
+    bound,
     graph,
     { maxSlices: parsed.args.maxSlices, launch: pre.main, overlap },
     parsed.args.attach,
@@ -111,8 +118,7 @@ async function runEntries(
   attach: string | null,
 ): Promise<EpicReport[]> {
   const cuts: EntryCut[] = [];
-  const main = opts.launch?.worktree;
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -140,11 +146,10 @@ async function cutEntry(
   hooks: WorkflowHooks,
   entry: RunSetEntry,
   attach: string | null,
-  main: string | undefined,
 ): Promise<EntryCut> {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
-  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(main, tag));
+  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(tag));
   const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
@@ -161,7 +166,7 @@ async function cutEntry(
   if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
-  const at = { batch, reportDir, tag, main: worktree };
+  const at = { batch, reportDir, tag };
   const found = await batchRegistry(hooks, cut.attach ?? null, at);
   if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
   const { registry } = found;

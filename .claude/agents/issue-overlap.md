@@ -18,10 +18,11 @@ The workflow turns every pair you name into a scheduler edge inside an epic, and
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Run set (JSON):` — the run's entries: each `epic` (`null` for an explicit list) and its `issues`; the skill's issues, each entry a group.
 - `Declared edges (JSON):` — the blocked-by edges already in the run (`blocker` lands before `dependent`): the skill's declared edges.
 - `Live runs (JSON):` — each other live run's `branch` and the repository-relative files it has changed (`landed`): the skill's changed-file sets, each named by its branch.
-- `PR head:` — attached runs only: the open PR's head, a ref (`origin/ship/<slug>`); the skill's tree. Without it, the tree is the main checkout you start in.
+- `PR head:` — attached runs only: the open PR's head, a ref (`origin/ship/<slug>`); the skill's tree. Without it, the tree is the main checkout, `Checkout:`.
 
 ## Limits
 

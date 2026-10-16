@@ -402,6 +402,7 @@ describe('runShip — one issue from launch to PR', () => {
       effort: 'high',
     });
     expect(promptOf(run, 'manifestTsdoc:7-1').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       'Issue: #7',
       'Slice worktree: C:/src/ph-runs/7/slice-7-1',
       'Slice base: cut1',
@@ -729,9 +730,9 @@ describe('runShip — the runner’s command line', () => {
     );
     const runners = run.calls.filter((c) => c.label.startsWith('runner:'));
     expect(runners.length).toBeGreaterThan(3);
-    expect(
-      runners.filter((c) => !c.prompt.startsWith('Command: node --import tsx tooling/')),
-    ).toEqual([]);
+    expect(runners.filter((c) => !/^Command: node --import tsx tooling\//m.test(c.prompt))).toEqual(
+      [],
+    );
   });
 });
 
@@ -1587,6 +1588,7 @@ describe('runShip — what an attempt hands on', () => {
         .split('\n')
         .map((l) => l.slice(0, l.indexOf(': ')));
       expect(keys).toEqual([
+        'Checkout',
         'Issue',
         'Slice worktree',
         'Slice base',
@@ -1610,6 +1612,7 @@ describe('runShip — what an attempt hands on', () => {
       .split('\n')
       .map((l) => l.slice(0, l.indexOf(': ')));
     expect(keys).toEqual([
+      'Checkout',
       'Issue',
       'Slice worktree',
       'Slice base',
@@ -1633,6 +1636,7 @@ describe('runShip — what an attempt hands on', () => {
       lines.findIndex((l) => l.startsWith('Commit message template: ')),
     );
     expect(head.map((l) => l.slice(0, l.indexOf(': ')))).toEqual([
+      'Checkout',
       'Issue',
       'Attempt',
       'Slice worktree',
@@ -1888,6 +1892,7 @@ describe('runShip — the epic end', () => {
       'origin1',
     ]);
     expect(promptOf(run, 'resolver:list').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       `Batch worktree: ${BATCH}`,
       `Pending paths: ${ADR_INDEX}`,
       `Report file: ${REPORT_DIR}/resolve.md`,
@@ -2357,7 +2362,7 @@ describe('runShip — issue readiness', () => {
       agentType: 'issue-readiness',
       model: 'opus',
       effort: 'medium',
-      prompt: 'Run-set issues: #7',
+      prompt: 'Checkout: C:/src/main\nRun-set issues: #7',
     });
   });
   it('refuses an issue both stale and not-ready once for each', async () => {

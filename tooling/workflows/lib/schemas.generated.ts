@@ -143,6 +143,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
+      worktree: { type: ['string', 'null'] },
       runs: {
         type: 'array',
         items: {
@@ -177,7 +178,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         },
       },
     },
-    required: ['status', 'errors', 'runs'],
+    required: ['status', 'errors', 'worktree', 'runs'],
   },
   'cut-batch': {
     type: 'object',

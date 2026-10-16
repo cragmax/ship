@@ -4,12 +4,12 @@
  * discipline lives in its agent file (`.claude/agents/<agentType>.md`), so
  * a prompt never restates it.
  *
- * Every value sits on its own `Key: value` line. The keys an agent's
- * builders emit are exactly those its agent file's `## Inputs (from the prompt)` lists,
- * no more and no fewer. A text the agent must copy to disk byte for byte goes in a
- * {@link verbatimBlock}; a command line's words are each quoted for bash by
- * {@link shellWord}, so the agent runs the line as given. An issue's text
- * reaches an agent as a file its `Issue command:` line writes ({@link issueLines}).
+ * Every value sits on its own `Key: value` line. The keys an agent's builders emit, with
+ * the `Checkout:` line {@link withCheckout} adds, are exactly those its agent file's
+ * `## Inputs (from the prompt)` lists, no more and no fewer. A text the agent must copy to
+ * disk byte for byte goes in a {@link verbatimBlock}; a command line's words are each quoted
+ * for bash by {@link shellWord}, so the agent runs the line as given. An issue's text reaches
+ * an agent as a file its `Issue command:` line writes ({@link issueLines}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -17,6 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
+import type { WorkflowHooks } from './hooks.types.js';
 import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from './stages.js';
 
 /** A live run's changed files, for `issue-overlap`'s judgment. */
@@ -39,11 +40,6 @@ export interface FileToWrite {
 export interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
-  /**
-   * The main checkout, absolute, the runner runs from whatever directory it starts in; absent
-   * before pre-flight's `preflight` call has named it, when the runner runs from its start.
-   */
-  readonly checkout?: string;
   /**
    * The directory the runner makes the call's fresh envelope directory in;
    * a relative one resolves against the main checkout.
@@ -233,6 +229,21 @@ export interface ResolverValues {
   readonly reportPath: string;
 }
 
+/**
+ * Hooks bound to the run's main checkout: every agent prompt, runner and judgment stage alike,
+ * starts with a `Checkout: <checkout>` line, so an agent works from it, never from its start
+ * directory, which a session `cd` moves mid-run (PF-94). A run binds once, from its first call's
+ * envelope; only that call runs unbound.
+ *
+ * @param checkout - The main checkout, absolute.
+ */
+export function withCheckout(hooks: WorkflowHooks, checkout: string): WorkflowHooks {
+  return {
+    ...hooks,
+    agent: (prompt, options) => hooks.agent(`Checkout: ${checkout}\n${prompt}`, options),
+  };
+}
+
 /** A word bash reads as itself unquoted. */
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 
@@ -340,7 +351,6 @@ export const PROMPTS = {
   runner: (values: RunnerValues): string =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
-      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),

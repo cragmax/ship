@@ -156,6 +156,7 @@ describe('runShip — the epic review', () => {
       effort: 'high',
     });
     expect(promptOf(run, 'epicReview:list').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       `Batch worktree: ${BATCH}`,
       'Epic range: master0..HEAD',
       'Scope: profiled',
@@ -173,7 +174,7 @@ describe('runShip — the epic review', () => {
 
     const lines = promptOf(run, 'epicReview:epic-1').split('\n');
     const reports = 'C:/src/ph-runs/epic-1/reports';
-    expect(lines.slice(2, 5)).toEqual([
+    expect(lines.slice(3, 6)).toEqual([
       'Scope: epic #1',
       `Epic file: ${reports}/issues/1.md`,
       `Epic command: mkdir -p ${reports}/issues && gh issue view 1 --json title,state,labels,body,comments --jq '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, (.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)' > ${reports}/issues/1.md`,
@@ -584,6 +585,7 @@ describe('runShip — the PR writer', () => {
     await runShip(run.hooks, 'issues 7');
 
     expect(promptOf(run, 'prWriter:list').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       'Epic: an explicit issue list',
       `Batch worktree: ${BATCH}`,
       'Diff range: origin0...HEAD',
@@ -633,7 +635,8 @@ describe('runShip — the PR writer', () => {
     for (const epic of [1, 2]) {
       const lines = promptOf(run, `prWriter:epic-${String(epic)}`).split('\n');
       const root = `C:/src/ph-runs/epic-${String(epic)}`;
-      expect([lines[0], lines[1], lines.at(-1)]).toEqual([
+      expect([lines[0], lines[1], lines[2], lines.at(-1)]).toEqual([
+        'Checkout: C:/src/main',
         `Epic: #${String(epic)}`,
         `Batch worktree: ${root}/batch`,
         `Report dir: ${root}/reports`,
@@ -1054,7 +1057,7 @@ describe('runShip — a failed publish’s recovery', () => {
       `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
       `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
     ]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
+    expect(promptOf(run, 'runner:publish:list').split('\n')[1]).toBe(
       `Command: ${recovery[0] ?? ''}`,
     );
     expect(writtenFiles(run)).toEqual(expect.arrayContaining(namedFiles(recovery)));
@@ -1086,7 +1089,7 @@ describe('runShip — a failed publish’s recovery', () => {
     expect(recovery).toEqual([
       `node --import tsx tooling/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
     ]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')[0]).toBe(
+    expect(promptOf(run, 'runner:publish:list').split('\n')[1]).toBe(
       `Command: ${recovery[0] ?? ''}`,
     );
   });

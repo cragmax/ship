@@ -66,7 +66,7 @@ export const TOOL_ENVELOPES = {
     snapshot: true,
     problems: true,
   }).extend({ errors: ERRORS }),
-  'live-runs': LiveRunsResultSchema.pick({ ...STATUS, runs: true }).extend({
+  'live-runs': LiveRunsResultSchema.pick({ ...STATUS, worktree: true, runs: true }).extend({
     errors: ERRORS,
     runs: z.array(LIVE_RUN),
   }),

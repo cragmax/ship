@@ -280,7 +280,7 @@ async function retireStep(input: Pick<EpicEndInput, 'hooks' | 'entry'>): Promise
     hooks,
     'retire-run',
     ['.', '--branch', entry.branch],
-    preCutPlace(entry.main, entry.tag),
+    preCutPlace(entry.tag),
   ).catch(() => null);
   return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }

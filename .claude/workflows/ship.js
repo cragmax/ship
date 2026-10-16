@@ -575,6 +575,12 @@ function entryLabel(epic) {
   return epic === null ? 'the explicit list' : `epic ${hash(epic)}`;
 }
 
+function withCheckout(hooks, checkout) {
+  return {
+    ...hooks,
+    agent: (prompt, options) => hooks.agent(`Checkout: ${checkout}\n${prompt}`, options),
+  };
+}
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 function shellWord(word) {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
@@ -629,7 +635,6 @@ const PROMPTS = {
   runner: (values) =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
-      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
@@ -863,6 +868,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
+      worktree: { type: ['string', 'null'] },
       runs: {
         type: 'array',
         items: {
@@ -897,7 +903,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
         },
       },
     },
-    required: ['status', 'errors', 'runs'],
+    required: ['status', 'errors', 'worktree', 'runs'],
   },
   'cut-batch': {
     type: 'object',
@@ -2057,20 +2063,11 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function preCutPlace(main, tag) {
-  return {
-    ...PRE_CUT,
-    ...(tag === undefined ? {} : { tag }),
-    ...(main === undefined ? {} : { checkout: main }),
-  };
+function preCutPlace(tag) {
+  return { ...PRE_CUT, tag };
 }
 function runPlace(at, tag, ...write) {
-  return {
-    dir: `${at.reportDir}/tool`,
-    tag,
-    ...(write.length === 0 ? {} : { write }),
-    ...(at.main === undefined ? {} : { checkout: at.main }),
-  };
+  return { dir: `${at.reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -2199,7 +2196,6 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
-    ...(place.checkout === undefined ? {} : { checkout: place.checkout }),
   });
   const out = await hooks.agent(
     prompt,
@@ -3108,7 +3104,7 @@ async function retireStep(input) {
     hooks,
     'retire-run',
     ['.', '--branch', entry.branch],
-    preCutPlace(entry.main, entry.tag),
+    preCutPlace(entry.tag),
   ).catch(() => null);
   return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
@@ -4136,27 +4132,41 @@ function runSlug(selection) {
 
 async function runPreflight(hooks, args) {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const place = preCutPlace(checks?.worktree ?? undefined);
-  const gate = await runTool(
-    hooks,
-    'run-gate',
-    [args.selection, ...args.numbers.map(String), ...(args.exclude ? ['--exclude'] : [])],
-    place,
-  );
-  const live = await runTool(hooks, 'live-runs', ['.'], place);
+  if (typeof checks?.worktree !== 'string') return unanchored(checks);
+  const bound = withCheckout(hooks, checks.worktree);
+  const gate = await runTool(bound, 'run-gate', [
+    args.selection,
+    ...args.numbers.map(String),
+    ...(args.exclude ? ['--exclude'] : []),
+  ]);
+  const live = await runTool(bound, 'live-runs', ['.']);
   const kept = exemptSpentSlices(checks, live);
   const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(kept);
-  if (gate?.runSet === undefined) {
-    return { refusals, dropped: [], graph: null, main, overlap: null, live };
-  }
+  const at = { main: mainSnapshot(kept), overlap: null, live, checkout: checks.worktree };
+  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null, ...at };
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const readiness = await AGENT_CALLS.issueReadiness(hooks, {
+  const readiness = await AGENT_CALLS.issueReadiness(bound, {
     issues: runSetIssues(graph.runSet),
     ...(args.attach === null ? {} : { prHead: `origin/${args.attach}` }),
   });
-  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
-  return settleOverlap(hooks, settleReadiness(found, readiness, args.exclude), args.attach);
+  const found = { refusals, dropped: gateDrops(gate), graph, ...at };
+  return settleOverlap(bound, settleReadiness(found, readiness, args.exclude), args.attach);
+}
+function unanchored(checks) {
+  const found = checkRefusals(checks);
+  const refusals =
+    found.length > 0
+      ? found
+      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
+  return {
+    refusals,
+    dropped: [],
+    graph: null,
+    main: null,
+    overlap: null,
+    live: null,
+    checkout: null,
+  };
 }
 function preflightArgv(args) {
   if (args.attach !== null) return ['.', '--attach', args.attach];
@@ -4385,7 +4395,7 @@ function toolError(out, what) {
   );
 }
 
-async function cleanupSpent(hooks, live, main) {
+async function cleanupSpent(hooks, live) {
   const report = {
     tornDown: [],
     retired: [],
@@ -4399,23 +4409,20 @@ async function cleanupSpent(hooks, live, main) {
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report, main);
+    await cleanupRun(hooks, run, report);
     if (report.stop !== null) break;
   }
   return report;
 }
-async function cleanupRun(hooks, run, report, main) {
+async function cleanupRun(hooks, run, report) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch }, report);
 }
 async function tearDownSpent(hooks, spent, report) {
-  const { path, branch, main } = spent;
-  const place = preCutPlace(
-    main,
-    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
-  );
+  const { path, branch } = spent;
+  const place = preCutPlace(`spent-${String(report.tornDown.length + report.residue.length + 1)}`);
   const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);
@@ -4450,14 +4457,20 @@ async function runShip(hooks, rawArgs) {
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
   hooks.phase(PHASE_TITLES.preflight);
   const pre = await runPreflight(hooks, parsed.args);
-  if (pre.refusals.length > 0 || pre.graph === null || pre.overlap === null) {
+  if (
+    pre.refusals.length > 0 ||
+    pre.graph === null ||
+    pre.overlap === null ||
+    pre.checkout === null
+  ) {
     return refusedReport(pre.refusals, pre.dropped);
   }
   const { graph, overlap } = pre;
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
-  const cleanup = await cleanupSpent(hooks, pre.live, pre.main?.worktree);
+  const bound = withCheckout(hooks, pre.checkout);
+  const cleanup = await cleanupSpent(bound, pre.live);
   if (cleanup.stop !== null) {
     return {
       ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
@@ -4466,7 +4479,7 @@ async function runShip(hooks, rawArgs) {
   }
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(
-    hooks,
+    bound,
     graph,
     { maxSlices: parsed.args.maxSlices, launch: pre.main, overlap },
     parsed.args.attach,
@@ -4475,8 +4488,7 @@ async function runShip(hooks, rawArgs) {
 }
 async function runEntries(hooks, graph, opts, attach) {
   const cuts = [];
-  const main = opts.launch?.worktree;
-  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach, main));
+  for (const entry of graph.runSet) cuts.push(await cutEntry(hooks, entry, attach));
   const lost = cuts.flatMap((c) => ('stopped' in c ? c.issues : []));
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
@@ -4495,10 +4507,10 @@ async function runEntries(hooks, graph, opts, attach) {
     return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
-async function cutEntry(hooks, entry, attach, main) {
+async function cutEntry(hooks, entry, attach) {
   const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
   const argv = ['.', ...cutSelection(entry, attach)];
-  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(main, tag));
+  const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(tag));
   const { worktree, branch, base, batch, reportDir } = cut ?? {};
   if (
     cut?.status !== 'ok' ||
@@ -4515,7 +4527,7 @@ async function cutEntry(hooks, entry, attach, main) {
   if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
-  const at = { batch, reportDir, tag, main: worktree };
+  const at = { batch, reportDir, tag };
   const found = await batchRegistry(hooks, cut.attach ?? null, at);
   if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
   const { registry } = found;

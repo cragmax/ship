@@ -107,6 +107,7 @@ export const LIVE_RUNS_NONE = {
   exitCode: 0,
   envelopePath: 'reports/tool/live-runs.json',
   status: 'ok',
+  worktree: 'C:/src/main',
   runs: [],
   errors: [],
 };
@@ -193,6 +194,7 @@ export const DOC_INDEX_CONFLICT = {
 export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
   'runner:live-runs': {
     ...OK,
+    worktree: 'C:/src/main',
     runs: runs.map((r, i) => ({
       branch: `ship/old-${String(i)}`,
       landed: [],

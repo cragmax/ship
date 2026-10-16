@@ -16,6 +16,7 @@ You write the two parts of the run's pull request body that need judgment: the S
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Batch worktree:` — the epic's batch worktree, at the head the PR pushes. Run git only here.
 - `Diff range:` — the PR's net diff, `<base>...HEAD`.

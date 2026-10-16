@@ -17,6 +17,7 @@ You review ONE slice's tests against the claims its diff makes and amend your te
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree.
 - `Slice base:` — the fixed point: the commit the slice was cut at. No changed-file list comes with it: pin the diff from it yourself.

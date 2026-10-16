@@ -19,7 +19,8 @@ import { parseResyncArgs } from './lib/resync-args.js';
 import { cleanupSpent, type CleanupReport } from './lib/spent-cleanup.js';
 import { RESYNC_PHASE_TITLES } from './lib/stages.js';
 import { syncMasterStep, type SyncStepResult } from './lib/sync-master-step.js';
-import { envelopeProblem, PRE_CUT, runPlace, runTool } from './lib/tool-calls.js';
+import { withCheckout } from './lib/prompts.js';
+import { envelopeProblem, preCutPlace, runPlace, runTool } from './lib/tool-calls.js';
 
 /** What the workflow returns. */
 export interface ResyncReport {
@@ -64,15 +65,21 @@ export async function runResync(hooks: WorkflowHooks, rawArgs: unknown): Promise
   }
   const { branch } = args;
   hooks.phase(RESYNC_PHASE_TITLES.preflight);
-  const live = await runTool(hooks, 'live-runs', ['.'], { ...PRE_CUT, tag: 'resync' });
-  const cleanup = await cleanupSpent(hooks, live);
+  const live = await runTool(hooks, 'live-runs', ['.'], preCutPlace('resync'));
+  if (typeof live?.worktree !== 'string') {
+    const message =
+      live === null ? envelopeProblem('live-runs', live) : 'live-runs named no main checkout';
+    return { ...base, branch, status: 'stopped', message };
+  }
+  const bound = withCheckout(hooks, live.worktree);
+  const cleanup = await cleanupSpent(bound, live);
   const report = { ...base, branch, cleanup };
   if (cleanup.stop !== null) return { ...report, status: 'stopped', message: cleanup.stop };
-  const attached = await attachStep(hooks, branch);
+  const attached = await attachStep(bound, branch);
   if ('stop' in attached) return { ...report, status: 'stopped', message: attached.stop };
   const withPr = { ...report, pr: attached.pr };
   hooks.phase(RESYNC_PHASE_TITLES.merge);
-  const sync = await syncMasterStep(hooks, { ...attached, tag: 'resync' });
+  const sync = await syncMasterStep(bound, { ...attached, tag: 'resync' });
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return {
       ...withPr,
@@ -82,7 +89,7 @@ export async function runResync(hooks: WorkflowHooks, rawArgs: unknown): Promise
     };
   }
   hooks.phase(RESYNC_PHASE_TITLES.push);
-  return pushStep(hooks, attached, { ...withPr, sync });
+  return pushStep(bound, attached, { ...withPr, sync });
 }
 
 /** Attach the branch's batch, provisioning it when it was checked out anew. */
@@ -90,10 +97,7 @@ async function attachStep(
   hooks: WorkflowHooks,
   branch: string,
 ): Promise<ResyncBatch | { readonly stop: string }> {
-  const cut = await runTool(hooks, 'cut-batch', ['.', '--attach', branch], {
-    ...PRE_CUT,
-    tag: 'resync',
-  });
+  const cut = await runTool(hooks, 'cut-batch', ['.', '--attach', branch], preCutPlace('resync'));
   const { batch, reportDir, attach } = cut ?? {};
   if (
     cut?.status !== 'ok' ||

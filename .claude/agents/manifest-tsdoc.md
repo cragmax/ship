@@ -16,6 +16,7 @@ You audit the Manifest TSDoc ONE slice's commit reaches and amend your fixes in 
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree; it has a local `dist`.
 - `Slice base:`, `Slice commit:` — the slice is `git diff <Slice base> HEAD`, and `HEAD` is the slice commit.

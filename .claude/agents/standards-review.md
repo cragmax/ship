@@ -16,6 +16,7 @@ You review ONE slice's commit against the repo's documented rules and amend your
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree.
 - `Slice base:` — the fixed point: the commit the slice was cut at.
@@ -29,7 +30,7 @@ You review ONE slice's commit against the repo's documented rules and amend your
 
 ## Limits
 
-- **The rules are the main checkout's**, read by path per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
+- **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
 
 ## Checkpoint overrides

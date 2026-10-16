@@ -146,6 +146,12 @@ function agentOptions(stage, detail, schema) {
   };
 }
 
+function withCheckout(hooks, checkout) {
+  return {
+    ...hooks,
+    agent: (prompt, options) => hooks.agent(`Checkout: ${checkout}\n${prompt}`, options),
+  };
+}
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 function shellWord(word) {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
@@ -200,7 +206,6 @@ const PROMPTS = {
   runner: (values) =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
-      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),
@@ -434,6 +439,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
+      worktree: { type: ['string', 'null'] },
       runs: {
         type: 'array',
         items: {
@@ -468,7 +474,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
         },
       },
     },
-    required: ['status', 'errors', 'runs'],
+    required: ['status', 'errors', 'worktree', 'runs'],
   },
   'cut-batch': {
     type: 'object',
@@ -1628,20 +1634,11 @@ const AGENT_OUTPUT_SCHEMAS = {
 
 const TOOL_ENVELOPE_DIR = 'reports/tool';
 const PRE_CUT = { dir: TOOL_ENVELOPE_DIR };
-function preCutPlace(main, tag) {
-  return {
-    ...PRE_CUT,
-    ...(tag === undefined ? {} : { tag }),
-    ...(main === undefined ? {} : { checkout: main }),
-  };
+function preCutPlace(tag) {
+  return { ...PRE_CUT, tag };
 }
 function runPlace(at, tag, ...write) {
-  return {
-    dir: `${at.reportDir}/tool`,
-    tag,
-    ...(write.length === 0 ? {} : { write }),
-    ...(at.main === undefined ? {} : { checkout: at.main }),
-  };
+  return { dir: `${at.reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
 const WORKTREE_CLI = 'tooling/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
@@ -1770,7 +1767,6 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
     envelopeDir: place.dir,
     envelopeName: place.tag === undefined ? name : `${name}-${place.tag}`,
     ...(place.write === undefined ? {} : { write: place.write }),
-    ...(place.checkout === undefined ? {} : { checkout: place.checkout }),
   });
   const out = await hooks.agent(
     prompt,
@@ -1798,7 +1794,7 @@ function envelopeProblem(tool, out) {
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
 }
 
-async function cleanupSpent(hooks, live, main) {
+async function cleanupSpent(hooks, live) {
   const report = {
     tornDown: [],
     retired: [],
@@ -1812,23 +1808,20 @@ async function cleanupSpent(hooks, live, main) {
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report, main);
+    await cleanupRun(hooks, run, report);
     if (report.stop !== null) break;
   }
   return report;
 }
-async function cleanupRun(hooks, run, report, main) {
+async function cleanupRun(hooks, run, report) {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch }, report);
 }
 async function tearDownSpent(hooks, spent, report) {
-  const { path, branch, main } = spent;
-  const place = preCutPlace(
-    main,
-    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
-  );
+  const { path, branch } = spent;
+  const place = preCutPlace(`spent-${String(report.tornDown.length + report.residue.length + 1)}`);
   const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);
@@ -2080,15 +2073,21 @@ async function runResync(hooks, rawArgs) {
   }
   const { branch } = args;
   hooks.phase(RESYNC_PHASE_TITLES.preflight);
-  const live = await runTool(hooks, 'live-runs', ['.'], { ...PRE_CUT, tag: 'resync' });
-  const cleanup = await cleanupSpent(hooks, live);
+  const live = await runTool(hooks, 'live-runs', ['.'], preCutPlace('resync'));
+  if (typeof live?.worktree !== 'string') {
+    const message =
+      live === null ? envelopeProblem('live-runs', live) : 'live-runs named no main checkout';
+    return { ...base, branch, status: 'stopped', message };
+  }
+  const bound = withCheckout(hooks, live.worktree);
+  const cleanup = await cleanupSpent(bound, live);
   const report = { ...base, branch, cleanup };
   if (cleanup.stop !== null) return { ...report, status: 'stopped', message: cleanup.stop };
-  const attached = await attachStep(hooks, branch);
+  const attached = await attachStep(bound, branch);
   if ('stop' in attached) return { ...report, status: 'stopped', message: attached.stop };
   const withPr = { ...report, pr: attached.pr };
   hooks.phase(RESYNC_PHASE_TITLES.merge);
-  const sync = await syncMasterStep(hooks, { ...attached, tag: 'resync' });
+  const sync = await syncMasterStep(bound, { ...attached, tag: 'resync' });
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return {
       ...withPr,
@@ -2098,13 +2097,10 @@ async function runResync(hooks, rawArgs) {
     };
   }
   hooks.phase(RESYNC_PHASE_TITLES.push);
-  return pushStep(hooks, attached, { ...withPr, sync });
+  return pushStep(bound, attached, { ...withPr, sync });
 }
 async function attachStep(hooks, branch) {
-  const cut = await runTool(hooks, 'cut-batch', ['.', '--attach', branch], {
-    ...PRE_CUT,
-    tag: 'resync',
-  });
+  const cut = await runTool(hooks, 'cut-batch', ['.', '--attach', branch], preCutPlace('resync'));
   const { batch, reportDir, attach } = cut ?? {};
   if (
     cut?.status !== 'ok' ||

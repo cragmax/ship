@@ -16,6 +16,7 @@ You review ONE slice's commit against its issue and amend your fixes in — the 
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree.
 - `Slice base:` — the fixed point: the commit the slice was cut at.

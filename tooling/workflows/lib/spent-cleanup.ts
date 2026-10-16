@@ -50,15 +50,13 @@ export interface CleanupReport {
 /**
  * Tear down the spent runs `live-runs` reported.
  *
- * @param hooks - The workflow hooks.
+ * @param hooks - The workflow hooks, bound to the main checkout.
  * @param live - `live-runs`' output; `null` when the runner returned none.
- * @param main - The main checkout its calls run from; `undefined` where no pre-flight named it.
  * @returns Resolves to the report; never rejects on a tool's outcome.
  */
 export async function cleanupSpent(
   hooks: WorkflowHooks,
   live: LiveRunsOutput | null,
-  main?: string,
 ): Promise<CleanupReport> {
   const report: CleanupReport = {
     tornDown: [],
@@ -73,7 +71,7 @@ export async function cleanupSpent(
     return report;
   }
   for (const run of live.runs) {
-    await cleanupRun(hooks, run, report, main);
+    await cleanupRun(hooks, run, report);
     if (report.stop !== null) break;
   }
   return report;
@@ -89,12 +87,11 @@ async function cleanupRun(
   hooks: WorkflowHooks,
   run: LiveRunOutput,
   report: CleanupReport,
-  main: string | undefined,
 ): Promise<void> {
   const target = spentTarget(run);
   if (target === null) return;
   if ('why' in target) report.skipped.push(target);
-  else await tearDownSpent(hooks, { path: target.path, branch: run.branch, main }, report);
+  else await tearDownSpent(hooks, { path: target.path, branch: run.branch }, report);
 }
 
 /**
@@ -104,14 +101,11 @@ async function cleanupRun(
  */
 async function tearDownSpent(
   hooks: WorkflowHooks,
-  spent: { readonly path: string; readonly branch: string; readonly main: string | undefined },
+  spent: { readonly path: string; readonly branch: string },
   report: CleanupReport,
 ): Promise<void> {
-  const { path, branch, main } = spent;
-  const place = preCutPlace(
-    main,
-    `spent-${String(report.tornDown.length + report.residue.length + 1)}`,
-  );
+  const { path, branch } = spent;
+  const place = preCutPlace(`spent-${String(report.tornDown.length + report.residue.length + 1)}`);
   const out = await runTool(hooks, 'teardown', [path], place);
   if (out?.status === 'ok') {
     report.tornDown.push(path);

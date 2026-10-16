@@ -15,7 +15,7 @@ You run ONE tooling command (`tooling/worktree.ts`, `tooling/run-gate.ts`, …) 
 ## Inputs (from the prompt)
 
 - `Command:` — the exact command line, each word already quoted for bash. Run it verbatim: never add, drop, reorder or re-quote a word.
-- `Checkout:` — optional: the main checkout, absolute. When given, every step's shell command runs from it, as `cd <Checkout> && <step>`, whatever directory you start in. Without it, run from the directory you start in.
+- `Checkout:` — the main checkout, absolute, on every call but the run's first (the one that names it). When given, every step's shell command runs from it, as `cd <Checkout> && <step>`, whatever directory you start in. Without it, run from the directory you start in.
 - `Envelope dir:` — the directory your call's own envelope directory goes in; a relative one resolves against the main checkout (`Checkout:`, else your start directory). Every call makes a fresh directory there, so no two calls — of this run or any other — share an envelope file.
 - `Envelope name:` — the envelope's file-name stem `<name>`.
 - `Write first:` — optional, and may repeat: a file path, then its content between a `----- BEGIN FILE -----` line and a `----- END FILE -----` line. The command, or one the workflow runs later, reads that file.
