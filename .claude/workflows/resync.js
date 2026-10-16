@@ -171,10 +171,20 @@ function leaseCommand(lease) {
     '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
   ].join(' ');
 }
+function fullServerTierCommand(lease) {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/tooling/run-integration.ts`),
+    'pool --no-standup --config vitest.worktree.integration.config.ts',
+  ].join(' ');
+}
 function serverTierLines(lease) {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
     `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }

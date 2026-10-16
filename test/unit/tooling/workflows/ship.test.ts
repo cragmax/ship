@@ -1472,13 +1472,14 @@ describe('runShip — what an attempt hands on', () => {
       await runShip(run.hooks, 'issues 7');
 
       const tddLines = promptOf(run, 'tdd:7-1').split('\n');
-      const recipe = ['Lease command: ', 'Lease version: '].map(
+      const recipe = ['Lease command: ', 'Lease version: ', 'Full server tier: '].map(
         (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
       );
       const registry = `${REPORT_DIR}/pool-registry.batch.json`;
       expect(recipe).toEqual([
         `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
         `Lease version: the version of the chosen type's entry in ${registry}`,
+        `Full server tier: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/run-integration.ts pool --no-standup --config vitest.worktree.integration.config.ts`,
       ]);
       expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
     },
@@ -1598,6 +1599,7 @@ describe('runShip — what an attempt hands on', () => {
         'Report file',
         'Lease command',
         'Lease version',
+        'Full server tier',
         'Probe caps',
       ]);
     },
@@ -1621,6 +1623,7 @@ describe('runShip — what an attempt hands on', () => {
       'Report file',
       'Lease command',
       'Lease version',
+      'Full server tier',
       'Probe caps',
     ]);
   });
@@ -1647,6 +1650,7 @@ describe('runShip — what an attempt hands on', () => {
       'Kept dir',
       'Lease command',
       'Lease version',
+      'Full server tier',
       'Probe caps',
     ]);
   });

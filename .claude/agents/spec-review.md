@@ -24,8 +24,9 @@ You review ONE slice's commit against its issue and amend your fixes in — the 
 - `Changed files:` — its paths.
 - `Issue file:` — the issue's text, written by an earlier stage: the skill's issue, its triage brief the plan.
 - `Report file:` — where your report goes.
-- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
+- `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
+- `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
 - `Probe caps:` — minutes per probe and probes per stage.
 
 ## Limits
@@ -48,4 +49,4 @@ Write the skill's report to the report file. Then return, per your output schema
 - `verdict` — `clean` when nothing was applied; `fixed` when you amended; `blocked` per § Limits, or when the amend cannot land under the hooks;
 - `sha` — `HEAD` after any amend;
 - `summary` — one line;
-- `leaseLines` — every `with-lease:` release line your `Lease command:` runs printed, verbatim, one per lease; `[]` when you ran none.
+- `leaseLines` — every `with-lease:` release line your `Lease command:` and `Full server tier:` runs printed, verbatim, one per lease; `[]` when you ran none.

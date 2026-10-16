@@ -87,7 +87,7 @@ export interface LandedSlice {
 
 /** Where a slice's lease runs lease from. */
 export interface LeaseValues {
-  /** The main checkout, whose `tooling/with-lease.ts` runs. */
+  /** The main checkout, whose `tooling/with-lease.ts` and `tooling/run-integration.ts` run. */
   readonly main: string;
   /** `PH_PROJECT_DIR` for the lease run: the slice provision's. */
   readonly projectDir: string;
@@ -287,13 +287,30 @@ function leaseCommand(lease: LeaseValues): string {
 }
 
 /**
+ * The command a slice's full server-tier run uses: the main checkout's pool runner over the run's
+ * registry, every shard of both engines at once under `with-lease`, nothing stood up.
+ *
+ * @param lease - Its values.
+ */
+function fullServerTierCommand(lease: LeaseValues): string {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/tooling/run-integration.ts`),
+    'pool --no-standup --config vitest.worktree.integration.config.ts',
+  ].join(' ');
+}
+
+/**
  * A slice's server-tier recipe: the lease command template, where its
- * version comes from, and the probe caps.
+ * version comes from, the full server-tier command, and the probe caps.
  */
 function serverTierLines(lease: LeaseValues): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
     `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }

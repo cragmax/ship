@@ -24,8 +24,9 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - `Issue command:` — the command that writes it; run it verbatim.
 - `Report file:` — where your full report goes.
 - `Kept dir:` — where an attempt that does not land keeps its work once you return: `slice.patch`, the diff from the slice base to every file git does not ignore, and a copy of your report under its own name. The attempt's end removes the worktree, and the run's end may remove the report file's directory.
-- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
+- `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
+- `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
 - `Probe caps:` — minutes per probe and probes per stage.
 - `Commit message template:` — the commit message file's path, then its message between `----- BEGIN FILE -----` and `----- END FILE -----`, with a `<type>(<scope>): <subject>` and a `<fixes|see>` placeholder for you to fill (§ Commit line).
 
