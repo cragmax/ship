@@ -16,6 +16,7 @@ You review ONE slice's commit against the repo's documented rules and amend your
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree.
 - `Slice base:` — the fixed point: the commit the slice was cut at.
@@ -23,13 +24,14 @@ You review ONE slice's commit against the repo's documented rules and amend your
 - `Changed files:` — its paths.
 - `Issue file:` — the issue's text, written by an earlier stage; the skill's verify rule reads it.
 - `Report file:` — where your report goes.
-- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
+- `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
+- `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
 - `Probe caps:` — minutes per probe and probes per stage.
 
 ## Limits
 
-- **The rules are the main checkout's**, read by path per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
+- **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
 
 ## Checkpoint overrides
@@ -47,4 +49,4 @@ Write the skill's report to the report file. Then return, per your output schema
 - `verdict` — `clean` when nothing was applied; `fixed` when you amended; `blocked` when the amend cannot land under the hooks;
 - `sha` — `HEAD` after any amend;
 - `summary` — one line;
-- `leaseLines` — every `with-lease:` release line your `Lease command:` runs printed, verbatim, one per lease; `[]` when you ran none.
+- `leaseLines` — every `with-lease:` release line your `Lease command:` and `Full server tier:` runs printed, verbatim, one per lease; `[]` when you ran none.

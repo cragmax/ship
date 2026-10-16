@@ -57,8 +57,6 @@ export interface SyncStepContext {
   readonly reportDir: string;
   /** What tells the entry's calls from other entries' (`epic-1025`, `list`, `resync`). */
   readonly tag: string;
-  /** The main checkout, absolute; absent for `resync`, which has no pre-flight to name it. */
-  readonly main?: string;
 }
 
 /**

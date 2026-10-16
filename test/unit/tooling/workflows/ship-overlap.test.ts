@@ -371,6 +371,7 @@ describe('runShip — the overlap estimate', () => {
 
     const call = run.calls.find((c) => c.label === 'issueOverlap');
     expect(call?.prompt.split('\n')).toEqual([
+      'Checkout: C:/src/main',
       'Run set (JSON): [{"epic":null,"issues":[7,8,9]}]',
       'Declared edges (JSON): [{"blocker":7,"dependent":9}]',
       'Live runs (JSON): []',
@@ -417,6 +418,7 @@ describe('runShip — live-run overlap', () => {
     const call = run.calls.find((c) => c.label === 'issueOverlap');
     expect(call).toMatchObject({ agentType: 'issue-overlap', model: 'opus', effort: 'medium' });
     expect(call?.prompt.split('\n')).toEqual([
+      'Checkout: C:/src/main',
       'Run set (JSON): [{"epic":null,"issues":[7]}]',
       'Declared edges (JSON): []',
       'Live runs (JSON): [{"branch":"ship/epic-9","landed":["src/a.ts"]}]',

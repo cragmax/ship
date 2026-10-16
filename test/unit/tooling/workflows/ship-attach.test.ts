@@ -401,7 +401,7 @@ describe('runShip --attach — the epic end', () => {
       `node --import tsx tooling/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
     ]);
     const lines = promptLines(run, 'runner:publish:list');
-    expect(lines[0]).toBe(`Command: ${recovery[0] ?? ''}`);
+    expect(lines.slice(0, 2)).toEqual(['Checkout: C:/src/main', `Command: ${recovery[0] ?? ''}`]);
     const at = lines.indexOf(`Write first: ${ATTACH_REPORTS}/pr-report-comment.md`);
     expect(lines.slice(at, at + 3)).toEqual([
       `Write first: ${ATTACH_REPORTS}/pr-report-comment.md`,
@@ -444,12 +444,14 @@ describe('runShip --attach — issue-readiness and issue-overlap', () => {
     const report = await runShip(run.hooks, `${ARGS} --preflight-only`);
 
     expect(promptLines(run, 'issueOverlap')).toEqual([
+      'Checkout: C:/src/main',
       'Run set (JSON): [{"epic":null,"issues":[7]}]',
       'Declared edges (JSON): []',
       'Live runs (JSON): [{"branch":"ship/epic-8","landed":["src/o.ts"]}]',
       'PR head: origin/ship/epic-9',
     ]);
     expect(promptLines(run, 'issueReadiness')).toEqual([
+      'Checkout: C:/src/main',
       'Run-set issues: #7',
       'PR head: origin/ship/epic-9',
     ]);

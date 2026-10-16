@@ -4,8 +4,8 @@
  * checked, since server-tier tdd runs lease it), the run gate, `live-runs`, `issue-readiness` once
  * over the run set, then `issue-overlap` once over what it left and the unspent live runs' files.
  *
- * **Every refusal is collected**: no check stops the phase early but `issue-readiness`'s need for
- * a run set. No verdict, a verdict missing its fields, or a run-set issue left unjudged is a
+ * **Every refusal is collected**: only an unnamed main checkout and an absent run set stop the
+ * phase early. No verdict, a verdict missing its fields, or a run-set issue left unjudged is a
  * refusal, never a pass. **Exclude mode** drops a stale or not-ready issue with its dependents
  * ({@link dropWithDependents}); a live-run overlap, and any pair {@link settleOverlap} keeps across
  * two epics, still refuses. **An attached run**'s `no-open-pr`, `slices-live` and
@@ -41,9 +41,8 @@ import {
 } from './agent-calls.js';
 import type { ShipArgs } from './args.js';
 import type { WorkflowHooks } from './hooks.types.js';
-import type { IssueOverlapValues, LiveRunFiles } from './prompts.js';
+import { withCheckout, type IssueOverlapValues, type LiveRunFiles } from './prompts.js';
 import {
-  preCutPlace,
   runTool,
   type GateOutput,
   type LiveRunsOutput,
@@ -118,6 +117,11 @@ export interface PreflightOutcome {
    * spent-run cleanup; `null` when the runner returned none.
    */
   readonly live: LiveRunsOutput | null;
+  /**
+   * The main checkout `preflight` named, every later call bound to it ({@link withCheckout});
+   * `null`, with a refusal, when it named none and nothing else ran.
+   */
+  readonly checkout: string | null;
 }
 
 /** An overlap edge pre-flight added, with `issue-overlap`'s word for it. */
@@ -140,8 +144,6 @@ export interface OverlapRecord {
 
 /** The main checkout at one moment, as `worktree.ts preflight` reports it. */
 export interface MainSnapshot {
-  /** The main checkout, absolute. */
-  readonly worktree: string;
   /**
    * Its `HEAD`, whether it had uncommitted changes, and the launch shas of local and `origin`'s
    * `master`.
@@ -169,27 +171,43 @@ export async function runPreflight(
   args: ShipArgs,
 ): Promise<PreflightOutcome> {
   const checks = await runTool(hooks, 'preflight', preflightArgv(args));
-  const place = preCutPlace(checks?.worktree ?? undefined);
-  const gate = await runTool(
-    hooks,
-    'run-gate',
-    [args.selection, ...args.numbers.map(String), ...(args.exclude ? ['--exclude'] : [])],
-    place,
-  );
-  const live = await runTool(hooks, 'live-runs', ['.'], place);
+  if (typeof checks?.worktree !== 'string') return unanchored(checks);
+  const bound = withCheckout(hooks, checks.worktree);
+  const gate = await runTool(bound, 'run-gate', [
+    args.selection,
+    ...args.numbers.map(String),
+    ...(args.exclude ? ['--exclude'] : []),
+  ]);
+  const live = await runTool(bound, 'live-runs', ['.']);
   const kept = exemptSpentSlices(checks, live);
   const refusals = [...checkRefusals(kept), ...gateRefusals(gate), ...liveRunRefusals(live)];
-  const main = mainSnapshot(kept);
-  if (gate?.runSet === undefined) {
-    return { refusals, dropped: [], graph: null, main, overlap: null, live };
-  }
+  const at = { main: mainSnapshot(kept), overlap: null, live, checkout: checks.worktree };
+  if (gate?.runSet === undefined) return { refusals, dropped: [], graph: null, ...at };
   const graph = { runSet: gate.runSet, edges: gate.edges ?? [] };
-  const readiness = await AGENT_CALLS.issueReadiness(hooks, {
+  const readiness = await AGENT_CALLS.issueReadiness(bound, {
     issues: runSetIssues(graph.runSet),
     ...(args.attach === null ? {} : { prHead: `origin/${args.attach}` }),
   });
-  const found = { refusals, dropped: gateDrops(gate), graph, main, overlap: null, live };
-  return settleOverlap(hooks, settleReadiness(found, readiness, args.exclude), args.attach);
+  const found = { refusals, dropped: gateDrops(gate), graph, ...at };
+  return settleOverlap(bound, settleReadiness(found, readiness, args.exclude), args.attach);
+}
+
+/** The outcome of a `preflight` that named no main checkout: its refusals, and nothing else ran. */
+function unanchored(checks: PreflightOutput | null): PreflightOutcome {
+  const found = checkRefusals(checks);
+  const refusals: ShipRefusal[] =
+    found.length > 0
+      ? found
+      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
+  return {
+    refusals,
+    dropped: [],
+    graph: null,
+    main: null,
+    overlap: null,
+    live: null,
+    checkout: null,
+  };
 }
 
 /**
@@ -327,16 +345,10 @@ function samePair(p: OverlapPair, a: number, b: number): boolean {
   return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 
-/**
- * The main checkout and its snapshot from `preflight`'s output; `null` unless the checks passed and
- * carry both.
- */
+/** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
 function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
-  if (typeof checks?.worktree !== 'string' || snapshot === undefined || snapshot === null) {
-    return null;
-  }
-  return { worktree: checks.worktree, snapshot };
+  return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 
 /**

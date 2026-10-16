@@ -257,10 +257,9 @@ describe('runResync — spent cleanup', () => {
 
   it('tears nothing down when live-runs fails, and still merges', async () => {
     const failed = {
-      ...OK,
+      ...liveRuns({})['runner:live-runs'],
       exitCode: 1,
       status: 'failed',
-      runs: liveRuns({})['runner:live-runs'].runs,
       errors: [{ step: 'pr-state', message: 'ship/old-0: gh pr list exited 1' }],
     };
     const run = resyncHooks({ 'runner:live-runs': failed });

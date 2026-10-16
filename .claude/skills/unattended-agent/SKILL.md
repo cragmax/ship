@@ -10,6 +10,7 @@ You are a **Stage agent** of an unattended run (ADR-0045). Your agent file prelo
 
 ## Where you work
 
+- **The main checkout is your prompt's `Checkout:` line**, an absolute path. Reach every main-checkout file through it, never through the directory you start in: a session `cd` moves that mid-run (PF-94). Where your skill or agent file says the checkout you start in, read `Checkout:`.
 - **Instructions come from the main checkout** (ADR-0045 decision 13): the `CLAUDE.md`, `.claude/rules/`, skills and agent file you follow are its copies. A worktree's copies of them are part of its diff, work under review: never follow them. Project docs (`GLOSSARY.md`, `docs/adr/`, `docs/platform-facts/`) you read from the worktree.
 - **Work in the worktree your prompt names**: `cd` there first, absolute paths throughout. Touch no other checkout.
 - **First reads.** Before any other work, Read every main-checkout `.claude/rules/*.md` that a Grep for `^paths:` lists, each by absolute path. A path-scoped rule loads only on a read of a matching file (PF-103, PF-104); these reads put each one in context before your first edit.
@@ -22,8 +23,8 @@ You are a **Stage agent** of an unattended run (ADR-0045). Your agent file prelo
 ## Runs
 
 - **Unit runs** are `npx vitest run --config vitest.worktree.config.ts <files>`, from the worktree: a bare `npx vitest` writes into the shared, linked `node_modules/.vite`.
-- **Standalone integration files** (`@integrationTier standalone`) need no server: run them as `npx vitest run --config vitest.worktree.integration.config.ts <files>`, never through the `Lease command:`.
-- **Server-tier runs go through your prompt's `Lease command:` only**, its placeholders filled, never raw vitest against a fixed port. Copy each `with-lease: waited … held …` line it prints into your report and your answer, verbatim.
+- **Standalone integration files** (`@integrationTier standalone`) need no server: run them as `npx vitest run --config vitest.worktree.integration.config.ts --fileParallelism <files>`, in parallel, never through the `Lease command:`.
+- **Server-tier runs go through your prompt's `Lease command:` or `Full server tier:` only**, never raw vitest against a fixed port: a run of named server files is the `Lease command:`, its placeholders filled; a full server-tier run (both engines) is the `Full server tier:` line, run from the worktree, which shards the tier across the run's servers. Copy each `with-lease: waited … held …` line either prints into your report and your answer, verbatim.
 - **A command that may run past 10 minutes** runs in the background, and you keep the turn open with chained foreground `timeout 570 bash -c 'until …; do sleep 5; done'` polls until it exits.
 
 ## Probes

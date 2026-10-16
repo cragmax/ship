@@ -143,6 +143,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
+      worktree: { type: ['string', 'null'] },
       runs: {
         type: 'array',
         items: {
@@ -177,7 +178,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         },
       },
     },
-    required: ['status', 'errors', 'runs'],
+    required: ['status', 'errors', 'worktree', 'runs'],
   },
   'cut-batch': {
     type: 'object',
@@ -226,7 +227,6 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      worktree: { type: ['string', 'null'] },
       branch: { type: ['string', 'null'] },
       base: { type: ['string', 'null'] },
       batch: { type: ['string', 'null'] },
@@ -243,7 +243,7 @@ export const TOOL_ENVELOPE_SCHEMAS = {
         required: ['created', 'fastForwarded', 'pr', 'run', 'registry'],
       },
     },
-    required: ['status', 'errors', 'worktree', 'branch', 'base', 'batch', 'reportDir', 'attach'],
+    required: ['status', 'errors', 'branch', 'base', 'batch', 'reportDir', 'attach'],
   },
   'provision-batch': {
     type: 'object',

@@ -18,8 +18,9 @@ The workflow refuses the launch for a stale or not-ready issue, or in exclude mo
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Run-set issues:` — the issues the run would ship: the skill's issues.
-- `PR head:` — attached runs only: the open PR's head, a ref (`origin/ship/<slug>`); the skill's tree. Without it, the tree is the main checkout you start in.
+- `PR head:` — attached runs only: the open PR's head, a ref (`origin/ship/<slug>`); the skill's tree. Without it, the tree is the main checkout, `Checkout:`.
 
 ## Limits
 

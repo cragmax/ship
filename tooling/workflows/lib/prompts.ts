@@ -4,12 +4,12 @@
  * discipline lives in its agent file (`.claude/agents/<agentType>.md`), so
  * a prompt never restates it.
  *
- * Every value sits on its own `Key: value` line. The keys an agent's
- * builders emit are exactly those its agent file's `## Inputs (from the prompt)` lists,
- * no more and no fewer. A text the agent must copy to disk byte for byte goes in a
- * {@link verbatimBlock}; a command line's words are each quoted for bash by
- * {@link shellWord}, so the agent runs the line as given. An issue's text
- * reaches an agent as a file its `Issue command:` line writes ({@link issueLines}).
+ * Every value sits on its own `Key: value` line. The keys an agent's builders emit, with
+ * the `Checkout:` line {@link withCheckout} adds, are exactly those its agent file's
+ * `## Inputs (from the prompt)` lists, no more and no fewer. A text the agent must copy to
+ * disk byte for byte goes in a {@link verbatimBlock}; a command line's words are each quoted
+ * for bash by {@link shellWord}, so the agent runs the line as given. An issue's text reaches
+ * an agent as a file its `Issue command:` line writes ({@link issueLines}).
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -17,6 +17,7 @@
 
 import type { RunEdge, RunSet } from '../../lib/run-set.js';
 
+import type { WorkflowHooks } from './hooks.types.js';
 import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from './stages.js';
 
 /** A live run's changed files, for `issue-overlap`'s judgment. */
@@ -39,11 +40,6 @@ export interface FileToWrite {
 export interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
-  /**
-   * The main checkout, absolute, the runner runs from whatever directory it starts in; absent
-   * before pre-flight's `preflight` call has named it, when the runner runs from its start.
-   */
-  readonly checkout?: string;
   /**
    * The directory the runner makes the call's fresh envelope directory in;
    * a relative one resolves against the main checkout.
@@ -91,7 +87,7 @@ export interface LandedSlice {
 
 /** Where a slice's lease runs lease from. */
 export interface LeaseValues {
-  /** The main checkout, whose `tooling/with-lease.ts` runs. */
+  /** The main checkout, whose `tooling/with-lease.ts` and `tooling/run-integration.ts` run. */
   readonly main: string;
   /** `PH_PROJECT_DIR` for the lease run: the slice provision's. */
   readonly projectDir: string;
@@ -233,6 +229,21 @@ export interface ResolverValues {
   readonly reportPath: string;
 }
 
+/**
+ * Hooks bound to the run's main checkout: every agent prompt, runner and judgment stage alike,
+ * starts with a `Checkout: <checkout>` line, so an agent works from it, never from its start
+ * directory, which a session `cd` moves mid-run (PF-94). A run binds once, from its first call's
+ * envelope; only that call runs unbound.
+ *
+ * @param checkout - The main checkout, absolute.
+ */
+export function withCheckout(hooks: WorkflowHooks, checkout: string): WorkflowHooks {
+  return {
+    ...hooks,
+    agent: (prompt, options) => hooks.agent(`Checkout: ${checkout}\n${prompt}`, options),
+  };
+}
+
 /** A word bash reads as itself unquoted. */
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 
@@ -257,6 +268,19 @@ function verbatimBlock(title: string, file: FileToWrite): string[] {
   return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
 }
 
+/** The vitest config a slice worktree's server-tier runs use. */
+const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
+
+/** `npx tsx` running the main checkout's `tooling/<tool>` with the slice's project and registry. */
+function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/tooling/${tool}`),
+  ];
+}
+
 /**
  * The lease command template a slice's server-tier runs use.
  *
@@ -265,24 +289,35 @@ function verbatimBlock(title: string, file: FileToWrite): string[] {
  */
 function leaseCommand(lease: LeaseValues): string {
   return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/tooling/with-lease.ts`),
+    ...mainToolPrefix(lease, 'with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
-    '--timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>',
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
+  ].join(' ');
+}
+
+/**
+ * The command a slice's full server-tier run uses: the main checkout's pool runner over the run's
+ * registry, every shard of both engines at once under `with-lease`, nothing stood up.
+ *
+ * @param lease - Its values.
+ */
+function fullServerTierCommand(lease: LeaseValues): string {
+  return [
+    ...mainToolPrefix(lease, 'run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
 
 /**
  * A slice's server-tier recipe: the lease command template, where its
- * version comes from, and the probe caps.
+ * version comes from, the full server-tier command, and the probe caps.
  */
 function serverTierLines(lease: LeaseValues): string[] {
   return [
     `Lease command: ${leaseCommand(lease)}`,
     `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
     `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
   ];
 }
@@ -340,7 +375,6 @@ export const PROMPTS = {
   runner: (values: RunnerValues): string =>
     [
       `Command: ${values.argv.map(shellWord).join(' ')}`,
-      ...(values.checkout === undefined ? [] : [`Checkout: ${values.checkout}`]),
       `Envelope dir: ${values.envelopeDir}`,
       `Envelope name: ${values.envelopeName}`,
       ...(values.write ?? []).flatMap((file) => verbatimBlock('Write first', file)),

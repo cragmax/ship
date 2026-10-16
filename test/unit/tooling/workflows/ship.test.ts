@@ -402,6 +402,7 @@ describe('runShip — one issue from launch to PR', () => {
       effort: 'high',
     });
     expect(promptOf(run, 'manifestTsdoc:7-1').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       'Issue: #7',
       'Slice worktree: C:/src/ph-runs/7/slice-7-1',
       'Slice base: cut1',
@@ -729,9 +730,9 @@ describe('runShip — the runner’s command line', () => {
     );
     const runners = run.calls.filter((c) => c.label.startsWith('runner:'));
     expect(runners.length).toBeGreaterThan(3);
-    expect(
-      runners.filter((c) => !c.prompt.startsWith('Command: node --import tsx tooling/')),
-    ).toEqual([]);
+    expect(runners.filter((c) => !/^Command: node --import tsx tooling\//m.test(c.prompt))).toEqual(
+      [],
+    );
   });
 });
 
@@ -1471,13 +1472,14 @@ describe('runShip — what an attempt hands on', () => {
       await runShip(run.hooks, 'issues 7');
 
       const tddLines = promptOf(run, 'tdd:7-1').split('\n');
-      const recipe = ['Lease command: ', 'Lease version: '].map(
+      const recipe = ['Lease command: ', 'Lease version: ', 'Full server tier: '].map(
         (key) => tddLines.find((l) => l.startsWith(key)) ?? key,
       );
       const registry = `${REPORT_DIR}/pool-registry.batch.json`;
       expect(recipe).toEqual([
         `Lease command: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/with-lease.ts --type <paper|folia> --version <version> --registry ${registry} --timeout 600000 -- npx vitest run --config vitest.worktree.integration.config.ts <files>`,
         `Lease version: the version of the chosen type's entry in ${registry}`,
+        `Full server tier: PH_PROJECT_DIR=${projectDir} PH_POOL_REGISTRY=${registry} npx tsx C:/src/main/tooling/run-integration.ts pool --no-standup --config vitest.worktree.integration.config.ts`,
       ]);
       expect(promptOf(run, label).split('\n')).toEqual(expect.arrayContaining(recipe));
     },
@@ -1587,6 +1589,7 @@ describe('runShip — what an attempt hands on', () => {
         .split('\n')
         .map((l) => l.slice(0, l.indexOf(': ')));
       expect(keys).toEqual([
+        'Checkout',
         'Issue',
         'Slice worktree',
         'Slice base',
@@ -1596,6 +1599,7 @@ describe('runShip — what an attempt hands on', () => {
         'Report file',
         'Lease command',
         'Lease version',
+        'Full server tier',
         'Probe caps',
       ]);
     },
@@ -1610,6 +1614,7 @@ describe('runShip — what an attempt hands on', () => {
       .split('\n')
       .map((l) => l.slice(0, l.indexOf(': ')));
     expect(keys).toEqual([
+      'Checkout',
       'Issue',
       'Slice worktree',
       'Slice base',
@@ -1618,6 +1623,7 @@ describe('runShip — what an attempt hands on', () => {
       'Report file',
       'Lease command',
       'Lease version',
+      'Full server tier',
       'Probe caps',
     ]);
   });
@@ -1633,6 +1639,7 @@ describe('runShip — what an attempt hands on', () => {
       lines.findIndex((l) => l.startsWith('Commit message template: ')),
     );
     expect(head.map((l) => l.slice(0, l.indexOf(': ')))).toEqual([
+      'Checkout',
       'Issue',
       'Attempt',
       'Slice worktree',
@@ -1643,6 +1650,7 @@ describe('runShip — what an attempt hands on', () => {
       'Kept dir',
       'Lease command',
       'Lease version',
+      'Full server tier',
       'Probe caps',
     ]);
   });
@@ -1888,6 +1896,7 @@ describe('runShip — the epic end', () => {
       'origin1',
     ]);
     expect(promptOf(run, 'resolver:list').split('\n')).toEqual([
+      'Checkout: C:/src/main',
       `Batch worktree: ${BATCH}`,
       `Pending paths: ${ADR_INDEX}`,
       `Report file: ${REPORT_DIR}/resolve.md`,
@@ -2357,7 +2366,7 @@ describe('runShip — issue readiness', () => {
       agentType: 'issue-readiness',
       model: 'opus',
       effort: 'medium',
-      prompt: 'Run-set issues: #7',
+      prompt: 'Checkout: C:/src/main\nRun-set issues: #7',
     });
   });
   it('refuses an issue both stale and not-ready once for each', async () => {

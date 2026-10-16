@@ -6,9 +6,11 @@ import { runShip } from '../../../../tooling/workflows/ship.js';
 
 import {
   BATCH,
+  checkoutLines,
   DOC_INDEX_CONFLICT,
   fakeHooks,
   liveRuns,
+  MAIN,
   OK,
   PREFLIGHT_OK,
   REPORT_DIR,
@@ -16,15 +18,11 @@ import {
   type FakeRun,
 } from './_fake-hooks.js';
 
-/** The main checkout pre-flight names: distinct from every other path the fakes answer. */
-const MAIN = 'D:/checkouts/main';
-
-/** Pre-flight and the cut both name {@link MAIN}, as the CLI does for one checkout. */
+/** Pre-flight names {@link MAIN}; the cut's envelope names no main checkout. */
 const AT_MAIN = {
   'runner:preflight': { ...PREFLIGHT_OK, worktree: MAIN },
   'runner:cut-batch': {
     ...OK,
-    worktree: MAIN,
     branch: 'ship/7',
     base: 'master0',
     batch: BATCH,
@@ -33,19 +31,9 @@ const AT_MAIN = {
   },
 };
 
-/** Each runner call's label and its prompt's `Checkout:` lines. */
-function checkouts(run: FakeRun): { label: string; checkout: string[] }[] {
-  return run.calls
-    .filter((c) => c.agentType === 'runner')
-    .map((c) => ({
-      label: c.label,
-      checkout: c.prompt.split('\n').filter((l) => l.startsWith('Checkout:')),
-    }));
-}
-
 /** Asserts the preflight call has no Checkout line and every later one names {@link MAIN}. */
 function laterLabelsAtMain(run: FakeRun): string[] {
-  const [first, ...later] = checkouts(run);
+  const [first, ...later] = checkoutLines(run, (c) => c.agentType === 'runner');
   expect(first).toEqual({ label: 'runner:preflight', checkout: [] });
   for (const call of later)
     expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
@@ -121,5 +109,67 @@ describe('runShip — every runner after pre-flight runs from the main checkout'
         'runner:append-pr-body:list',
       ]),
     );
+  });
+});
+
+describe('runShip — every agent after pre-flight works from the main checkout', () => {
+  it('gives every judgment agent’s prompt, pre-flight’s two included, one Checkout line naming preflight’s worktree', async () => {
+    const run = fakeHooks({ ...AT_MAIN, ...liveRuns({ spent: false }), ...DOC_INDEX_CONFLICT });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report).toMatchObject({ status: 'done', epics: [{ outcome: 'pr' }] });
+    const agents = checkoutLines(run, (c) => c.agentType !== 'runner');
+    for (const call of agents)
+      expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
+    expect(agents.map((c) => c.label)).toEqual(
+      expect.arrayContaining([
+        'issueReadiness',
+        'issueOverlap',
+        'tdd:7-1',
+        'specReview:7-1',
+        'testReview:7-1',
+        'standardsReview:7-1',
+        'resolver:list',
+        'epicReview:list',
+        'retro:list',
+        'prWriter:list',
+      ]),
+    );
+  });
+});
+
+describe('runShip — a preflight naming no main checkout', () => {
+  it('refuses with a preflight-error, running nothing after preflight', async () => {
+    const run = fakeHooks({ 'runner:preflight': { ...PREFLIGHT_OK, worktree: null } });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report).toEqual({
+      status: 'refused',
+      refusals: [{ kind: 'preflight-error', message: 'preflight named no main checkout' }],
+      dropped: [],
+      epics: [],
+    });
+    expect(run.calls.map((c) => c.label)).toEqual(['runner:preflight']);
+  });
+
+  it('refuses with its failed checks when it names them', async () => {
+    const run = fakeHooks({
+      'runner:preflight': {
+        ...PREFLIGHT_OK,
+        exitCode: 1,
+        status: 'refused',
+        reason: 'preflight-failed',
+        worktree: null,
+        snapshot: null,
+        problems: [{ check: 'gh-auth', message: 'gh is not logged in' }],
+      },
+    });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.refusals).toEqual([{ kind: 'gh-auth', message: 'gh is not logged in' }]);
+    expect(run.calls.map((c) => c.label)).toEqual(['runner:preflight']);
   });
 });

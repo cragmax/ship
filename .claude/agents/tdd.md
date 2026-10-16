@@ -16,6 +16,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Issue:`, `Attempt:` — the issue and the attempt.
 - `Slice worktree:` — your only work tree, provisioned: `node_modules` linked, a local `dist`, `vitest.worktree.config.ts` and `vitest.worktree.integration.config.ts` written.
 - `Slice base:` — the commit the slice was cut at; your commit's only parent.
@@ -23,8 +24,9 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - `Issue command:` — the command that writes it; run it verbatim.
 - `Report file:` — where your full report goes.
 - `Kept dir:` — where an attempt that does not land keeps its work once you return: `slice.patch`, the diff from the slice base to every file git does not ignore, and a copy of your report under its own name. The attempt's end removes the worktree, and the run's end may remove the report file's directory.
-- `Lease command:` — the template every server-tier vitest run uses; fill `<paper|folia>`, `<version>` and `<files>`.
+- `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
+- `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
 - `Probe caps:` — minutes per probe and probes per stage.
 - `Commit message template:` — the commit message file's path, then its message between `----- BEGIN FILE -----` and `----- END FILE -----`, with a `<type>(<scope>): <subject>` and a `<fixes|see>` placeholder for you to fill (§ Commit line).
 
@@ -48,7 +50,7 @@ Choose the commit's first line: a `type` and `scope` from `tooling/lib/commit-ms
 
 ## Commit
 
-1. `MSYS_NO_PATHCONV=1 node <main>/tooling/mutate.ts check`, run from the slice root with `<main>` the checkout you started in, exits 0; else restore what it lists. The slice's copy of `mutate.ts` is diff, not a tool.
+1. `MSYS_NO_PATHCONV=1 node <main>/tooling/mutate.ts check`, run from the slice root with `<main>` the `Checkout:` path, exits 0; else restore what it lists. The slice's copy of `mutate.ts` is diff, not a tool.
 2. Once the slice is green: when it changed anything under `src/` or `tooling/`, run `npm run build` (the commit gate reads `dist/api-manifest.json`).
 3. Write the commit message file: the template's lines between the markers, each ending in a newline, its placeholders filled per § Commit line.
 4. Stage your files by name (`git add -- <path>…`): never the `vitest.worktree*.config.ts` files, caches or `reports/`.

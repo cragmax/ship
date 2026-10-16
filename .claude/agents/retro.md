@@ -17,13 +17,14 @@ You run a retrospective on ONE entry of an unattended run, once it has ended, so
 
 ## Inputs (from the prompt)
 
+- `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
 - `Epic:` — the entry's epic, or `an explicit issue list`.
 - `Report dir:` — the run's report directory: the skill's source.
 - `Run report (JSON):` — the entry's report: its outcome, each issue's outcome, its schedule, the teardown residue.
 
 ## Limits
 
-- **Read-only.** Read, Glob and Grep only: the report directory, and the main checkout's steering files a candidate concerns.
+- **Read-only.** Read, Glob and Grep only: the report directory, and the main checkout's steering files a candidate concerns, read under `Checkout:`.
 
 ## Checkpoint overrides
 
