@@ -1,8 +1,8 @@
 /**
  * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
- * at least one landed ({@link epicEnd}): the epic review, the master sync, the version bump, the
- * retro and PR writer concurrently, then the publish task; an entry that halted or landed nothing
- * gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
+ * at least one landed ({@link epicEnd}): the epic review, the master sync, the bump, the pushed
+ * paths, the retro and PR writer concurrently, then the publish task; one that halted or landed
+ * nothing gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
  * No server-tier step: pre-push runs it on a Platform-wide change; red refuses the push (ADR-0051).
  * A code conflict, a failed sync, a failed bump or a throwing step stops the epic; a bump finding
@@ -32,6 +32,7 @@ import {
   type EpicReviewReport,
   type LandedIssue,
   type PrBodyInput,
+  type PushedPaths,
   type ScheduleEntry,
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
@@ -347,6 +348,7 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
+  const pushed = await pushedPathsStep(input, sync.upstream);
   // No thunk rejects (each step catches), so `parallel`'s `null` for a throw (`hooks.types.ts`)
   // is never read. An attached run runs no PR writer: its section is appended after the push
   // (`pushOntoPr`).
@@ -358,13 +360,28 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
       if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
-  return publishStep(input, { sync, bump, state });
+  return publishStep(input, { sync, bump, pushed, state });
+}
+
+/**
+ * The paths the push will change, read from the batch's `HEAD` after the bump, from the base
+ * pre-push diffs it from: the synced `origin/master`, the merge base of a new branch; for an
+ * attached run, the batch's cut, the open PR's tip. A failed read is `unread`, never a stop.
+ */
+async function pushedPathsStep(input: EpicEndInput, upstream: string | null): Promise<PushedPaths> {
+  const { hooks, entry } = input;
+  const base = entry.attached === null ? (upstream ?? entry.base) : entry.base;
+  const argv = [entry.batch, 'HEAD', '--base', base];
+  const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
+  if (read?.status === 'ok' && read.files !== undefined) return { kind: 'read', paths: read.files };
+  return { kind: 'unread', problem: envelopeProblem('changed-files', read) };
 }
 
 /** What the pull request body reports besides the entry's inputs. */
 interface EndFindings {
   readonly sync: SyncStepResult;
   readonly bump: BumpOutput;
+  readonly pushed: PushedPaths;
   readonly state: EndState;
 }
 
@@ -602,6 +619,7 @@ function bodyInput(
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
     bump: found.bump,
+    pushed: found.pushed,
     masterCheck: checked.masterCheck,
     mainUntouched: checked.mainUntouched,
     epicReview: found.state.epicReview ?? {
