@@ -2566,7 +2566,7 @@ function pushedRanges(updates) {
 }
 function decideTier(tier, changes, isPresent) {
   if (changes.kind === 'unresolved') {
-    return { run: 'full', why: `git cannot resolve the pushed range ${changes.range}` };
+    return { run: 'full', why: changes.why };
   }
   const platform = changes.paths.find(isPlatformWide);
   if (platform !== undefined) return { run: 'full', why: `${platform} is a Platform-wide path` };
@@ -2783,8 +2783,8 @@ function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
 function testsAtPushLines(pushed) {
-  if (pushed.kind === 'unread') {
-    return [`Not known: the pushed range could not be read (${pushed.problem}).`];
+  if (pushed.kind === 'unresolved') {
+    return [`Not known: the pushed range could not be read (${pushed.why}).`];
   }
   const wide = pushed.paths.filter((path) => isPlatformWide(path));
   if (wide.length === 0) {
@@ -3181,7 +3181,7 @@ async function shipSteps(input, state) {
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  const pushed = await pushedPathsStep(input, sync.upstream);
+  const read = pushedPathsStep(input, sync.upstream);
   await hooks.parallel([
     async () => {
       state.retro = await retroStep(input, retroReport(input, { outcome: 'pr' }));
@@ -3190,15 +3190,22 @@ async function shipSteps(input, state) {
       if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
-  return publishStep(input, { sync, bump, pushed, state });
+  return publishStep(input, { sync, bump, pushed: await read, state });
 }
 async function pushedPathsStep(input, upstream) {
   const { hooks, entry } = input;
   const base = entry.attached === null ? (upstream ?? entry.base) : entry.base;
   const argv = [entry.batch, 'HEAD', '--base', base];
-  const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
-  if (read?.status === 'ok' && read.files !== undefined) return { kind: 'read', paths: read.files };
-  return { kind: 'unread', problem: envelopeProblem('changed-files', read) };
+  try {
+    const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
+    if (read?.status === 'ok' && read.files !== undefined) {
+      return { kind: 'resolved', paths: read.files };
+    }
+    return { kind: 'unresolved', why: envelopeProblem('changed-files', read) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: 'unresolved', why: `changed-files threw: ${message}` };
+  }
 }
 async function publishStep(input, found) {
   return input.repoLock.enqueue(async () => {

@@ -18,7 +18,7 @@
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
 import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
-import { isPlatformWide } from '../../lib/push-scope.js';
+import { isPlatformWide, type PushedChanges } from '../../lib/push-scope.js';
 
 import type {
   CommitSpec,
@@ -130,11 +130,6 @@ export interface EpicReviewReport {
   readonly answer: EpicReviewOutput | null;
 }
 
-/** The paths the epic end's push changes, read before the push; or why the read failed. */
-export type PushedPaths =
-  | { readonly kind: 'read'; readonly paths: readonly string[] }
-  | { readonly kind: 'unread'; readonly problem: string };
-
 /** Everything an epic's pull request body reports. */
 export interface PrBodyInput {
   /** The epic; `null` for an explicit list. */
@@ -161,7 +156,7 @@ export interface PrBodyInput {
   /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
   /** The paths the push changes, which decide the tests pre-push runs on it (ADR-0051). */
-  readonly pushed: PushedPaths;
+  readonly pushed: PushedChanges;
   /** The overlap edges pre-flight added to the entry. */
   readonly overlap: OverlapRecord;
   /** Each issue's schedule, in the entry's order. */
@@ -450,9 +445,9 @@ function evidenceList(landed: readonly LandedIssue[]): string[] {
  * tiers, naming each Platform-wide path it changes; else targeted tests only, the full server tier
  * left to the nightly; or not known, naming the failed read.
  */
-function testsAtPushLines(pushed: PushedPaths): string[] {
-  if (pushed.kind === 'unread') {
-    return [`Not known: the pushed range could not be read (${pushed.problem}).`];
+function testsAtPushLines(pushed: PushedChanges): string[] {
+  if (pushed.kind === 'unresolved') {
+    return [`Not known: the pushed range could not be read (${pushed.why}).`];
   }
   const wide = pushed.paths.filter((path) => isPlatformWide(path));
   if (wide.length === 0) {

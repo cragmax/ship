@@ -203,7 +203,7 @@ const INPUT: PrBodyInput = {
     remote: { launch: 'o0', synced: 'o0', current: 'o0', move: 'equal' },
   },
   mainUntouched: true,
-  pushed: { kind: 'read', paths: ['src/a.ts', 'tooling/x.ts'] },
+  pushed: { kind: 'resolved', paths: ['src/a.ts', 'tooling/x.ts'] },
   epicReview: {
     verdict: 'accepted-with-open-items',
     profiled: false,
@@ -1478,7 +1478,7 @@ describe('renderPrBody — tests at push', () => {
 
   it('says the full tiers ran at push, naming each Platform-wide path the push changes', () => {
     const pushed = {
-      kind: 'read',
+      kind: 'resolved',
       paths: ['package.json', 'ph-plugin/src/Main.java', 'src/a.ts', 'test/helpers/x.ts'],
     } as const;
 
@@ -1500,7 +1500,7 @@ describe('renderPrBody — tests at push', () => {
   });
 
   it('says it is not known, naming the failed read, when the pushed range was not read', () => {
-    const pushed = { kind: 'unread', problem: 'changed-files failed: bad revision' } as const;
+    const pushed = { kind: 'unresolved', why: 'changed-files failed: bad revision' } as const;
 
     expect(testsAtPush({ ...INPUT, pushed })).toEqual([
       '## Tests at push',
@@ -1616,7 +1616,7 @@ describe('renderAttachedSection', () => {
   it('says what pre-push ran on this run’s push under ### Tests at push, between its Evidence and its Issues', () => {
     const lines = renderAttachedSection({
       ...SECTION_INPUT,
-      pushed: { kind: 'read', paths: ['src/rcon/client.ts', 'tooling/x.ts'] },
+      pushed: { kind: 'resolved', paths: ['src/rcon/client.ts', 'tooling/x.ts'] },
     }).split('\n');
 
     expect(lines.slice(lines.indexOf('### Issues') - 4, lines.indexOf('### Issues'))).toEqual([

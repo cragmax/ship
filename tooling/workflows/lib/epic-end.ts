@@ -17,6 +17,7 @@
  */
 
 import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
+import type { PushedChanges } from '../../lib/push-scope.js';
 
 import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from './agent-calls.js';
 import type { CommitQueue } from './commit-queue.js';
@@ -32,7 +33,6 @@ import {
   type EpicReviewReport,
   type LandedIssue,
   type PrBodyInput,
-  type PushedPaths,
   type ScheduleEntry,
 } from './pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
@@ -334,9 +334,9 @@ async function postIssueComment(
 }
 
 /**
- * The shipping path up to the pull request — epic review, sync, bump, the retro and
- * (unattached runs only) the PR writer concurrently, then the publish task — filling in `state` as
- * steps report.
+ * The shipping path up to the pull request — epic review, sync, bump, the pushed-paths read, the
+ * retro and (unattached runs only) the PR writer concurrently, then the publish task — filling in
+ * `state` as steps report.
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
@@ -348,7 +348,8 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   }
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
-  const pushed = await pushedPathsStep(input, sync.upstream);
+  // Never rejects, so it can run beside the `parallel` below.
+  const read = pushedPathsStep(input, sync.upstream);
   // No thunk rejects (each step catches), so `parallel`'s `null` for a throw (`hooks.types.ts`)
   // is never read. An attached run runs no PR writer: its section is appended after the push
   // (`pushOntoPr`).
@@ -360,28 +361,38 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
       if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
-  return publishStep(input, { sync, bump, pushed, state });
+  return publishStep(input, { sync, bump, pushed: await read, state });
 }
 
 /**
  * The paths the push will change, read from the batch's `HEAD` after the bump, from the base
  * pre-push diffs it from: the synced `origin/master`, the merge base of a new branch; for an
- * attached run, the batch's cut, the open PR's tip. A failed read is `unread`, never a stop.
+ * attached run, the batch's cut, the open PR's tip. Never rejects: a failure is `unresolved`.
  */
-async function pushedPathsStep(input: EpicEndInput, upstream: string | null): Promise<PushedPaths> {
+async function pushedPathsStep(
+  input: EpicEndInput,
+  upstream: string | null,
+): Promise<PushedChanges> {
   const { hooks, entry } = input;
   const base = entry.attached === null ? (upstream ?? entry.base) : entry.base;
   const argv = [entry.batch, 'HEAD', '--base', base];
-  const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
-  if (read?.status === 'ok' && read.files !== undefined) return { kind: 'read', paths: read.files };
-  return { kind: 'unread', problem: envelopeProblem('changed-files', read) };
+  try {
+    const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
+    if (read?.status === 'ok' && read.files !== undefined) {
+      return { kind: 'resolved', paths: read.files };
+    }
+    return { kind: 'unresolved', why: envelopeProblem('changed-files', read) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: 'unresolved', why: `changed-files threw: ${message}` };
+  }
 }
 
 /** What the pull request body reports besides the entry's inputs. */
 interface EndFindings {
   readonly sync: SyncStepResult;
   readonly bump: BumpOutput;
-  readonly pushed: PushedPaths;
+  readonly pushed: PushedChanges;
   readonly state: EndState;
 }
 
