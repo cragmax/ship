@@ -180,7 +180,7 @@ interface BuiltSlice extends ProvisionedSlice {
   readonly sha: string;
   /**
    * The slice commit's changed paths: the tdd's, then each slice review amend's, re-read
-   * ({@link afterAmend}). The Manifest TSDoc review's amend is not re-read: no stage reads
+   * ({@link afterAmend}). The Script API TSDoc review's amend is not re-read: no stage reads
    * them after it.
    */
   readonly files: readonly string[];
@@ -202,7 +202,7 @@ interface ReviewedSlice extends TestReviewedSlice {
 }
 
 /**
- * An authored slice, ready to land: the Manifest TSDoc review's answer, or why it was skipped;
+ * An authored slice, ready to land: the Script API TSDoc review's answer, or why it was skipped;
  * `sha` its last amend.
  */
 interface AuthoredSlice extends ReviewedSlice {
@@ -247,7 +247,7 @@ async function openSlice(at: AttemptId): Promise<Opened> {
   return cutStage(at);
 }
 
-/** Run the provision through the Manifest TSDoc review, each at a boundary that sees a halt. */
+/** Run the provision through the Script API TSDoc review, each at a boundary that sees a halt. */
 async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
@@ -420,7 +420,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
 }
 
 /**
- * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the slice
+ * Review the Script API TSDoc the slice reaches, amending its commit with any fix, when the slice
  * changes a path under `src/`; `sha` its amend.
  */
 async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
@@ -430,10 +430,10 @@ async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>
   }
   const values = {
     ...sliceCommitValues(s),
-    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+    reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+  return afterReview(at, 'script api tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
 }
 
 /**

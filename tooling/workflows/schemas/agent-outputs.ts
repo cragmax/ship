@@ -178,7 +178,7 @@ export const ReviewOutputSchema = z.object({
   leaseLines: z.array(z.string()),
 });
 
-/** The Manifest TSDoc review's answer. */
+/** The Script API TSDoc review's answer. */
 export const ManifestTsdocOutputSchema = z.object({
   /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
   verdict: z.enum(['clean', 'fixed', 'blocked']),

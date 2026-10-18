@@ -92,10 +92,10 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
  */
 export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
-/** The Manifest TSDoc review's answer. */
+/** The Script API TSDoc review's answer. */
 export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
 
-/** Why a slice's Manifest TSDoc review was skipped: it changed nothing under `src/`. */
+/** Why a slice's Script API TSDoc review was skipped: it changed nothing under `src/`. */
 export type ManifestTsdocSkip = 'no src/ change';
 
 /** What a slice's agents produced by the time its commit is ready to land. */
@@ -108,7 +108,7 @@ export interface SliceWork {
   readonly testReview: ReviewOutput | TestReviewSkip;
   /** The standards review's answer. */
   readonly standardsReview: ReviewOutput;
-  /** The Manifest TSDoc review's answer, or why it was skipped. */
+  /** The Script API TSDoc review's answer, or why it was skipped. */
   readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
 }
 

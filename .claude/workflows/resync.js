@@ -72,7 +72,7 @@ const STAGES = {
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+  manifestTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
@@ -102,7 +102,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Manifest TSDoc (src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,

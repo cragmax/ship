@@ -153,7 +153,7 @@ export interface SliceReviewValues extends SliceCommitValues {
  */
 export type TestReviewValues = Omit<SliceReviewValues, 'files'>;
 
-/** The Manifest TSDoc review's values: the slice's, and where its report goes. */
+/** The Script API TSDoc review's values: the slice's, and where its report goes. */
 export interface ManifestTsdocValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;

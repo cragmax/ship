@@ -199,13 +199,13 @@ describe('runShip — the epic review', () => {
     );
   });
 
-  it('names the Manifest TSDoc report among the slice reports when that review ran', async () => {
+  it('names the Script API TSDoc report among the slice reports when that review ran', async () => {
     const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['src/a.ts', 'test/unit/a.test.ts'] } });
 
     await runShip(run.hooks, 'issues 7');
 
     expect(promptOf(run, 'epicReview:list').split('\n')).toContain(
-      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/test-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md, ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+      `Slice reports: ${REPORT_DIR}/spec-review-7-1.md, ${REPORT_DIR}/test-review-7-1.md, ${REPORT_DIR}/standards-review-7-1.md, ${REPORT_DIR}/script-api-tsdoc-7-1.md`,
     );
   });
 

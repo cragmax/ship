@@ -13,7 +13,7 @@ export const meta = {
     {
       title: 'Issues',
       detail:
-        'per issue, in dependency order: tdd, spec review, test review, standards review, Manifest TSDoc (src/ only), land',
+        'per issue, in dependency order: tdd, spec review, test review, standards review, Script API TSDoc (src/ only), land',
     },
     {
       title: 'Epic end',
@@ -34,7 +34,7 @@ const STAGES = {
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+  manifestTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
@@ -64,7 +64,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Manifest TSDoc (src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -2945,7 +2945,7 @@ function issueSection(landed) {
     reviewLine('Spec review', landed.specReview),
     reviewLine('Test review', landed.testReview),
     reviewLine('Standards review', landed.standardsReview),
-    reviewLine('Manifest TSDoc', landed.manifestTsdoc),
+    reviewLine('Script API TSDoc', landed.manifestTsdoc),
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
@@ -3391,7 +3391,7 @@ function sliceReports(input, landed) {
   const stages = ['spec-review'];
   if (typeof landed.testReview !== 'string') stages.push('test-review');
   stages.push('standards-review');
-  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  if (typeof landed.manifestTsdoc !== 'string') stages.push('script-api-tsdoc');
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 async function retroStep(input, report) {
@@ -3600,10 +3600,10 @@ async function manifestTsdocStage(s) {
   }
   const values = {
     ...sliceCommitValues(s),
-    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+    reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+  return afterReview(at, 'script api tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
 }
 function afterReview(at, label, out, next) {
   if (out === null) return { stop: died(at) };

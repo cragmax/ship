@@ -377,7 +377,7 @@ describe('runShip — one issue from launch to PR', () => {
     });
   });
 
-  it('runs the Manifest TSDoc review after the standards review on a slice changing src/, the land reading its amend', async () => {
+  it('runs the Script API TSDoc review after the standards review on a slice changing src/, the land reading its amend', async () => {
     const files = ['src/fluent/wrapped-bot/types.ts', 'test/unit/x.test.ts'];
     const run = fakeHooks({
       tdd: { ...TDD_GREEN, files },
@@ -397,7 +397,7 @@ describe('runShip — one issue from launch to PR', () => {
     ]);
     const call = run.calls.find((c) => c.label === 'manifestTsdoc:7-1');
     expect({ agentType: call?.agentType, model: call?.model, effort: call?.effort }).toEqual({
-      agentType: 'manifest-tsdoc',
+      agentType: 'script-api-tsdoc',
       model: 'opus',
       effort: 'high',
     });
@@ -408,7 +408,7 @@ describe('runShip — one issue from launch to PR', () => {
       'Slice base: cut1',
       'Slice commit: slice2',
       'Changed files: src/fluent/wrapped-bot/types.ts, test/unit/x.test.ts',
-      `Report file: ${REPORT_DIR}/manifest-tsdoc-7-1.md`,
+      `Report file: ${REPORT_DIR}/script-api-tsdoc-7-1.md`,
     ]);
     expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2m');
   });
@@ -1272,13 +1272,13 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     'a stage threw: runtime crashed',
   ],
   [
-    'blocked by the Manifest TSDoc review',
+    'blocked by the Script API TSDoc review',
     {
       tdd: { ...TDD_GREEN, files: ['src/fluent/wrapped-bot/types.ts'] },
       manifestTsdoc: { verdict: 'blocked', sha: '', summary: 'a hook failure would not clear' },
     },
     [...UP_TO_REVIEW, 'manifestTsdoc:7-1', 'runner:teardown:7-1'],
-    'manifest tsdoc: a hook failure would not clear',
+    'script api tsdoc: a hook failure would not clear',
   ],
   [
     'blocked by a failed re-read of the spec review’s amend',
@@ -1789,7 +1789,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
     expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
       'Changed files: src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
     );
-    // The tdd changed no src/ path: only the amend's src/y.ts runs the Manifest TSDoc review.
+    // The tdd changed no src/ path: only the amend's src/y.ts runs the Script API TSDoc review.
     expect(lineSeenBy(run, 'manifestTsdoc:7-1', 'Changed files: ')).toBe(
       'Changed files: docs/y.md, src/y.ts, test/unit/tooling/x.test.ts, tooling/x.ts',
     );
@@ -2446,7 +2446,7 @@ describe('agent-call tiers', () => {
       specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
       testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-      manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+      manifestTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
       resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
       retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
