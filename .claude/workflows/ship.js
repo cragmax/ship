@@ -2537,7 +2537,7 @@ const PLATFORM_WIDE_PATHS = [
   'src/rcon/',
   'src/engine/bot/',
   'src/engine/state/bot-list.ts',
-  'src/server-pool/',
+  'server-pool/',
   'src/world-state-reset/',
   'tooling/run-integration.ts',
   'tooling/with-lease.ts',

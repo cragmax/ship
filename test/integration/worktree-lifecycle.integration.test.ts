@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadPoolRegistry } from '../../src/server-pool/index.js';
+import { loadPoolRegistry } from '../../server-pool/src/index.js';
 import { toPosix } from '../../tooling/shared.js';
 import { unlinkLink } from '../../tooling/worktree/links.js';
 import { provisionBatch } from '../../tooling/worktree/provision-batch.js';
@@ -170,7 +170,7 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
     const { main, batch, slice } = batchAndSlice();
     expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
 
-    const down = runCli<TeardownResult>(['teardown', slice], { cwd: join(slice, 'src') });
+    const down = runCli<TeardownResult>(['teardown', slice], { cwd: join(slice, 'server-pool') });
     expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
     expect(existsSync(slice)).toBe(false);
     expect(isRegistered(main, slice)).toBe(false);
@@ -275,7 +275,7 @@ describe('provision-batch', () => {
     {
       name: 'the registry lacks the folia warm member',
       arrange: (_main: string, batch: string): BatchCase => {
-        const path = join(batch, 'src', 'server-pool', 'registry', 'pool-registry.json');
+        const path = join(batch, 'server-pool', 'src', 'registry', 'pool-registry.json');
         const entries = JSON.parse(readFileSync(path, 'utf8')) as { type: string }[];
         writeFileSync(path, JSON.stringify(entries.filter((e) => e.type !== 'folia')));
         return { batch, reportDir: join(root, 'reports') };

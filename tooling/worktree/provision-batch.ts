@@ -66,7 +66,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
     result.dist = `${batch}/dist`;
     result.projectDirMarker = createProjectDirMarker(batch);
     const registry = `${reportDir}/${BATCH_REGISTRY_FILE}`;
-    result.warm = trimRegistry(`${batch}/src/server-pool/registry/pool-registry.json`, registry);
+    result.warm = trimRegistry(`${batch}/server-pool/src/registry/pool-registry.json`, registry);
     result.registry = registry;
     assertStatusUnchanged(batch, before);
     result.env = { PH_PROJECT_DIR: batch, PH_POOL_REGISTRY: registry };

@@ -13,7 +13,7 @@
  * registry failure stops the command.
  */
 
-import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js';
+import { loadPoolRegistry, type PoolEntry } from '../../server-pool/src/index.js';
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from '../lib/rcon-probe.js';
 
 import { assertPublished, attachSlug, openPr } from './cut-attach.js';
@@ -49,7 +49,7 @@ export interface PreflightInput {
 }
 
 /** Where the main checkout keeps the pool registry the warm set is read from. */
-const REGISTRY_PATH = 'src/server-pool/registry/pool-registry.json';
+const REGISTRY_PATH = 'server-pool/src/registry/pool-registry.json';
 
 /**
  * Run every pre-flight check against the main checkout.
