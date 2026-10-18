@@ -6,17 +6,11 @@
 
 import { join } from 'node:path';
 
-import { toPosix } from '../shared.js';
+import { sortedSet, toPosix } from '../shared.js';
 
 import { freshLogDir } from './exec.js';
 import { commitWithHooks, git, refExists, requireWorktreeRoot } from './git.js';
-import {
-  compareSets,
-  formatDifference,
-  normaliseRepoPath,
-  sortedSet,
-  stagedPaths,
-} from './staged-set.js';
+import { compareSets, formatDifference, normaliseRepoPath, stagedPaths } from './staged-set.js';
 import { Refusal, recordFailure, type CommitResult } from './types.js';
 
 /** Inputs of {@link commit}; paths absolute with forward slashes, `files` repo-relative. */

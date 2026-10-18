@@ -16,6 +16,8 @@
 
 import { readFileSync } from 'node:fs';
 
+import { sortedSet } from '../shared.js';
+
 import { COMMIT_TIMEOUT_MS, freshLogDir, NPM_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import {
   commitWithHooks,
@@ -31,7 +33,6 @@ import { assertBatchClean, assertLinkedWorktree } from './harvest.js';
 import { needsBuild } from './land.js';
 import { linkTarget } from './links.js';
 import { RUN_UPSTREAM } from './run-layout.js';
-import { sortedSet } from './staged-set.js';
 import {
   applyVersionRule,
   LOCKFILE,

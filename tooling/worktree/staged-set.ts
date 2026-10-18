@@ -10,7 +10,7 @@
  * win32, observed 2026-09-28), and a case-folded compare passes that loss.
  */
 
-import { compareStrings, toPosix } from '../shared.js';
+import { sortedSet, toPosix } from '../shared.js';
 
 import { gitPaths, requireWorktreeRoot } from './git.js';
 import { Refusal, recordFailure, type StagedGuardResult } from './types.js';
@@ -35,16 +35,6 @@ export function normaliseRepoPath(path: string): string {
   let out = toPosix(path);
   while (out.startsWith('./')) out = out.slice(2);
   return out;
-}
-
-/**
- * Sort and deduplicate by code unit.
- *
- * @param paths - Paths in any order.
- * @returns The distinct paths, sorted.
- */
-export function sortedSet(paths: readonly string[]): string[] {
-  return [...new Set(paths)].sort(compareStrings);
 }
 
 /**

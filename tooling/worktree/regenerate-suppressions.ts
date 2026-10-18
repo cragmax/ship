@@ -1,10 +1,10 @@
 import { existsSync, writeFileSync } from 'node:fs';
 
 import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+import { sortedSet } from '../shared.js';
 
 import { NPM_TIMEOUT_MS, runStep } from './exec.js';
 import { git } from './git.js';
-import { sortedSet } from './staged-set.js';
 
 /** ESLint's suppressions file: file → rule → suppressed count. */
 type Suppressions = Record<string, Record<string, { count: number }>>;

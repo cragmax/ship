@@ -5,8 +5,9 @@
  * Read-only: no self-hosted guard.
  */
 
+import { sortedSet } from '../shared.js';
+
 import { gitPaths, resolveCommit } from './git.js';
-import { sortedSet } from './staged-set.js';
 import type { ChangedFilesResult } from './types-run.js';
 import { recordFailure } from './types.js';
 

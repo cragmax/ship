@@ -138,11 +138,7 @@ describe('worktree CLI module loading', () => {
       (m) => ['commit', '--message-file', `${m}/m.txt`, 'f.txt'],
       ['commit', 'staged-set'],
     ],
-    [
-      'changed-files',
-      (m) => ['changed-files', m, 'abc', '--base', 'b'],
-      ['changed-files', 'staged-set'],
-    ],
+    ['changed-files', (m) => ['changed-files', m, 'abc', '--base', 'b'], ['changed-files']],
     [
       'retire-run',
       (m) => ['retire-run', m, '--branch', 'ship/x'],

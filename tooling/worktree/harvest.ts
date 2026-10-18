@@ -14,6 +14,7 @@
  */
 
 import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+import { sortedSet } from '../shared.js';
 
 import { runCaptured } from './exec.js';
 import {
@@ -27,7 +28,7 @@ import {
   statusEntries,
 } from './git.js';
 import { regenerateSuppressions } from './regenerate-suppressions.js';
-import { compareSets, formatDifference, sortedSet, stagedPaths } from './staged-set.js';
+import { compareSets, formatDifference, stagedPaths } from './staged-set.js';
 import {
   Conflict,
   Refusal,
