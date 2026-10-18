@@ -1703,6 +1703,7 @@ describe('runShip — the slice test review', () => {
     [
       ['changes no code', ['docs/x.md', '.claude/agents/x.md'], null, false, false],
       ['only adds tests', ['test/unit/x.test.ts'], null, false, true],
+      ['only adds server-pool tests', ['server-pool/test/unit/x.test.ts'], null, false, true],
       [
         'changes code and tests',
         ['tooling/x.ts', 'test/unit/x.test.ts'],

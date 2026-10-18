@@ -36,7 +36,7 @@ import {
 import type { WorkflowHooks } from './hooks.types.js';
 import { commitMessage, commitMessageTemplate, type SliceSize } from './pr-body.js';
 import type { LeaseValues, SliceCommitValues, SliceReviewValues } from './prompts.js';
-import { isTrivialSurface } from './stages.js';
+import { anyUnder, isTrivialSurface } from './stages.js';
 import { envelopeProblem, runPlace, runTool, type KeptWork, type ToolPlace } from './tool-calls.js';
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
@@ -386,15 +386,17 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
+const TEST_PREFIXES: readonly string[] = ['test/', 'server-pool/test/'];
+
 /**
  * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files
- * change no code; else, none under `test/`, `'comment-only'` when `tooling/comment-only.ts` proves
- * its commit comment-only, leaving no code path uncompared. A failed proof reviews them.
+ * change no code; else, none under {@link TEST_PREFIXES}, `'comment-only'` when `comment-only.ts`
+ * proves its commit comment-only, leaving no code path uncompared. A failed proof reviews them.
  */
 async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
   const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
-  if (files.some((path) => path.startsWith('test/'))) return null;
+  if (anyUnder(files, TEST_PREFIXES)) return null;
   const range = `${s.base}..${s.sha}`;
   const out = await runTool(s.at.ctx.hooks, 'comment-only', [range], s.at.place);
   const proven =

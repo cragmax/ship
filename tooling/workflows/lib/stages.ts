@@ -55,18 +55,27 @@ export const PROBE_CAP_MINUTES = 15;
 /** The most probes one stage of one slice (its tdd or one slice review) may run. */
 export const PROBES_PER_STAGE = 3;
 
-/** The paths whose change is not a trivial surface: code, tooling and tests. */
-const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/'];
+const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'server-pool/'];
+
+/**
+ * Whether any path starts with one of the prefixes.
+ *
+ * @param prefixes - Each a directory with its trailing `/`, so `server-pool/`
+ *   misses `server-pool-old/`.
+ */
+export function anyUnder(files: readonly string[], prefixes: readonly string[]): boolean {
+  return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
+}
 
 /**
  * Whether a change touches no code: a slice's test review is skipped for it.
  *
  * @param files - The changed paths, repository-relative.
- * @returns `true` when no path is under `src/`, `tooling/` or `test/` (an
- *   empty list included).
+ * @returns `true` when no path is under {@link CODE_PREFIXES} (an empty list
+ *   included).
  */
 export function isTrivialSurface(files: readonly string[]): boolean {
-  return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
+  return !anyUnder(files, CODE_PREFIXES);
 }
 
 /** The titles `phase()` is called with. */

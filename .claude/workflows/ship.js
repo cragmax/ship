@@ -43,9 +43,12 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/'];
+function anyUnder(files, prefixes) {
+  return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
+}
 function isTrivialSurface(files) {
-  return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
+  return !anyUnder(files, CODE_PREFIXES);
 }
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
@@ -3566,10 +3569,11 @@ async function testReviewStage(s) {
   );
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
+const TEST_PREFIXES = ['test/', 'server-pool/test/'];
 async function testSkip(s) {
   const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
-  if (files.some((path) => path.startsWith('test/'))) return null;
+  if (anyUnder(files, TEST_PREFIXES)) return null;
   const range = `${s.base}..${s.sha}`;
   const out = await runTool(s.at.ctx.hooks, 'comment-only', [range], s.at.place);
   const proven =

@@ -81,9 +81,12 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/'];
+function anyUnder(files, prefixes) {
+  return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
+}
 function isTrivialSurface(files) {
-  return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
+  return !anyUnder(files, CODE_PREFIXES);
 }
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
