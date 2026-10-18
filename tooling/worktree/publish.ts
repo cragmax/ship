@@ -5,8 +5,8 @@
  *
  * Order: the guards (a linked run batch, no open PR for the branch, a body
  * file within {@link GH_BODY_LIMIT}), then `npm run build` — so the
- * pre-push gate's unit suite reads a current
- * `dist/api-manifest.json` — then the push, then `gh pr create`.
+ * pre-push gate's tests read a current `dist/` — then the push, then
+ * `gh pr create`.
  * A failed push opens no PR. The PR number is read from the PR URL that
  * `gh pr create` prints on stdout on success; no URL is a `pr` failure with `pushed` true.
  *
