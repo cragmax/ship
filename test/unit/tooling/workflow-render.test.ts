@@ -245,7 +245,7 @@ describe('the render closure', () => {
     const at = (file: string): number => files.indexOf(file);
 
     expect(files).toContain('tooling/lib/run-scheduler.ts');
-    expect(files).toContain('tooling/lib/lease-timings.ts');
+    expect(files).toContain('server-pool/src/lease-timings.ts');
     expect(files).not.toContain('tooling/lib/run-scheduler.types.ts');
     expect(files.filter((f) => f.startsWith('tooling/worktree'))).toEqual([]);
     expect(at('tooling/lib/run-set.ts')).toBeLessThan(at('tooling/lib/run-scheduler.ts'));

@@ -16,7 +16,10 @@
  * effect.
  */
 
-import { aggregateLeaseTimings, type LeaseAggregate } from '../../lib/lease-timings.js';
+import {
+  aggregateLeaseTimings,
+  type LeaseAggregate,
+} from '../../../server-pool/src/lease-timings.js';
 import type { PushedChanges } from '../../lib/push-scope.js';
 
 import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from './agent-calls.js';

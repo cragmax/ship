@@ -166,12 +166,12 @@ function mainToolPrefix(lease, tool) {
     `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
     `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
     'npx tsx',
-    shellWord(`${lease.main}/tooling/${tool}`),
+    shellWord(`${lease.main}/${tool}`),
   ];
 }
 function leaseCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'with-lease.ts'),
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
     `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
@@ -179,7 +179,7 @@ function leaseCommand(lease) {
 }
 function fullServerTierCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }

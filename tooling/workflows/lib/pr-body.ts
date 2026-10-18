@@ -11,13 +11,17 @@
  * section is appended to is never neutralised again.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect; `tooling/lib/lease-timings.ts`, which parses the lease lines, and
+ * effect; `server-pool/src/lease-timings.ts`, which parses the lease lines, and
  * `tooling/lib/push-scope.ts`, which names the Platform-wide paths, join the closure.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
-import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from '../../lib/lease-timings.js';
+import {
+  parseLeaseLines,
+  type LeaseAggregate,
+  type LeaseTiming,
+} from '../../../server-pool/src/lease-timings.js';
 import { isPlatformWide, MAX_RELATED_FILES } from '../../lib/platform-wide.js';
 import type { PushedChanges } from '../../lib/push-scope.js';
 
