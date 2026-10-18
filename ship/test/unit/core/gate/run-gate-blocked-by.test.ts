@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { parseBlockedBySection } from '../../../tooling/lib/run-gate-blocked-by.js';
+import { parseBlockedBySection } from '../../../../src/core/gate/run-gate-blocked-by.js';
 
 function section(...lines: string[]): string {
   return ['## Parent', '', '- #1025', '', '## Blocked by', '', ...lines, ''].join('\n');

@@ -17,7 +17,7 @@
  */
 
 import type { ShipRefusal } from './preflight.js';
-import { RUN_BRANCH_SHAPE } from './run-branch.js';
+import { RUN_BRANCH_SHAPE } from '../../../ship/src/core/run-branch.js';
 import { MAX_SLICES } from './stages.js';
 
 /** What a run ships: whole epics, or an explicit issue list. */

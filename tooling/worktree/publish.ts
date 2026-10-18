@@ -16,7 +16,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { GH_BODY_LIMIT } from '../lib/gh-body-limit.js';
+import { GH_BODY_LIMIT } from '../../ship/src/core/gh-body-limit.js';
 
 import { assertRunBatch } from './cut.js';
 import { GH_TIMEOUT_MS, NPM_TIMEOUT_MS, PUSH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';

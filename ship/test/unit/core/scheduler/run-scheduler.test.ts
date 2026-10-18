@@ -3,12 +3,12 @@ import { resolve } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
 
-import { advance, createScheduler } from '../../../tooling/lib/run-scheduler.js';
+import { advance, createScheduler } from '../../../../src/core/scheduler/run-scheduler.js';
 import type {
   SchedulerEvent,
   SchedulerInput,
   Transition,
-} from '../../../tooling/lib/run-scheduler.types.js';
+} from '../../../../src/core/scheduler/run-scheduler.types.js';
 
 /** Create, then feed each event in turn; returns every transition, the initial one first. */
 function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
@@ -338,11 +338,11 @@ describe('run-scheduler render safety', () => {
   // run-scheduler.ts into one scope. Comments are stripped first (the same two
   // regexes as run-set.test.ts) so the header TSDoc may name forbidden tokens.
   const code = (file: string): string =>
-    readFileSync(resolve(import.meta.dirname, '../../../tooling/lib', file), 'utf8')
+    readFileSync(resolve(import.meta.dirname, '../../../../src/core', file), 'utf8')
       .replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '')
       .replace(/\/\/[^\n]*/g, '');
-  const scheduler = code('run-scheduler.ts');
-  const types = code('run-scheduler.types.ts');
+  const scheduler = code('scheduler/run-scheduler.ts');
+  const types = code('scheduler/run-scheduler.types.ts');
   const runSet = code('run-set.ts');
   const imports = (src: string): string[] => src.match(/^import\s[^;]*;/gm) ?? [];
   const isTypeImport = (statement: string): boolean => /^import\s+type\s/.test(statement);
@@ -354,10 +354,10 @@ describe('run-scheduler render safety', () => {
       ),
     ].map((m) => m[1] ?? '');
 
-  it('run-scheduler.ts value-imports only ./run-set.js; every other import is import type', () => {
+  it('run-scheduler.ts value-imports only ../run-set.js; every other import is import type', () => {
     const valueImports = imports(scheduler).filter((s) => !isTypeImport(s));
     expect(valueImports.map((s) => /from\s*['"]([^'"]+)['"]/.exec(s)?.[1])).toEqual([
-      './run-set.js',
+      '../run-set.js',
     ]);
   });
 

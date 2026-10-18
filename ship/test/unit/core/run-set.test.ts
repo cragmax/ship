@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
 
-import { findCycles, runSetIssues, transitiveDependents } from '../../../tooling/lib/run-set.js';
+import { findCycles, runSetIssues, transitiveDependents } from '../../../src/core/run-set.js';
 
 describe('runSetIssues', () => {
   it('flattens every entry, ascending', () => {
@@ -121,10 +121,7 @@ describe('run-set.ts render safety', () => {
   // Read as text: the purity contract is about the file's source, which a
   // render step copies verbatim. Comments are stripped first so the header
   // TSDoc may name the forbidden tokens.
-  const source = readFileSync(
-    resolve(import.meta.dirname, '../../../tooling/lib/run-set.ts'),
-    'utf8',
-  );
+  const source = readFileSync(resolve(import.meta.dirname, '../../../src/core/run-set.ts'), 'utf8');
   const code = source.replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '').replace(/\/\/[^\n]*/g, '');
 
   it('has no import statement or re-export', () => {

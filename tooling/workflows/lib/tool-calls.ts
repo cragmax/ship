@@ -17,7 +17,7 @@
 import type { z } from 'zod';
 
 import type { CommentOnlyReport } from '../../lib/comment-only.js';
-import type { GateVerdict, IssueCheck } from '../../lib/run-gate.js';
+import type { GateVerdict, IssueCheck } from '../../../ship/src/core/gate/run-gate.js';
 import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
 import type { JsonSchema, WorkflowHooks } from './hooks.types.js';
@@ -291,8 +291,8 @@ function envelopeSchema(name: WorktreeToolName): JsonSchema {
  * `schemas.generated.ts`' emission of its pick in `tooling/workflows/schemas/tool-envelopes.ts` —
  * the one source of the consumed fields, their schema and their type, and of which are required —
  * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
- * hand-written from `tooling/lib/run-gate.ts`' types: every consumed field required, save those a
- * failure or exclusion kind may lack. The `comment-only` row is hand-written from
+ * hand-written from `ship/src/core/gate/run-gate.ts`' types: every consumed field required,
+ * save those a failure or exclusion kind may lack. The `comment-only` row is hand-written from
  * `tooling/lib/comment-only.ts`' `CommentOnlyReport`, its consumed field required.
  */
 export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {

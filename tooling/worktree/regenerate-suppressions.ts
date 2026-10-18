@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from 'node:fs';
 
-import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+import { ESLINT_SUPPRESSIONS } from '../../ship/src/core/generated-files.js';
 import { sortedSet } from '../shared.js';
 
 import { NPM_TIMEOUT_MS, runStep } from './exec.js';

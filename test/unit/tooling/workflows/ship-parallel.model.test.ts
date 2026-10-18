@@ -3,10 +3,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { SchedulerInput } from '../../../../tooling/lib/run-scheduler.types.js';
+import type { SchedulerInput } from '../../../../ship/src/core/scheduler/run-scheduler.types.js';
 import type { ShipReport } from '../../../../tooling/workflows/ship.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
-import { arbInput } from '../_run-scheduler-model.js';
+import { arbInput } from '../../../../ship/test/unit/core/scheduler/_run-scheduler-model.js';
 
 import {
   fakeHooks,

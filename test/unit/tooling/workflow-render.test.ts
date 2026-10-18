@@ -234,9 +234,9 @@ describe('the render closure', () => {
   it('takes the ship closure through run-set.ts and leaves out type-only modules', () => {
     const files = workflowClosure(ROOT, shipSpec().entry);
 
-    expect(files).toContain('tooling/lib/run-set.ts');
+    expect(files).toContain('ship/src/core/run-set.ts');
     expect(files).not.toContain('tooling/workflows/lib/hooks.types.ts');
-    expect(files).not.toContain('tooling/lib/run-gate.ts');
+    expect(files).not.toContain('ship/src/core/gate/run-gate.ts');
     expect(files.at(-1)).toBe('tooling/workflows/ship.ts');
   });
 
@@ -244,12 +244,16 @@ describe('the render closure', () => {
     const files = workflowClosure(ROOT, shipSpec().entry);
     const at = (file: string): number => files.indexOf(file);
 
-    expect(files).toContain('tooling/lib/run-scheduler.ts');
+    expect(files).toContain('ship/src/core/scheduler/run-scheduler.ts');
     expect(files).toContain('server-pool/src/lease-timings.ts');
-    expect(files).not.toContain('tooling/lib/run-scheduler.types.ts');
+    expect(files).not.toContain('ship/src/core/scheduler/run-scheduler.types.ts');
     expect(files.filter((f) => f.startsWith('tooling/worktree'))).toEqual([]);
-    expect(at('tooling/lib/run-set.ts')).toBeLessThan(at('tooling/lib/run-scheduler.ts'));
-    expect(at('tooling/lib/run-scheduler.ts')).toBeLessThan(at('tooling/workflows/lib/drive.ts'));
+    expect(at('ship/src/core/run-set.ts')).toBeLessThan(
+      at('ship/src/core/scheduler/run-scheduler.ts'),
+    );
+    expect(at('ship/src/core/scheduler/run-scheduler.ts')).toBeLessThan(
+      at('tooling/workflows/lib/drive.ts'),
+    );
   });
 
   it.each(['ship', 'resync'])(

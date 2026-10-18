@@ -8,8 +8,8 @@
 
 import fc from 'fast-check';
 
-import { advance, createScheduler } from '../../../tooling/lib/run-scheduler.js';
-import type { RunEdge } from '../../../tooling/lib/run-set.js';
+import { advance, createScheduler } from '../../../../src/core/scheduler/run-scheduler.js';
+import type { RunEdge } from '../../../../src/core/run-set.js';
 import type {
   IssueEvent,
   SchedulerAction,
@@ -18,10 +18,10 @@ import type {
   SchedulerState,
   SkipCause,
   Transition,
-} from '../../../tooling/lib/run-scheduler.types.js';
+} from '../../../../src/core/scheduler/run-scheduler.types.js';
 
 /** The checker's invariants; per-step ones first, in check order, then end-of-run ones. */
-export type InvariantName =
+type InvariantName =
   | 'halt-stops-entry'
   | 'dependency-order'
   | 'cap'
@@ -54,7 +54,7 @@ export class InvariantViolation extends Error {
 }
 
 /** One generated step: an event kind and which candidate issue to aim it at. */
-export interface Choice {
+interface Choice {
   readonly kind: SchedulerEvent['kind'];
   readonly pick: number;
 }
@@ -65,7 +65,7 @@ type Observed = 'unstarted' | 'authoring' | 'landing' | 'settled';
 type EndKind = 'epic-done' | 'epic-halted';
 
 /** What the driver has seen so far, built only from fed events and emitted actions. */
-export interface View {
+interface View {
   readonly input: SchedulerInput;
   readonly order: readonly number[];
   readonly entryOf: ReadonlyMap<number, number | null>;
@@ -85,16 +85,16 @@ export interface View {
 }
 
 /** The scheduler surface the driver talks to — the real one, or a mutant around it. */
-export interface Machine {
+interface Machine {
   readonly create: (input: SchedulerInput) => Transition;
   readonly advance: (state: SchedulerState, event: SchedulerEvent) => Transition;
 }
 
 /** Builds a machine; a mutant reads the driver's pre-step view to aim its fault. */
-export type MachineFactory = (view: View) => Machine;
+type MachineFactory = (view: View) => Machine;
 
 /** The recorded run: every fed event, and every transition (the initial one first). */
-export interface Trace {
+interface Trace {
   readonly events: readonly SchedulerEvent[];
   readonly transitions: readonly Transition[];
 }
@@ -622,7 +622,7 @@ function checkEnd(view: View): void {
 // ---------------------------------------------------------------- mutants
 
 /** A must-fail twin: a fault around the real scheduler, and the invariant it trips first. */
-export interface Mutant {
+interface Mutant {
   readonly name: string;
   readonly trips: InvariantName;
   readonly machine: MachineFactory;

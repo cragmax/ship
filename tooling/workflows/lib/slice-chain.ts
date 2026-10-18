@@ -15,7 +15,7 @@
  * effect.
  */
 
-import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
+import type { SchedulerEvent } from '../../../ship/src/core/scheduler/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,

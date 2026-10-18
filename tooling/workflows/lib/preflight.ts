@@ -15,21 +15,21 @@
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level effect.
  */
 
-import { GENERATED_FILES } from '../../lib/generated-files.js';
-import type { GateFailure } from '../../lib/run-gate.js';
+import { GENERATED_FILES } from '../../../ship/src/core/generated-files.js';
+import type { GateFailure } from '../../../ship/src/core/gate/run-gate.js';
 import {
   mergeOverlapEdges,
   type OverlapCrossPair,
   type OverlapMerge,
   type OverlapPair,
-} from '../../lib/run-overlap.js';
+} from '../../../ship/src/core/run-overlap.js';
 import {
   runSetIssues,
   transitiveDependents,
   type RunEdge,
   type RunGraph,
-} from '../../lib/run-set.js';
-import { runSlug } from '../../lib/run-slug.js';
+} from '../../../ship/src/core/run-set.js';
+import { runSlug } from '../../../ship/src/core/run-slug.js';
 import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
 
 import {

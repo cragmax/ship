@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { runSlug } from '../../../tooling/lib/run-slug.js';
+import { runSlug } from '../../../ship/src/core/run-slug.js';
 import {
   attachedRunReports,
   nextAttachedRun,

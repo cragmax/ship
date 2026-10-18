@@ -9,8 +9,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import fc from 'fast-check';
 
-import { advance, createScheduler } from '../../../tooling/lib/run-scheduler.js';
-import type { SchedulerState, Transition } from '../../../tooling/lib/run-scheduler.types.js';
+import { advance, createScheduler } from '../../../../src/core/scheduler/run-scheduler.js';
+import type {
+  SchedulerState,
+  Transition,
+} from '../../../../src/core/scheduler/run-scheduler.types.js';
 
 import {
   arbChoices,

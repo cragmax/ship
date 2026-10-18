@@ -14,14 +14,14 @@
  * ECMAScript built-ins only, no top-level side effect.
  */
 
-import { advance, createScheduler } from '../../lib/run-scheduler.js';
+import { advance, createScheduler } from '../../../ship/src/core/scheduler/run-scheduler.js';
 import type {
   SchedulerAction,
   SchedulerEvent,
   SchedulerState,
   Transition,
-} from '../../lib/run-scheduler.types.js';
-import type { RunGraph } from '../../lib/run-set.js';
+} from '../../../ship/src/core/scheduler/run-scheduler.types.js';
+import type { RunGraph } from '../../../ship/src/core/run-set.js';
 
 import {
   createCommitQueue,
@@ -446,7 +446,7 @@ export function neverStarted(
 
 /**
  * One graph edge's blocker and its source: an edge both declared and estimated reads `declared`,
- * since `mergeOverlapEdges` (`tooling/lib/run-overlap.ts`) adds no edge for a pair the declared
+ * since `mergeOverlapEdges` (`ship/src/core/run-overlap.ts`) adds no edge for a pair the declared
  * edges already order — so a graph edge absent from `overlap.added` is declared.
  */
 function scheduleBlocker(

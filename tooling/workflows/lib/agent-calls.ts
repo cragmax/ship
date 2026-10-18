@@ -16,7 +16,7 @@
 
 import type { z } from 'zod';
 
-import { runSetIssues } from '../../lib/run-set.js';
+import { runSetIssues } from '../../../ship/src/core/run-set.js';
 import type {
   CommitSpecSchema,
   EpicReviewOutputSchema,

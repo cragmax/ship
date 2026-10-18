@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { CO_AUTHOR_TRAILER } from '../lib/commit-trailer.js';
+import { CO_AUTHOR_TRAILER } from '../../ship/src/core/commit-trailer.js';
 import { describeError } from '../lib/describe-error.js';
 
 import { assertRunBatch } from './cut.js';

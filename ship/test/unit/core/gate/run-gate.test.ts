@@ -7,8 +7,8 @@ import {
   type GateMode,
   type IssueFacts,
   type IssueState,
-} from '../../../tooling/lib/run-gate.js';
-import type { RunSet } from '../../../tooling/lib/run-set.js';
+} from '../../../../src/core/gate/run-gate.js';
+import type { RunSet } from '../../../../src/core/run-set.js';
 
 // Whole-verdict pins leave `message` open; each kind's message content is
 // pinned once, by substring, in the `failure messages` block.

@@ -1,6 +1,6 @@
 /**
  * The run gate's `gh` boundary: fetch, validate and normalise the issue data
- * the pure core (`tooling/lib/run-gate.ts`) decides over, through an injected
+ * the pure core (`ship/src/core/gate/run-gate.ts`) decides over, through an injected
  * {@link GhJson} port. The real port lives only in the CLI (`tooling/run-gate.ts`).
  *
  * **Three fetches, each zod-parsed** — an epic (`EPIC_FIELDS`), a run-set
@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { formatZodIssues } from '../../src/contracts/index.js';
 
-import { parseBlockedBySection } from './run-gate-blocked-by.js';
+import { parseBlockedBySection } from '../../ship/src/core/gate/run-gate-blocked-by.js';
 import {
   checkIssue,
   evaluateRunGate,
@@ -32,8 +32,8 @@ import {
   type IssueFacts,
   type IssueState,
   type LaunchSpec,
-} from './run-gate.js';
-import { runSetIssues } from './run-set.js';
+} from '../../ship/src/core/gate/run-gate.js';
+import { runSetIssues } from '../../ship/src/core/run-set.js';
 
 /**
  * The injected `gh` port: run `gh <args>` and resolve its stdout parsed as

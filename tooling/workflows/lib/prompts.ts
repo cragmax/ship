@@ -15,7 +15,7 @@
  * no top-level side effect.
  */
 
-import type { RunEdge, RunSet } from '../../lib/run-set.js';
+import type { RunEdge, RunSet } from '../../../ship/src/core/run-set.js';
 
 import type { WorkflowHooks } from './hooks.types.js';
 import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from './stages.js';

@@ -22,10 +22,10 @@ import {
   type RunEdge,
   type RunGraph,
   type RunSet,
-} from './run-set.js';
+} from '../run-set.js';
 
 /** The label an issue must carry to be gated ready. */
-export const READY_LABEL = 'ready-for-agent';
+const READY_LABEL = 'ready-for-agent';
 
 /** What the run was launched over: whole epics, or an explicit issue list. */
 export type LaunchSpec =
@@ -126,7 +126,7 @@ export interface IssueCheck {
 }
 
 /** Input to {@link evaluateRunGate}. */
-export interface RunGateInput {
+interface RunGateInput {
   /** The resolved run set. */
   readonly runSet: RunSet;
   /** Facts for every run-set issue. */

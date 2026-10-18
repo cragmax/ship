@@ -15,7 +15,7 @@
  * effect.
  */
 
-import type { RunGraph, RunSetEntry } from '../lib/run-set.js';
+import type { RunGraph, RunSetEntry } from '../../ship/src/core/run-set.js';
 
 import { parseShipArgs } from './lib/args.js';
 import { drive, neverStarted, type DriveInput } from './lib/drive.js';

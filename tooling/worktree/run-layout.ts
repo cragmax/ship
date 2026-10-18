@@ -1,6 +1,6 @@
 /**
  * The run layout of an unattended run (ADR-0045) — the one home of its naming rules but the slug's
- * (`tooling/lib/run-slug.ts`, render-safe for the workflow). Every tool that names a run's branch
+ * (`ship/src/core/run-slug.ts`, render-safe for the workflow). Every tool that names a run's branch
  * or directory derives it here, never by re-spelling the rule.
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
@@ -13,7 +13,7 @@
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
 
-import { EPIC_SLUG_PREFIX } from '../lib/run-slug.js';
+import { EPIC_SLUG_PREFIX } from '../../ship/src/core/run-slug.js';
 import { toPosix } from '../shared.js';
 
 /**

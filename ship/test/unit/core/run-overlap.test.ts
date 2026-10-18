@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeOverlapEdges } from '../../../tooling/lib/run-overlap.js';
-import { advance, createScheduler } from '../../../tooling/lib/run-scheduler.js';
-import { findCycles } from '../../../tooling/lib/run-set.js';
+import { mergeOverlapEdges } from '../../../src/core/run-overlap.js';
+import { advance, createScheduler } from '../../../src/core/scheduler/run-scheduler.js';
+import { findCycles } from '../../../src/core/run-set.js';
 
 describe('mergeOverlapEdges', () => {
   it('directs each pair along a topological order of the declared edges, keeping the union acyclic', () => {

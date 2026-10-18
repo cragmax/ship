@@ -20,9 +20,9 @@ import { pathToFileURL } from 'node:url';
 
 import type { z } from 'zod';
 
-import type { RunSelection } from './lib/run-slug.js';
+import type { RunSelection } from '../ship/src/core/run-slug.js';
 import { toPosix } from './shared.js';
-import { RUN_BRANCH_SHAPE } from './workflows/lib/run-branch.js';
+import { RUN_BRANCH_SHAPE } from '../ship/src/core/run-branch.js';
 import type { CutSliceInput } from './worktree/cut.js';
 import {
   CommitResultSchema,

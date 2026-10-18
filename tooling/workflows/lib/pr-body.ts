@@ -15,8 +15,8 @@
  * `tooling/lib/push-scope.ts`, which names the Platform-wide paths, join the closure.
  */
 
-import { CO_AUTHOR_TRAILER } from '../../lib/commit-trailer.js';
-import { GH_BODY_LIMIT } from '../../lib/gh-body-limit.js';
+import { CO_AUTHOR_TRAILER } from '../../../ship/src/core/commit-trailer.js';
+import { GH_BODY_LIMIT } from '../../../ship/src/core/gh-body-limit.js';
 import {
   parseLeaseLines,
   type LeaseAggregate,

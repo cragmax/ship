@@ -13,7 +13,7 @@
  * Known limitation: a force-added path the batch holds ignored is overwritten; rollback deletes it.
  */
 
-import { ESLINT_SUPPRESSIONS } from '../lib/generated-files.js';
+import { ESLINT_SUPPRESSIONS } from '../../ship/src/core/generated-files.js';
 import { sortedSet } from '../shared.js';
 
 import { runCaptured } from './exec.js';

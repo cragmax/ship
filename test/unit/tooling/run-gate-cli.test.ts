@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import type { GhJson } from '../../../tooling/lib/run-gate-gh.js';
-import type { GateVerdict, IssueCheck } from '../../../tooling/lib/run-gate.js';
+import type { GateVerdict, IssueCheck } from '../../../ship/src/core/gate/run-gate.js';
 import { exitCodeFor, main, parseRunGateArgs } from '../../../tooling/run-gate.js';
 
 describe('parseRunGateArgs', () => {

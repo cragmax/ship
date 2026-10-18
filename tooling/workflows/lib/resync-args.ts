@@ -8,7 +8,7 @@
  * no top-level side effect.
  */
 
-import { RUN_BRANCH_SHAPE } from './run-branch.js';
+import { RUN_BRANCH_SHAPE } from '../../../ship/src/core/run-branch.js';
 
 /** The parse's outcome: the branch, or why the arguments are refused. */
 export type ResyncArgsOutcome =

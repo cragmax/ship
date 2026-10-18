@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 
 import { describeError } from '../lib/describe-error.js';
-import { GH_BODY_LIMIT } from '../lib/gh-body-limit.js';
+import { GH_BODY_LIMIT } from '../../ship/src/core/gh-body-limit.js';
 
 import { freshLogDir, GH_TIMEOUT_MS, runCaptured } from './exec.js';
 import type { AppendPrBodyResult } from './types-run.js';

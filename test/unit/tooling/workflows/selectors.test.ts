@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createScheduler } from '../../../../tooling/lib/run-scheduler.js';
+import { createScheduler } from '../../../../ship/src/core/scheduler/run-scheduler.js';
 import { dropWithDependents } from '../../../../tooling/workflows/lib/preflight.js';
 import { isTrivialSurface } from '../../../../tooling/workflows/lib/stages.js';
 

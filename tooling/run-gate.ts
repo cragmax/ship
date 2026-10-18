@@ -1,6 +1,7 @@
 /**
- * Decides whether an unattended run may start and derives its dependency edges: a shell
- * over the pure core `tooling/lib/run-gate.ts` and its `gh` boundary `tooling/lib/run-gate-gh.ts`.
+ * Decides whether an unattended run may start and derives its dependency edges: a shell over
+ * the pure core `ship/src/core/gate/run-gate.ts` and its `gh` boundary
+ * `tooling/lib/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
  * `#` — quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
@@ -17,7 +18,12 @@ import { execa } from 'execa';
 
 import { describeError } from './lib/describe-error.js';
 import { gatherAndEvaluate, gatherCheck, type GhJson } from './lib/run-gate-gh.js';
-import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from './lib/run-gate.js';
+import type {
+  GateMode,
+  GateVerdict,
+  IssueCheck,
+  LaunchSpec,
+} from '../ship/src/core/gate/run-gate.js';
 
 /** Parsed argv: gate a launch spec, or check one issue. */
 export type RunGateArgs =

@@ -15,7 +15,7 @@
 
 import { existsSync, mkdirSync } from 'node:fs';
 
-import { runSlug, type RunSelection } from '../lib/run-slug.js';
+import { runSlug, type RunSelection } from '../../ship/src/core/run-slug.js';
 
 import {
   assertMainWorktree,

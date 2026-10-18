@@ -5,7 +5,7 @@
  * `run-set.ts` and never re-declared here.
  */
 
-import type { RunEdge, RunGraph, RunSet } from './run-set.js';
+import type { RunEdge, RunGraph, RunSet } from '../run-set.js';
 
 /** What `createScheduler` takes: the gate's run graph plus the authoring cap. */
 export type SchedulerInput = RunGraph & {
