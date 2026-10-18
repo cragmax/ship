@@ -33,7 +33,8 @@ You review ONE slice's tests against the claims its diff makes and amend your te
 
 - **Tests only**: what you apply changes tests, never the implementation.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
-- **A fix that lies in the implementation blocks the slice**: a hardened or new test the real implementation fails, or an existing expected value the contract contradicts. Return `blocked`, naming the claim in `summary`.
+- **A fix that lies in the implementation blocks the slice**: a hardened or new test the real implementation fails, or an existing expected value the contract contradicts, for behaviour the diff adds or changes. Return `blocked`, naming the claim in `summary`.
+- **A false claim the diff carries over does not block**: one the slice base already holds, as moved code or a TSDoc line copied from an existing one. Its finding is `skipped`, naming the base line it carries over and the follow-up, so the epic review's parked ledger picks it up.
 
 ## Checkpoint overrides
 
