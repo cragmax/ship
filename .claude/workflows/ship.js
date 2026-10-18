@@ -2531,7 +2531,6 @@ const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 const GH_BODY_LIMIT = 65_536;
 
 const PLATFORM_WIDE_PATHS = [
-  'docker/',
   'ph-plugin/',
   'src/fluent/ph-plugin-protocol.ts',
   'src/rcon/',
