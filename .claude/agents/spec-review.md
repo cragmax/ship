@@ -36,7 +36,11 @@ You review ONE slice's commit against its issue and amend your fixes in — the 
 
 ## Checkpoint overrides
 
-- **_apply approval_**: no one is asked. Apply every verified `hard` finding, and a `judgement` one when its fix is cheap; the rest are `skipped` with the reason.
+- **_apply approval_**: no one is asked. Apply every verified `hard` finding, and a `judgement` one when its fix is cheap; a `judgement` finding left unapplied is `skipped` with the reason. A verified `hard` finding against a quoted acceptance criterion is never rejected on a reading of the criterion's intent; its only alternatives to being applied are:
+  - `skipped`, the conflict named, when the criterion looks wrong or conflicts with an ADR or a sibling issue;
+  - `blocked`, when its fix is out of scope (§ Limits).
+
+  A slice never returns `clean` against an unmet criterion, unless its finding is `skipped` with the conflict named.
 
 ## Amend
 
@@ -46,7 +50,7 @@ When you applied anything, amend the slice per `unattended-agent` § Git.
 
 Write the skill's report to the report file. Then return, per your output schema:
 
-- `verdict` — `clean` when nothing was applied; `fixed` when you amended; `blocked` per § Limits, or when the amend cannot land under the hooks;
+- `verdict` — `clean` when nothing was applied and § Checkpoint overrides allows it; `fixed` when you amended; `blocked` per § Limits, or when the amend cannot land under the hooks;
 - `sha` — `HEAD` after any amend;
 - `summary` — one line;
 - `leaseLines` — every `with-lease:` release line your `Lease command:` and `Full server tier:` runs printed, verbatim, one per lease; `[]` when you ran none.
