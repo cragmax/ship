@@ -1250,7 +1250,7 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  manifestTsdoc: {
+  scriptApiTsdoc: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },

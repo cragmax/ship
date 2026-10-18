@@ -704,7 +704,7 @@ function sliceReports(input: EpicEndInput, landed: LandedIssue): string[] {
   const stages = ['spec-review'];
   if (typeof landed.testReview !== 'string') stages.push('test-review');
   stages.push('standards-review');
-  if (typeof landed.manifestTsdoc !== 'string') stages.push('script-api-tsdoc');
+  if (typeof landed.scriptApiTsdoc !== 'string') stages.push('script-api-tsdoc');
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 

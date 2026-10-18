@@ -358,7 +358,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     leaseLines: [],
   },
   // Clean: no amend, so the standards review's sha stands.
-  manifestTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
+  scriptApiTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false, kept: null },
   'runner:retire-run': OK,

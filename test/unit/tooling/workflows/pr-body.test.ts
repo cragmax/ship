@@ -49,7 +49,7 @@ const work = (fields: {
   specReview?: SliceWork['specReview'];
   testReview?: SliceWork['testReview'];
   standardsReview?: SliceWork['standardsReview'];
-  manifestTsdoc?: SliceWork['manifestTsdoc'];
+  scriptApiTsdoc?: SliceWork['scriptApiTsdoc'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
@@ -82,7 +82,7 @@ const work = (fields: {
     summary: 'renamed a helper',
     leaseLines: [],
   },
-  manifestTsdoc: fields.manifestTsdoc ?? {
+  scriptApiTsdoc: fields.scriptApiTsdoc ?? {
     verdict: 'fixed',
     sha: 's2m',
     summary: 'sharpened walkTo',
@@ -118,7 +118,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
-    manifestTsdoc: 'no src/ change',
+    scriptApiTsdoc: 'no src/ change',
   }),
 };
 

@@ -179,7 +179,7 @@ export const ReviewOutputSchema = z.object({
 });
 
 /** The Script API TSDoc review's answer. */
-export const ManifestTsdocOutputSchema = z.object({
+export const ScriptApiTsdocOutputSchema = z.object({
   /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
   verdict: z.enum(['clean', 'fixed', 'blocked']),
   /** The slice's commit after any amend. */
@@ -274,7 +274,7 @@ export const AGENT_OUTPUTS = {
   specReview: ReviewOutputSchema,
   testReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,
-  manifestTsdoc: ManifestTsdocOutputSchema,
+  scriptApiTsdoc: ScriptApiTsdocOutputSchema,
   resolver: ResolverOutputSchema,
   epicReview: EpicReviewOutputSchema,
   retro: RetroOutputSchema,
