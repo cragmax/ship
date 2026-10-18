@@ -81,7 +81,7 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/', 'ship/'];
 function anyUnder(files, prefixes) {
   return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
 }

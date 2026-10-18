@@ -55,7 +55,7 @@ export const PROBE_CAP_MINUTES = 15;
 /** The most probes one stage of one slice (its tdd or one slice review) may run. */
 export const PROBES_PER_STAGE = 3;
 
-const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'server-pool/'];
+const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'server-pool/', 'ship/'];
 
 /**
  * Whether any path starts with one of the prefixes.

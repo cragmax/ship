@@ -43,7 +43,7 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/', 'ship/'];
 function anyUnder(files, prefixes) {
   return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
 }
@@ -3569,7 +3569,7 @@ async function testReviewStage(s) {
   );
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
-const TEST_PREFIXES = ['test/', 'server-pool/test/'];
+const TEST_PREFIXES = ['test/', 'server-pool/test/', 'ship/test/'];
 async function testSkip(s) {
   const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';

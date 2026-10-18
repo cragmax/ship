@@ -14,6 +14,8 @@ describe('isTrivialSurface', () => {
     ['a test/ file', ['test/unit/a.test.ts'], false],
     ['a server-pool/ file', ['server-pool/src/lease/claim.ts'], false],
     ['a path merely starting with server-pool', ['server-pool-old/a.ts'], true],
+    ['a ship/ file', ['docs/a.md', 'ship/src/core/run-set.ts'], false],
+    ['a path merely starting with ship', ['shipping/a.ts'], true],
   ])('judges %s', (_name, files, trivial) => {
     expect(isTrivialSurface(files)).toBe(trivial);
   });

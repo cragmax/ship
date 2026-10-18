@@ -11,7 +11,7 @@ import { WORKFLOWS } from '../../../../tooling/render-workflows.js';
 import { SHIP_META } from '../../../../tooling/workflows/ship.meta.js';
 import { runShip } from '../../../../tooling/workflows/ship.js';
 
-import { fakeHooks, GATE_OK, LAND_OK, liveRuns, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, LAND_OK, liveRuns, TDD_GREEN, type FakeRun } from './_fake-hooks.js';
 
 const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
@@ -94,6 +94,17 @@ describe('ship.js — a fresh render of the current sources', () => {
       ],
     });
     expect(both.rendered.phases).toEqual(['Pre-flight', 'Issues', 'Epic end']);
+    expectSameRun(both);
+  });
+
+  it('reviews the tests of a slice changing only Ship, unproven, as the source does', async () => {
+    const files = ['ship/src/core/run-set.ts', 'ship/test/unit/core/run-set.test.ts'];
+    const both = await runBoth('issues 7', { tdd: { ...TDD_GREEN, files } });
+
+    const sliceCalls = both.rendered.calls
+      .map((c) => c.label)
+      .filter((l) => /^(runner:comment-only|testReview):7-1/.test(l));
+    expect(sliceCalls).toEqual(['testReview:7-1']);
     expectSameRun(both);
   });
 

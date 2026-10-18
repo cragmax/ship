@@ -386,7 +386,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
-const TEST_PREFIXES: readonly string[] = ['test/', 'server-pool/test/'];
+const TEST_PREFIXES: readonly string[] = ['test/', 'server-pool/test/', 'ship/test/'];
 
 /**
  * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files
