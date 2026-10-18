@@ -37,19 +37,16 @@ import type {
   TsserverRestart,
 } from '../../tooling/worktree/types.js';
 import {
-  addWorktree,
   isJunction,
   isRegistered,
   listTree,
   makeFixtureRepo,
-  mustRun,
-  porcelain,
   prebuildNpmTemplate,
   runCli,
-  runIn,
   seedBatch,
   type FixtureRepoOptions,
-} from '../helpers/worktree-fixture.js';
+} from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun, porcelain, runIn } from '../helpers/worktree-fixture.js';
 import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 
 const WIN32 = process.platform === 'win32';

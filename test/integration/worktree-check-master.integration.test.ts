@@ -21,7 +21,8 @@ import {
   makeBareOrigin,
   makeGitRepo,
 } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, mustRun, runCli } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

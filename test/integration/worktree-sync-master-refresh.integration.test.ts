@@ -26,11 +26,10 @@ import {
 } from '../helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
-  mustRun,
-  porcelain,
   prebuildNpmTemplate,
   runSyncMaster,
-} from '../helpers/worktree-fixture.js';
+} from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';

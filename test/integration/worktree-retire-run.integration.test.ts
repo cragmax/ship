@@ -17,7 +17,8 @@ import { createJunction } from '../../tooling/worktree/links.js';
 import type { RetireRunResult, TeardownResult } from '../../tooling/worktree/types.js';
 import type { CutBatchResult } from '../../tooling/worktree/types-run.js';
 import { commitChanges, makeBareOrigin, makeGitRepo } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, isRegistered, mustRun, runCli, runIn } from '../helpers/worktree-fixture.js';
+import { isRegistered, runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun, runIn } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 

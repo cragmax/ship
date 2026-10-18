@@ -26,7 +26,8 @@ import {
   withOriginAndBatch,
   type FixtureRun,
 } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, porcelain, runSyncMaster } from '../helpers/worktree-fixture.js';
+import { runSyncMaster } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';

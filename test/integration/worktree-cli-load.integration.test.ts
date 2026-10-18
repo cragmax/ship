@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { toPosix } from '../../tooling/shared.js';
 import { prependPath, writeFakeGh } from '../helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 

@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { toPosix } from '../../tooling/shared.js';
 import type { ChangedFilesResult } from '../../tooling/worktree/types-run.js';
 import { commitChanges, headSha, makeGitRepo } from '../helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const GHOST = '0123456789abcdef0123456789abcdef01234567';

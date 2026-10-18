@@ -21,7 +21,8 @@ import {
   makeGitRepo,
   stagedNames,
 } from '../helpers/worktree-fixture-git.js';
-import { mustRun, porcelain, runCli, runIn } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { mustRun, porcelain, runIn } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook output';

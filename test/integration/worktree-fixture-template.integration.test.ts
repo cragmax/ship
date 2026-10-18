@@ -19,12 +19,10 @@ import {
   makeGitRepo,
 } from '../helpers/worktree-fixture-git.js';
 import {
-  copyTemplateRepo,
   makeFixtureRepo,
-  mustRun,
-  porcelain,
   prebuildNpmTemplate,
-} from '../helpers/worktree-fixture.js';
+} from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { copyTemplateRepo, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');

@@ -24,7 +24,7 @@ Folders follow where the code runs (Ship ADR-0001 decision 2):
 | `src/schemas/`  | at codegen                            | the zod sources of the agent outputs and tool envelopes                    |
 | `src/build/`    | at build and gate time                | the render, the schema emit and the codegen check                          |
 
-Tests live in `test/`, under the subfolder of the file they test.
+Tests live in `test/`, under the subfolder of the file they test; the helpers they share live in `test/helpers/`.
 
 ## What Ship owns under `.claude/`
 

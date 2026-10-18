@@ -30,7 +30,8 @@ import {
   writeFakeGh,
   type FakeGhResponse,
 } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, mustRun, runCli } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const REGISTRY = 'server-pool/src/registry/pool-registry.json';

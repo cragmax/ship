@@ -34,7 +34,8 @@ import {
   type Changes,
 } from '../helpers/worktree-fixture-git.js';
 import { linkNodeModules } from '../helpers/hooked-run.js';
-import { addWorktree, mustRun, porcelain, runCli, runIn } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun, porcelain, runIn } from '../helpers/worktree-fixture.js';
 
 const WIN32 = process.platform === 'win32';
 const TIMEOUT = { timeout: 60_000 };

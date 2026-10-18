@@ -28,7 +28,8 @@ import {
   stagedNames,
   type Changes,
 } from '../helpers/worktree-fixture-git.js';
-import { addWorktree, mustRun, porcelain, runCli } from '../helpers/worktree-fixture.js';
+import { runCli } from '../../ship/test/helpers/worktree-cli-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
