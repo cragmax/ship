@@ -32,11 +32,12 @@ You review ONE slice's commit against the repo's documented rules and amend your
 ## Limits
 
 - **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
+- **A `hard` fix out of scope blocks the slice**: one that needs a file outside `Changed files:` and their tests. Return `blocked`, naming the file in `summary`.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
 
 ## Checkpoint overrides
 
-- **_apply approval_**: no one is asked. Apply every verified `hard` finding, and a `judgement` one when its fix is cheap ("cheap" qualifies `judgement` findings only); a `judgement` finding left unapplied is `skipped` with the reason. A `hard` fix that trips `local/comment-budget` is applied by moving or cutting a claim (`comments.md` § Budgets): the budget is never a reason to skip it. A `hard` fix that needs a file outside `Changed files:` makes the slice `blocked`.
+- **_apply approval_**: no one is asked. Apply every verified `hard` finding, and a `judgement` one when its fix is cheap ("cheap" qualifies `judgement` findings only); a `judgement` finding left unapplied is `skipped` with the reason. A `hard` fix that trips `local/comment-budget` is applied by moving or cutting a claim (`comments.md` § Budgets): the budget is never a reason to skip it.
 
 ## Amend
 
@@ -46,7 +47,7 @@ When you applied anything, amend the slice per `unattended-agent` § Git.
 
 Write the skill's report to the report file. Then return, per your output schema:
 
-- `verdict` — `clean` when nothing was applied; `fixed` when you amended; `blocked` per § Checkpoint overrides (name the file in `summary`), or when the amend cannot land under the hooks;
+- `verdict` — `clean` when nothing was applied; `fixed` when you amended; `blocked` per § Limits, or when the amend cannot land under the hooks;
 - `sha` — `HEAD` after any amend;
 - `summary` — one line;
 - `leaseLines` — every `with-lease:` release line your `Lease command:` and `Full server tier:` runs printed, verbatim, one per lease; `[]` when you ran none.
