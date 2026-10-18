@@ -290,6 +290,61 @@ describe('sync-master doc-index resolution', () => {
     expect(snapshot(run.batch)).toMatchObject({ head: run.ours, porcelain: '', merging: false });
   });
 
+  it('hands a home glossary conflict to the resolver, then --continue merges it', TIMEOUT, () => {
+    const glossary = 'server-pool/GLOSSARY.md';
+    const run = makeRun({ [glossary]: '# Pool\n\n- base\n' });
+    const ours = commitChanges(run.batch, { write: { [glossary]: '# Pool\n\n- ours\n' } }, 'ours');
+    const theirs = advanceOrigin(root, run.bare, { write: { [glossary]: '# Pool\n\n- theirs\n' } });
+
+    const start = runSyncMaster(run.batch);
+
+    expect(start.code).toBe(1);
+    expect(start.json).toMatchObject({ status: 'conflict', pending: [glossary] });
+
+    writeFileSync(join(run.batch, glossary), '# Pool\n\n- ours\n- theirs\n');
+    const done = runSyncMaster(run.batch, '--continue');
+
+    expect(done.json).toMatchObject({ status: 'ok', outcome: 'merged', upstream: theirs });
+    expect(parents(run.batch)).toEqual([ours, theirs]);
+  });
+
+  it('hands conflicts in all nine doc indexes, root and home, to the resolver', TIMEOUT, () => {
+    const indexes = [
+      'GLOSSARY.md',
+      'docs/adr/readme.md',
+      'docs/platform-facts/readme.md',
+      'ph-plugin/GLOSSARY.md',
+      'ph-plugin/docs/adr/readme.md',
+      'server-pool/GLOSSARY.md',
+      'server-pool/docs/adr/readme.md',
+      'ship/GLOSSARY.md',
+      'ship/docs/adr/readme.md',
+    ];
+    const side = (text: string): Record<string, string> =>
+      Object.fromEntries(indexes.map((path) => [path, `# Index\n\n- ${text}\n`]));
+    const run = makeRun(side('base'));
+    commitChanges(run.batch, { write: side('ours') }, 'ours');
+    advanceOrigin(root, run.bare, { write: side('theirs') });
+
+    const r = runSyncMaster(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'conflict', pending: indexes });
+  });
+
+  it('refuses a conflict in a home file that is not an index', TIMEOUT, () => {
+    const notIndex = 'server-pool/CLAUDE.md';
+    const run = makeRun({ [notIndex]: '# Pool\n\nbase\n' });
+    commitChanges(run.batch, { write: { [notIndex]: '# Pool\n\nours\n' } }, 'ours');
+    advanceOrigin(root, run.bare, { write: { [notIndex]: '# Pool\n\ntheirs\n' } }, 'docs: pool');
+    const before = snapshot(run.batch);
+
+    const r = runSyncMaster(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict' });
+    expect(r.json.conflicts).toEqual([{ path: notIndex, kind: 'code', landedBy: ['docs: pool'] }]);
+    expect(snapshot(run.batch)).toEqual(before);
+  });
+
   it('refuses --continue without a merge in progress', TIMEOUT, () => {
     const run = makeRun({ 'notes.md': 'n\n' });
     const before = snapshot(run.batch);
