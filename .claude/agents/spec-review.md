@@ -40,7 +40,7 @@ You review ONE slice's commit against its issue and amend your fixes in — the 
   - `skipped`, the conflict named, when the criterion looks wrong or conflicts with an ADR or a sibling issue;
   - `blocked`, when its fix is out of scope (§ Limits).
 
-  A slice never returns `clean` against an unmet criterion.
+  A slice never returns `clean` against an unmet criterion, unless its finding is `skipped` with the conflict named (§ Output).
 
 ## Amend
 
