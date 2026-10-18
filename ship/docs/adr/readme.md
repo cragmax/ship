@@ -14,7 +14,7 @@ Records here are always cited `Ship ADR-NNNN`, inside this home too; a bare
    the main checkout, run worktrees under `.claude/worktrees/`; pre-flight
    collecting every refusal (run gate, `issue-readiness`, `issue-overlap`);
    a deterministic scheduler (`MAX_SLICES` 4, optimistic requeue); the slice
-   chain tdd → spec, test and standards review → Manifest TSDoc → land, each
+   chain tdd → spec, test and standards review → Script API TSDoc → land, each
    review amending the one commit; probes 15 min and 3 per stage; one branch
    and commit queue per epic; the 2 + 2 warm set; the epic end (epic review,
    master sync, bump, retro ‖ `pr`, publish; the push is the server tier);

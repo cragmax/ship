@@ -24,7 +24,7 @@ import type {
   IssueReadinessSchema,
   IssueOverlapSchema,
   LiveOverlapSchema,
-  ManifestTsdocOutputSchema,
+  ScriptApiTsdocOutputSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
   ReadinessVerdictSchema,
@@ -42,7 +42,7 @@ import {
   type EpicReviewValues,
   type IssueOverlapValues,
   type IssueReadinessValues,
-  type ManifestTsdocValues,
+  type ScriptApiTsdocValues,
   type PrWriterValues,
   type ResolverValues,
   type RetroValues,
@@ -92,11 +92,11 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
  */
 export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
-/** The Manifest TSDoc review's answer. */
-export type ManifestTsdocOutput = z.infer<typeof ManifestTsdocOutputSchema>;
+/** The Script API TSDoc review's answer. */
+export type ScriptApiTsdocOutput = z.infer<typeof ScriptApiTsdocOutputSchema>;
 
-/** Why a slice's Manifest TSDoc review was skipped: it changed nothing under `src/`. */
-export type ManifestTsdocSkip = 'no src/ change';
+/** Why a slice's Script API TSDoc review was skipped: it changed nothing under `src/`. */
+export type ScriptApiTsdocSkip = 'no src/ change';
 
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
@@ -108,8 +108,8 @@ export interface SliceWork {
   readonly testReview: ReviewOutput | TestReviewSkip;
   /** The standards review's answer. */
   readonly standardsReview: ReviewOutput;
-  /** The Manifest TSDoc review's answer, or why it was skipped. */
-  readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
+  /** The Script API TSDoc review's answer, or why it was skipped. */
+  readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
 /** The epic review's answer. */
@@ -203,11 +203,11 @@ export const AGENT_CALLS = {
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
-  manifestTsdoc: (hooks: WorkflowHooks, values: ManifestTsdocValues, tag: string) =>
-    askAgent<ManifestTsdocOutput>(
+  scriptApiTsdoc: (hooks: WorkflowHooks, values: ScriptApiTsdocValues, tag: string) =>
+    askAgent<ScriptApiTsdocOutput>(
       hooks,
-      PROMPTS.manifestTsdoc(values),
-      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
+      PROMPTS.scriptApiTsdoc(values),
+      agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   resolver: (hooks: WorkflowHooks, values: ResolverValues, tag: string) =>
     askAgent<ResolverOutput>(

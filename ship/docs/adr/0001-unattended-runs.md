@@ -138,7 +138,7 @@ no human gate between.
      unlanded issues cited `see #N`; the run's other epics carry on.
 8. **The slice chain.** Each issue attempt runs, in its own Slice worktree
    cut from its epic's head: label re-check → cut → provision → tdd → **Spec
-   review** → **Test review** → **Standards review** → Manifest TSDoc → land.
+   review** → **Test review** → **Standards review** → Script API TSDoc → land.
    - **Planning happens at triage, not in the run.** The tdd builds from the
      issue, its triage brief the plan; sizing is the ticket-time **Slice
      budget**, judged when the ticket is cut. An issue the tree has overtaken,
@@ -151,8 +151,8 @@ no human gate between.
      review has a fixed cost. After an amend, the slice's changed files are
      re-read from git, never carried stale. A blocked review stops the slice.
    - **Skips.** Test review is skipped on a trivial surface (no path under the
-     code prefixes) or a commit `comment-only` proves comment-only; Manifest
-     TSDoc runs only when the slice changes `src/`.
+     code prefixes) or a commit `comment-only` proves comment-only;
+     Script API TSDoc runs only when the slice changes `src/`.
    - **Each stage runs only the tests its change makes relevant**
      (`write-testing.md` § Which tests a change runs), beside its own
      red-green runs. Server-tier runs take **per-invocation leases** on the

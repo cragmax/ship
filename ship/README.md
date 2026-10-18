@@ -35,7 +35,7 @@ decision 4):
   workflows. `npm run codegen` renders them from `src/workflow/`;
   `gate:codegen` checks they match. Never edit them by hand.
 - **Kept in place:** the stage agent files in `.claude/agents/` (`tdd`,
-  `spec-review`, `test-review`, `standards-review`, `manifest-tsdoc`,
+  `spec-review`, `test-review`, `standards-review`, `script-api-tsdoc`,
   `issue-readiness`, `issue-overlap`, `epic-review`, `retro`, `pr`,
   `resolve-index-conflicts`, `runner`) and the run-only `unattended-agent`
   skill.

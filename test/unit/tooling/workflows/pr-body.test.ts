@@ -49,7 +49,7 @@ const work = (fields: {
   specReview?: SliceWork['specReview'];
   testReview?: SliceWork['testReview'];
   standardsReview?: SliceWork['standardsReview'];
-  manifestTsdoc?: SliceWork['manifestTsdoc'];
+  scriptApiTsdoc?: SliceWork['scriptApiTsdoc'];
   evidence?: TddEvidence;
   recorded?: SliceWork['tdd']['recorded'];
 }): SliceWork => ({
@@ -82,7 +82,7 @@ const work = (fields: {
     summary: 'renamed a helper',
     leaseLines: [],
   },
-  manifestTsdoc: fields.manifestTsdoc ?? {
+  scriptApiTsdoc: fields.scriptApiTsdoc ?? {
     verdict: 'fixed',
     sha: 's2m',
     summary: 'sharpened walkTo',
@@ -118,7 +118,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
-    manifestTsdoc: 'no src/ change',
+    scriptApiTsdoc: 'no src/ change',
   }),
 };
 
@@ -348,8 +348,8 @@ describe('renderPrBody', () => {
       '- Issue: #8, landed as c8',
       '- Spec review: fixed — covered criterion 3',
       '- Standards review: fixed — renamed a helper',
-      '- Manifest TSDoc: fixed — sharpened walkTo',
-      '- Manifest TSDoc: skipped — no src/ change',
+      '- Script API TSDoc: fixed — sharpened walkTo',
+      '- Script API TSDoc: skipped — no src/ change',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',

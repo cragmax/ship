@@ -13,7 +13,7 @@ export const meta = {
     {
       title: 'Issues',
       detail:
-        'per issue, in dependency order: tdd, spec review, test review, standards review, Manifest TSDoc (src/ only), land',
+        'per issue, in dependency order: tdd, spec review, test review, standards review, Script API TSDoc (src/ only), land',
     },
     {
       title: 'Epic end',
@@ -34,7 +34,7 @@ const STAGES = {
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+  scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
@@ -64,7 +64,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Manifest TSDoc (src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -688,7 +688,7 @@ const PROMPTS = {
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
-  manifestTsdoc: (values) =>
+  scriptApiTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   resolver: (values) =>
     [
@@ -1986,7 +1986,7 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  manifestTsdoc: {
+  scriptApiTsdoc: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
@@ -2453,11 +2453,11 @@ const AGENT_CALLS = {
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
-  manifestTsdoc: (hooks, values, tag) =>
+  scriptApiTsdoc: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.manifestTsdoc(values),
-      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
+      PROMPTS.scriptApiTsdoc(values),
+      agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   resolver: (hooks, values, tag) =>
     askAgent(
@@ -2945,7 +2945,7 @@ function issueSection(landed) {
     reviewLine('Spec review', landed.specReview),
     reviewLine('Test review', landed.testReview),
     reviewLine('Standards review', landed.standardsReview),
-    reviewLine('Manifest TSDoc', landed.manifestTsdoc),
+    reviewLine('Script API TSDoc', landed.scriptApiTsdoc),
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',
@@ -3391,7 +3391,7 @@ function sliceReports(input, landed) {
   const stages = ['spec-review'];
   if (typeof landed.testReview !== 'string') stages.push('test-review');
   stages.push('standards-review');
-  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  if (typeof landed.scriptApiTsdoc !== 'string') stages.push('script-api-tsdoc');
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 async function retroStep(input, report) {
@@ -3469,7 +3469,7 @@ async function authorSlice(cut) {
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
   const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
-  return atBoundary(reviewed, at, manifestTsdocStage);
+  return atBoundary(reviewed, at, scriptApiTsdocStage);
 }
 async function atBoundary(step, at, stage) {
   if ('stop' in step) return step;
@@ -3593,17 +3593,17 @@ async function standardsReviewStage(s) {
     standardsReview,
   }));
 }
-async function manifestTsdocStage(s) {
+async function scriptApiTsdocStage(s) {
   const { at } = s;
   if (!s.files.some((path) => path.startsWith('src/'))) {
-    return { next: { ...s, manifestTsdoc: 'no src/ change' } };
+    return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
   }
   const values = {
     ...sliceCommitValues(s),
-    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+    reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
-  const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+  const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
+  return afterReview(at, 'script api tsdoc', out, (scriptApiTsdoc) => ({ ...s, scriptApiTsdoc }));
 }
 function afterReview(at, label, out, next) {
   if (out === null) return { stop: died(at) };
@@ -3642,10 +3642,10 @@ async function landSlice(s) {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, testReview, standardsReview, manifestTsdoc } = s;
+    const { tdd, specReview, testReview, standardsReview, scriptApiTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, testReview, standardsReview, manifestTsdoc },
+      work: { tdd, specReview, testReview, standardsReview, scriptApiTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

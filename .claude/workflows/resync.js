@@ -72,7 +72,7 @@ const STAGES = {
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-  manifestTsdoc: { agentType: 'manifest-tsdoc', model: 'opus', effort: 'high' },
+  scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
   resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
@@ -102,7 +102,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Manifest TSDoc (src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -259,7 +259,7 @@ const PROMPTS = {
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
-  manifestTsdoc: (values) =>
+  scriptApiTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
   resolver: (values) =>
     [
@@ -1557,7 +1557,7 @@ const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  manifestTsdoc: {
+  scriptApiTsdoc: {
     type: 'object',
     properties: {
       verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
@@ -1993,11 +1993,11 @@ const AGENT_CALLS = {
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
-  manifestTsdoc: (hooks, values, tag) =>
+  scriptApiTsdoc: (hooks, values, tag) =>
     askAgent(
       hooks,
-      PROMPTS.manifestTsdoc(values),
-      agentOptions('manifestTsdoc', tag, AGENT_OUTPUT_SCHEMAS.manifestTsdoc),
+      PROMPTS.scriptApiTsdoc(values),
+      agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   resolver: (hooks, values, tag) =>
     askAgent(

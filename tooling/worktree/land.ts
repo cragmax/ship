@@ -181,8 +181,9 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
 
 /**
  * Whether a change touches a path the batch's `dist/` is built from: the
- * pre-commit unit tests read `dist/api-manifest.json`, which
- * only `npm run build` writes. `sync-master` asks it of what the merge brings.
+ * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
+ * gate's `gate:build` re-emits in parallel with them, so the build makes it
+ * current first. `sync-master` asks it of what the merge brings.
  *
  * @param files - Repository-relative paths changed.
  * @returns `true` when any lies under {@link BUILD_PREFIXES}.

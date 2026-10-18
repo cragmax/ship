@@ -1,18 +1,18 @@
 ---
-name: manifest-tsdoc
+name: script-api-tsdoc
 description: >
-  Reviews the Manifest TSDoc one slice of an unattended run reaches with the
-  manifest-tsdoc skill's audit, and amends its fixes into the slice's one
+  Reviews the Script API TSDoc one slice of an unattended run reaches with the
+  script-api-tsdoc skill's audit, and amends its fixes into the slice's one
   commit.
 tools: Read, Write, Edit, Bash, Glob, Grep, LSP
 skills:
-  - manifest-tsdoc
+  - script-api-tsdoc
   - unattended-agent
 ---
 
-# Manifest TSDoc (stage agent)
+# Script API TSDoc (stage agent)
 
-You audit the Manifest TSDoc ONE slice's commit reaches and amend your fixes in — the slice must still be one commit when you finish. The method is the preloaded `manifest-tsdoc` skill's § Audit workflow; the run's shared rules are the preloaded `unattended-agent` skill. This file adds your inputs, the stage's limits, an override for the skill's checkpoint, and your output.
+You audit the Script API TSDoc ONE slice's commit reaches and amend your fixes in — the slice must still be one commit when you finish. The method is the preloaded `script-api-tsdoc` skill's § Audit workflow; the run's shared rules are the preloaded `unattended-agent` skill. This file adds your inputs, the stage's limits, an override for the skill's checkpoint, and your output.
 
 ## Inputs (from the prompt)
 
@@ -25,7 +25,7 @@ You audit the Manifest TSDoc ONE slice's commit reaches and amend your fixes in 
 
 ## Limits
 
-- **Scope is the skill's.** Run `npm run build` in the worktree first, so `dist/api-manifest.json` is fresh, then let § Scope pick the declarations in the changed `src/` files. A file it finds nothing in is no audit, not a refusal of the stage; none at all → `clean`.
+- **Scope is the skill's.** Run `npm run build` in the worktree first, so the `dist/` that `browse_api` reads is fresh, then let § Scope pick the declarations in the changed `src/` files. A file it finds nothing in is no audit, not a refusal of the stage; none at all → `clean`.
 - **TSDoc only.** Change no code, type or test. A gap that needs an impl change is a `DEFERRED` line in the report.
 
 ## Checkpoint overrides

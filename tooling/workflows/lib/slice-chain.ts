@@ -19,8 +19,8 @@ import type { SchedulerEvent } from '../../lib/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,
-  type ManifestTsdocOutput,
-  type ManifestTsdocSkip,
+  type ScriptApiTsdocOutput,
+  type ScriptApiTsdocSkip,
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
@@ -180,7 +180,7 @@ interface BuiltSlice extends ProvisionedSlice {
   readonly sha: string;
   /**
    * The slice commit's changed paths: the tdd's, then each slice review amend's, re-read
-   * ({@link afterAmend}). The Manifest TSDoc review's amend is not re-read: no stage reads
+   * ({@link afterAmend}). The Script API TSDoc review's amend is not re-read: no stage reads
    * them after it.
    */
   readonly files: readonly string[];
@@ -202,11 +202,11 @@ interface ReviewedSlice extends TestReviewedSlice {
 }
 
 /**
- * An authored slice, ready to land: the Manifest TSDoc review's answer, or why it was skipped;
+ * An authored slice, ready to land: the Script API TSDoc review's answer, or why it was skipped;
  * `sha` its last amend.
  */
 interface AuthoredSlice extends ReviewedSlice {
-  readonly manifestTsdoc: ManifestTsdocOutput | ManifestTsdocSkip;
+  readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
 /**
@@ -247,7 +247,7 @@ async function openSlice(at: AttemptId): Promise<Opened> {
   return cutStage(at);
 }
 
-/** Run the provision through the Manifest TSDoc review, each at a boundary that sees a halt. */
+/** Run the provision through the Script API TSDoc review, each at a boundary that sees a halt. */
 async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
@@ -255,7 +255,7 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
   const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
-  return atBoundary(reviewed, at, manifestTsdocStage);
+  return atBoundary(reviewed, at, scriptApiTsdocStage);
 }
 
 /** Pass a stop on; else stop for a halting entry; else run the next stage. */
@@ -420,20 +420,20 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
 }
 
 /**
- * Review the Manifest TSDoc the slice reaches, amending its commit with any fix, when the slice
+ * Review the Script API TSDoc the slice reaches, amending its commit with any fix, when the slice
  * changes a path under `src/`; `sha` its amend.
  */
-async function manifestTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
+async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
   if (!s.files.some((path) => path.startsWith('src/'))) {
-    return { next: { ...s, manifestTsdoc: 'no src/ change' } };
+    return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
   }
   const values = {
     ...sliceCommitValues(s),
-    reportPath: `${at.ctx.reportDir}/manifest-tsdoc-${at.tag}.md`,
+    reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
-  const out = await AGENT_CALLS.manifestTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'manifest tsdoc', out, (manifestTsdoc) => ({ ...s, manifestTsdoc }));
+  const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
+  return afterReview(at, 'script api tsdoc', out, (scriptApiTsdoc) => ({ ...s, scriptApiTsdoc }));
 }
 
 /**
@@ -501,10 +501,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, testReview, standardsReview, manifestTsdoc } = s;
+    const { tdd, specReview, testReview, standardsReview, scriptApiTsdoc } = s;
     return {
       kind: 'landed',
-      work: { tdd, specReview, testReview, standardsReview, manifestTsdoc },
+      work: { tdd, specReview, testReview, standardsReview, scriptApiTsdoc },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

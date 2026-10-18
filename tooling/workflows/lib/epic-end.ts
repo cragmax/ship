@@ -696,7 +696,7 @@ async function epicReviewStep(input: EpicEndInput): Promise<EpicReviewReport> {
 
 /**
  * A landed issue's slice review reports, its final attempt's: the spec review's, the test review's
- * when it ran, the standards review's, and the Manifest TSDoc review's when it ran.
+ * when it ran, the standards review's, and the Script API TSDoc review's when it ran.
  */
 function sliceReports(input: EpicEndInput, landed: LandedIssue): string[] {
   const attempt = input.schedule.find((s) => s.issue === landed.issue)?.attempts ?? 1;
@@ -704,7 +704,7 @@ function sliceReports(input: EpicEndInput, landed: LandedIssue): string[] {
   const stages = ['spec-review'];
   if (typeof landed.testReview !== 'string') stages.push('test-review');
   stages.push('standards-review');
-  if (typeof landed.manifestTsdoc !== 'string') stages.push('manifest-tsdoc');
+  if (typeof landed.scriptApiTsdoc !== 'string') stages.push('script-api-tsdoc');
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 
