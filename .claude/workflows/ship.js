@@ -43,9 +43,12 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = ['src/', 'tooling/', 'test/'];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/'];
+function anyUnder(files, prefixes) {
+  return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
+}
 function isTrivialSurface(files) {
-  return !files.some((path) => CODE_PREFIXES.some((prefix) => path.startsWith(prefix)));
+  return !anyUnder(files, CODE_PREFIXES);
 }
 const PHASE_TITLES = {
   preflight: 'Pre-flight',
@@ -595,12 +598,12 @@ function mainToolPrefix(lease, tool) {
     `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
     `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
     'npx tsx',
-    shellWord(`${lease.main}/tooling/${tool}`),
+    shellWord(`${lease.main}/${tool}`),
   ];
 }
 function leaseCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'with-lease.ts'),
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
     `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
@@ -608,7 +611,7 @@ function leaseCommand(lease) {
 }
 function fullServerTierCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
@@ -2531,16 +2534,14 @@ const CO_AUTHOR_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 const GH_BODY_LIMIT = 65_536;
 
 const PLATFORM_WIDE_PATHS = [
-  'docker/',
   'ph-plugin/',
   'src/fluent/ph-plugin-protocol.ts',
   'src/rcon/',
   'src/engine/bot/',
   'src/engine/state/bot-list.ts',
-  'src/server-pool/',
+  'server-pool/',
   'src/world-state-reset/',
   'tooling/run-integration.ts',
-  'tooling/with-lease.ts',
   'tooling/pool-partition.ts',
   'tooling/build-ph-plugin.ts',
   'tooling/integration-tiers.ts',
@@ -3568,10 +3569,11 @@ async function testReviewStage(s) {
   );
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
+const TEST_PREFIXES = ['test/', 'server-pool/test/'];
 async function testSkip(s) {
   const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
-  if (files.some((path) => path.startsWith('test/'))) return null;
+  if (anyUnder(files, TEST_PREFIXES)) return null;
   const range = `${s.base}..${s.sha}`;
   const out = await runTool(s.at.ctx.hooks, 'comment-only', [range], s.at.place);
   const proven =

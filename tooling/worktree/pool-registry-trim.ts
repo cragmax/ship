@@ -7,7 +7,7 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { loadPoolRegistry, type PoolEntry } from '../../src/server-pool/index.js';
+import { loadPoolRegistry, type PoolEntry } from '../../server-pool/src/index.js';
 
 import { StepFailure, type WarmMember } from './types.js';
 

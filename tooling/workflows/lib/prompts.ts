@@ -87,7 +87,7 @@ export interface LandedSlice {
 
 /** Where a slice's lease runs lease from. */
 export interface LeaseValues {
-  /** The main checkout, whose `tooling/with-lease.ts` and `tooling/run-integration.ts` run. */
+  /** The main checkout, whose `with-lease` and `tooling/run-integration.ts` run. */
   readonly main: string;
   /** `PH_PROJECT_DIR` for the lease run: the slice provision's. */
   readonly projectDir: string;
@@ -271,13 +271,13 @@ function verbatimBlock(title: string, file: FileToWrite): string[] {
 /** The vitest config a slice worktree's server-tier runs use. */
 const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
 
-/** `npx tsx` running the main checkout's `tooling/<tool>` with the slice's project and registry. */
+/** `npx tsx` running the main checkout's repo-relative `tool` on the slice's project, registry. */
 function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
   return [
     `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
     `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
     'npx tsx',
-    shellWord(`${lease.main}/tooling/${tool}`),
+    shellWord(`${lease.main}/${tool}`),
   ];
 }
 
@@ -289,7 +289,7 @@ function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
  */
 function leaseCommand(lease: LeaseValues): string {
   return [
-    ...mainToolPrefix(lease, 'with-lease.ts'),
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
     '--type <paper|folia> --version <version>',
     `--registry ${shellWord(lease.registry)}`,
     `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
@@ -304,7 +304,7 @@ function leaseCommand(lease: LeaseValues): string {
  */
 function fullServerTierCommand(lease: LeaseValues): string {
   return [
-    ...mainToolPrefix(lease, 'run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }

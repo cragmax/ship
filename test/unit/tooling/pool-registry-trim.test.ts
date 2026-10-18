@@ -9,7 +9,7 @@ import { trimRegistry } from '../../../tooling/worktree/pool-registry-trim.js';
 const REAL_REGISTRY = resolve(
   import.meta.dirname,
   '../../..',
-  'src/server-pool/registry/pool-registry.json',
+  'server-pool/src/registry/pool-registry.json',
 );
 
 let dir: string;

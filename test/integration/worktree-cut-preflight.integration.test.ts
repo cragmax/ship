@@ -33,7 +33,7 @@ import {
 import { addWorktree, mustRun, runCli } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
-const REGISTRY = 'src/server-pool/registry/pool-registry.json';
+const REGISTRY = 'server-pool/src/registry/pool-registry.json';
 const REAL_REGISTRY = resolve(import.meta.dirname, '../..', REGISTRY);
 
 let root: string;
@@ -397,7 +397,7 @@ describe('preflight', () => {
 
   it('hands --attach’s branch to the attach checks', TIMEOUT, () => {
     // An empty registry names no warm member, so no RCON probe leaves the process.
-    mkdirSync(join(main, 'src/server-pool/registry'), { recursive: true });
+    mkdirSync(join(main, 'server-pool/src/registry'), { recursive: true });
     writeFileSync(join(main, REGISTRY), '[]\n');
     makeBareOrigin(root, main);
     const bin = writeFakeGh(root, { 'ship/s': { prs: [{ number: 9, state: 'CLOSED' }] } });
@@ -414,7 +414,7 @@ describe('preflight', () => {
 
   it('hands --slug’s comma-separated slugs to the slice-branch check', TIMEOUT, () => {
     // An empty registry names no warm member, so no RCON probe leaves the process.
-    mkdirSync(join(main, 'src/server-pool/registry'), { recursive: true });
+    mkdirSync(join(main, 'server-pool/src/registry'), { recursive: true });
     writeFileSync(join(main, REGISTRY), '[]\n');
     makeBareOrigin(root, main);
     const bin = writeFakeGh(root, {});
