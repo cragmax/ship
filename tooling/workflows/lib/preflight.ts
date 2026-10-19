@@ -30,7 +30,7 @@ import {
   type RunGraph,
 } from '../../../ship/src/core/run-set.js';
 import { runSlug } from '../../../ship/src/core/run-slug.js';
-import type { PreflightCheck, PreflightResult } from '../../worktree/types-run.js';
+import type { PreflightCheck, PreflightResult } from '../../../ship/src/cli/envelope/types-run.js';
 
 import {
   AGENT_CALLS,

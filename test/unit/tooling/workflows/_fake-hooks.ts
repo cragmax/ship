@@ -14,7 +14,7 @@ import type {
   JsonSchema,
   WorkflowHooks,
 } from '../../../../tooling/workflows/lib/hooks.types.js';
-import type { MasterMove } from '../../../../tooling/worktree/types-run.js';
+import type { MasterMove } from '../../../../ship/src/cli/envelope/types-run.js';
 
 /** One recorded `agent()` call. */
 export interface RecordedCall {

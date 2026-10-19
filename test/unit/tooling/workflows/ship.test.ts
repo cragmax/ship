@@ -176,9 +176,9 @@ describe('runShip — pre-flight only', () => {
       'issueOverlap',
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
-      ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
+      ['ship/src/cli/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
       ['tooling/run-gate.ts', 'epics', '1025'],
-      ['tooling/worktree.ts', 'live-runs', '.'],
+      ['ship/src/cli/worktree.ts', 'live-runs', '.'],
       [],
       [],
     ]);
@@ -189,12 +189,12 @@ describe('runShip — pre-flight only', () => {
     {
       args: 'issues 9 7 8 --preflight-only',
       slugs: '7-8-9',
-      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', '7-8-9'],
+      argv: ['ship/src/cli/worktree.ts', 'preflight', '.', '--slug', '7-8-9'],
     },
     {
       args: 'epics 1025 1030 --preflight-only',
       slugs: 'epic-1025,epic-1030',
-      argv: ['tooling/worktree.ts', 'preflight', '.', '--slug', 'epic-1025,epic-1030'],
+      argv: ['ship/src/cli/worktree.ts', 'preflight', '.', '--slug', 'epic-1025,epic-1030'],
     },
   ])('passes --slug $slugs for $args', async ({ args, argv }) => {
     const run = fakeHooks();
@@ -421,14 +421,14 @@ describe('runShip — one issue from launch to PR', () => {
     const argvOf = (label: string): readonly string[] =>
       run.calls.find((c) => c.label === label)?.argv ?? [];
     expect(argvOf('runner:cut-batch:list')).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-batch',
       '.',
       '--issues',
       '7',
     ]);
     expect(argvOf('runner:cut-slice:7-1')).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-slice',
       BATCH,
       '--issue',
@@ -437,7 +437,7 @@ describe('runShip — one issue from launch to PR', () => {
       '1',
     ]);
     expect(argvOf('runner:provision:7-1')).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'provision',
       'C:/src/ph-runs/7/slice-7-1',
       '--batch',
@@ -448,7 +448,7 @@ describe('runShip — one issue from launch to PR', () => {
     expect(lineSeenBy(run, 'specReview:7-1', 'Slice commit: ')).toBe('Slice commit: slice1');
     expect(lineSeenBy(run, 'standardsReview:7-1', 'Slice commit: ')).toBe('Slice commit: spec1');
     expect(argvOf('runner:land:7-1')).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'land',
       BATCH,
       'slice2',
@@ -460,7 +460,7 @@ describe('runShip — one issue from launch to PR', () => {
       `${REPORT_DIR}/land-7-1.log`,
     ]);
     expect(argvOf('runner:publish:list')).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'publish',
       BATCH,
       '--title',
@@ -723,16 +723,16 @@ describe('runShip — the runner’s command line', () => {
       'Command: node --import tsx tooling/run-gate.ts issues 7',
     );
     expect(commandOf('runner:teardown:7-1')).toBe(
-      'Command: node --import tsx tooling/worktree.ts teardown C:/src/ph-runs/7/slice-7-1',
+      'Command: node --import tsx ship/src/cli/worktree.ts teardown C:/src/ph-runs/7/slice-7-1',
     );
     expect(commandOf('runner:publish:list')).toMatch(
-      /^Command: node --import tsx tooling\/worktree\.ts publish /,
+      /^Command: node --import tsx ship\/src\/cli\/worktree\.ts publish /,
     );
     const runners = run.calls.filter((c) => c.label.startsWith('runner:'));
     expect(runners.length).toBeGreaterThan(3);
-    expect(runners.filter((c) => !/^Command: node --import tsx tooling\//m.test(c.prompt))).toEqual(
-      [],
-    );
+    expect(
+      runners.filter((c) => !/^Command: node --import tsx (?:tooling|ship)\//m.test(c.prompt)),
+    ).toEqual([]);
   });
 });
 
@@ -750,7 +750,7 @@ describe('runShip — an attempt that does not land', () => {
       when(run, 'call runner:cut-slice:7-2'),
     );
     expect(run.calls.find((c) => c.label === 'runner:cut-slice:7-2')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-slice',
       BATCH,
       '--issue',
@@ -835,7 +835,7 @@ describe('runShip — an attempt that does not land', () => {
       await runShip(run.hooks, 'issues 7');
 
       expect(teardownArgv(run)).toEqual([
-        'tooling/worktree.ts',
+        'ship/src/cli/worktree.ts',
         'teardown',
         SLICE,
         '--keep-to',
@@ -852,7 +852,7 @@ describe('runShip — an attempt that does not land', () => {
 
       await runShip(run.hooks, 'issues 7');
 
-      expect(teardownArgv(run)).toEqual(['tooling/worktree.ts', 'teardown', SLICE]);
+      expect(teardownArgv(run)).toEqual(['ship/src/cli/worktree.ts', 'teardown', SLICE]);
     });
 
     it('tells the tdd where its work is kept', async () => {
@@ -907,7 +907,7 @@ describe('runShip — an attempt that does not land', () => {
 
       const call = run.calls.find((c) => c.label === 'runner:post-issue-comment:7');
       expect(call?.argv).toEqual([
-        'tooling/worktree.ts',
+        'ship/src/cli/worktree.ts',
         'post-issue-comment',
         'C:/src/main',
         '--issue',
@@ -1782,8 +1782,8 @@ describe('runShip — the slice’s changed files after an amend', () => {
     expect(
       run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv),
     ).toEqual([
-      ['tooling/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'cut1'],
-      ['tooling/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'cut1'],
+      ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'cut1'],
+      ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'cut1'],
     ]);
     expect(lineSeenBy(run, 'specReview:7-1', 'Changed files: ')).toBe(
       'Changed files: tooling/x.ts, test/unit/tooling/x.test.ts',
@@ -1888,7 +1888,7 @@ describe('runShip — the epic end', () => {
       'runner:publish:list',
     ]);
     expect(run.calls.find((c) => c.label === 'runner:sync-master:list-continue')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'sync-master',
       BATCH,
       '--continue',
@@ -1989,7 +1989,7 @@ describe('runShip — a halting entry', () => {
     const report = await runShip(run.hooks, 'issues 7 8');
 
     expect(run.calls.find((c) => c.label === 'runner:cut-batch:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-batch',
       '.',
       '--issues',

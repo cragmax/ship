@@ -1,5 +1,5 @@
 // regression: a session `cd` mid-run moved every later agent's start directory, so a runner
-// resolved `tooling/worktree.ts` against a report dir and the epic end halted
+// resolved `ship/src/cli/worktree.ts` against a report dir and the epic end halted
 import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../../tooling/workflows/ship.js';

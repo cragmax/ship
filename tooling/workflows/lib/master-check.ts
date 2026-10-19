@@ -13,7 +13,7 @@
  * effect.
  */
 
-import type { MasterMove } from '../../worktree/types-run.js';
+import type { MasterMove } from '../../../ship/src/cli/envelope/types-run.js';
 
 import type { WorkflowHooks } from './hooks.types.js';
 import type { MainSnapshot } from './preflight.js';

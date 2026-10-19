@@ -6,7 +6,7 @@
  *
  * **Types.** Each output type is shallow-`Partial`, required fields included: a command
  * that exits 2 prints no verdict, one that threw or failed its envelope
- * schema prints only the base fields (`tooling/worktree.ts`
+ * schema prints only the base fields (`ship/src/cli/worktree.ts`
  * `runWorktreeCli`), so a reader treats a missing field as a failure,
  * never as a pass.
  *
@@ -202,7 +202,7 @@ export interface ToolOutputs {
 }
 
 /** The worktree CLI's entry, relative to the main checkout. */
-const WORKTREE_CLI = 'tooling/worktree.ts';
+const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
 
 /** The run gate's entry, relative to the main checkout. */
 const RUN_GATE_CLI = 'tooling/run-gate.ts';

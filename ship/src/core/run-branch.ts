@@ -9,7 +9,7 @@
 
 /**
  * A run branch: `ship/` — the namespace `RUN_BRANCH_PREFIX` names
- * (`tooling/worktree/run-layout.ts`, which cannot enter the render closure)
+ * (`ship/src/cli/git/run-layout.ts`, which cannot enter the render closure)
  * — then a slug in `runSlug`'s domain (`epic-<E>`, or issue numbers joined
  * with `-`).
  */

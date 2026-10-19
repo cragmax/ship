@@ -83,14 +83,14 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:append-pr-body:list',
     ]);
     expect(callOf(run, 'runner:preflight')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'preflight',
       '.',
       '--attach',
       'ship/epic-9',
     ]);
     expect(callOf(run, 'runner:cut-batch:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-batch',
       '.',
       '--attach',
@@ -99,7 +99,7 @@ describe('runShip --attach — one attached issue from launch to the push', () =
     ]);
     const publish = callOf(run, 'runner:publish:list');
     expect(publish?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'publish',
       BATCH,
       '--push-only',
@@ -199,7 +199,7 @@ describe('runShip --attach — setup', () => {
     );
     expect(leaseLine(run, 'tdd:7-1')).toContain(`PH_POOL_REGISTRY=${REGISTRY}`);
     expect(callOf(run, 'runner:cut-slice:7-1')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'cut-slice',
       BATCH,
       '--issue',
@@ -229,7 +229,7 @@ describe('runShip --attach — setup', () => {
     await runShip(run.hooks, ARGS);
 
     expect(callOf(run, 'runner:provision-batch:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'provision-batch',
       BATCH,
       '--report-dir',
@@ -396,9 +396,9 @@ describe('runShip --attach — the epic end', () => {
       message: 'publish failed: the pre-push gate failed',
     });
     expect(recovery).toEqual([
-      `node --import tsx tooling/worktree.ts publish ${BATCH} --push-only --log ${ATTACH_REPORTS}/publish.log`,
-      `node --import tsx tooling/worktree.ts post-pr-comment ${BATCH} --pr 9 --comment-file ${ATTACH_REPORTS}/pr-report-comment.md`,
-      `node --import tsx tooling/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
+      `node --import tsx ship/src/cli/worktree.ts publish ${BATCH} --push-only --log ${ATTACH_REPORTS}/publish.log`,
+      `node --import tsx ship/src/cli/worktree.ts post-pr-comment ${BATCH} --pr 9 --comment-file ${ATTACH_REPORTS}/pr-report-comment.md`,
+      `node --import tsx ship/src/cli/worktree.ts append-pr-body ${BATCH} --pr 9 --section-file ${ATTACH_REPORTS}/pr-section.md`,
     ]);
     const lines = promptLines(run, 'runner:publish:list');
     expect(lines.slice(0, 2)).toEqual(['Checkout: C:/src/main', `Command: ${recovery[0] ?? ''}`]);
@@ -517,7 +517,7 @@ describe('runShip --attach — the PR body section', () => {
       'runner:append-pr-body:list',
     ]);
     expect(callOf(run, 'runner:append-pr-body:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'append-pr-body',
       BATCH,
       '--pr',
@@ -545,7 +545,7 @@ describe('runShip --attach — the PR body section', () => {
     expect(lines).not.toContain('<details><summary>Run report — attached run 2</summary>');
     expect(lines).not.toContain('## Landed issues');
     expect(callOf(run, 'runner:post-pr-comment:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'post-pr-comment',
       BATCH,
       '--pr',

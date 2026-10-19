@@ -360,8 +360,8 @@ describe('runShip — epics side by side', () => {
     const argvOf = (prefix: string): string[][] =>
       run.calls.filter((c) => c.label.startsWith(prefix)).map((c) => [...c.argv]);
     expect(argvOf('runner:cut-batch')).toEqual([
-      ['tooling/worktree.ts', 'cut-batch', '.', '--epic', '1'],
-      ['tooling/worktree.ts', 'cut-batch', '.', '--epic', '2'],
+      ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '1'],
+      ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '2'],
     ]);
     expect(argvOf('runner:publish').map((a) => a[2])).toEqual(
       expect.arrayContaining(['C:/src/ph-runs/epic-1/batch', 'C:/src/ph-runs/epic-2/batch']),

@@ -1,6 +1,6 @@
 /**
  * The zod source of each worktree tool's output schema: the envelope fields the saved workflows
- * consume, `.pick`ed from the envelope schemas in `tooling/worktree/schemas*.ts`, so a renamed or
+ * consume, `.pick`ed from the envelope schemas in `ship/src/cli/envelope/`, so a renamed or
  * dropped envelope field breaks the pick at compile time. Every consumed field is
  * required — a runner answer that lacks one fails its schema, and the workflow reads a missing
  * answer as a failure — except `reason`, which the envelope carries only when `refused`; `at`,
@@ -23,7 +23,7 @@ import {
   RetireRunResultSchema,
   StepErrorSchema,
   TeardownResultSchema,
-} from '../../worktree/schemas.js';
+} from '../../../ship/src/cli/envelope/schemas.js';
 import {
   AppendPrBodyResultSchema,
   BumpResultSchema,
@@ -37,7 +37,7 @@ import {
   PreflightResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
-} from '../../worktree/schemas-run.js';
+} from '../../../ship/src/cli/envelope/schemas-run.js';
 import type { WorktreeToolName } from '../lib/tool-calls.js';
 
 /** The keys every row picks: the status fields. */

@@ -208,7 +208,7 @@ describe('the resync render', () => {
 
     expect(resync).toContain('tooling/workflows/lib/sync-master-step.ts');
     expect(ship).toContain('tooling/workflows/lib/sync-master-step.ts');
-    expect(resync.filter((f) => f.startsWith('tooling/worktree/'))).toEqual([]);
+    expect(resync.filter((f) => f.startsWith('ship/src/cli/'))).toEqual([]);
     expect(resync).not.toContain('tooling/workflows/lib/epic-end.ts');
   });
 });
@@ -247,7 +247,7 @@ describe('the render closure', () => {
     expect(files).toContain('ship/src/core/scheduler/run-scheduler.ts');
     expect(files).toContain('server-pool/src/lease-timings.ts');
     expect(files).not.toContain('ship/src/core/scheduler/run-scheduler.types.ts');
-    expect(files.filter((f) => f.startsWith('tooling/worktree'))).toEqual([]);
+    expect(files.filter((f) => f.startsWith('ship/src/cli/'))).toEqual([]);
     expect(at('ship/src/core/run-set.ts')).toBeLessThan(
       at('ship/src/core/scheduler/run-scheduler.ts'),
     );

@@ -1,6 +1,6 @@
 /**
  * The slug of an unattended run (ADR-0045) — the name its run branch, run root and slice branches
- * share. Apart from `tooling/worktree/run-layout.ts`, which spells the rest of the layout, so the
+ * share. Apart from `ship/src/cli/git/run-layout.ts`, which spells the rest of the layout, so the
  * `ship` workflow can name a run before it is cut.
  *
  * Render-safe (`tooling/lib/workflow-render.ts`): ECMAScript built-ins only, no top-level side

@@ -31,12 +31,12 @@ describe('runShip — spent-run cleanup at launch', () => {
       'runner:cut-batch:list',
     ]);
     expect(run.calls.find((c) => c.label === 'runner:teardown:spent-1')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'teardown',
       SPENT_BATCH,
     ]);
     expect(run.calls.find((c) => c.label === 'runner:retire-run:spent-1')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'retire-run',
       '.',
       '--branch',

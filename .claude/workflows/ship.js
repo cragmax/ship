@@ -2084,7 +2084,7 @@ function preCutPlace(tag) {
 function runPlace(at, tag, ...write) {
   return { dir: `${at.reportDir}/tool`, tag, ...(write.length === 0 ? {} : { write }) };
 }
-const WORKTREE_CLI = 'tooling/worktree.ts';
+const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
 const RUN_GATE_CLI = 'tooling/run-gate.ts';
 const TOOL_COMMANDS = {
   preflight: [WORKTREE_CLI, 'preflight'],

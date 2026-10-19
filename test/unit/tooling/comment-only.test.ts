@@ -14,7 +14,7 @@ import {
   parseRevisions,
   proveCommentOnly,
 } from '../../../tooling/lib/comment-only.js';
-import { StepFailure } from '../../../tooling/worktree/types.js';
+import { StepFailure } from '../../../ship/src/cli/envelope/types.js';
 import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
 import { mustRun } from '../../helpers/worktree-fixture.js';
 

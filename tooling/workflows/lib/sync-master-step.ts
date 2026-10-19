@@ -15,7 +15,7 @@
  * no top-level side effect.
  */
 
-import type { ConflictPath, VersionLine } from '../../worktree/types-run.js';
+import type { ConflictPath, VersionLine } from '../../../ship/src/cli/envelope/types-run.js';
 
 import { AGENT_CALLS } from './agent-calls.js';
 import type { WorkflowHooks } from './hooks.types.js';

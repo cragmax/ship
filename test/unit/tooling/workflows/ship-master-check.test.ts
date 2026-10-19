@@ -44,7 +44,7 @@ describe('runShip — the master check', () => {
 
     expect(publishes(run)).toEqual([]);
     expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual([
-      'tooling/worktree.ts',
+      'ship/src/cli/worktree.ts',
       'check-master',
       'C:/src/main',
       '--local',
@@ -86,7 +86,7 @@ describe('runShip — the master check', () => {
 
       expect(publishes(run)).toEqual([]);
       expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual([
-        'tooling/worktree.ts',
+        'ship/src/cli/worktree.ts',
         'check-master',
         'C:/src/main',
         '--local',

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import ts from 'typescript';
 
-import { git, gitPaths } from '../worktree/git.js';
+import { git, gitPaths } from '../../ship/src/cli/git/git.js';
 
 /** One code token; comments and JSDoc are never tokens. */
 export interface CodeToken {

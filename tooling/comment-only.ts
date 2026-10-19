@@ -19,7 +19,7 @@ import {
   proveCommentOnly,
 } from './lib/comment-only.js';
 import { describeError } from './lib/describe-error.js';
-import { StepFailure } from './worktree/types.js';
+import { StepFailure } from '../ship/src/cli/envelope/types.js';
 
 function writeFailures(report: CommentOnlyReport): boolean {
   if (report.difference !== null) {
