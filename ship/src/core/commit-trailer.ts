@@ -1,10 +1,10 @@
 /**
  * The co-author trailer — the one home of the attribution line on every
  * commit an unattended run writes the message for: each landed issue's
- * commit (`tooling/workflows/lib/pr-body.ts`) and the version bump
+ * commit (`ship/src/workflow/pr/pr-body.ts`) and the version bump
  * (`ship/src/cli/commands/bump.ts`).
  *
- * Render-safe (`tooling/lib/workflow-render.ts`): it joins the `ship`
+ * Render-safe (`ship/src/build/workflow-render.ts`): it joins the `ship`
  * workflow's render closure through `pr-body.ts`.
  */
 

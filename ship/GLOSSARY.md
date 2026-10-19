@@ -78,4 +78,4 @@ _Avoid_: "container" (the Minecraft window), "ship agent" (the `ship-` prefix is
 
 ## Flagged ambiguities
 
-- **"Workflow" — source, render, runtime** (resolved 2026-10-16, wayfinder #1488; Ship ADR-0001) — "the workflow" named the typed sources in `tooling/workflows/`, the rendered JS in `.claude/workflows/` and Claude Code's tool alike, about 67 ambiguous uses across agents, skills and ADR-0045. Now the **Workflow source** renders into the **Saved workflow**, which the **Workflow tool** runs in the **Workflow runtime**; a GitHub Actions file is a "CI workflow".
+- **"Workflow" — source, render, runtime** (resolved 2026-10-16, wayfinder #1488; Ship ADR-0001) — "the workflow" named the typed sources in `ship/src/workflow/`, the rendered JS in `.claude/workflows/` and Claude Code's tool alike, about 67 ambiguous uses across agents, skills and ADR-0045. Now the **Workflow source** renders into the **Saved workflow**, which the **Workflow tool** runs in the **Workflow runtime**; a GitHub Actions file is a "CI workflow".

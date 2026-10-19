@@ -1,5 +1,5 @@
 /**
- * Render-safe (`tooling/lib/workflow-render.ts`): it joins the `ship` workflow's render
+ * Render-safe (`ship/src/build/workflow-render.ts`): it joins the `ship` workflow's render
  * closure through `pr-body.ts`, so the PR body and the `ship/src/cli/` guards share one limit.
  */
 

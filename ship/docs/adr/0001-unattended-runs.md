@@ -4,10 +4,8 @@ Date: 2026-10-16
 Status: DRAFT. Supersedes ADR-0045.
 
 > Restates [ADR-0045](../../../docs/adr/0045-unattended-runs.md) as Ship
-> stands once Epic 2 of the tooling-split map (#1483) has moved it here; until
-> then its code sits under `tooling/workflows/`, `tooling/worktree/` and
-> `tooling/lib/`. Decided on wayfinder ticket #1488, 2026-10-16; decision 2's
-> layout on #1486. ADR-0045 holds the history and the old → new decision map.
+> stands once Epic 2 of the tooling-split map (#1483) has moved it here.
+> Decided on wayfinder ticket #1488, 2026-10-16; decision 2's layout on #1486. ADR-0045 holds the history and the old → new decision map.
 
 ## Context
 

@@ -1,5 +1,5 @@
 /**
- * Render-safe (`tooling/lib/workflow-render.ts`): it joins the `ship` workflow's render
+ * Render-safe (`ship/src/build/workflow-render.ts`): it joins the `ship` workflow's render
  * closure through `preflight.ts`, so pre-flight's overlap filter and `harvest`'s regeneration
  * share one name.
  */

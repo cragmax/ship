@@ -2,7 +2,7 @@
  * The worktree CLI's envelope schemas: the canonical home of every envelope it
  * prints (the run-branch and epic-end commands' are in `schemas-run.ts`). `types.ts` and
  * `types-run.ts` export each envelope's type as the schema's `z.infer`, and the saved workflows'
- * tool-output schemas are `.pick`s of these (`tooling/workflows/schemas/`), so a field renamed here
+ * tool-output schemas are `.pick`s of these (`ship/src/schemas/`), so a field renamed here
  * breaks every builder and reader at compile time.
  *
  * Every filesystem path in an envelope is absolute with forward slashes; the path lists of
