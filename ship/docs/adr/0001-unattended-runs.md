@@ -50,7 +50,8 @@ no human gate between.
    codegen; `build/` renders, emits and checks. A depcruise rule lets
    `workflow/` and `core/` value-import only each other, plus two named
    carve-outs the render closure inlines, neither importing anything:
-   `server-pool/src/lease-timings.ts`, in place of the pool barrel
+   `server-pool/src/lease-timings.ts`, for `workflow/` only, in place of the
+   pool barrel
    ([Pool ADR-0001](../../../server-pool/docs/adr/0001-warm-pool-and-lock-file-leasing.md)
    decision 5), and `tooling/lib/platform-wide.ts`, whose `isPlatformWide`
    and `MAX_RELATED_FILES` the PR body's full-tiers line reads. Type-only
