@@ -66,7 +66,7 @@ const BUILD_SCRIPT = [
 const CHECK_SCRIPT = "require('fake-dep');\nconsole.log('fake-dep resolved');\n";
 
 /** What {@link runCli} returns for one CLI invocation. */
-export interface CliRun<T extends ResultBase> {
+interface CliRun<T extends ResultBase> {
   /** The single JSON object the CLI printed. */
   readonly json: T;
   /** The CLI's exit code. */

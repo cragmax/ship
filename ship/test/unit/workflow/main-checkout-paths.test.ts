@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { gitPathList } from '../../../../test/helpers/worktree-fixture-git.js';
 import { PROMPTS } from '../../../src/workflow/calls/prompts.js';
 import { TOOL_COMMANDS } from '../../../src/workflow/calls/tool-calls.js';
 
@@ -11,12 +11,7 @@ import { TOOL_COMMANDS } from '../../../src/workflow/calls/tool-calls.js';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-const TRACKED = new Set(
-  // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally; fixed argv, no shell
-  execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
-    .split('\0')
-    .filter((path) => path !== ''),
-);
+const TRACKED = new Set(gitPathList(ROOT, ['ls-files', '-z']));
 
 /** A main checkout no real path starts with, so each tool path it prefixes is found by it. */
 const MAIN = 'Z:/main-checkout';
