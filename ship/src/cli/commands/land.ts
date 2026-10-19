@@ -49,12 +49,6 @@ interface LandInput {
 }
 
 /**
- * Repository-relative prefixes whose change makes `dist/` stale: only `src/`
- * builds into it (ADR-0048 decision 5).
- */
-const BUILD_PREFIXES = ['src/'] as const;
-
-/**
  * Land one slice commit on the batch, keeping the file header's invariant.
  *
  * @returns The envelope: `ok` with the new `commit`; `refused` before any
@@ -182,17 +176,21 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
   }
 }
 
+/** The files `npm run build` reads besides `src/`: its script, `tsc`'s config and the pre-clean. */
+const BUILD_FILES: readonly string[] = ['package.json', 'tsconfig.json', 'tooling/clean.ts'];
+
 /**
  * Whether a change touches a path the batch's `dist/` is built from: the
  * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
  * gate's `gate:build` re-emits in parallel with them, so the build makes it
- * current first. `sync-master` asks it of what the merge brings.
+ * current first. Only `src/` builds into `dist/` (ADR-0048 decision 5).
+ * `sync-master` asks it of what the merge brings.
  *
  * @param files - Repository-relative paths changed.
- * @returns `true` when any lies under {@link BUILD_PREFIXES}.
+ * @returns `true` when any lies under `src/` or is one of {@link BUILD_FILES}.
  */
 export function needsBuild(files: readonly string[]): boolean {
-  return files.some((file) => BUILD_PREFIXES.some((prefix) => file.startsWith(prefix)));
+  return files.some((file) => file.startsWith('src/') || BUILD_FILES.includes(file));
 }
 
 /** Re-verify the batch clean, never throwing: `false` when residue remains or git cannot tell. */

@@ -46,6 +46,8 @@ const HOOK_SAYS = 'fixture hook: commit refused';
 const BUILD_MARKER = 'dist/built.txt';
 const BUILD_SCRIPT = `require('fs').mkdirSync('dist', { recursive: true });\nrequire('fs').writeFileSync('${BUILD_MARKER}', 'built\\n');\n`;
 const FIXTURE_PACKAGE = `${JSON.stringify({ name: 'land-fixture', private: true, scripts: { build: 'node build.js' } })}\n`;
+// A package.json change that keeps the fixture's build script.
+const BUMPED_PACKAGE = FIXTURE_PACKAGE.replace('"private"', '"version":"2.0.0","private"');
 
 let root: string;
 
@@ -217,12 +219,15 @@ describe('land', () => {
   });
 
   it.each([
-    { path: 'src/feature.ts', built: true },
-    { path: 'tooling/tool.ts', built: false },
-    { path: 'docs/notes.md', built: false },
-  ])('builds the batch before committing $path: $built', TIMEOUT, ({ path, built }) => {
+    { path: 'src/feature.ts', content: 'changed\n', built: true },
+    { path: 'tsconfig.json', content: 'changed\n', built: true },
+    { path: 'tooling/clean.ts', content: 'changed\n', built: true },
+    { path: 'package.json', content: BUMPED_PACKAGE, built: true },
+    { path: 'tooling/tool.ts', content: 'changed\n', built: false },
+    { path: 'docs/notes.md', content: 'changed\n', built: false },
+  ])('builds the batch before committing $path: $built', TIMEOUT, ({ path, content, built }) => {
     const run = makeRun({ 'package.json': FIXTURE_PACKAGE, 'build.js': BUILD_SCRIPT });
-    const sha = commitChanges(run.slice, { write: { [path]: 'changed\n' } }, 'slice');
+    const sha = commitChanges(run.slice, { write: { [path]: content } }, 'slice');
 
     const r = land(run.batch, sha, run.cut);
 
