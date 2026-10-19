@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-import type { GhJson } from '../../../tooling/lib/run-gate-gh.js';
-import type { GateVerdict, IssueCheck } from '../../../ship/src/core/gate/run-gate.js';
-import { exitCodeFor, main, parseRunGateArgs } from '../../../tooling/run-gate.js';
+import type { GhJson } from '../../../src/cli/run-gate-gh.js';
+import type { GateVerdict, IssueCheck } from '../../../src/core/gate/run-gate.js';
+import { exitCodeFor, main, parseRunGateArgs } from '../../../src/cli/run-gate.js';
 
 describe('parseRunGateArgs', () => {
   it('epics with space-separated numbers', () => {
@@ -140,6 +140,9 @@ describe('main', () => {
     expect(process.exitCode).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr.join('')).toContain("'abc'");
+    expect(stderr.join('')).toContain(
+      'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] | check N',
+    );
   });
 
   it('a gh failure exits 2, stdout empty, the diagnostic on stderr', async () => {

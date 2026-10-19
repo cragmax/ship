@@ -5,7 +5,7 @@ import {
   gatherCheck,
   toIssueFacts,
   type GhJson,
-} from '../../../tooling/lib/run-gate-gh.js';
+} from '../../../src/cli/run-gate-gh.js';
 
 // Fixtures mirror observed gh 2.101.0 `issue view --json` output, extra keys
 // (`id`, `title`, `url`, `color`) included so the schemas' unknown-key

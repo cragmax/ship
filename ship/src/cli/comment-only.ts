@@ -1,6 +1,6 @@
 /**
- * `npx tsx tooling/comment-only.ts [--json] [--cached] [<base>] | <base>..<head>` — prove a change
- * to TypeScript files is comment-only ({@link proveCommentOnly}); with no head it reads the
+ * `npx tsx ship/src/cli/comment-only.ts [--json] [--cached] [<base>] | <base>..<head>` — prove a
+ * change to TypeScript files is comment-only ({@link proveCommentOnly}); with no head it reads the
  * working tree, or the staged index under `--cached`.
  *
  * Exit 0: stdout lists each `not compared: <path>`, then the count of token-identical files.
@@ -17,9 +17,9 @@ import {
   formatMojibake,
   parseRevisions,
   proveCommentOnly,
-} from './lib/comment-only.js';
-import { describeError } from './lib/describe-error.js';
-import { StepFailure } from '../ship/src/cli/envelope/types.js';
+} from './comment-only.core.js';
+import { describeError } from '../../../tooling/lib/describe-error.js';
+import { StepFailure } from './envelope/types.js';
 
 function writeFailures(report: CommentOnlyReport): boolean {
   if (report.difference !== null) {

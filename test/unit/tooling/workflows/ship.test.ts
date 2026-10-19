@@ -177,7 +177,7 @@ describe('runShip — pre-flight only', () => {
     ]);
     expect(run.calls.map((c) => c.argv)).toEqual([
       ['ship/src/cli/worktree.ts', 'preflight', '.', '--slug', 'epic-1025'],
-      ['tooling/run-gate.ts', 'epics', '1025'],
+      ['ship/src/cli/run-gate.ts', 'epics', '1025'],
       ['ship/src/cli/worktree.ts', 'live-runs', '.'],
       [],
       [],
@@ -720,7 +720,7 @@ describe('runShip — the runner’s command line', () => {
         .split('\n')
         .find((l) => l.startsWith('Command: '));
     expect(commandOf('runner:run-gate')).toBe(
-      'Command: node --import tsx tooling/run-gate.ts issues 7',
+      'Command: node --import tsx ship/src/cli/run-gate.ts issues 7',
     );
     expect(commandOf('runner:teardown:7-1')).toBe(
       'Command: node --import tsx ship/src/cli/worktree.ts teardown C:/src/ph-runs/7/slice-7-1',
@@ -1746,7 +1746,7 @@ describe('runShip — the slice test review', () => {
     ]);
     if (proofRuns) {
       expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
-        'tooling/comment-only.ts',
+        'ship/src/cli/comment-only.ts',
         '--json',
         'cut1..spec1',
       ]);
@@ -2428,7 +2428,7 @@ describe('runShip — exclude mode', () => {
       epics: [],
     });
     expect(run.calls[1]?.argv).toEqual([
-      'tooling/run-gate.ts',
+      'ship/src/cli/run-gate.ts',
       'issues',
       '7',
       '8',

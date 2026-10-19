@@ -13,10 +13,14 @@ import {
   parseNameStatus,
   parseRevisions,
   proveCommentOnly,
-} from '../../../tooling/lib/comment-only.js';
-import { StepFailure } from '../../../ship/src/cli/envelope/types.js';
-import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
-import { mustRun } from '../../helpers/worktree-fixture.js';
+} from '../../../src/cli/comment-only.core.js';
+import { StepFailure } from '../../../src/cli/envelope/types.js';
+import {
+  commitChanges,
+  headSha,
+  makeGitRepo,
+} from '../../../../test/helpers/worktree-fixture-git.js';
+import { mustRun } from '../../../../test/helpers/worktree-fixture.js';
 
 // A test spawning git runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });

@@ -1,7 +1,7 @@
 /**
  * Parser for an issue body's `## Blocked by` section — the hand-written half of an issue's
  * blockers. The native `blockedBy` links are the other half, unioned in by
- * `tooling/lib/run-gate-gh.ts`.
+ * `ship/src/cli/run-gate-gh.ts`.
  *
  * **Deliberately ignored.** Refs after a line's leading run (a trailing parenthetical), and every
  * line whose text does not start with a ref — prose such as `Soft dependency on #N`,

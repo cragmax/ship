@@ -1,7 +1,7 @@
 /**
  * Decides whether an unattended run may start and derives its dependency edges: a shell over
  * the pure core `ship/src/core/gate/run-gate.ts` and its `gh` boundary
- * `tooling/lib/run-gate-gh.ts`.
+ * `ship/src/cli/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
  * `#` — quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
@@ -16,21 +16,16 @@ import { pathToFileURL } from 'node:url';
 
 import { execa } from 'execa';
 
-import { describeError } from './lib/describe-error.js';
-import { gatherAndEvaluate, gatherCheck, type GhJson } from './lib/run-gate-gh.js';
-import type {
-  GateMode,
-  GateVerdict,
-  IssueCheck,
-  LaunchSpec,
-} from '../ship/src/core/gate/run-gate.js';
+import { describeError } from '../../../tooling/lib/describe-error.js';
+import { gatherAndEvaluate, gatherCheck, type GhJson } from './run-gate-gh.js';
+import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from '../core/gate/run-gate.js';
 
 /** Parsed argv: gate a launch spec, or check one issue. */
 export type RunGateArgs =
   | { readonly kind: 'gate'; readonly spec: LaunchSpec; readonly mode: GateMode }
   | { readonly kind: 'check'; readonly issue: number };
 
-const USAGE = 'usage: npx tsx tooling/run-gate.ts epics|issues N... [--exclude] | check N';
+const USAGE = 'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] | check N';
 
 /** One parsed issue number and the argv token it came from. */
 interface Operand {

@@ -1,7 +1,7 @@
 /**
  * The run gate's pure decision core: resolve a launch spec into a
  * run set, decide whether the run may start, and derive its dependency edges.
- * No I/O — `tooling/lib/run-gate-gh.ts` gathers the inputs, and the rules
+ * No I/O — `ship/src/cli/run-gate-gh.ts` gathers the inputs, and the rules
  * below are the oracle the unit tests pin.
  *
  * **What an `ok` verdict guarantees the scheduler.** Every edge has both ends

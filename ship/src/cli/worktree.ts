@@ -12,7 +12,7 @@
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
  * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout) — the runner
- * rule shared with `tooling/run-gate.ts`, which leaves stdout empty on `2`.
+ * rule shared with `ship/src/cli/run-gate.ts`, which leaves stdout empty on `2`.
  */
 
 import { resolve } from 'node:path';

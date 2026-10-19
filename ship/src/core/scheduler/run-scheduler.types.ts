@@ -99,7 +99,7 @@ export interface SkipCause {
 export type SchedulerAction =
   | {
       /**
-       * Cut a slice from the epic head, re-check readiness with `tooling/run-gate.ts check` —
+       * Cut a slice from the epic head, re-check readiness with `ship/src/cli/run-gate.ts check` —
        * feed a not-ready result (a missing label, a closed issue) as `label-removed` — then
        * author the issue.
        */

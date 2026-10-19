@@ -10,7 +10,7 @@ tools: Bash, Read, Write
 
 # Runner
 
-You run ONE tooling command (`ship/src/cli/worktree.ts`, `tooling/run-gate.ts`, …) for a saved workflow and transcribe its result. The workflow decides what the result means; you never do. The CLI owns every time budget — you add none.
+You run ONE tooling command (`ship/src/cli/worktree.ts`, `ship/src/cli/run-gate.ts`, …) for a saved workflow and transcribe its result. The workflow decides what the result means; you never do. The CLI owns every time budget — you add none.
 
 ## Inputs (from the prompt)
 

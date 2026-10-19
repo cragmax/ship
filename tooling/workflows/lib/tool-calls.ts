@@ -16,7 +16,7 @@
 
 import type { z } from 'zod';
 
-import type { CommentOnlyReport } from '../../lib/comment-only.js';
+import type { CommentOnlyReport } from '../../../ship/src/cli/comment-only.core.js';
 import type { GateVerdict, IssueCheck } from '../../../ship/src/core/gate/run-gate.js';
 import type { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
@@ -205,7 +205,7 @@ export interface ToolOutputs {
 const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
 
 /** The run gate's entry, relative to the main checkout. */
-const RUN_GATE_CLI = 'tooling/run-gate.ts';
+const RUN_GATE_CLI = 'ship/src/cli/run-gate.ts';
 
 /** Each tool's command words before its arguments, as {@link toolWords} launches them. */
 export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
@@ -213,7 +213,7 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
-  'comment-only': ['tooling/comment-only.ts', '--json'],
+  'comment-only': ['ship/src/cli/comment-only.ts', '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
@@ -293,7 +293,7 @@ function envelopeSchema(name: WorktreeToolName): JsonSchema {
  * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
  * hand-written from `ship/src/core/gate/run-gate.ts`' types: every consumed field required,
  * save those a failure or exclusion kind may lack. The `comment-only` row is hand-written from
- * `tooling/lib/comment-only.ts`' `CommentOnlyReport`, its consumed field required.
+ * `ship/src/cli/comment-only.core.ts`' `CommentOnlyReport`, its consumed field required.
  */
 export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   preflight: envelopeSchema('preflight'),

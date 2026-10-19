@@ -6,8 +6,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { commitChanges, headSha, makeGitRepo } from '../../helpers/worktree-fixture-git.js';
-import { runIn } from '../../helpers/worktree-fixture.js';
+import {
+  commitChanges,
+  headSha,
+  makeGitRepo,
+} from '../../../../test/helpers/worktree-fixture-git.js';
+import { mustRun, runIn } from '../../../../test/helpers/worktree-fixture.js';
 
 // A test spawning git or the CLI through tsx runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });
@@ -15,7 +19,7 @@ vi.setConfig({ testTimeout: 20_000 });
 const BASE = readFileSync(new URL('../../fixtures/comment-only/base.txt', import.meta.url), 'utf8');
 
 describe('comment-only CLI', () => {
-  const CLI = fileURLToPath(new URL('../../../tooling/comment-only.ts', import.meta.url));
+  const CLI = fileURLToPath(new URL('../../../src/cli/comment-only.ts', import.meta.url));
   // An absolute loader URL, so the child resolves tsx from any cwd.
   const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
   let root: string;
@@ -43,6 +47,19 @@ describe('comment-only CLI', () => {
     expect(run()).toMatchObject({
       exitCode: 1,
       all: 'comment-only: mojibake at a.ts:2: `\u00e2\u20ac`',
+    });
+  });
+
+  // The working tree carries a code change on top of the staged one, so only --cached passes.
+  it('exits 0 under --cached on a staged comment-only change', () => {
+    const dir = makeGitRepo(root, { 'a.ts': BASE });
+    writeFileSync(join(dir, 'a.ts'), BASE.replace('Header line one', 'Header one'));
+    mustRun('git', ['add', 'a.ts'], dir);
+    writeFileSync(join(dir, 'a.ts'), BASE.replace("'a // not comment'", "'b // not comment'"));
+    const r = runIn(process.execPath, ['--import', TSX_LOADER_URL, CLI, '--cached'], dir);
+    expect(r).toMatchObject({
+      exitCode: 0,
+      all: 'comment-only: 1 TypeScript files token-identical',
     });
   });
 

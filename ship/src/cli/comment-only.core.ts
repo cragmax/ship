@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import ts from 'typescript';
 
-import { git, gitPaths } from '../../ship/src/cli/git/git.js';
+import { git, gitPaths } from './git/git.js';
 
 /** One code token; comments and JSDoc are never tokens. */
 export interface CodeToken {
@@ -28,13 +28,13 @@ export interface FileChange {
 }
 
 /** The side compared against the base: a revision, the staged index or the working tree. */
-export type Head =
+type Head =
   | { readonly kind: 'revision'; readonly rev: string }
   | { readonly kind: 'index' }
   | { readonly kind: 'worktree' };
 
 /** The base revision and the side compared against it. */
-export interface Revisions {
+interface Revisions {
   readonly base: string;
   readonly head: Head;
 }

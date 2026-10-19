@@ -35,6 +35,6 @@ You are a **Stage agent** of an unattended run (ADR-0045). Your agent file prelo
 
 ## Files and answer
 
-- **Write files as UTF-8 without a BOM**, through the Read, Edit and Write tools. A shell pipe, a PowerShell redirection or any tool that re-encodes content as Windows-1252 double-encodes every non-ASCII character (an em dash comes back as two or three Latin-1 characters); `tooling/comment-only.ts` fails a mojibake sequence the base lacks, naming its `file:line`.
+- **Write files as UTF-8 without a BOM**, through the Read, Edit and Write tools. A shell pipe, a PowerShell redirection or any tool that re-encodes content as Windows-1252 double-encodes every non-ASCII character (an em dash comes back as two or three Latin-1 characters); `ship/src/cli/comment-only.ts` fails a mojibake sequence the base lacks, naming its `file:line`.
 - **Your report file and every file your prompt names are deliverables** the workflow reads, not reports for a person: write them, even where a generic note says not to write report or findings files.
 - **Your answer is one StructuredOutput tool call**, per your output schema. A text reply is never read.
