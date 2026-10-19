@@ -48,10 +48,14 @@ no human gate between.
    decisions used on both sides; `cli/` is runner or session I/O
    (`commands/`, `envelope/`, `git/`); `schemas/` holds the zod sources for
    codegen; `build/` renders, emits and checks. A depcruise rule lets
-   `workflow/` and `core/` value-import only each other, plus one named
-   carve-out, `server-pool/src/lease-timings.ts`, which the render closure
-   inlines ([Pool ADR-0001](../../../server-pool/docs/adr/0001-warm-pool-and-lock-file-leasing.md)
-   decision 5). So render-safety is held by folder, not by review. A file
+   `workflow/` and `core/` value-import only each other, plus two named
+   carve-outs the render closure inlines, neither importing anything:
+   `server-pool/src/lease-timings.ts`, in place of the pool barrel
+   ([Pool ADR-0001](../../../server-pool/docs/adr/0001-warm-pool-and-lock-file-leasing.md)
+   decision 5), and `tooling/lib/platform-wide.ts`, whose `isPlatformWide`
+   and `MAX_RELATED_FILES` the PR body's full-tiers line reads. Type-only
+   imports are free, since the render erases them. So render-safety is held
+   by folder, not by review. A file
    belongs to the home that imports it, and running a CLI is no import edge
    (ADR-0048 decision 2): the whole worktree CLI is Ship's, the interactive
    `commit` command included, and so are `comment-only` and `describe-error`.
