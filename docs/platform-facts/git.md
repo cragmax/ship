@@ -55,7 +55,7 @@ release in their **Platform** line, and a git release can move them.
 
 - **Last verified.** 2026-10-09.
 - **Relied on by.** #1300's run-branch retire guard (`assertMerged` in
-  `tooling/worktree/retire-run.ts`), which uses `merge-base --is-ancestor` +
+  `ship/src/cli/commands/retire-run.ts`), which uses `merge-base --is-ancestor` +
   `git branch -D` for this reason.
 
 ## PF-91 · `git worktree remove --force` leaves the directory behind when it holds a live junction, and spares the junction target
@@ -74,7 +74,7 @@ release in their **Platform** line, and a git release can move them.
   ```
 
 - **Last verified.** 2026-10-10.
-- **Relied on by.** `tooling/worktree/teardown.ts` (`assertNoLinksRemain`).
+- **Relied on by.** `ship/src/cli/commands/teardown.ts` (`assertNoLinksRemain`).
 
 ## PF-105 · `commit-msg` runs for a merge commit, with `MERGE_HEAD` set
 
