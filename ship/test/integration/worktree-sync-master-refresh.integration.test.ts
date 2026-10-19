@@ -118,7 +118,7 @@ describe('sync-master batch refresh', () => {
 
   it.each([
     { changed: 'src/feature.ts', build: true },
-    { changed: 'tooling/tool.ts', build: true },
+    { changed: 'tooling/tool.ts', build: false },
     { changed: 'docs/notes.md', build: false },
   ])('builds before reporting when master changed $changed: $build', TIMEOUT, (c) => {
     const run = makeNpmRun();

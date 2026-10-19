@@ -48,8 +48,11 @@ interface LandInput {
   readonly selfPath?: string;
 }
 
-/** Repository-relative prefixes whose change makes `dist/` stale. */
-const BUILD_PREFIXES = ['src/', 'tooling/'] as const;
+/**
+ * Repository-relative prefixes whose change makes `dist/` stale: only `src/`
+ * builds into it (ADR-0048 decision 5).
+ */
+const BUILD_PREFIXES = ['src/'] as const;
 
 /**
  * Land one slice commit on the batch, keeping the file header's invariant.

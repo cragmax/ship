@@ -218,7 +218,7 @@ describe('land', () => {
 
   it.each([
     { path: 'src/feature.ts', built: true },
-    { path: 'tooling/tool.ts', built: true },
+    { path: 'tooling/tool.ts', built: false },
     { path: 'docs/notes.md', built: false },
   ])('builds the batch before committing $path: $built', TIMEOUT, ({ path, built }) => {
     const run = makeRun({ 'package.json': FIXTURE_PACKAGE, 'build.js': BUILD_SCRIPT });
