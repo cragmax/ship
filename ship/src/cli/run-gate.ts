@@ -21,7 +21,7 @@ import { gatherAndEvaluate, gatherCheck, type GhJson } from './run-gate-gh.js';
 import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from '../core/gate/run-gate.js';
 
 /** Parsed argv: gate a launch spec, or check one issue. */
-export type RunGateArgs =
+type RunGateArgs =
   | { readonly kind: 'gate'; readonly spec: LaunchSpec; readonly mode: GateMode }
   | { readonly kind: 'check'; readonly issue: number };
 
