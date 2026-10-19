@@ -51,7 +51,7 @@ Choose the commit's first line: a `type` and `scope` from `tooling/lib/commit-ms
 ## Commit
 
 1. `MSYS_NO_PATHCONV=1 node <main>/tooling/mutate.ts check`, run from the slice root with `<main>` the `Checkout:` path, exits 0; else restore what it lists. The slice's copy of `mutate.ts` is diff, not a tool.
-2. Once the slice is green: when it changed anything under `src/` or `tooling/`, run `npm run build` (the commit gate's tests read `dist/`, which its `gate:build` re-emits in parallel with them).
+2. Once the slice is green, build `dist/` per the preloaded `unattended-agent` § Git.
 3. Write the commit message file: the template's lines between the markers, each ending in a newline, its placeholders filled per § Commit line.
 4. Stage your files by name (`git add -- <path>…`): never the `vitest.worktree*.config.ts` files, caches or `reports/`.
 5. `git commit -F <commit message file>`.
