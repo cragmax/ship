@@ -14,7 +14,7 @@
  */
 
 import { ESLINT_SUPPRESSIONS } from '../../core/generated-files.js';
-import { sortedSet } from '../../../../tooling/shared.js';
+import { sortedSet } from '../../../../tooling/lib/shared.js';
 
 import { runCaptured } from '../git/exec.js';
 import {

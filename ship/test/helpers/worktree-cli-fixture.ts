@@ -33,7 +33,7 @@ import {
   runIn,
   templatesRoot,
 } from '../../../test/helpers/worktree-fixture.js';
-import { compareStrings, toPosix } from '../../../tooling/shared.js';
+import { compareStrings, toPosix } from '../../../tooling/lib/shared.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
 

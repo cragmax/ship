@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it, onTestFailed } from 'vitest';
 
 import { checkSchemaModule, SCHEMA_MODULE } from '../../../src/build/workflow-schemas.js';
-import { compareStrings } from '../../../../tooling/shared.js';
+import { compareStrings } from '../../../../tooling/lib/shared.js';
 import { AGENT_CALLS } from '../../../src/workflow/calls/agent-calls.js';
 import type { JsonSchema } from '../../../src/workflow/runtime.types.js';
 import {

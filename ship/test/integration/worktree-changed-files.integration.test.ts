@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/shared.js';
+import { toPosix } from '../../../tooling/lib/shared.js';
 import type { ChangedFilesResult } from '../../src/cli/envelope/types-run.js';
 import { commitChanges, headSha, makeGitRepo } from '../../../test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';

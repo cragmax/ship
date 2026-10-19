@@ -6,7 +6,7 @@
 
 import { join } from 'node:path';
 
-import { sortedSet, toPosix } from '../../../../tooling/shared.js';
+import { sortedSet, toPosix } from '../../../../tooling/lib/shared.js';
 
 import { freshLogDir } from '../git/exec.js';
 import { commitWithHooks, git, refExists, requireWorktreeRoot } from '../git/git.js';

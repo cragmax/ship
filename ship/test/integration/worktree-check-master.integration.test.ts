@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/shared.js';
+import { toPosix } from '../../../tooling/lib/shared.js';
 import { checkMaster } from '../../src/cli/commands/check-master.js';
 import type { CheckMasterResult } from '../../src/cli/envelope/types-run.js';
 import {

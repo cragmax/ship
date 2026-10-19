@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/shared.js';
+import { toPosix } from '../../../tooling/lib/shared.js';
 import { createJunction } from '../../src/cli/git/links.js';
 import type { RetireRunResult, TeardownResult } from '../../src/cli/envelope/types.js';
 import type { CutBatchResult } from '../../src/cli/envelope/types-run.js';

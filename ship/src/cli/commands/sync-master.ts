@@ -16,7 +16,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { sortedSet } from '../../../../tooling/shared.js';
+import { sortedSet } from '../../../../tooling/lib/shared.js';
 
 import {
   COMMIT_TIMEOUT_MS,

@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { execaSync } from 'execa';
 
-import { toPosix } from '../../../../tooling/shared.js';
+import { toPosix } from '../../../../tooling/lib/shared.js';
 
 import { StepFailure } from '../envelope/types.js';
 

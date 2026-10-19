@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/shared.js';
+import { toPosix } from '../../../tooling/lib/shared.js';
 import {
   commitChanges,
   headSha,
