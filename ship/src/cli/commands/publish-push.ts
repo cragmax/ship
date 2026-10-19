@@ -1,7 +1,7 @@
 /**
  * `publish <batch> --push-only --log L` — push a run branch whose PR is already open, then read
  * that PR's mergeable state: the `/resync` workflow's last step, after `sync-master` merged
- * `origin/master` into the batch (ADR-0045 decision 6).
+ * `origin/master` into the batch (Ship ADR-0001 decision 12).
  *
  * Order: the guards (a linked run batch; an open PR for the branch), the fetch, the ancestry
  * pre-check against `origin/<branch>`, then — only when the batch is ahead — `npm run build` and

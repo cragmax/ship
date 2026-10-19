@@ -1,6 +1,6 @@
 /**
- * The `ship` workflow's entry (ADR-0045): ships epics or explicit issue lists unattended, one pull
- * request per epic. Rendered by `ship/src/build/render-workflows.ts` into the Saved workflow
+ * The `ship` workflow's entry (Ship ADR-0001): ships epics or explicit issue lists unattended, one
+ * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` into the Saved workflow
  * `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the rendered file.
  *
  * Every refusal — the arguments, pre-flight, or a `source-shrank` spent-run teardown — ends the run
@@ -9,7 +9,7 @@
  * run (`--attach ship/<slug>`, issues only, so one entry) lands on an open PR's existing branch
  * instead of cutting one. Resume (`resumeFromRunId`) is safe only for a single-entry run at
  * `maxSlices: 1`; any other run is recovered by hand once cut (`drive.ts` § Concurrency;
- * ADR-0045 decision 10).
+ * Ship ADR-0001 decision 17).
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.

@@ -1,6 +1,6 @@
 /**
  * The saved workflows' tier table — the one home of every stage's
- * `agentType`, `model` and `effort` (ADR-0045), plus the run's tunables and
+ * `agentType`, `model` and `effort` (Ship ADR-0001 decision 15), plus the run's tunables and
  * each workflow's phase titles. No other workflow source spells a tier:
  * each `agent()` call takes its options from {@link agentOptions}.
  *

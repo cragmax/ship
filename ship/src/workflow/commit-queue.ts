@@ -1,7 +1,7 @@
 /**
  * The `ship` workflow's commit queue: one promise chain per epic, so the epic's landings run one
  * at a time, plus the pure mappings from a landing's and a teardown's envelope to the scheduler
- * events an issue attempt ends with (ADR-0045 decision 6).
+ * events an issue attempt ends with (Ship ADR-0001 decision 10).
  *
  * **The settle rule** (the `epic-halt` event's doc, `run-scheduler.types.ts`): every attempt's
  * slice is torn down before its final events are fed. A halt — from the landing or from a

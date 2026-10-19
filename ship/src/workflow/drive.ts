@@ -1,13 +1,13 @@
 /**
- * The `ship` workflow's event loop (ADR-0045 decision 3): drives the run scheduler over every cut
- * entry, running each action in the order the scheduler emits it and feeding each settled
+ * The `ship` workflow's event loop (Ship ADR-0001 decision 7): drives the run scheduler over every
+ * cut entry, running each action in the order the scheduler emits it and feeding each settled
  * attempt's events in order. **The cap bounds everything in flight; epic ends run outside it**:
  * an authored attempt feeds nothing, so its issue keeps its slot until its landing settles.
  *
  * **Concurrency.** The workflow runtime resolves `Promise.race` over un-awaited flights in
- * completion order (ADR-0045 Q7), so while more than one flight is in
- * progress the order of the run's `agent()` calls follows settle timing. With one flight at a
- * time — a single entry at `maxSlices: 1` — it does not: the resume boundary, ADR-0045 decision 10.
+ * completion order (PF-115), so while more than one flight is in progress the order of the run's
+ * `agent()` calls follows settle timing. With one flight at a time — a single entry at
+ * `maxSlices: 1` — it does not: the resume boundary, Ship ADR-0001 decision 17.
  *
  * **One halt state per entry** ({@link HaltState}): once it leaves `running`, the entry's attempts
  * stop and its queued landings never run. Render-safe (`ship/src/build/workflow-render.ts`):

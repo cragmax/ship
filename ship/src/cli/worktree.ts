@@ -1,5 +1,5 @@
 /**
- * Worktree lifecycle CLI (ADR-0045) — checks, cuts, provisions, lands into and tears down an
+ * Worktree lifecycle CLI (Ship ADR-0001) — checks, cuts, provisions, lands into and tears down an
  * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs;
  * `COMMANDS` holds each command's flags and arity. A command prints one JSON object on one stdout
  * line and nothing else: its envelope, checked against its schema (`envelope/schemas*.ts`) before

@@ -211,7 +211,7 @@ function unpublishedCommits(main: string, branch: string): number {
 
 /**
  * Refuse a branch holding commits of its own `origin` lacks — a stopped
- * attached run's fixes, which ADR-0045 decision 10 recovers first. An
+ * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
  * unpushed merge alone passes.
  *
  * @param branch - Short branch name.
@@ -224,7 +224,7 @@ export function assertPublished(main: string, branch: string): void {
   throw new Refusal(
     'unpublished-commits',
     'preconditions',
-    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (ADR-0045 decision 10)`,
+    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)`,
   );
 }
 

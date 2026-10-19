@@ -1,14 +1,14 @@
 /**
- * The run layout of an unattended run (ADR-0045) — the one home of its naming rules but the slug's
- * (`ship/src/core/run-slug.ts`, render-safe for the workflow). Every tool that names a run's branch
- * or directory derives it here, never by re-spelling the rule.
+ * The run layout of an unattended run (Ship ADR-0001 decision 3) — the one home of its naming rules
+ * but the slug's (`ship/src/core/run-slug.ts`, render-safe for the workflow). Every tool that names
+ * a run's branch or directory derives it here, never by re-spelling the rule.
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
  * check keys on, and nothing else may use it: slice branches (`slice/<slug>/…`) never sit under it.
  * Every worktree of a run is a direct child of the main checkout's {@link WORKTREES_DIR}, named
  * from the batch's `ship-<head>`, and its report dir is `reports/ship-<head>/`; both lie in the
- * main checkout's gitignored paths (ADR-0045 decision 13). An attached run R's names sit beside the
- * run's own, prefixed `a<R>-` ({@link nextAttachedRun} picks R).
+ * main checkout's gitignored paths (Ship ADR-0001 decision 3). An attached run R's names sit beside
+ * the run's own, prefixed `a<R>-` ({@link nextAttachedRun} picks R).
  *
  * Pure: no filesystem or git access, so any path it returns may not exist.
  */
@@ -24,7 +24,7 @@ import { toPosix } from '../../../../tooling/shared.js';
  */
 export const RUN_BRANCH_PREFIX = 'refs/heads/ship/';
 
-/** The branch every run is cut from and merged back into (ADR-0045 decision 6). */
+/** The branch every run is cut from and merged back into (Ship ADR-0001 decision 10). */
 export const RUN_BASE_BRANCH = 'master';
 
 /** The remote-tracking branch of {@link RUN_BASE_BRANCH}, as `git merge` / `git log` name it. */
@@ -60,7 +60,7 @@ interface SliceLayout {
 /**
  * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
  * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
- * branch. Not `ship-<slug>`: Windows' 260-character path limit (ADR-0045 decision 13).
+ * branch. Not `ship-<slug>`: Windows' 260-character path limit (Ship ADR-0001 decision 3).
  */
 function runHead(slug: string): string {
   if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;

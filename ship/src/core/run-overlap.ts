@@ -1,8 +1,8 @@
 /**
  * Overlap edges: the scheduler edges pre-flight adds between two issues of one entry likely to
- * touch the same files, so they land in turn instead of racing to a harvest conflict (ADR-0045
- * decision 3). `issue-overlap` names the pairs, unordered; {@link mergeOverlapEdges} directs
- * each one and merges it into the run graph.
+ * touch the same files, so they land in turn instead of racing to a harvest conflict (Ship
+ * ADR-0001 decision 6). `issue-overlap` names the pairs, unordered; {@link mergeOverlapEdges}
+ * directs each one and merges it into the run graph.
  *
  * **Direction rule.** The declared edges are ordered topologically (Kahn's algorithm; among ready
  * issues the earliest in run-set order goes first), and each pair runs earlier → later: one linear

@@ -1,6 +1,6 @@
 /**
- * `sync-master <batch> [--continue]` merges `origin/master` into the batch (ADR-0045 decision 6). A
- * `git merge-tree` probe refuses a code conflict before merging; a doc-index conflict stops,
+ * `sync-master <batch> [--continue]` merges `origin/master` into the batch (Ship ADR-0001 decision
+ * 12). A `git merge-tree` probe refuses a code conflict before merging; a doc-index conflict stops,
  * `MERGE_HEAD` kept, for a resolver who edits, never stages: `--continue` stages and commits,
  * never resetting, which would drop `MERGE_HEAD` and the second parent. Only when both
  * sides moved the version does the version rule ({@link planVersionRule}) hold the merge

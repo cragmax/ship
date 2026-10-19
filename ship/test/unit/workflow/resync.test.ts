@@ -169,7 +169,7 @@ describe('runResync — merge and push', () => {
 
   it('refuses a branch with commits of its own origin lacks, merging and pushing nothing', async () => {
     const message =
-      'ship/epic-9 has 1 commit(s) of its own origin lacks; recover them first (ADR-0045 decision 10)';
+      'ship/epic-9 has 1 commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)';
     const run = resyncHooks({
       'runner:cut-batch': {
         ...attachOk(false),

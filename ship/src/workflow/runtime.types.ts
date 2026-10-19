@@ -1,6 +1,6 @@
 /**
  * The workflow runtime's vocabulary, as the workflow sources see it
- * (ADR-0045 decision 1): the hooks a saved workflow's body is given, the
+ * (Ship ADR-0001 decision 1): the hooks a saved workflow's body is given, the
  * options of one `agent()` call, and the `meta` export. The runtime binds
  * the hooks as globals; the sources take them as one object instead, so a
  * test can drive the body with fakes, and only the rendered tail
@@ -24,8 +24,7 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
  *
  * **No working directory.** Every agent starts in the session's current
  * working directory, which a session `cd` moves mid-run, whatever worktree it
- * works in (PF-94). No option here sets another: none
- * was observed (ADR-0045's capability verdicts never asked), and none can be
+ * works in (PF-94). No option here sets another (unprobed), and none can be
  * probed inside an unattended run. So a worktree agent reaches its worktree
  * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
  * session loads are the main checkout's. Each worktree agent's file has it

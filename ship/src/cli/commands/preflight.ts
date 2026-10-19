@@ -1,10 +1,10 @@
 /**
  * `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]` — the checks an unattended run holds
- * before it cuts anything (ADR-0045): local `master` level with `origin/master` after a fetch, `gh`
- * logged in, every warm-set server answering RCON; with `--slug`, no leftover slice branch of each
- * run slug ({@link checkSliceBranches}); with `--attach`, the target branch's checks
- * ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and the
- * launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref) — the
+ * before it cuts anything (Ship ADR-0001 decision 4): local `master` level with `origin/master`
+ * after a fetch, `gh` logged in, every warm-set server answering RCON; with `--slug`, no leftover
+ * slice branch of each run slug ({@link checkSliceBranches}); with `--attach`, the target branch's
+ * checks ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and
+ * the launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref) — the
  * epic end's master-check baseline. A dirty main checkout is recorded, never a problem.
  *
  * Read-only toward every worktree, so no self-hosted guard: the fetch writes only remote-tracking

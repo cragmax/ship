@@ -1,8 +1,8 @@
 /**
- * The `ship` workflow's pre-flight phase (ADR-0045): everything a run must hold before it cuts
- * anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set — always
- * checked, since server-tier tdd runs lease it), the run gate, `live-runs`, `issue-readiness` once
- * over the run set, then `issue-overlap` once over what it left and the unspent live runs' files.
+ * The `ship` workflow's pre-flight (Ship ADR-0001 decision 4): everything a run must hold before
+ * it cuts anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set
+ * — always checked, as server-tier tdd runs lease it), the run gate, `live-runs`, then, once each,
+ * `issue-readiness` on the run set and `issue-overlap` on the rest and unspent live runs' files.
  *
  * **Every refusal is collected**: only an unnamed main checkout and an absent run set stop the
  * phase early. No verdict, a verdict missing its fields, or a run-set issue left unjudged is a

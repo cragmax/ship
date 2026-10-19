@@ -1,8 +1,8 @@
 /**
- * The `ship` workflow's epic end (ADR-0045 decision 6). For an entry whose issues all settled with
- * at least one landed ({@link epicEnd}): the epic review, the master sync, the bump, the pushed
- * paths, the retro and PR writer concurrently, then the publish task; one that halted or landed
- * nothing gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
+ * The `ship` workflow's epic end (Ship ADR-0001 decision 12). For an entry whose issues all
+ * settled with at least one landed ({@link epicEnd}): the epic review, the master sync, the bump,
+ * the pushed paths, the retro and PR writer concurrently, then the publish task; a halted or empty
+ * one gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
  * No server-tier step: pre-push runs it on a Platform-wide change; red refuses the push (ADR-0051).
  * A code conflict, a failed sync, a failed bump or a throwing step stops the epic; a bump finding

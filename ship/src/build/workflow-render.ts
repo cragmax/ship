@@ -1,6 +1,6 @@
 /**
  * Renders a workflow's typed sources into the one plain-JS file the runtime loads (it loads no
- * module) and checks a committed copy against a fresh render (ADR-0045 decision 1).
+ * module) and checks a committed copy against a fresh render (Ship ADR-0001 decision 1).
  *
  * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
  * ones erased, never followed; a non-relative value import an error), each transpiled (ES2022,

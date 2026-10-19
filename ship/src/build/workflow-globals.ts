@@ -1,6 +1,6 @@
 /**
  * The names the workflow runtime binds as globals in a saved workflow's
- * scope (ADR-0045 decision 1) — the one list both the renderer
+ * scope (Ship ADR-0001 decision 1) — the one list both the renderer
  * (`workflow-render.ts`, which reserves them as top-level names) and the
  * project-root `eslint.config.js` (which declares them for the rendered
  * files' `no-undef`) read.

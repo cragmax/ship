@@ -3,7 +3,7 @@
  * batch and `origin/master` moved the `package.json` version since their
  * merge-base, the merge takes master's version bumped by the branch's own
  * bump. That keeps the PR's net at one bump over `master`
- * (ADR-0045 decision 7).
+ * (Ship ADR-0001 decision 14).
  * The rule intervenes only when both sides moved ({@link bothMoved}):
  * without it an identical bump — both sides at the same number — merges
  * clean in git, and the PR's net bump is zero. {@link bumpVersion} also

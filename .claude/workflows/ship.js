@@ -1,7 +1,7 @@
 export const meta = {
   name: 'ship',
   description:
-    'Ship epics or issue lists unattended (ADR-0045): pre-flight, then each issue built from its brief, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
+    'Ship epics or issue lists unattended (Ship ADR-0001): pre-flight, then each issue built from its brief, reviewed and landed on its epic branch in dependency order, then the epic end and one pull request per epic.',
   whenToUse:
     'Launch with `epics N...` or `issues N...` (space- or comma-separated, optional #) plus optional `--exclude` (drop failing or stale issues and dependents), `--preflight-only`, `--max-slices K` (issues in flight, default 4), `--attach ship/<slug>` (`issues` only: land on that open PR); or the object { epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }. Given bare numbers, ask: epics or issues? Never choose. Resume (`resumeFromRunId`) only a one-epic or one-list `--max-slices 1` run whose script is unchanged; recover others by hand.',
   phases: [

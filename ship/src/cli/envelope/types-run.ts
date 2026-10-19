@@ -1,6 +1,6 @@
 /**
  * Envelope types of the worktree CLI's run-branch commands — the commands
- * that cut, check and land an unattended run (ADR-0045): `cut-batch`,
+ * that cut, check and land an unattended run (Ship ADR-0001): `cut-batch`,
  * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
  * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
  * `post-pr-comment`; and of `changed-files`, the slice chain's re-read.

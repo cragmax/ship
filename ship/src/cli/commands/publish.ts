@@ -1,7 +1,7 @@
 /**
  * `publish <batch> --title T --body-file F --log L [--draft]` — push the run's
  * feature branch and open its pull request, as a draft with `--draft`
- * (ADR-0045 decision 6: the PR is the sole human gate).
+ * (Ship ADR-0001 decision 12: the PR is the sole human gate).
  *
  * Order: the guards (a linked run batch, no open PR for the branch, a body
  * file within {@link GH_BODY_LIMIT}), then `npm run build` — so the

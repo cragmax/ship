@@ -1,7 +1,7 @@
 /**
  * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>` — the commit queue's
- * one deterministic step: a slice commit becomes exactly one batch commit, or nothing (ADR-0045
- * decision 3).
+ * one deterministic step: a slice commit becomes exactly one batch commit, or nothing (Ship
+ * ADR-0001 decision 10).
  *
  * Invariant: nothing is mutated before four guards pass — harvest's linked-worktree and clean-batch
  * guards, cut-slice's `ship/` run-branch guard, and a slice of exactly one commit whose parent is
@@ -164,7 +164,7 @@ function pick(result: LandResult, batch: string, sha: string, selfPath: string):
 
 /**
  * Require the staged set to equal the harvest's `files`, a rename as both endpoints
- * (ADR-0045 decision 6).
+ * (Ship ADR-0001 decision 10).
  *
  * @throws Refusal `staged-mismatch` naming both differences.
  */
