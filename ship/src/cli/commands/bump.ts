@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { CO_AUTHOR_TRAILER } from '../../core/commit-trailer.js';
-import { describeError } from '../../../../tooling/lib/describe-error.js';
+import { describeError } from '../../core/describe-error.js';
 
 import { assertRunBatch } from './cut.js';
 import { freshLogDir, NPM_TIMEOUT_MS, runStep } from '../git/exec.js';

@@ -18,7 +18,7 @@ import {
   parseRevisions,
   proveCommentOnly,
 } from './comment-only.core.js';
-import { describeError } from '../../../tooling/lib/describe-error.js';
+import { describeError } from '../core/describe-error.js';
 import { StepFailure } from './envelope/types.js';
 
 function writeFailures(report: CommentOnlyReport): boolean {

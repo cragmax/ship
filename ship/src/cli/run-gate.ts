@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 
 import { execa } from 'execa';
 
-import { describeError } from '../../../tooling/lib/describe-error.js';
+import { describeError } from '../core/describe-error.js';
 import { gatherAndEvaluate, gatherCheck, type GhJson } from './run-gate-gh.js';
 import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from '../core/gate/run-gate.js';
 

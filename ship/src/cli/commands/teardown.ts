@@ -17,7 +17,7 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { posix } from 'node:path';
 
-import { describeError } from '../../../../tooling/lib/describe-error.js';
+import { describeError } from '../../core/describe-error.js';
 import { runCaptured } from '../git/exec.js';
 import {
   assertNotSelfHosted,
