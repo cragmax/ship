@@ -53,7 +53,7 @@ no human gate between.
    `server-pool/src/lease-timings.ts`, for `workflow/` only, in place of the
    pool barrel
    ([Pool ADR-0001](../../../server-pool/docs/adr/0001-warm-pool-and-lock-file-leasing.md)
-   decision 5), and `tooling/lib/platform-wide.ts`, whose `isPlatformWide`
+   decision 5), and `tooling/hooks/lib/platform-wide.ts`, whose `isPlatformWide`
    and `MAX_RELATED_FILES` the PR body's full-tiers line reads. Type-only
    imports are free, since the render erases them. So render-safety is held
    by folder, not by review. A file

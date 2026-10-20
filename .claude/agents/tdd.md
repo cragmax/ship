@@ -46,7 +46,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 
 ## Commit line
 
-Choose the commit's first line: a `type` and `scope` from `tooling/lib/commit-msg.ts` (`COMMIT_TYPES`, `COMMIT_SCOPES`; the issue's title is usually one already) and a lowercase imperative subject. `closes` is `see` when the issue carries an acceptance line that needs a human (a HITL check); otherwise `fixes`. An acceptance line asking for content in the commit body or message (a count, a size only the build produces) is a `recorded` value (§ Output), never a reason to block: the landing rewrites the message from your `commit` and `closes`.
+Choose the commit's first line: a `type` and `scope` from `tooling/hooks/lib/commit-msg.ts` (`COMMIT_TYPES`, `COMMIT_SCOPES`; the issue's title is usually one already) and a lowercase imperative subject. `closes` is `see` when the issue carries an acceptance line that needs a human (a HITL check); otherwise `fixes`. An acceptance line asking for content in the commit body or message (a count, a size only the build produces) is a `recorded` value (§ Output), never a reason to block: the landing rewrites the message from your `commit` and `closes`.
 
 ## Commit
 
