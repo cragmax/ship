@@ -12,7 +12,7 @@
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect; `server-pool/src/lease-timings.ts`, which parses the lease lines, and
- * `tooling/lib/platform-wide.ts`, which names the Platform-wide paths, join the closure.
+ * `tooling/hooks/lib/platform-wide.ts`, which names the Platform-wide paths, join the closure.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../core/commit-trailer.js';
@@ -22,8 +22,8 @@ import {
   type LeaseAggregate,
   type LeaseTiming,
 } from '../../../../server-pool/src/lease-timings.js';
-import { isPlatformWide, MAX_RELATED_FILES } from '../../../../tooling/lib/platform-wide.js';
-import type { PushedChanges } from '../../../../tooling/lib/push-scope.js';
+import { isPlatformWide, MAX_RELATED_FILES } from '../../../../tooling/hooks/lib/platform-wide.js';
+import type { PushedChanges } from '../../../../tooling/hooks/lib/push-scope.js';
 
 import type {
   CommitSpec,

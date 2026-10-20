@@ -91,4 +91,4 @@ release in their **Platform** line, and a git release can move them.
   ```
 
 - **Last verified.** 2026-10-13.
-- **Relied on by.** `tooling/commit-msg.ts` (the merge skip).
+- **Relied on by.** `tooling/hooks/commit-msg.ts` (the merge skip).
