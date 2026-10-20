@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { compareStrings, toPosix } from '../../../tooling/lib/shared.js';
+import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { COMMIT_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { rollback } from '../../src/cli/commands/harvest.js';
@@ -221,7 +221,6 @@ describe('land', () => {
   it.each([
     { path: 'src/feature.ts', content: 'changed\n', built: true },
     { path: 'tsconfig.json', content: 'changed\n', built: true },
-    { path: 'tooling/clean.ts', content: 'changed\n', built: true },
     { path: 'package.json', content: BUMPED_PACKAGE, built: true },
     { path: 'tooling/tool.ts', content: 'changed\n', built: false },
     { path: 'docs/notes.md', content: 'changed\n', built: false },

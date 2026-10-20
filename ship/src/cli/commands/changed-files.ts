@@ -5,7 +5,7 @@
  * Read-only: no self-hosted guard.
  */
 
-import { sortedSet } from '../../../../tooling/lib/shared.js';
+import { sortedSet } from '../../../../tooling/lib/strings.js';
 
 import { gitPaths, resolveCommit } from '../git/git.js';
 import type { ChangedFilesResult } from '../envelope/types-run.js';

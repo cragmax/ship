@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/shared.js';
+import { toPosix } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { appendPrBody as appendPrBodyInProcess } from '../../src/cli/commands/append-pr-body.js';
 import { runCaptured } from '../../src/cli/git/exec.js';

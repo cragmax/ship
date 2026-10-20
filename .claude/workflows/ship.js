@@ -2543,7 +2543,6 @@ const PLATFORM_WIDE_PATHS = [
   'src/world-state-reset/',
   'tooling/run-integration.ts',
   'tooling/lib/pool-partition.ts',
-  'tooling/build-ph-plugin.ts',
   'tooling/lib/integration-tiers.ts',
   'tooling/push-scope.ts',
   'tooling/lib/push-scope.ts',

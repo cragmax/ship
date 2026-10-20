@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 
 import { z } from 'zod';
 
-import { describeError } from '../../../../tooling/lib/describe-error.js';
+import { describeError } from '../../core/describe-error.js';
 import { runCaptured } from '../git/exec.js';
 import type { TsserverRestart, TsserverSkipReason } from '../envelope/types.js';
 

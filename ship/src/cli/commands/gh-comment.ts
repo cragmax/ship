@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { describeError } from '../../../../tooling/lib/describe-error.js';
+import { describeError } from '../../core/describe-error.js';
 import { GH_BODY_LIMIT } from '../../core/gh-body-limit.js';
 
 import { GH_TIMEOUT_MS, runCaptured } from '../git/exec.js';

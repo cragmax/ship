@@ -9,7 +9,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { toPosix } from '../../../../tooling/lib/shared.js';
+import { toPosix } from '../../../../tooling/lib/strings.js';
 
 import { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
 import { Refusal, StepFailure } from '../envelope/types.js';

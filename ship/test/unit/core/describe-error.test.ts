@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { describeError } from '../../../tooling/lib/describe-error.js';
+import { describeError } from '../../../src/core/describe-error.js';
 
 describe('describeError', () => {
   it('gives an errno error its message and code', () => {

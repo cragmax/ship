@@ -14,7 +14,7 @@
 import { lstatSync, rmSync } from 'node:fs';
 import { posix } from 'node:path';
 
-import { compareStrings } from '../../../../tooling/lib/shared.js';
+import { compareStrings } from '../../../../tooling/lib/strings.js';
 import { attachSlug } from './cut-attach.js';
 import { runCaptured } from '../git/exec.js';
 import {

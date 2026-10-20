@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/shared.js';
+import { toPosix } from '../../../tooling/lib/strings.js';
 import {
   advanceOrigin,
   commitChanges,
@@ -119,7 +119,6 @@ describe('sync-master batch refresh', () => {
   it.each([
     { changed: 'src/feature.ts', build: true },
     { changed: 'tsconfig.json', build: true },
-    { changed: 'tooling/clean.ts', build: true },
     { changed: 'tooling/tool.ts', build: false },
     { changed: 'docs/notes.md', build: false },
   ])('builds before reporting when master changed $changed: $build', TIMEOUT, (c) => {
