@@ -10,7 +10,7 @@
 import { lstatSync, readdirSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { toPosix } from '../../../../tooling/lib/shared.js';
+import { toPosix } from '../../../../tooling/lib/strings.js';
 
 import type { LinkRecord } from '../envelope/types.js';
 

@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { loadPoolRegistry } from '../../../server-pool/src/index.js';
-import { toPosix } from '../../../tooling/lib/shared.js';
+import { toPosix } from '../../../tooling/lib/strings.js';
 import { unlinkLink } from '../../src/cli/git/links.js';
 import { provisionBatch } from '../../src/cli/commands/provision-batch.js';
 import { provision } from '../../src/cli/commands/provision.js';

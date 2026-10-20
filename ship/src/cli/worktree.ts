@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 
 import type { RunSelection } from '../core/run-slug.js';
-import { toPosix } from '../../../tooling/lib/shared.js';
+import { toPosix } from '../../../tooling/lib/strings.js';
 import { RUN_BRANCH_SHAPE } from '../core/run-branch.js';
 import type { CutSliceInput } from './commands/cut.js';
 import {

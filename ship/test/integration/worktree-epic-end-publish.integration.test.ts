@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/shared.js';
+import { toPosix } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { PUSH_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { MERGEABLE_READS } from '../../src/cli/commands/publish-push.js';

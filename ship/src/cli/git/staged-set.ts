@@ -10,7 +10,7 @@
  * win32, observed 2026-09-28), and a case-folded compare passes that loss.
  */
 
-import { sortedSet, toPosix } from '../../../../tooling/lib/shared.js';
+import { sortedSet, toPosix } from '../../../../tooling/lib/strings.js';
 
 import { gitPaths, requireWorktreeRoot } from './git.js';
 import { Refusal, recordFailure, type StagedGuardResult } from '../envelope/types.js';
