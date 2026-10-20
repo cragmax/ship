@@ -182,7 +182,7 @@ function leaseCommand(lease) {
 }
 function fullServerTierCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }

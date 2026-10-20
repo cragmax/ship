@@ -611,7 +611,7 @@ function leaseCommand(lease) {
 }
 function fullServerTierCommand(lease) {
   return [
-    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
@@ -2541,8 +2541,7 @@ const PLATFORM_WIDE_PATHS = [
   'src/engine/state/bot-list.ts',
   'server-pool/',
   'src/world-state-reset/',
-  'tooling/run-integration.ts',
-  'tooling/lib/pool-partition.ts',
+  'tooling/integration/',
   'tooling/lib/integration-tiers.ts',
   'tooling/hooks/push-scope.ts',
   'tooling/hooks/lib/push-scope.ts',
