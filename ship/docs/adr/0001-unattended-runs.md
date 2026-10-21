@@ -26,7 +26,7 @@ no human gate between.
    render (`npm run codegen`) into the **Saved workflows** `ship.js` and
    `resync.js` in `.claude/workflows/`, where the Workflow tool finds them. A
    Saved workflow loads no code by any route
-   ([PF-112](../../../docs/platform-facts/mcp-client.md)), so the render
+   ([Ship PF-4](../platform-facts/workflow-runtime.md)), so the render
    inlines the entry and the transitive closure of its relative value imports,
    and `gate:codegen` compares the committed file with a fresh render. Rendered
    code uses ECMAScript built-ins only: no imports, no `eval` or
@@ -36,11 +36,11 @@ no human gate between.
      worktree CLI's commands and the run gate do every git, `gh`, npm and file
      step; a **runner** agent invokes each from the main checkout with
      `node --import tsx` (an `npx tsx` tool is orphaned from the session's
-     process tree, [PF-109](../../../docs/platform-facts/node-runtime.md)) and
+     process tree, [Repo PF-18](../../../docs/platform-facts/node-runtime.md)) and
      returns its JSON envelope, schema-validated. Every judgment is a **Stage
      agent** running one skill, resolved by `agentType` with an output schema
-     ([PF-113](../../../docs/platform-facts/mcp-client.md)), its skill
-     preloaded ([PF-107](../../../docs/platform-facts/mcp-client.md)).
+     ([Ship PF-5](../platform-facts/workflow-runtime.md)), its skill
+     preloaded ([Repo PF-17](../../../docs/platform-facts/claude-code.md)).
    - **Rules and live docs state neutral invariants** and never name a
      maintainer-personal skill.
 2. **Ship's layout follows where its code runs.** `ship/src/workflow/` runs
@@ -71,7 +71,7 @@ no human gate between.
    - **The run layout makes it so.** Every run worktree is a direct child of
      `<main>/.claude/worktrees/`, which gets the main checkout's path-scoped
      rules and never its own `CLAUDE.md` or rules
-     ([PF-104](../../../docs/platform-facts/mcp-client.md)): the **Batch
+     ([Repo PF-15](../../../docs/platform-facts/claude-code.md)): the **Batch
      worktree** `ship-<head>`, **Slice worktrees** `ship-<head>-<N>-<K>`
      (`ship-<head>-a<R>-<N>-<K>` for an **Attached run**). The run root, its
      report dir, is `<main>/reports/ship-<head>/`; an unlanded slice's work is
@@ -82,7 +82,7 @@ no human gate between.
      slice; `retire-run` removes only a real `ship-*` directory directly under
      `<main>/reports/`; `teardown` and git refuse the main checkout, and
      teardown restarts the session's tsserver after it removes a worktree
-     ([PF-110](../../../docs/platform-facts/mcp-client.md)). A dirty main
+     ([Repo PF-19](../../../docs/platform-facts/claude-code.md)). A dirty main
      checkout is recorded, never refused.
    - **Accepted residuals.** A slice missing its `node_modules` junction
      resolves modules from the main checkout's, silently; no tsconfig sets
@@ -125,7 +125,7 @@ no human gate between.
    LLM, no context budget: each issue starts as soon as its dependencies have
    landed, under one `MAX_SLICES` cap (4) across all the run's epics, with no
    rung barriers. The drive loop races un-awaited flights with `Promise.race`
-   in completion order ([PF-115](../../../docs/platform-facts/mcp-client.md)).
+   in completion order ([Ship PF-7](../platform-facts/workflow-runtime.md)).
    A slice holds its slot until it settles, the commit-queue wait included;
    epic ends run outside the cap. Four is known to have broken nothing on real
    runs, not measured to have headroom (#1038).
@@ -166,7 +166,7 @@ no human gate between.
    probe record carries its measured `seconds`; enforcement is the agent's. A
    command that can outlast a call's 10-minute cap goes to the background,
    polled by chained foreground `timeout 570 … until` calls, the turn never
-   ended while it runs ([PF-114](../../../docs/platform-facts/mcp-client.md)).
+   ended while it runs ([Ship PF-6](../platform-facts/workflow-runtime.md)).
    A cap hit or inconclusive probe records nothing and adds a PR follow-up.
    Rig-reconfiguring probes (a plugin jar swap, a compose or
    `server.properties` change, a Docker restart) are forbidden and block the
@@ -184,7 +184,7 @@ no human gate between.
     per-invocation consumer, on the four registry servers the batch's registry
     trim keeps; pre-flight requires all four warm. Four servers peaked at
     about 16.6 GiB together with no OOM and TPS never below 19.6
-    ([PF-56](../../../docs/platform-facts/pool-capacity.md)).
+    ([Pool PF-1](../../../server-pool/docs/platform-facts/pool-capacity.md)).
 
 ### The epic end
 
@@ -236,9 +236,9 @@ no human gate between.
     number, so the net stays one.
 15. **Per-stage tiers are set in one table.** The tier table holds every
     stage's `agentType`, `model` and `effort`, passed on each `agent()` call
-    ([PF-95](../../../docs/platform-facts/mcp-client.md)). Agent files carry
+    ([Ship PF-3](../platform-facts/workflow-runtime.md)). Agent files carry
     no model pin: a frontmatter pin is honoured when no per-call `model` is
-    passed ([PF-113](../../../docs/platform-facts/mcp-client.md)), so it could
+    passed ([Ship PF-5](../platform-facts/workflow-runtime.md)), so it could
     silently override the table, and interactive use without one inherits the
     session model.
 
@@ -305,7 +305,7 @@ no human gate between.
 ## Alternatives considered
 
 - **Import the gate and scheduler into the Saved workflow.** Impossible
-  ([PF-112](../../../docs/platform-facts/mcp-client.md)).
+  ([Ship PF-4](../platform-facts/workflow-runtime.md)).
 - **Rung-barrier scheduling.** Rejected: epic-986 idled four finished slices
   for 34 min.
 - **Bulk planning before the run, or a planner inside each slice.** Bulk
@@ -326,9 +326,9 @@ no human gate between.
   rounds would undo completion-order scheduling.
 - **A run root outside the project, or under `tmp/` or an untracked
   dot-directory** (#1401). Rejected: outside the project no path-scoped rule
-  loads ([PF-103](../../../docs/platform-facts/mcp-client.md)); inside but not
+  loads ([Repo PF-14](../../../docs/platform-facts/claude-code.md)); inside but not
   under `.claude/worktrees/`, a worktree loads its own `CLAUDE.md` and rules
-  (PF-104).
+  (Repo PF-15).
 - **Full-slug worktree names** (#1401). Rejected: the longest list slug puts a
   slice's deepest path near 300 of Windows' 260 characters.
 
@@ -336,6 +336,6 @@ no human gate between.
 
 - PRD #1025's evidence base: 14 batch report sets, 4 timed batches, 91 sessions
   and 409 sub-agent transcripts (2026-09-19 → 09-28).
-- The Workflow-runtime verdicts of #1026 and #1036, now PF-112 … PF-115.
+- The Workflow-runtime verdicts of #1026 and #1036, now Ship PF-4 … Ship PF-7.
 - The #1038 recording of six real runs (2026-09-29 → 09-30), behind
   `MAX_SLICES` and the probe caps.

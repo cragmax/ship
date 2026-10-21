@@ -51,19 +51,23 @@ import type { ConflictKind, ConflictPath, SyncMasterResult } from '../envelope/t
 import { Conflict, Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /**
- * The doc indexes, the root's and each self-contained home's (ADR-0048): a conflict in one goes to
- * a resolver, never refuses.
+ * The doc indexes, the root's and each home's (ADR-0048): a conflict in one goes to a resolver,
+ * never refuses.
  */
 const DOC_INDEX_PATHS: readonly string[] = [
   'GLOSSARY.md',
   'docs/adr/readme.md',
   'docs/platform-facts/readme.md',
+  'framework/docs/platform-facts/readme.md',
   'server-pool/GLOSSARY.md',
   'server-pool/docs/adr/readme.md',
+  'server-pool/docs/platform-facts/readme.md',
   'ph-plugin/GLOSSARY.md',
   'ph-plugin/docs/adr/readme.md',
   'ship/GLOSSARY.md',
   'ship/docs/adr/readme.md',
+  'ship/docs/platform-facts/readme.md',
+  'tooling/docs/platform-facts/readme.md',
 ];
 
 /** How many subjects a conflict's `landedBy` carries at most. */

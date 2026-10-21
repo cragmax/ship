@@ -14,7 +14,7 @@ import { StepFailure, type WarmMember } from '../envelope/types.js';
 /**
  * The fixed, machine-wide warm set: two Paper and two Folia servers (the
  * compose services `minecraft`, `minecraft-2`, `minecraft-folia` and
- * `minecraft-folia-2`; sized by PF-56). Pinned, never derived from the
+ * `minecraft-folia-2`; sized by Pool PF-1). Pinned, never derived from the
  * registry, so concurrent runs agree on it without coordinating, and registry
  * drift fails {@link trimRegistry} loudly.
  */
