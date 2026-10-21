@@ -87,7 +87,7 @@ export interface LandedSlice {
 
 /** Where a slice's lease runs lease from. */
 export interface LeaseValues {
-  /** The main checkout, whose `with-lease` and `tooling/run-integration.ts` run. */
+  /** The main checkout, whose `with-lease` and `tooling/integration/run-integration.ts` run. */
   readonly main: string;
   /** `PH_PROJECT_DIR` for the lease run: the slice provision's. */
   readonly projectDir: string;
@@ -304,7 +304,7 @@ function leaseCommand(lease: LeaseValues): string {
  */
 function fullServerTierCommand(lease: LeaseValues): string {
   return [
-    ...mainToolPrefix(lease, 'tooling/run-integration.ts'),
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
     `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
   ].join(' ');
 }
