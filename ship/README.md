@@ -2,7 +2,7 @@
 
 The application that performs **Unattended runs**: it takes epics or an issue
 list from launch to one pull request per epic, with the PR as the only human
-gate ([Ship ADR-0001](docs/adr/0001-unattended-runs.md)).
+gate ([Ship ADR-0001](docs/adr/0001-unattended-runs-rendered-scheduler-reviewed-slices-pr-gate.md)).
 
 ## Launching
 

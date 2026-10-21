@@ -4,7 +4,7 @@ The `ship/` home (Repo ADR-0006): the application that performs **Unattended run
 
 - [README.md](README.md): what the folder holds, how a run is launched, and what Ship owns under `.claude/`.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): Ship's terms. Read before naming things here.
-- [docs/adr/](docs/adr/readme.md): Ship's decisions, cited `Ship ADR-NNNN`; every citation names its series (Repo ADR-0007).
-- [docs/platform-facts/](docs/platform-facts/readme.md): Ship's platform facts, cited `Ship PF-N`.
+- [docs/adr/](docs/adr/): Ship's decisions, cited `Ship ADR-NNNN`; every citation names its series (Repo ADR-0007). List the folder: the slug names the decision.
+- [docs/platform-facts/](docs/platform-facts/index.md): Ship's platform facts, cited `Ship PF-N`.
 
 The platform-facts policy, the testing policy and the git rules are the root's: see the root [CLAUDE.md](../CLAUDE.md).

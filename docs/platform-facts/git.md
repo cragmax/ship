@@ -1,8 +1,6 @@
 # Git
 
-Part of [Platform facts](readme.md) — see the readme for the rig, the admission
-bar, and the living / divergence rules. Each fact is version-stamped in its
-**Platform** line. This category covers **git**, which paper-harness's own
+Part of [Platform facts](index.md); the record format, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`. This category covers **git**, which paper-harness's own
 tooling drives (the unattended-run worktree tooling), rather than the
 Minecraft-side stack it tests against; facts here are stamped against the git
 release in their **Platform** line, and a git release can move them.

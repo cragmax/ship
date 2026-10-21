@@ -1,11 +1,10 @@
+---
+status: draft
+---
+
 # Ship ADR-0001: Unattended runs — a rendered scheduler, a reviewed slice chain, the PR as the sole human gate
 
-Date: 2026-10-16
-Status: DRAFT. Restates the root unattended-runs record, since retired (Repo ADR-0007).
-
-> Restates the root unattended-runs record as Ship
-> stands once Epic 2 of the tooling-split map (#1483) has moved it here.
-> Decided on wayfinder ticket #1488, 2026-10-16; decision 2's layout on #1486. The retired root record, named on this home's ADR index, holds the history and the old → new decision map in git.
+Ship performs unattended runs: workflow sources rendered into saved workflows drive a deterministic scheduler over an epic's issues, each built from its triage brief in a slice worktree, reviewed by stage agents that amend its one commit, and landed on the epic's branch, with one pull request per epic as the only human gate, because a long-lived orchestrator session had spent half its flow keeping its own context alive. Restates the retired root unattended-runs record (Repo ADR-0007).
 
 ## Context
 
@@ -202,8 +201,9 @@ no human gate between.
     - **The push is the server tier.** The epic end runs no server-tier step
       of its own: its push goes through the pre-push hook, which runs the
       server tier on both engines across the pool when the pushed range
-      touches a Platform-wide path ([Tooling ADR-0002](../../../tooling/docs/adr/0002-change-scoped-pre-push.md)),
-      so a red tier refuses the push and no PR opens; `npm run test:nightly`
+      touches a Platform-wide path ([Tooling ADR-0002](../../../tooling/docs/adr/0002-change-scoped-pre-push.md);
+      amended by it 2026-10-16: the push ran the full server tier on every
+      range before), so a red tier refuses the push and no PR opens; `npm run test:nightly`
       is the backstop.
     - **The retro runs for every entry that was cut** (shipped, halted,
       stopped or with nothing landed), and its findings go in the PR body. An
@@ -331,11 +331,3 @@ no human gate between.
   (Repo PF-15).
 - **Full-slug worktree names** (#1401). Rejected: the longest list slug puts a
   slice's deepest path near 300 of Windows' 260 characters.
-
-## Evidence
-
-- PRD #1025's evidence base: 14 batch report sets, 4 timed batches, 91 sessions
-  and 409 sub-agent transcripts (2026-09-19 → 09-28).
-- The Workflow-runtime verdicts of #1026 and #1036, now Ship PF-4 … Ship PF-7.
-- The #1038 recording of six real runs (2026-09-29 → 09-30), behind
-  `MAX_SLICES` and the probe caps.

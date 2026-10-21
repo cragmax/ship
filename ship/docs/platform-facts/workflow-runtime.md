@@ -1,7 +1,6 @@
 # Claude Code workflow runtime
 
-Part of [Platform facts](readme.md) — see the readme for the admission bar and
-the living / divergence rules. This category covers the **Claude Code workflow runtime** unattended runs execute in: saved workflows and their `agent()` calls. Facts here are version-stamped against the **Claude Code** release in
+Part of [Platform facts](index.md); the record format, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`. This category covers the **Claude Code workflow runtime** unattended runs execute in: saved workflows and their `agent()` calls. Facts here are version-stamped against the **Claude Code** release in
 their **Platform** line, where one was recorded; a Claude Code release can move them, so re-verify before
 relying on one.
 

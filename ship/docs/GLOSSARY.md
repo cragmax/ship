@@ -25,7 +25,7 @@ _Avoid_: "workflow engine"; "CI workflow" is a GitHub Actions file in `.github/w
 ### Runs
 
 **Unattended run**:
-An AFK delivery run that ships a **Run set** from launch to PR with no human gate in between. Pre-flight runs while the maintainer is present and fails fast; it never pauses. Its work lands on the epic's feature branch — one commit per landed issue — and the PR (feature → `master`) is the only human gate ([Ship ADR-0001](adr/0001-unattended-runs.md)).
+An AFK delivery run that ships a **Run set** from launch to PR with no human gate in between. Pre-flight runs while the maintainer is present and fails fast; it never pauses. Its work lands on the epic's feature branch — one commit per landed issue — and the PR (feature → `master`) is the only human gate ([Ship ADR-0001](adr/0001-unattended-runs-rendered-scheduler-reviewed-slices-pr-gate.md)).
 _Avoid_: "batch" for the run (collides with the `batch:N` labels and RCON batching).
 
 **Run set**:

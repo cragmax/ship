@@ -2,9 +2,7 @@
 
 The `ship/` home's series of platform facts: the Claude Code workflow runtime
 unattended runs execute in, and the tools Ship drives. Facts here are cited
-`Ship PF-N`, inside this home too. The admission bar, the record format and
-the living-ness and staleness rules are the root's:
-[docs/platform-facts/readme.md](../../../docs/platform-facts/readme.md).
+`Ship PF-N`, inside this home too. The record format, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`; the root [docs/platform-facts/index.md](../../../docs/platform-facts/index.md) maps the homes.
 
 ## Categories
 
