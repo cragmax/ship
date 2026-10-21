@@ -119,9 +119,9 @@ function assertBodyWithinLimit(bodyFile: string): void {
 }
 
 /**
- * Push the branch to `origin`, setting its upstream, through the pre-push hook (ADR-0051). Never
- * forced: a push `origin` would have to lose commits for fails, and is reported — never retried
- * with force. `publish` and `publish --push-only` both push through here.
+ * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002).
+ * Never forced: a push `origin` would have to lose commits for fails, and is reported — never
+ * retried with force. `publish` and `publish --push-only` both push through here.
  *
  * @remarks
  * The refspec names both sides, unforced, so push configuration cannot redirect or force it.

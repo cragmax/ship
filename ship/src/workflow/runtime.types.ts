@@ -20,11 +20,11 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 /**
  * The options of one `agent()` call. The runtime honours a per-call `model`
- * and `effort` — `effort` with a non-default model included (PF-95).
+ * and `effort` — `effort` with a non-default model included (Ship PF-3).
  *
  * **No working directory.** Every agent starts in the session's current
  * working directory, which a session `cd` moves mid-run, whatever worktree it
- * works in (PF-94). No option here sets another (unprobed), and none can be
+ * works in (Ship PF-2). No option here sets another (unprobed), and none can be
  * probed inside an unattended run. So a worktree agent reaches its worktree
  * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
  * session loads are the main checkout's. Each worktree agent's file has it

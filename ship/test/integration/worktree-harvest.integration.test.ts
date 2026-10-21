@@ -32,10 +32,15 @@ import {
   stagedNames,
   untrackedNames,
   type Changes,
-} from '../../../test/helpers/worktree-fixture-git.js';
-import { linkNodeModules } from '../../../test/helpers/hooked-run.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { linkNodeModules } from '../../../tooling/test/helpers/hooked-run.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain, runIn } from '../../../test/helpers/worktree-fixture.js';
+import {
+  addWorktree,
+  mustRun,
+  porcelain,
+  runIn,
+} from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const WIN32 = process.platform === 'win32';
 const TIMEOUT = { timeout: 60_000 };

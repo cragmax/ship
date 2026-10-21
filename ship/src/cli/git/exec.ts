@@ -5,7 +5,7 @@
  * every spawn that can outlast local git plumbing names its constant here.
  *
  * A budget kill is `execaSync`'s `timeout`. On win32 it reaches only the direct child; npm chains,
- * MSYS fork children and git's launcher and hook survive (PF-65). Async execa kills no
+ * MSYS fork children and git's launcher and hook survive (Repo PF-5). Async execa kills no
  * further, and never settles while a survivor holds the output pipe. Accepted residual: a Windows
  * budget kill's survivors are reported, not reaped ({@link outputOf}, {@link orphanWarning});
  * POSIX is unprobed.
@@ -39,7 +39,10 @@ export const FETCH_TIMEOUT_MS = 120_000;
 /** Budget for one `gh` call. */
 export const GH_TIMEOUT_MS = 120_000;
 
-/** Budget for one `git push` through the pre-push hook, whose server tier may run (ADR-0051). */
+/**
+ * Budget for one `git push` through the pre-push hook, whose server tier may run
+ * (Tooling ADR-0002).
+ */
 export const PUSH_TIMEOUT_MS = 2_700_000;
 
 /** Budget for any child without an explicit one. */

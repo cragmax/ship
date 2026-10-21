@@ -1,6 +1,6 @@
 # Ship
 
-The terms of the `ship/` home (ADR-0048). The product's terms live in the root [GLOSSARY.md](../GLOSSARY.md), among them the reviews a slice runs (**Spec review**, **Test review**, **Standards review**), **Checkpoint** and **Slice budget**, which sessions use with no run involved; the pool's, **Lease** among them, in [server-pool/GLOSSARY.md](../server-pool/GLOSSARY.md).
+The terms of the `ship/` home (Repo ADR-0006). The repo-wide terms live in the root [docs/GLOSSARY.md](../../docs/GLOSSARY.md), among them the reviews a slice runs (**Spec review**, **Test review**, **Standards review**), **Checkpoint** and **Slice budget**, which sessions use with no run involved; the product's in [framework/docs/GLOSSARY.md](../../framework/docs/GLOSSARY.md); the pool's, **Lease** among them, in [server-pool/docs/GLOSSARY.md](../../server-pool/docs/GLOSSARY.md).
 
 ## Language
 
@@ -25,7 +25,7 @@ _Avoid_: "workflow engine"; "CI workflow" is a GitHub Actions file in `.github/w
 ### Runs
 
 **Unattended run**:
-An AFK delivery run that ships a **Run set** from launch to PR with no human gate in between. Pre-flight runs while the maintainer is present and fails fast; it never pauses. Its work lands on the epic's feature branch — one commit per landed issue — and the PR (feature → `master`) is the only human gate ([Ship ADR-0001](docs/adr/0001-unattended-runs.md)).
+An AFK delivery run that ships a **Run set** from launch to PR with no human gate in between. Pre-flight runs while the maintainer is present and fails fast; it never pauses. Its work lands on the epic's feature branch — one commit per landed issue — and the PR (feature → `master`) is the only human gate ([Ship ADR-0001](adr/0001-unattended-runs.md)).
 _Avoid_: "batch" for the run (collides with the `batch:N` labels and RCON batching).
 
 **Run set**:

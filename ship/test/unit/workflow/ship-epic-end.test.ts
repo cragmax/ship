@@ -200,7 +200,9 @@ describe('runShip — the epic review', () => {
   });
 
   it('names the Script API TSDoc report among the slice reports when that review ran', async () => {
-    const run = fakeHooks({ tdd: { ...TDD_GREEN, files: ['src/a.ts', 'test/unit/a.test.ts'] } });
+    const run = fakeHooks({
+      tdd: { ...TDD_GREEN, files: ['framework/src/a.ts', 'framework/test/unit/a.test.ts'] },
+    });
 
     await runShip(run.hooks, 'issues 7');
 
@@ -517,7 +519,7 @@ describe('runShip — the tests at push', () => {
     const run = fakeHooks({
       'runner:changed-files:list': {
         ...OK,
-        files: ['package.json', 'src/rcon/client.ts', 'tooling/x.ts'],
+        files: ['package.json', 'framework/src/rcon/client.ts', 'tooling/x.ts'],
       },
     });
 
@@ -534,7 +536,7 @@ describe('runShip — the tests at push', () => {
     expect(testsAtPush(run)).toEqual([
       '## Tests at push',
       '',
-      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `src/rcon/client.ts` changed.',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `framework/src/rcon/client.ts` changed.',
       '',
     ]);
   });
@@ -838,13 +840,13 @@ describe('runShip — the tdd’s evidence', () => {
     expect(lines.slice(at, at + 9)).toEqual([
       '## Evidence',
       '',
-      '- **#7** `test/unit/tooling/x.test.ts › adds x`',
+      '- **#7** `tooling/test/unit/x.test.ts › adds x`',
       '  ```text',
       '  x()',
       '    returns 1',
       '  ```',
       '  **Before:** AssertionError: expected undefined to be 1',
-      '  **After:** ✓ test/unit/tooling/x.test.ts › adds x',
+      '  **After:** ✓ tooling/test/unit/x.test.ts › adds x',
     ]);
   });
 });

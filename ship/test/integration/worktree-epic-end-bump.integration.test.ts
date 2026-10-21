@@ -22,9 +22,9 @@ import {
   withOriginAndBatch,
   type Changes,
   type FixtureRun,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { makeFixtureRepo, prebuildNpmTemplate, runCli } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain } from '../../../test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook: commit refused';

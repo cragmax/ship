@@ -28,7 +28,7 @@ Tests live in `test/`, under the subfolder of the file they test; the helpers th
 
 ## What Ship owns under `.claude/`
 
-Claude Code finds these only under `.claude/`, so they stay there (ADR-0048
+Claude Code finds these only under `.claude/`, so they stay there (Repo ADR-0006
 decision 4):
 
 - **Rendered:** `.claude/workflows/ship.js` and `resync.js`, the Saved

@@ -31,7 +31,7 @@ import {
   setFakePrEditExit,
   writeFakeGh,
   type FakePrComment,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
@@ -347,7 +347,7 @@ describe('post-issue-comment', () => {
 });
 
 describe('usage errors', () => {
-  // The epic end has no server-tier step: its push's pre-push hook runs the tier (ADR-0051).
+  // The epic end has no server-tier step: its push's pre-push hook runs it (Tooling ADR-0002).
   it('exits 2 naming server-tier an unknown command', TIMEOUT, () => {
     const run = runCli(['server-tier', 'b', '--engine', 'paper', '--registry', 'r', '--log', 'l'], {
       cwd: root,

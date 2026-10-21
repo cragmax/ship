@@ -29,9 +29,9 @@ import {
   repoState,
   writeFakeGh,
   type FakeGhResponse,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
-import { mustRun } from '../../../test/helpers/worktree-fixture.js';
+import { mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 

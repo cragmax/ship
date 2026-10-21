@@ -23,13 +23,13 @@ import {
   snapshot,
   withOriginAndBatch,
   type FixtureRun,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
   prebuildNpmTemplate,
   runSyncMaster,
 } from '../helpers/worktree-cli-fixture.js';
-import { mustRun, porcelain } from '../../../test/helpers/worktree-fixture.js';
+import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';
@@ -117,8 +117,10 @@ describe('sync-master batch refresh', () => {
   }
 
   it.each([
-    { changed: 'src/feature.ts', build: true },
+    { changed: 'framework/src/feature.ts', build: true },
     { changed: 'tsconfig.json', build: true },
+    { changed: 'framework/tsconfig.json', build: true },
+    { changed: 'src/feature.ts', build: false },
     { changed: 'tooling/tool.ts', build: false },
     { changed: 'docs/notes.md', build: false },
   ])('builds before reporting when master changed $changed: $build', TIMEOUT, (c) => {
@@ -223,7 +225,7 @@ describe('sync-master batch refresh', () => {
     const run = makeNpmRun();
     const ours = commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     const theirs = advanceOrigin(root, run.bare, {
-      write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
+      write: { 'framework/src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
     const r = runSyncMaster(run.batch);
@@ -241,7 +243,11 @@ describe('sync-master batch refresh', () => {
     const run = makeNpmRun();
     const ours = commitChanges(run.batch, { write: { [ADR_INDEX]: '- ours\n' } }, 'docs: ours');
     advanceOrigin(root, run.bare, {
-      write: { [ADR_INDEX]: '- theirs\n', 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
+      write: {
+        [ADR_INDEX]: '- theirs\n',
+        'framework/src/feature.ts': 'master\n',
+        [FAIL_BUILD]: '',
+      },
     });
 
     const r = runSyncMaster(run.batch);

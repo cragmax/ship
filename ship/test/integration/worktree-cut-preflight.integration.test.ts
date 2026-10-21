@@ -29,9 +29,9 @@ import {
   prependPath,
   writeFakeGh,
   type FakeGhResponse,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun } from '../../../test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const REGISTRY = 'server-pool/src/registry/pool-registry.json';

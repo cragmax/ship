@@ -2,7 +2,7 @@
  * Directory-link primitives for the worktree CLI.
  *
  * Never walk with recursive `readdirSync`: it descends into junctions on
- * Windows (PF-69), so a walk or count would see— and a cleanup
+ * Windows (Repo PF-9), so a walk or count would see— and a cleanup
  * would reach — the link target's contents. Every walk here is a manual
  * `lstat` walk that stops at a link.
  */

@@ -118,7 +118,7 @@ const EIGHT: LandedIssue = {
         seconds: 900,
       },
     ],
-    scriptApiTsdoc: 'no src/ change',
+    scriptApiTsdoc: 'no framework/src/ change',
   }),
 };
 
@@ -349,7 +349,7 @@ describe('renderPrBody', () => {
       '- Spec review: fixed — covered criterion 3',
       '- Standards review: fixed — renamed a helper',
       '- Script API TSDoc: fixed — sharpened walkTo',
-      '- Script API TSDoc: skipped — no src/ change',
+      '- Script API TSDoc: skipped — no framework/src/ change',
       '- Lease timings: tdd: paper@localhost:25575 waited 1.5s, held 42s; folia@localhost:25576 waited 0s, held 30.25s',
       '- Lease timings: none',
       '- Probes: no probe needed',
@@ -1479,13 +1479,18 @@ describe('renderPrBody — tests at push', () => {
   it('says the full tiers ran at push, naming each Platform-wide path the push changes', () => {
     const pushed = {
       kind: 'resolved',
-      paths: ['package.json', 'ph-plugin/src/Main.java', 'src/a.ts', 'test/helpers/x.ts'],
+      paths: [
+        'package.json',
+        'ph-plugin/src/Main.java',
+        'framework/src/a.ts',
+        'framework/test/helpers/x.ts',
+      ],
     } as const;
 
     expect(testsAtPush({ ...INPUT, pushed })).toEqual([
       '## Tests at push',
       '',
-      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `ph-plugin/src/Main.java`, `test/helpers/x.ts` changed.',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `package.json`, `ph-plugin/src/Main.java`, `framework/test/helpers/x.ts` changed.',
       '',
     ]);
   });
@@ -1635,13 +1640,13 @@ describe('renderAttachedSection', () => {
   it('says what pre-push ran on this run’s push under ### Tests at push, between its Evidence and its Issues', () => {
     const lines = renderAttachedSection({
       ...SECTION_INPUT,
-      pushed: { kind: 'resolved', paths: ['src/rcon/client.ts', 'tooling/x.ts'] },
+      pushed: { kind: 'resolved', paths: ['framework/src/rcon/client.ts', 'tooling/x.ts'] },
     }).split('\n');
 
     expect(lines.slice(lines.indexOf('### Issues') - 4, lines.indexOf('### Issues'))).toEqual([
       '### Tests at push',
       '',
-      'The full standalone and server tiers ran at push: the Platform-wide paths `src/rcon/client.ts` changed.',
+      'The full standalone and server tiers ran at push: the Platform-wide paths `framework/src/rcon/client.ts` changed.',
       '',
     ]);
   });

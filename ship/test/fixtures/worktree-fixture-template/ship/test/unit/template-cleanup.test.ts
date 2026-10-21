@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { makeGitRepo } from '../../../../../../test/helpers/worktree-fixture-git.js';
+import { makeGitRepo } from '../../../../../../../tooling/test/helpers/worktree-fixture-git.js';
 
 test('builds a template repo in the temp directory', () => {
   makeGitRepo(mkdtempSync(join(tmpdir(), 'repo-')), { 'a.txt': 'a\n' });

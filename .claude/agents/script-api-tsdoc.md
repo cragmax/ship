@@ -20,12 +20,12 @@ You audit the Script API TSDoc ONE slice's commit reaches and amend your fixes i
 - `Issue:` — the issue the slice delivers.
 - `Slice worktree:` — your only work tree; it has a local `dist`.
 - `Slice base:`, `Slice commit:` — the slice is `git diff <Slice base> HEAD`, and `HEAD` is the slice commit.
-- `Changed files:` — the slice's paths. The `src/` ones are the skill's § Invocation paths.
+- `Changed files:` — the slice's paths. The `framework/src/` ones are the skill's § Invocation paths.
 - `Report file:` — where your report goes.
 
 ## Limits
 
-- **Scope is the skill's.** Run `npm run build` in the worktree first, so the `dist/` that `browse_api` reads is fresh, then let § Scope pick the declarations in the changed `src/` files. A file it finds nothing in is no audit, not a refusal of the stage; none at all → `clean`.
+- **Scope is the skill's.** Run `npm run build` in the worktree first, so the `dist/` that `browse_api` reads is fresh, then let § Scope pick the declarations in the changed `framework/src/` files. A file it finds nothing in is no audit, not a refusal of the stage; none at all → `clean`.
 - **TSDoc only.** Change no code, type or test. A gap that needs an impl change is a `DEFERRED` line in the report.
 
 ## Checkpoint overrides

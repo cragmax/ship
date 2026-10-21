@@ -20,9 +20,9 @@ import {
   commitChanges,
   makeBareOrigin,
   makeGitRepo,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { isRegistered, runCli } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, runIn } from '../../../test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 

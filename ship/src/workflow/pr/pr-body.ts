@@ -160,7 +160,7 @@ export interface PrBodyInput {
   readonly mainUntouched: boolean | null;
   /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
-  /** The paths the push changes, which decide the tests pre-push runs on it (ADR-0051). */
+  /** The paths the push changes, which decide the tests pre-push runs on it (Tooling ADR-0002). */
   readonly pushed: PushedChanges;
   /** The overlap edges pre-flight added to the entry. */
   readonly overlap: OverlapRecord;
@@ -446,9 +446,9 @@ function evidenceList(landed: readonly LandedIssue[]): string[] {
 }
 
 /**
- * The one line saying what pre-push ran (ADR-0051): both tiers in full, naming the Platform-wide
- * paths; else the standalone tier in full past {@link MAX_RELATED_FILES} files, or targeted
- * tests, the server tier left to the nightly; or not known, naming the failed read.
+ * The one line saying what pre-push ran (Tooling ADR-0002): both tiers in full, naming the
+ * Platform-wide paths; else the standalone tier in full past {@link MAX_RELATED_FILES} files, or
+ * targeted tests, the server tier left to the nightly; or not known, naming the failed read.
  */
 function testsAtPushLines(pushed: PushedChanges): string[] {
   if (pushed.kind === 'unresolved') {
