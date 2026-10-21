@@ -58,6 +58,7 @@ const DOC_INDEX_PATHS: readonly string[] = [
   'GLOSSARY.md',
   'docs/adr/readme.md',
   'docs/platform-facts/readme.md',
+  'framework/docs/adr/readme.md',
   'framework/docs/platform-facts/readme.md',
   'server-pool/GLOSSARY.md',
   'server-pool/docs/adr/readme.md',
