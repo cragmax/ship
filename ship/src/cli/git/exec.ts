@@ -39,7 +39,10 @@ export const FETCH_TIMEOUT_MS = 120_000;
 /** Budget for one `gh` call. */
 export const GH_TIMEOUT_MS = 120_000;
 
-/** Budget for one `git push` through the pre-push hook, whose server tier may run (ADR-0051). */
+/**
+ * Budget for one `git push` through the pre-push hook, whose server tier may run
+ * (Tooling ADR-0002).
+ */
 export const PUSH_TIMEOUT_MS = 2_700_000;
 
 /** Budget for any child without an explicit one. */

@@ -51,8 +51,8 @@ import type { ConflictKind, ConflictPath, SyncMasterResult } from '../envelope/t
 import { Conflict, Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /**
- * The doc indexes, the root's and each home's (ADR-0048): a conflict in one goes to a resolver,
- * never refuses.
+ * The doc indexes, the root's and each home's (Repo ADR-0007): a conflict in one goes to a
+ * resolver, never refuses.
  */
 const DOC_INDEX_PATHS: readonly string[] = [
   'GLOSSARY.md',
@@ -67,6 +67,7 @@ const DOC_INDEX_PATHS: readonly string[] = [
   'ship/GLOSSARY.md',
   'ship/docs/adr/readme.md',
   'ship/docs/platform-facts/readme.md',
+  'tooling/docs/adr/readme.md',
   'tooling/docs/platform-facts/readme.md',
 ];
 

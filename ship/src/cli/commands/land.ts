@@ -183,7 +183,7 @@ const BUILD_FILES: readonly string[] = ['package.json', 'tsconfig.json'];
  * Whether a change touches a path the batch's `dist/` is built from: the
  * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
  * gate's `gate:build` re-emits in parallel with them, so the build makes it
- * current first. Only `src/` builds into `dist/` (ADR-0048 decision 5).
+ * current first. Only `src/` builds into `dist/` (Repo ADR-0006 decision 5).
  * `sync-master` asks it of what the merge brings.
  *
  * @param files - Repository-relative paths changed.

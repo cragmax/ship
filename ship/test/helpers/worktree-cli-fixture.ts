@@ -3,7 +3,7 @@
  * it provisions and tears down — the real `.gitignore` (so clean-status checks run against the
  * actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci` installs
  * offline, and fake `build` / `test` scripts. The plain process and template-copy helpers they
- * build on are root's `test/helpers/worktree-fixture.ts` (ADR-0048 decision 3).
+ * build on are root's `test/helpers/worktree-fixture.ts` (Repo ADR-0006 decision 3).
  */
 
 import {

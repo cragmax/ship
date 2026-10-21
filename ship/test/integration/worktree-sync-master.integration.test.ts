@@ -309,7 +309,7 @@ describe('sync-master doc-index resolution', () => {
     expect(parents(run.batch)).toEqual([ours, theirs]);
   });
 
-  it('hands conflicts in all thirteen doc indexes, root and home, to the resolver', TIMEOUT, () => {
+  it('hands conflicts in all fourteen doc indexes, root and home, to the resolver', TIMEOUT, () => {
     const indexes = [
       'GLOSSARY.md',
       'docs/adr/readme.md',
@@ -323,6 +323,7 @@ describe('sync-master doc-index resolution', () => {
       'ship/GLOSSARY.md',
       'ship/docs/adr/readme.md',
       'ship/docs/platform-facts/readme.md',
+      'tooling/docs/adr/readme.md',
       'tooling/docs/platform-facts/readme.md',
     ];
     const side = (text: string): Record<string, string> =>

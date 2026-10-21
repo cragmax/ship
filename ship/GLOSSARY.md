@@ -1,6 +1,6 @@
 # Ship
 
-The terms of the `ship/` home (ADR-0048). The product's terms live in the root [GLOSSARY.md](../GLOSSARY.md), among them the reviews a slice runs (**Spec review**, **Test review**, **Standards review**), **Checkpoint** and **Slice budget**, which sessions use with no run involved; the pool's, **Lease** among them, in [server-pool/GLOSSARY.md](../server-pool/GLOSSARY.md).
+The terms of the `ship/` home (Repo ADR-0006). The product's terms live in the root [GLOSSARY.md](../GLOSSARY.md), among them the reviews a slice runs (**Spec review**, **Test review**, **Standards review**), **Checkpoint** and **Slice budget**, which sessions use with no run involved; the pool's, **Lease** among them, in [server-pool/GLOSSARY.md](../server-pool/GLOSSARY.md).
 
 ## Language
 

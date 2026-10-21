@@ -1,11 +1,11 @@
 # Ship ADR-0001: Unattended runs — a rendered scheduler, a reviewed slice chain, the PR as the sole human gate
 
 Date: 2026-10-16
-Status: DRAFT. Supersedes ADR-0045.
+Status: DRAFT. Restates the root unattended-runs record, since retired (Repo ADR-0007).
 
-> Restates [ADR-0045](../../../docs/adr/0045-unattended-runs.md) as Ship
+> Restates the root unattended-runs record as Ship
 > stands once Epic 2 of the tooling-split map (#1483) has moved it here.
-> Decided on wayfinder ticket #1488, 2026-10-16; decision 2's layout on #1486. ADR-0045 holds the history and the old → new decision map.
+> Decided on wayfinder ticket #1488, 2026-10-16; decision 2's layout on #1486. The retired root record, named on this home's ADR index, holds the history and the old → new decision map in git.
 
 ## Context
 
@@ -58,10 +58,10 @@ no human gate between.
    imports are free, since the render erases them. So render-safety is held
    by folder, not by review. A file
    belongs to the home that imports it, and running a CLI is no import edge
-   (ADR-0048 decision 2): the whole worktree CLI is Ship's, the interactive
+   (Repo ADR-0006 decision 2): the whole worktree CLI is Ship's, the interactive
    `commit` command included, and so are `comment-only` and `describe-error`.
    Ship's part of `.claude/` stays where Claude Code reads it and is listed in
-   [Ship's README](../../README.md) (ADR-0048 decision 4).
+   [Ship's README](../../README.md) (Repo ADR-0006 decision 4).
 3. **Instructions come from the main checkout.** Every agent instruction
    (`CLAUDE.md`, `.claude/rules/`, skills, agent files, the Saved workflow)
    comes from the main checkout's working tree when each agent starts; a
@@ -202,7 +202,7 @@ no human gate between.
     - **The push is the server tier.** The epic end runs no server-tier step
       of its own: its push goes through the pre-push hook, which runs the
       server tier on both engines across the pool when the pushed range
-      touches a Platform-wide path ([ADR-0051](../../../docs/adr/0051-change-scoped-pre-push.md)),
+      touches a Platform-wide path ([Tooling ADR-0002](../../../tooling/docs/adr/0002-change-scoped-pre-push.md)),
       so a red tier refuses the push and no PR opens; `npm run test:nightly`
       is the backstop.
     - **The retro runs for every entry that was cut** (shipped, halted,

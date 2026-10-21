@@ -1,9 +1,9 @@
 # Ship ADRs
 
-The decisions of the `ship/` home (ADR-0048). The criteria, workflow and
-status legend are the root series': [docs/adr/readme.md](../../../docs/adr/readme.md).
-Records here are always cited `Ship ADR-NNNN`, inside this home too; a bare
-`ADR-NNNN` means the root series.
+The decisions of the `ship/` home (Repo ADR-0006). The criteria, workflow and
+status legend are the Repo series': [docs/adr/readme.md](../../../docs/adr/readme.md).
+Records here are always cited `Ship ADR-NNNN`, inside this home too; every
+citation names its series (Repo ADR-0007).
 
 ## Index
 
@@ -19,19 +19,20 @@ Records here are always cited `Ship ADR-NNNN`, inside this home too; a bare
    and commit queue per epic; the 2 + 2 warm set; the epic end (epic review,
    master sync, bump, retro ‖ `pr`, publish; the push is the server tier);
    the PR body; one net bump per PR; one tier table, no pins; attached runs;
-   resume for one-flight runs only, manual recovery otherwise. Restates
-   ADR-0045. Status: DRAFT.
+   resume for one-flight runs only, manual recovery otherwise. Restates the
+   root unattended-runs record, retired by Repo ADR-0007. Status: DRAFT.
+   Formerly ADR-0045, the retired root record it restates.
 
 ## Cross-references
 
 - **Ship #0001 ↔ Pool #0001:** a run's slices are the pool's per-invocation
   consumer, on a warm set Ship trims from the registry; the render closure
   inlines the pool's `lease-timings`, a named depcruise carve-out.
-- **Ship #0001 ↔ ADR-0048:** Ship is the top home; it imports tooling,
+- **Ship #0001 ↔ Repo ADR-0006:** Ship is the top home; it imports tooling,
   server-pool and src, and nothing imports it.
-- **Ship #0001 ↔ ADR-0051:** the epic end's push is its server tier, run only
+- **Ship #0001 ↔ Tooling ADR-0002:** the epic end's push is its server tier, run only
   when the pushed range touches a Platform-wide path; the nightly is the
   backstop.
-- **Ship #0001 ↔ ADR-0049:** the push's server tier is the runner's `pool`
+- **Ship #0001 ↔ Tooling ADR-0001:** the push's server tier is the runner's `pool`
   mode across the full registry, which can wait on the warm set while slices
   hold it.

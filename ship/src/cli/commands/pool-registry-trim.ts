@@ -1,6 +1,6 @@
 /**
  * Trim a pool registry to the warm set — the servers every concurrent
- * unattended run on the machine may lease (ADR-0032). Lease runs in a batch
+ * unattended run on the machine may lease (Pool ADR-0001). Lease runs in a batch
  * worktree and its slices read the trimmed copy (`PH_POOL_REGISTRY`), so a
  * cold-but-registered server never enters candidate selection.
  */
