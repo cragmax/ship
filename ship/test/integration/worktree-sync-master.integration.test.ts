@@ -292,7 +292,7 @@ describe('sync-master doc-index resolution', () => {
   });
 
   it('hands a home glossary conflict to the resolver, then --continue merges it', TIMEOUT, () => {
-    const glossary = 'server-pool/GLOSSARY.md';
+    const glossary = 'server-pool/docs/GLOSSARY.md';
     const run = makeRun({ [glossary]: '# Pool\n\n- base\n' });
     const ours = commitChanges(run.batch, { write: { [glossary]: '# Pool\n\n- ours\n' } }, 'ours');
     const theirs = advanceOrigin(root, run.bare, { write: { [glossary]: '# Pool\n\n- theirs\n' } });
@@ -309,34 +309,40 @@ describe('sync-master doc-index resolution', () => {
     expect(parents(run.batch)).toEqual([ours, theirs]);
   });
 
-  it('hands conflicts in all fifteen doc indexes, root and home, to the resolver', TIMEOUT, () => {
-    const indexes = [
-      'GLOSSARY.md',
-      'docs/adr/readme.md',
-      'docs/platform-facts/readme.md',
-      'framework/docs/adr/readme.md',
-      'framework/docs/platform-facts/readme.md',
-      'ph-plugin/GLOSSARY.md',
-      'ph-plugin/docs/adr/readme.md',
-      'server-pool/GLOSSARY.md',
-      'server-pool/docs/adr/readme.md',
-      'server-pool/docs/platform-facts/readme.md',
-      'ship/GLOSSARY.md',
-      'ship/docs/adr/readme.md',
-      'ship/docs/platform-facts/readme.md',
-      'tooling/docs/adr/readme.md',
-      'tooling/docs/platform-facts/readme.md',
-    ];
-    const side = (text: string): Record<string, string> =>
-      Object.fromEntries(indexes.map((path) => [path, `# Index\n\n- ${text}\n`]));
-    const run = makeRun(side('base'));
-    commitChanges(run.batch, { write: side('ours') }, 'ours');
-    advanceOrigin(root, run.bare, { write: side('theirs') });
+  it(
+    'hands conflicts in all seventeen doc indexes, root and home, to the resolver',
+    TIMEOUT,
+    () => {
+      const indexes = [
+        'docs/GLOSSARY.md',
+        'docs/adr/readme.md',
+        'docs/platform-facts/readme.md',
+        'framework/docs/GLOSSARY.md',
+        'framework/docs/adr/readme.md',
+        'framework/docs/platform-facts/readme.md',
+        'ph-plugin/docs/GLOSSARY.md',
+        'ph-plugin/docs/adr/readme.md',
+        'server-pool/docs/GLOSSARY.md',
+        'server-pool/docs/adr/readme.md',
+        'server-pool/docs/platform-facts/readme.md',
+        'ship/docs/GLOSSARY.md',
+        'ship/docs/adr/readme.md',
+        'ship/docs/platform-facts/readme.md',
+        'tooling/docs/GLOSSARY.md',
+        'tooling/docs/adr/readme.md',
+        'tooling/docs/platform-facts/readme.md',
+      ];
+      const side = (text: string): Record<string, string> =>
+        Object.fromEntries(indexes.map((path) => [path, `# Index\n\n- ${text}\n`]));
+      const run = makeRun(side('base'));
+      commitChanges(run.batch, { write: side('ours') }, 'ours');
+      advanceOrigin(root, run.bare, { write: side('theirs') });
 
-    const r = runSyncMaster(run.batch);
+      const r = runSyncMaster(run.batch);
 
-    expect(r.json).toMatchObject({ status: 'conflict', pending: indexes });
-  });
+      expect(r.json).toMatchObject({ status: 'conflict', pending: indexes });
+    },
+  );
 
   it('refuses a conflict in a home file that is not an index', TIMEOUT, () => {
     const notIndex = 'server-pool/CLAUDE.md';

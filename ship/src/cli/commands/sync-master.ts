@@ -55,19 +55,21 @@ import { Conflict, Refusal, recordFailure, StepFailure } from '../envelope/types
  * resolver, never refuses.
  */
 const DOC_INDEX_PATHS: readonly string[] = [
-  'GLOSSARY.md',
+  'docs/GLOSSARY.md',
   'docs/adr/readme.md',
   'docs/platform-facts/readme.md',
+  'framework/docs/GLOSSARY.md',
   'framework/docs/adr/readme.md',
   'framework/docs/platform-facts/readme.md',
-  'server-pool/GLOSSARY.md',
+  'server-pool/docs/GLOSSARY.md',
   'server-pool/docs/adr/readme.md',
   'server-pool/docs/platform-facts/readme.md',
-  'ph-plugin/GLOSSARY.md',
+  'ph-plugin/docs/GLOSSARY.md',
   'ph-plugin/docs/adr/readme.md',
-  'ship/GLOSSARY.md',
+  'ship/docs/GLOSSARY.md',
   'ship/docs/adr/readme.md',
   'ship/docs/platform-facts/readme.md',
+  'tooling/docs/GLOSSARY.md',
   'tooling/docs/adr/readme.md',
   'tooling/docs/platform-facts/readme.md',
 ];
