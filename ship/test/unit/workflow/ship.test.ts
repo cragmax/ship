@@ -6,7 +6,7 @@ import { STAGES, type StageName, type StageRow } from '../../../src/workflow/sta
 import { runShip } from '../../../src/workflow/ship.js';
 
 import {
-  ADR_INDEX,
+  DOC_INDEX,
   BATCH,
   DOC_INDEX_CONFLICT,
   fakeHooks,
@@ -1930,7 +1930,7 @@ describe('runShip — the epic end', () => {
     expect(promptOf(run, 'resolver:list').split('\n')).toEqual([
       'Checkout: C:/src/main',
       `Batch worktree: ${BATCH}`,
-      `Pending paths: ${ADR_INDEX}`,
+      `Pending paths: ${DOC_INDEX}`,
       `Report file: ${REPORT_DIR}/resolve.md`,
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(

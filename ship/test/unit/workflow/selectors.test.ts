@@ -22,7 +22,14 @@ describe('isTrivialSurface', () => {
     ['a path merely starting with server-pool', ['server-pool-old/a.ts'], true],
     ['a ship/src/ file', ['docs/a.md', 'ship/src/core/run-set.ts'], false],
     ['a ship/test/ file', ['ship/test/unit/a.test.ts'], false],
-    ["ship/'s docs only", ['ship/CLAUDE.md', 'ship/docs/adr/0001-unattended-runs.md'], true],
+    [
+      "ship/'s docs only",
+      [
+        'ship/CLAUDE.md',
+        'ship/docs/adr/0001-unattended-runs-rendered-scheduler-reviewed-slices-pr-gate.md',
+      ],
+      true,
+    ],
     ['a path merely starting with ship', ['shipping/a.ts'], true],
   ])('judges %s', (_name, files, trivial) => {
     expect(isTrivialSurface(files)).toBe(trivial);

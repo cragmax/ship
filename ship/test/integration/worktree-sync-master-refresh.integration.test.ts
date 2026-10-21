@@ -32,7 +32,7 @@ import {
 import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
-const ADR_INDEX = 'docs/adr/readme.md';
+const DOC_INDEX = 'docs/GLOSSARY.md';
 // What the npm fixture's `build` script writes (`dist/` is ignored).
 const BUILT = 'dist/index.js';
 // The npm fixture's `build` script fails while this file exists.
@@ -241,10 +241,10 @@ describe('sync-master batch refresh', () => {
 
   it('aborts its merge when the refresh before a resolver fails', TIMEOUT, () => {
     const run = makeNpmRun();
-    const ours = commitChanges(run.batch, { write: { [ADR_INDEX]: '- ours\n' } }, 'docs: ours');
+    const ours = commitChanges(run.batch, { write: { [DOC_INDEX]: '- ours\n' } }, 'docs: ours');
     advanceOrigin(root, run.bare, {
       write: {
-        [ADR_INDEX]: '- theirs\n',
+        [DOC_INDEX]: '- theirs\n',
         'framework/src/feature.ts': 'master\n',
         [FAIL_BUILD]: '',
       },

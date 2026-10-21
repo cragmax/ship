@@ -151,9 +151,9 @@ const RUN_ROOT = 'C:/src/ph-runs/7';
 export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
 /** The doc index the conflict fakes stop on. */
-export const ADR_INDEX = 'docs/adr/readme.md';
+export const DOC_INDEX = 'docs/GLOSSARY.md';
 
-/** A `sync-master` start stopped on {@link ADR_INDEX}, as the CLI's own tests pin it. */
+/** A `sync-master` start stopped on {@link DOC_INDEX}, as the CLI's own tests pin it. */
 export const DOC_INDEX_STOP = {
   exitCode: 1,
   envelopePath: 'e.json',
@@ -161,9 +161,9 @@ export const DOC_INDEX_STOP = {
   outcome: 'needs-resolution',
   commit: null,
   upstream: null,
-  conflicts: [{ path: ADR_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
+  conflicts: [{ path: DOC_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
   version: null,
-  pending: [ADR_INDEX],
+  pending: [DOC_INDEX],
   errors: [],
 };
 

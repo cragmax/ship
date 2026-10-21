@@ -30,7 +30,7 @@ import { runSyncMaster } from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
-const ADR_INDEX = 'docs/adr/readme.md';
+const DOC_INDEX = 'docs/GLOSSARY.md';
 const HOOK_SAYS = 'fixture hook: commit refused';
 
 let root: string;
@@ -216,14 +216,14 @@ describe('sync-master', () => {
 });
 
 describe('sync-master doc-index resolution', () => {
-  /** A batch whose merge of origin/master stops on a `docs/adr/readme.md` conflict. */
+  /** A batch whose merge of origin/master stops on a `docs/GLOSSARY.md` conflict. */
   function conflictedRun(): FixtureRun & { readonly ours: string; readonly theirs: string } {
-    const run = makeRun({ [ADR_INDEX]: '# ADRs\n\n- base\n', 'notes.md': 'n\n' });
-    const ours = commitChanges(run.batch, { write: { [ADR_INDEX]: '# ADRs\n\n- ours\n' } }, 'ours');
+    const run = makeRun({ [DOC_INDEX]: '# ADRs\n\n- base\n', 'notes.md': 'n\n' });
+    const ours = commitChanges(run.batch, { write: { [DOC_INDEX]: '# ADRs\n\n- ours\n' } }, 'ours');
     const theirs = advanceOrigin(
       root,
       run.bare,
-      { write: { [ADR_INDEX]: '# ADRs\n\n- theirs\n', 'notes.md': 'master\n' } },
+      { write: { [DOC_INDEX]: '# ADRs\n\n- theirs\n', 'notes.md': 'master\n' } },
       'docs: theirs',
     );
     return { ...run, ours, theirs };
@@ -238,14 +238,14 @@ describe('sync-master doc-index resolution', () => {
     expect(start.json).toMatchObject({
       status: 'conflict',
       outcome: 'needs-resolution',
-      pending: [ADR_INDEX],
+      pending: [DOC_INDEX],
       commit: null,
       upstream: null,
     });
     expect(snapshot(run.batch)).toMatchObject({ head: run.ours, merging: true });
 
     // The resolver edits the file and never stages it.
-    writeFileSync(join(run.batch, ADR_INDEX), '# ADRs\n\n- ours\n- theirs\n');
+    writeFileSync(join(run.batch, DOC_INDEX), '# ADRs\n\n- ours\n- theirs\n');
     const done = runSyncMaster(run.batch, '--continue');
 
     expect(done.code).toBe(0);
@@ -257,7 +257,7 @@ describe('sync-master doc-index resolution', () => {
     });
     expect(done.json.commit).toBe(headSha(run.batch));
     expect(parents(run.batch)).toEqual([run.ours, run.theirs]);
-    expect(show(run.batch, ADR_INDEX)).toBe('# ADRs\n\n- ours\n- theirs\n');
+    expect(show(run.batch, DOC_INDEX)).toBe('# ADRs\n\n- ours\n- theirs\n');
     expect(show(run.batch, 'notes.md')).toBe('master\n');
     expect(snapshot(run.batch)).toMatchObject({ porcelain: '', merging: false });
   });
@@ -266,20 +266,20 @@ describe('sync-master doc-index resolution', () => {
     const run = conflictedRun();
     runSyncMaster(run.batch);
     const resolved = '# ADRs\n\n- ours\n- theirs\n';
-    writeFileSync(join(run.batch, ADR_INDEX), `${resolved}<<<<<<< HEAD\n=======\n>>>>>>> x\n`);
+    writeFileSync(join(run.batch, DOC_INDEX), `${resolved}<<<<<<< HEAD\n=======\n>>>>>>> x\n`);
 
     const r = runSyncMaster(run.batch, '--continue');
 
     expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'refused', reason: 'unresolved', pending: [ADR_INDEX] });
-    expect(unmerged(run.batch)).toEqual([ADR_INDEX]);
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'unresolved', pending: [DOC_INDEX] });
+    expect(unmerged(run.batch)).toEqual([DOC_INDEX]);
     expect(snapshot(run.batch)).toMatchObject({ head: run.ours, merging: true });
   });
 
   it('aborts the merge when the commit hook fails', TIMEOUT, () => {
     const run = conflictedRun();
     runSyncMaster(run.batch);
-    writeFileSync(join(run.batch, ADR_INDEX), '# ADRs\n\n- ours\n- theirs\n');
+    writeFileSync(join(run.batch, DOC_INDEX), '# ADRs\n\n- ours\n- theirs\n');
     installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
     const r = runSyncMaster(run.batch, '--continue');
@@ -309,40 +309,30 @@ describe('sync-master doc-index resolution', () => {
     expect(parents(run.batch)).toEqual([ours, theirs]);
   });
 
-  it(
-    'hands conflicts in all seventeen doc indexes, root and home, to the resolver',
-    TIMEOUT,
-    () => {
-      const indexes = [
-        'docs/GLOSSARY.md',
-        'docs/adr/readme.md',
-        'docs/platform-facts/readme.md',
-        'framework/docs/GLOSSARY.md',
-        'framework/docs/adr/readme.md',
-        'framework/docs/platform-facts/readme.md',
-        'ph-plugin/docs/GLOSSARY.md',
-        'ph-plugin/docs/adr/readme.md',
-        'server-pool/docs/GLOSSARY.md',
-        'server-pool/docs/adr/readme.md',
-        'server-pool/docs/platform-facts/readme.md',
-        'ship/docs/GLOSSARY.md',
-        'ship/docs/adr/readme.md',
-        'ship/docs/platform-facts/readme.md',
-        'tooling/docs/GLOSSARY.md',
-        'tooling/docs/adr/readme.md',
-        'tooling/docs/platform-facts/readme.md',
-      ];
-      const side = (text: string): Record<string, string> =>
-        Object.fromEntries(indexes.map((path) => [path, `# Index\n\n- ${text}\n`]));
-      const run = makeRun(side('base'));
-      commitChanges(run.batch, { write: side('ours') }, 'ours');
-      advanceOrigin(root, run.bare, { write: side('theirs') });
+  it('hands conflicts in all eleven doc indexes, root and home, to the resolver', TIMEOUT, () => {
+    const indexes = [
+      'docs/GLOSSARY.md',
+      'docs/platform-facts/index.md',
+      'framework/docs/GLOSSARY.md',
+      'framework/docs/platform-facts/index.md',
+      'ph-plugin/docs/GLOSSARY.md',
+      'server-pool/docs/GLOSSARY.md',
+      'server-pool/docs/platform-facts/index.md',
+      'ship/docs/GLOSSARY.md',
+      'ship/docs/platform-facts/index.md',
+      'tooling/docs/GLOSSARY.md',
+      'tooling/docs/platform-facts/index.md',
+    ];
+    const side = (text: string): Record<string, string> =>
+      Object.fromEntries(indexes.map((path) => [path, `# Index\n\n- ${text}\n`]));
+    const run = makeRun(side('base'));
+    commitChanges(run.batch, { write: side('ours') }, 'ours');
+    advanceOrigin(root, run.bare, { write: side('theirs') });
 
-      const r = runSyncMaster(run.batch);
+    const r = runSyncMaster(run.batch);
 
-      expect(r.json).toMatchObject({ status: 'conflict', pending: indexes });
-    },
-  );
+    expect(r.json).toMatchObject({ status: 'conflict', pending: indexes });
+  });
 
   it('refuses a conflict in a home file that is not an index', TIMEOUT, () => {
     const notIndex = 'server-pool/CLAUDE.md';

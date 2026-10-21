@@ -51,27 +51,21 @@ import type { ConflictKind, ConflictPath, SyncMasterResult } from '../envelope/t
 import { Conflict, Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /**
- * The doc indexes, the root's and each home's (Repo ADR-0007): a conflict in one goes to a
- * resolver, never refuses.
+ * The doc indexes, the root's and each home's glossary and platform-facts index (Repo
+ * ADR-0007): a conflict in one goes to a resolver, never refuses. An ADR folder has no index.
  */
 const DOC_INDEX_PATHS: readonly string[] = [
   'docs/GLOSSARY.md',
-  'docs/adr/readme.md',
-  'docs/platform-facts/readme.md',
+  'docs/platform-facts/index.md',
   'framework/docs/GLOSSARY.md',
-  'framework/docs/adr/readme.md',
-  'framework/docs/platform-facts/readme.md',
+  'framework/docs/platform-facts/index.md',
   'server-pool/docs/GLOSSARY.md',
-  'server-pool/docs/adr/readme.md',
-  'server-pool/docs/platform-facts/readme.md',
+  'server-pool/docs/platform-facts/index.md',
   'ph-plugin/docs/GLOSSARY.md',
-  'ph-plugin/docs/adr/readme.md',
   'ship/docs/GLOSSARY.md',
-  'ship/docs/adr/readme.md',
-  'ship/docs/platform-facts/readme.md',
+  'ship/docs/platform-facts/index.md',
   'tooling/docs/GLOSSARY.md',
-  'tooling/docs/adr/readme.md',
-  'tooling/docs/platform-facts/readme.md',
+  'tooling/docs/platform-facts/index.md',
 ];
 
 /** How many subjects a conflict's `landedBy` carries at most. */
