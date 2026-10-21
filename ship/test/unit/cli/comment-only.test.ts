@@ -19,8 +19,8 @@ import {
   commitChanges,
   headSha,
   makeGitRepo,
-} from '../../../../test/helpers/worktree-fixture-git.js';
-import { mustRun } from '../../../../test/helpers/worktree-fixture.js';
+} from '../../../../tooling/test/helpers/worktree-fixture-git.js';
+import { mustRun } from '../../../../tooling/test/helpers/worktree-fixture.js';
 
 // A test spawning git runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });

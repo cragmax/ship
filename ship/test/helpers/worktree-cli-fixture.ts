@@ -3,7 +3,7 @@
  * it provisions and tears down — the real `.gitignore` (so clean-status checks run against the
  * actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci` installs
  * offline, and fake `build` / `test` scripts. The plain process and template-copy helpers they
- * build on are root's `test/helpers/worktree-fixture.ts` (Repo ADR-0006 decision 3).
+ * build on are tooling's `tooling/test/helpers/worktree-fixture.ts` (Repo ADR-0006 decision 3).
  */
 
 import {
@@ -32,7 +32,7 @@ import {
   realGitignore,
   runIn,
   templatesRoot,
-} from '../../../test/helpers/worktree-fixture.js';
+} from '../../../tooling/test/helpers/worktree-fixture.js';
 import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
@@ -243,7 +243,7 @@ function parseEnvelope(stdout: string, stderr: string): ResultBase {
  * loader (by absolute URL, so any `cwd` works). The default cwd is the OS
  * temp dir, so a relative or defaulted path can never resolve into a real
  * checkout. `options.env` is laid over the fixture env: a key must match the existing spelling to
- * replace it — see `prependPath` in `test/helpers/worktree-fixture-git.ts`.
+ * replace it — see `prependPath` in `tooling/test/helpers/worktree-fixture-git.ts`.
  */
 export function runCli<T extends ResultBase = ResultBase>(
   args: readonly string[],

@@ -10,8 +10,8 @@ import {
   commitChanges,
   headSha,
   makeGitRepo,
-} from '../../../../test/helpers/worktree-fixture-git.js';
-import { mustRun, runIn } from '../../../../test/helpers/worktree-fixture.js';
+} from '../../../../tooling/test/helpers/worktree-fixture-git.js';
+import { mustRun, runIn } from '../../../../tooling/test/helpers/worktree-fixture.js';
 
 // A test spawning git or the CLI through tsx runs near 5s under the gate's parallel load.
 vi.setConfig({ testTimeout: 20_000 });

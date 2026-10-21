@@ -17,9 +17,13 @@ import {
   headSha,
   makeBareOrigin,
   makeGitRepo,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { makeFixtureRepo, prebuildNpmTemplate } from '../helpers/worktree-cli-fixture.js';
-import { copyTemplateRepo, mustRun, porcelain } from '../../../test/helpers/worktree-fixture.js';
+import {
+  copyTemplateRepo,
+  mustRun,
+  porcelain,
+} from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');

@@ -27,9 +27,9 @@ import {
   makeGitRepo,
   stagedNames,
   type Changes,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain } from '../../../test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.

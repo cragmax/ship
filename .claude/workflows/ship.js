@@ -2554,6 +2554,7 @@ const PLATFORM_WIDE_PATHS = [
   'vitest.integration.config.ts',
   'vitest.bodies.config.ts',
   'test/helpers/',
+  'tooling/test/helpers/',
   'package.json',
   'package-lock.json',
 ];

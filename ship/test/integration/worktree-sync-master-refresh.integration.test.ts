@@ -23,13 +23,13 @@ import {
   snapshot,
   withOriginAndBatch,
   type FixtureRun,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
   prebuildNpmTemplate,
   runSyncMaster,
 } from '../helpers/worktree-cli-fixture.js';
-import { mustRun, porcelain } from '../../../test/helpers/worktree-fixture.js';
+import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ADR_INDEX = 'docs/adr/readme.md';

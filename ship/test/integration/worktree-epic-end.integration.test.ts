@@ -31,7 +31,7 @@ import {
   setFakePrEditExit,
   writeFakeGh,
   type FakePrComment,
-} from '../../../test/helpers/worktree-fixture-git.js';
+} from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
