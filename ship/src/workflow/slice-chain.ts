@@ -392,7 +392,12 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
-const TEST_PREFIXES: readonly string[] = ['test/', 'server-pool/test/', 'ship/test/'];
+const TEST_PREFIXES: readonly string[] = [
+  'framework/test/',
+  'tooling/test/',
+  'server-pool/test/',
+  'ship/test/',
+];
 
 /**
  * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files
@@ -429,12 +434,12 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
 
 /**
  * Review the Script API TSDoc the slice reaches, amending its commit with any fix, when the slice
- * changes a path under `src/`; `sha` its amend.
+ * changes a path under `framework/src/`; `sha` its amend.
  */
 async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
-  if (!s.files.some((path) => path.startsWith('src/'))) {
-    return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
+  if (!s.files.some((path) => path.startsWith('framework/src/'))) {
+    return { next: { ...s, scriptApiTsdoc: 'no framework/src/ change' } };
   }
   const values = {
     ...sliceCommitValues(s),

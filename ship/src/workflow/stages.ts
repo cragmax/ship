@@ -62,9 +62,9 @@ export const PROBE_CAP_MINUTES = 15;
 export const PROBES_PER_STAGE = 3;
 
 const CODE_PREFIXES: readonly string[] = [
-  'src/',
+  'framework/src/',
   'tooling/',
-  'test/',
+  'framework/test/',
   'server-pool/',
   'ship/src/',
   'ship/test/',
@@ -111,7 +111,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Script API TSDoc (src/ only), land',
+      'Script API TSDoc (framework/src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,

@@ -254,7 +254,7 @@ export const REPORT_DIR = `${RUN_ROOT}/reports`;
 export const BATCH = `${RUN_ROOT}/batch`;
 
 /** The files the fake tdd's slice commit changes. */
-const TDD_FILES = ['tooling/x.ts', 'test/unit/tooling/x.test.ts'];
+const TDD_FILES = ['tooling/x.ts', 'tooling/test/unit/x.test.ts'];
 
 /**
  * A GREEN tdd over {@link TDD_FILES} for issue 7, with one lease line, no probe, its tracer's
@@ -268,10 +268,10 @@ export const TDD_GREEN = {
   probes: [],
   evidence: {
     kind: 'tracer',
-    test: 'test/unit/tooling/x.test.ts › adds x',
+    test: 'tooling/test/unit/x.test.ts › adds x',
     pseudocode: 'x()\n  returns 1',
     red: 'AssertionError: expected undefined to be 1',
-    green: '✓ test/unit/tooling/x.test.ts › adds x',
+    green: '✓ tooling/test/unit/x.test.ts › adds x',
     reason: '',
   },
   recorded: [],
