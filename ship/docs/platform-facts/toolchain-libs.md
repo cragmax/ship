@@ -1,6 +1,6 @@
 # Toolchain & library behaviour
 
-Part of [Platform facts](index.md); the record format, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`. This category covers the **tools** Ship drives (`gh`); facts here are stamped against the version in their **Platform** line, and a release can move them.
+This category covers the **tools** Ship drives (`gh`); facts here are stamped against the version in their **Platform** line, and a release can move them.
 
 ## Ship PF-1 · `gh issue view --json blockedBy,subIssues` nodes carry no repository field
 
