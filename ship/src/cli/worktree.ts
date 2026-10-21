@@ -272,11 +272,11 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   'sync-master': {
     schema: SyncMasterResultSchema,
     valueFlags: [],
-    switchFlags: ['--continue'],
+    switchFlags: [],
     rest: NO_REST,
     run: async (args) => {
       const { syncMaster } = await import('./commands/sync-master.js');
-      return syncMaster({ batch: args.target, continue: args.switches.has('--continue') });
+      return syncMaster({ batch: args.target });
     },
   },
   bump: {

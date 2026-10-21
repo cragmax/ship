@@ -68,7 +68,6 @@ const SYNC_NO_UPSTREAM = {
   upstream: null,
   conflicts: [],
   version: null,
-  pending: [],
 };
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
@@ -362,7 +361,6 @@ describe('runShip — the retro', () => {
           upstream: null,
           conflicts: [],
           version: null,
-          pending: [],
         },
       },
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
@@ -1113,7 +1111,6 @@ describe('runShip — a stop before the publish carries no recovery', () => {
           upstream: null,
           conflicts: [],
           version: null,
-          pending: [],
         },
       },
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',

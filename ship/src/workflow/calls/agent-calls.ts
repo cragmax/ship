@@ -27,7 +27,6 @@ import type {
   PrWriterOutputSchema,
   ProbeRecordSchema,
   ReadinessVerdictSchema,
-  ResolverOutputSchema,
   RetroFindingSchema,
   RetroOutputSchema,
   ReviewOutputSchema,
@@ -43,7 +42,6 @@ import {
   type IssueReadinessValues,
   type ScriptApiTsdocValues,
   type PrWriterValues,
-  type ResolverValues,
   type RetroValues,
   type SliceReviewValues,
   type TddValues,
@@ -119,9 +117,6 @@ type RetroOutput = z.infer<typeof RetroOutputSchema>;
 
 /** The PR writer's answer. */
 export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
-
-/** The doc-index resolver's answer. */
-type ResolverOutput = z.infer<typeof ResolverOutputSchema>;
 
 /**
  * `issue-overlap`'s output schema, built per call: a pair's endpoints and a
@@ -204,12 +199,6 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
-    ),
-  resolver: (hooks: WorkflowHooks, values: ResolverValues, tag: string) =>
-    askAgent<ResolverOutput>(
-      hooks,
-      PROMPTS.resolver(values),
-      agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
     ),
   epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
     askAgent<EpicReviewOutput>(

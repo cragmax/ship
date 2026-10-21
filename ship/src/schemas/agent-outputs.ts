@@ -188,14 +188,6 @@ export const ScriptApiTsdocOutputSchema = z.object({
   summary: z.string(),
 });
 
-/** The doc-index resolver's answer. */
-export const ResolverOutputSchema = z.object({
-  /** `resolved`: every pending path edited clean; `unresolvable`: not. */
-  verdict: z.enum(['resolved', 'unresolvable']),
-  /** What it did, one line. */
-  summary: z.string(),
-});
-
 /** One acceptance criterion as the epic review traced it. */
 const EpicCriterionSchema = z.object({
   /** The issue it belongs to. */
@@ -275,7 +267,6 @@ export const AGENT_OUTPUTS = {
   testReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,
   scriptApiTsdoc: ScriptApiTsdocOutputSchema,
-  resolver: ResolverOutputSchema,
   epicReview: EpicReviewOutputSchema,
   retro: RetroOutputSchema,
   prWriter: PrWriterOutputSchema,

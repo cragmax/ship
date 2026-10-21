@@ -1,15 +1,10 @@
 /**
  * The epic end's merge step (Ship ADR-0001 decision 12) — the one workflow home
  * of the `origin/master` merge, which the `resync` workflow reuses, passing
- * `{ batch, reportDir, tag: 'resync' }`: `sync-master`; on
- * `needs-resolution`, the doc-index resolver (it edits the pending paths
- * and never stages); then `sync-master --continue`, which stages by name
- * itself.
+ * `{ batch, reportDir, tag: 'resync' }`.
  *
  * A code conflict or any failure stops the epic before its bump and push;
- * the caller reads {@link SyncStepResult.verdict}. A resolver that returns
- * nothing, or does not resolve, leaves the merge in progress in the batch
- * for the maintainer — `--continue` is never run over unresolved paths.
+ * the caller reads {@link SyncStepResult.verdict}.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -17,36 +12,35 @@
 
 import type { ConflictPath, VersionLine } from '../../cli/envelope/types-run.js';
 
-import { AGENT_CALLS } from '../calls/agent-calls.js';
 import type { WorkflowHooks } from '../runtime.types.js';
 import { envelopeProblem, runPlace, runTool, type SyncMasterOutput } from '../calls/tool-calls.js';
 
 /** How the merge step ended. `code-conflict` and `failed` stop the epic. */
-export type SyncVerdict = 'up-to-date' | 'merged' | 'resolved' | 'code-conflict' | 'failed';
+export type SyncVerdict = 'up-to-date' | 'merged' | 'code-conflict' | 'failed';
 
 /** The merge step's result. */
 export interface SyncStepResult {
   /** How it ended. */
   readonly verdict: SyncVerdict;
-  /** The merge commit; `null` unless `merged` or `resolved`. */
+  /** The merge commit; `null` unless `merged`. */
   readonly commit: string | null;
   /**
    * `sync-master`'s `upstream`: the `origin/master` sha the batch contains
-   * after the step; `null` unless `up-to-date`, `merged` or `resolved`.
+   * after the step; `null` unless `up-to-date` or `merged`.
    */
   readonly upstream: string | null;
   /** One line on what happened. */
   readonly message: string;
   /**
-   * The start's classified conflicts — what landed each code conflict included; `[]` when it named
-   * none.
+   * `sync-master`'s classified conflicts — what landed each code conflict included; `[]` when it
+   * named none.
    */
   readonly conflicts: readonly ConflictPath[];
-  /** The versions the start's merge saw and ended on; `null` when it named none. */
+  /** The versions its merge saw and ended on; `null` when it named none. */
   readonly version: VersionLine | null;
 }
 
-/** How the step ended, before the start's findings are added. */
+/** How the step ended, before `sync-master`'s findings are added. */
 type SyncOutcome = Pick<SyncStepResult, 'verdict' | 'commit' | 'upstream' | 'message'>;
 
 /** Where the step runs. */
@@ -60,60 +54,26 @@ interface SyncStepContext {
 }
 
 /**
- * Merge `origin/master` into the batch, resolving doc-index conflicts.
+ * Merge `origin/master` into the batch.
  *
  * @param hooks - The workflow hooks.
  * @param ctx - The batch and its report directory.
- * @returns Resolves to the step's result, carrying the start's `conflicts`
+ * @returns Resolves to the step's result, carrying `sync-master`'s `conflicts`
  *   and `version` on every path; never rejects on a tool's outcome.
  */
 export async function syncMasterStep(
   hooks: WorkflowHooks,
   ctx: SyncStepContext,
 ): Promise<SyncStepResult> {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
-  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
-  if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
-  }
-  return { ...syncVerdict(start, 'merged'), ...found };
-}
-
-/**
- * Run the resolver over the pending doc indexes, then finish the merge.
- *
- * @returns Resolves to `resolved`, or `failed` naming what stopped it.
- */
-async function resolveAndContinue(
-  hooks: WorkflowHooks,
-  ctx: SyncStepContext,
-  pending: readonly string[],
-): Promise<SyncOutcome> {
-  if (pending.length === 0) {
-    return syncFailure(
-      `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
-    );
-  }
-  const values = { batch: ctx.batch, pending, reportPath: `${ctx.reportDir}/resolve.md` };
-  const answer = await AGENT_CALLS.resolver(hooks, values, ctx.tag);
-  if (answer?.verdict !== 'resolved') {
-    const said = answer === null ? 'returned nothing' : `said ${answer.summary}`;
-    return syncFailure(`the resolver ${said}; merge left in progress in ${ctx.batch}`);
-  }
-  const done = await runTool(
-    hooks,
-    'sync-master',
-    [ctx.batch, '--continue'],
-    runPlace(ctx, `${ctx.tag}-continue`),
-  );
-  return syncVerdict(done, 'resolved');
+  const out = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
+  return { ...syncVerdict(out), conflicts: out?.conflicts ?? [], version: out?.version ?? null };
 }
 
 /**
  * A `sync-master` output's verdict. A merge whose output named no `upstream` carries `null`: the
  * master check then fails, not the sync.
  */
-function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'): SyncOutcome {
+function syncVerdict(out: SyncMasterOutput | null): SyncOutcome {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
     return {
       verdict: 'up-to-date',
@@ -124,7 +84,7 @@ function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'
   }
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
-      verdict: merged,
+      verdict: 'merged',
       commit: out.commit,
       upstream: out.upstream ?? null,
       message: `merged origin/master as ${out.commit}`,
@@ -134,15 +94,5 @@ function syncVerdict(out: SyncMasterOutput | null, merged: 'merged' | 'resolved'
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
     return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
-  return syncFailure(message);
-}
-
-/**
- * A `failed` outcome.
- *
- * @param message - What stopped the step.
- * @returns The outcome.
- */
-function syncFailure(message: string): SyncOutcome {
   return { verdict: 'failed', commit: null, upstream: null, message };
 }

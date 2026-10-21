@@ -1,20 +1,16 @@
 /**
- * `sync-master <batch> [--continue]` merges `origin/master` into the batch (Ship ADR-0001 decision
- * 12). A `git merge-tree` probe refuses a code conflict before merging; a doc-index conflict stops,
- * `MERGE_HEAD` kept, for a resolver who edits, never stages: `--continue` stages and commits,
- * never resetting, which would drop `MERGE_HEAD` and the second parent. Only when both
- * sides moved the version does the version rule ({@link planVersionRule}) hold the merge
- * `--no-ff --no-commit`: an identical bump stops before its commit.
+ * `sync-master <batch>` merges `origin/master` into the batch (Ship ADR-0001 decision 12). A
+ * `git merge-tree` probe refuses a code conflict before merging. Only when both sides moved the
+ * version does the version rule ({@link planVersionRule}) hold the merge `--no-ff --no-commit`: an
+ * identical bump stops before its commit.
  *
- * Invariant: a `failed` envelope never leaves a merge this call started or continued in progress:
- * it is aborted; a failed abort adds an `abort` error. `refused` / `conflict` leave the merge as
- * found or as the resolver needs. Nothing is mutated, not even the fetch's remote-tracking refs,
- * before the batch is verified a clean linked worktree, no slice linked in. Start mode refreshes
- * the merged tree before reporting, `--continue` never; a refresh failing after a clean merge keeps
- * that commit (`merged`, `commit` / `upstream` set, `install` / `build` failed), no rollback.
+ * Invariant: a `failed` envelope never leaves a merge this call started in progress: it is
+ * aborted; a failed abort adds an `abort` error. `refused` leaves the batch as found. Nothing is
+ * mutated, not even the fetch's remote-tracking refs, before the batch is verified a clean linked
+ * worktree, no slice linked in. The merged tree is refreshed before reporting; a refresh failing
+ * after a clean merge keeps that commit (`merged`, `commit` / `upstream` set, `install` / `build`
+ * failed), no rollback.
  */
-
-import { readFileSync } from 'node:fs';
 
 import { sortedSet } from '../../../../tooling/lib/strings.js';
 
@@ -48,38 +44,15 @@ import {
   type VersionRule,
 } from './sync-master-version.js';
 import type { ConflictKind, ConflictPath, SyncMasterResult } from '../envelope/types-run.js';
-import { Conflict, Refusal, recordFailure, StepFailure } from '../envelope/types.js';
-
-/**
- * The doc indexes, the root's and each home's glossary and platform-facts index (Repo
- * ADR-0007): a conflict in one goes to a resolver, never refuses. An ADR folder has no index.
- */
-const DOC_INDEX_PATHS: readonly string[] = [
-  'docs/GLOSSARY.md',
-  'docs/platform-facts/index.md',
-  'framework/docs/GLOSSARY.md',
-  'framework/docs/platform-facts/index.md',
-  'server-pool/docs/GLOSSARY.md',
-  'server-pool/docs/platform-facts/index.md',
-  'ph-plugin/docs/GLOSSARY.md',
-  'ship/docs/GLOSSARY.md',
-  'ship/docs/platform-facts/index.md',
-  'tooling/docs/GLOSSARY.md',
-  'tooling/docs/platform-facts/index.md',
-];
+import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /** How many subjects a conflict's `landedBy` carries at most. */
 const LANDED_BY_LIMIT = 5;
-
-/** A conflict-marker line git writes into a conflicted file. */
-const MARKER_LINE = /^(?:<{7} |={7}\r?$|>{7} )/mu;
 
 /** Inputs of {@link syncMaster}. */
 interface SyncMasterInput {
   /** The batch worktree, absolute with forward slashes. */
   readonly batch: string;
-  /** Finish a merge stopped for a resolver instead of starting one. */
-  readonly continue: boolean;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
 }
@@ -88,21 +61,19 @@ interface SyncMasterInput {
 interface Run {
   readonly batch: string;
   readonly result: SyncMasterResult;
-  /** Set once the merge in progress is this call's: started, or verified to continue. */
+  /** Set once this call starts its merge. */
   owned: boolean;
   /** This call's log directory, created at the first log. */
   logDir: string | null;
 }
 
 /**
- * Merge `origin/master` into the batch, or finish a merge stopped for a
- * resolver, keeping the file header's invariant.
+ * Merge `origin/master` into the batch, keeping the file header's invariant.
  *
  * @returns The envelope: `ok` with `outcome` `up-to-date` or `merged`,
  *   `upstream` naming the `origin/master` sha the batch then contains;
- *   `conflict` with `needs-resolution` and `pending`; `refused` (harvest's
- *   linked-worktree reasons, `batch-dirty`, `slices-live`, `code-conflict`,
- *   `no-merge-in-progress`, `unresolved`); or `failed` with the step.
+ *   `refused` (harvest's linked-worktree reasons, `batch-dirty`,
+ *   `slices-live`, `code-conflict`); or `failed` with the step.
  */
 export function syncMaster(input: SyncMasterInput): SyncMasterResult {
   const { batch, selfPath = import.meta.filename } = input;
@@ -120,15 +91,13 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
       upstream: null,
       conflicts: [],
       version: null,
-      pending: [],
       refreshed: { ci: false, build: false },
       logs: [],
     },
   };
   try {
     assertLinkedWorktree(batch, selfPath);
-    if (input.continue) finish(run);
-    else start(run);
+    start(run);
   } catch (err) {
     recordFailure(run.result, err);
     if (run.result.status === 'failed' && run.owned) abortMerge(run);
@@ -137,10 +106,10 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
 }
 
 /**
- * Start mode: fetch, probe, merge.
+ * Fetch, probe, merge; a held merge is settled, refreshed, then committed.
  *
- * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; Conflict `merge` when doc-index
- *   paths await a resolver; StepFailure per failed step, {@link planVersionRule}'s before merging.
+ * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; StepFailure per failed step,
+ *   {@link planVersionRule}'s before merging.
  */
 function start(run: Run): void {
   const { batch, result } = run;
@@ -168,60 +137,29 @@ function start(run: Run): void {
     refresh(run, mergeBase);
     return;
   }
-  const pending = settleStoppedMerge(batch, rule);
+  settleStoppedMerge(batch, rule);
   refresh(run, mergeBase);
-  if (pending.length > 0) {
-    result.pending = pending;
-    result.outcome = 'needs-resolution';
-    throw new Conflict(
-      'merge',
-      `doc-index conflicts await a resolver: ${pending.join(', ')}`,
-      pending,
-    );
-  }
-  finish(run);
+  commitMerge(run);
+  recordMerged(run, upstream);
 }
 
 /**
- * Settle what needs no resolver: the version rule's `package.json` and lockfile, or a conflicted
- * lockfile regenerated; returns the doc-index paths left, sorted. Throws StepFailure `merge` for an
- * unmerged path neither settled here nor a doc index; `version` or `lockfile` when settling fails.
+ * Settle a stopped merge: the version rule's `package.json` and lockfile, or a conflicted lockfile
+ * regenerated. Throws StepFailure `merge` for any other unmerged path, one the probe missed;
+ * `version` or `lockfile` when settling fails.
  */
-function settleStoppedMerge(batch: string, rule: VersionRule | null): string[] {
+function settleStoppedMerge(batch: string, rule: VersionRule | null): void {
   const unmerged = unmergedPaths(batch, 'merge');
   const settled = rule === null ? [LOCKFILE] : [LOCKFILE, PACKAGE_JSON];
-  const pending = unmerged.filter((path) => !settled.includes(path));
-  assertOnlyDocIndexes(pending);
+  const other = unmerged.filter((path) => !settled.includes(path));
+  if (other.length > 0) {
+    throw new StepFailure('merge', `merge conflicted beyond the probe: ${other.join(', ')}`);
+  }
   if (rule !== null) {
     applyVersionRule(batch, rule.merged, rule.target, unmerged.includes(LOCKFILE));
   } else if (unmerged.includes(LOCKFILE)) {
     regenerateLockfile(batch, true);
   }
-  return pending;
-}
-
-/**
- * `--continue`, and start mode's own finish: stage the resolved doc indexes by name, then commit
- * through the hooks. Throws Refusal `no-merge-in-progress`; `unresolved` per {@link assertResolved}
- * (nothing staged then) or when still unmerged after staging; StepFailure `continue` or `commit`.
- */
-function finish(run: Run): void {
-  const { batch, result } = run;
-  if (!refExists(batch, 'MERGE_HEAD')) {
-    throw new Refusal('no-merge-in-progress', 'preconditions', `${batch} has no merge in progress`);
-  }
-  run.owned = true;
-  const upstream = git(batch, ['rev-parse', '--verify', 'MERGE_HEAD^{commit}'], 'continue');
-  result.pending = unmergedPaths(batch, 'continue');
-  assertResolved(batch, result.pending);
-  if (result.pending.length > 0) git(batch, ['add', '--', ...result.pending], 'continue');
-  const left = unmergedPaths(batch, 'continue');
-  if (left.length > 0) {
-    throw new Refusal('unresolved', 'continue', `still unmerged after staging: ${left.join(', ')}`);
-  }
-  commitMerge(run);
-  result.pending = [];
-  recordMerged(run, upstream);
 }
 
 /**
@@ -299,8 +237,7 @@ function probeConflicts(batch: string): string[] {
 /** A conflicted path's kind; a `package.json` conflict the version rule can't resolve is `code`. */
 function conflictKind(path: string, packageResolved: boolean): ConflictKind {
   if (path === LOCKFILE) return 'lockfile';
-  if (path === PACKAGE_JSON && packageResolved) return 'package';
-  return DOC_INDEX_PATHS.includes(path) ? 'doc-index' : 'code';
+  return path === PACKAGE_JSON && packageResolved ? 'package' : 'code';
 }
 
 /**
@@ -400,36 +337,6 @@ function refresh(run: Run, mergeBase: string): void {
  */
 function unmergedPaths(batch: string, step: string): string[] {
   return sortedSet(gitPaths(batch, ['diff', '--name-only', '--diff-filter=U'], step));
-}
-
-/**
- * Require the merge to have stopped only on doc indexes, as the probe promised.
- *
- * @throws StepFailure `merge` naming the paths outside them; the caller then aborts.
- */
-function assertOnlyDocIndexes(pending: readonly string[]): void {
-  const other = pending.filter((path) => !DOC_INDEX_PATHS.includes(path));
-  if (other.length > 0) {
-    throw new StepFailure('merge', `merge conflicted outside the doc indexes: ${other.join(', ')}`);
-  }
-}
-
-/**
- * Refuse unless every pending path is a doc index free of conflict markers.
- *
- * @throws Refusal `unresolved` naming the offending paths.
- */
-function assertResolved(batch: string, pending: readonly string[]): void {
-  const outside = pending.filter((path) => !DOC_INDEX_PATHS.includes(path));
-  if (outside.length > 0) {
-    throw new Refusal('unresolved', 'continue', `not a doc index: ${outside.join(', ')}`);
-  }
-  const marked = pending.filter((path) =>
-    MARKER_LINE.test(readFileSync(`${batch}/${path}`, 'utf8')),
-  );
-  if (marked.length > 0) {
-    throw new Refusal('unresolved', 'continue', `conflict markers remain in ${marked.join(', ')}`);
-  }
 }
 
 /**

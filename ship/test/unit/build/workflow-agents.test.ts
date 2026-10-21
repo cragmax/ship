@@ -11,7 +11,6 @@ describe('workflow agents', () => {
       'issue-overlap',
       'issue-readiness',
       'pr',
-      'resolve-index-conflicts',
       'retro',
       'runner',
       'script-api-tsdoc',

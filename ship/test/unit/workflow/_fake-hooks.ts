@@ -150,41 +150,6 @@ const RUN_ROOT = 'C:/src/ph-runs/7';
 /** Fields every `ok` worktree-CLI output carries. */
 export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
-/** The doc index the conflict fakes stop on. */
-export const DOC_INDEX = 'docs/GLOSSARY.md';
-
-/** A `sync-master` start stopped on {@link DOC_INDEX}, as the CLI's own tests pin it. */
-export const DOC_INDEX_STOP = {
-  exitCode: 1,
-  envelopePath: 'e.json',
-  status: 'conflict',
-  outcome: 'needs-resolution',
-  commit: null,
-  upstream: null,
-  conflicts: [{ path: DOC_INDEX, kind: 'doc-index', landedBy: ['docs: theirs'] }],
-  version: null,
-  pending: [DOC_INDEX],
-  errors: [],
-};
-
-/** The `--continue` that commits the resolved merge. */
-export const DOC_INDEX_MERGED = {
-  ...OK,
-  outcome: 'merged',
-  commit: 'merge1',
-  upstream: 'origin1',
-  conflicts: [],
-  version: null,
-  pending: [],
-};
-
-/** A doc-index conflict at a `ship` epic end: the start, the resolver, then `--continue`. */
-export const DOC_INDEX_CONFLICT = {
-  'runner:sync-master:list': DOC_INDEX_STOP,
-  resolver: { verdict: 'resolved', summary: 'kept both rows' },
-  'runner:sync-master:list-continue': DOC_INDEX_MERGED,
-};
-
 /**
  * A `live-runs` answer holding `runs`.
  *
@@ -369,7 +334,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     upstream: 'origin0',
     conflicts: [],
     version: null,
-    pending: [],
   },
   'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
   'runner:check-master': {

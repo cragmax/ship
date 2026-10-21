@@ -12,7 +12,7 @@ import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { runResync } from '../../../src/workflow/resync.js';
 
 import type { FakeRun } from './_fake-hooks.js';
-import { BRANCH, DOC_INDEX_CONFLICT, resyncHooks } from './_fake-resync.js';
+import { BRANCH, MERGED, resyncHooks } from './_fake-resync.js';
 
 const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
@@ -44,15 +44,15 @@ describe('resync.js — a fresh render of the current sources', () => {
     expect(meta).toEqual(RESYNC_META);
   });
 
-  it('runs the resolution path with the same report, calls, timeline and phases as the source', async () => {
-    const source = resyncHooks(DOC_INDEX_CONFLICT);
-    const rendered = resyncHooks(DOC_INDEX_CONFLICT);
+  it('runs the merge path with the same report, calls, timeline and phases as the source', async () => {
+    const source = resyncHooks(MERGED);
+    const rendered = resyncHooks(MERGED);
 
     const expected = await runResync(source.hooks, BRANCH);
     const report = await runRendered(resyncJs, rendered, BRANCH);
 
     expect(report).toEqual(expected);
-    expect(report).toMatchObject({ status: 'done', sync: { verdict: 'resolved' } });
+    expect(report).toMatchObject({ status: 'done', sync: { verdict: 'merged' } });
     expect(rendered.calls).toEqual(source.calls);
     expect(rendered.timeline).toEqual(source.timeline);
     expect(rendered.phases).toEqual(source.phases);

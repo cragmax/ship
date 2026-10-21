@@ -32,7 +32,7 @@ import {
 import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
-const DOC_INDEX = 'docs/GLOSSARY.md';
+const HOOK_SAYS = 'fixture hook: commit refused';
 // What the npm fixture's `build` script writes (`dist/` is ignored).
 const BUILT = 'dist/index.js';
 // The npm fixture's `build` script fails while this file exists.
@@ -147,7 +147,7 @@ describe('sync-master batch refresh', () => {
     const r = runSyncMaster(run.batch);
 
     expect(r.code).toBe(0);
-    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', pending: [] });
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
     expect(r.json.conflicts).toMatchObject([{ path: LOCKFILE, kind: 'lockfile' }]);
     expect(r.json.refreshed).toEqual({ ci: true, build: true });
     expect(parents(run.batch)).toEqual([ours, theirs]);
@@ -239,15 +239,12 @@ describe('sync-master batch refresh', () => {
     expect(snapshot(run.batch)).toMatchObject({ porcelain: '', merging: false });
   });
 
-  it('aborts its merge when the refresh before a resolver fails', TIMEOUT, () => {
+  it('aborts its held merge when the refresh before the commit fails', TIMEOUT, () => {
     const run = makeNpmRun();
-    const ours = commitChanges(run.batch, { write: { [DOC_INDEX]: '- ours\n' } }, 'docs: ours');
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    bumpOrigin(run, 'patch', 'chore: theirs');
     advanceOrigin(root, run.bare, {
-      write: {
-        [DOC_INDEX]: '- theirs\n',
-        'framework/src/feature.ts': 'master\n',
-        [FAIL_BUILD]: '',
-      },
+      write: { 'framework/src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
     const r = runSyncMaster(run.batch);
@@ -255,6 +252,21 @@ describe('sync-master batch refresh', () => {
     expect(r.code).toBe(1);
     expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
     expect(r.json.errors.map((e) => e.step)).toEqual(['build']);
+    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+  });
+
+  it('aborts its held merge when the commit hook fails', TIMEOUT, () => {
+    const run = makeNpmRun();
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    bumpOrigin(run, 'patch', 'chore: theirs');
+    installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
+
+    const r = runSyncMaster(run.batch);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['commit']);
+    expect(readFileSync(r.json.logs.at(-1) ?? '', 'utf8')).toContain(HOOK_SAYS);
     expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
   });
 });

@@ -35,7 +35,6 @@ const STAGES = {
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
-  resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
@@ -99,8 +98,8 @@ const RESYNC_PHASES = [
   {
     title: RESYNC_PHASE_TITLES.merge,
     detail:
-      "the epic end's merge step: doc indexes resolved, the version line re-bumped, " +
-      'a code conflict stops',
+      "the epic end's merge step: the lockfile regenerated, the version line re-bumped, " +
+      'any other conflict stops',
   },
   {
     title: RESYNC_PHASE_TITLES.push,
@@ -700,12 +699,6 @@ const PROMPTS = {
   standardsReview: (values) => sliceReviewPrompt(values),
   scriptApiTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  resolver: (values) =>
-    [
-      `Batch worktree: ${values.batch}`,
-      `Pending paths: ${values.pending.join(', ')}`,
-      `Report file: ${values.reportPath}`,
-    ].join('\n'),
   epicReview: (values) =>
     [
       `Batch worktree: ${values.batch}`,
@@ -786,8 +779,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -873,8 +864,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -957,8 +946,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1022,8 +1009,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1078,8 +1063,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1132,8 +1115,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1187,8 +1168,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1254,8 +1233,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1311,8 +1288,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1361,8 +1336,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1379,10 +1352,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      outcome: {
-        type: ['string', 'null'],
-        enum: ['up-to-date', 'merged', 'needs-resolution', null],
-      },
+      outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', null] },
       commit: { type: ['string', 'null'] },
       upstream: { type: ['string', 'null'] },
       conflicts: {
@@ -1391,7 +1361,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           type: 'object',
           properties: {
             path: { type: 'string' },
-            kind: { type: 'string', enum: ['lockfile', 'doc-index', 'package', 'code'] },
+            kind: { type: 'string', enum: ['lockfile', 'package', 'code'] },
             landedBy: { type: 'array', items: { type: 'string' } },
           },
           required: ['path', 'kind', 'landedBy'],
@@ -1407,18 +1377,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
         },
         required: ['base', 'ours', 'theirs', 'result'],
       },
-      pending: { type: 'array', items: { type: 'string' } },
     },
-    required: [
-      'status',
-      'errors',
-      'outcome',
-      'commit',
-      'upstream',
-      'conflicts',
-      'version',
-      'pending',
-    ],
+    required: ['status', 'errors', 'outcome', 'commit', 'upstream', 'conflicts', 'version'],
   },
   bump: {
     type: 'object',
@@ -1449,8 +1409,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1503,8 +1461,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1560,8 +1516,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1630,8 +1584,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1680,8 +1632,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1731,8 +1681,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1782,8 +1730,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -2004,14 +1950,6 @@ const AGENT_OUTPUT_SCHEMAS = {
       summary: { type: 'string' },
     },
     required: ['verdict', 'sha', 'summary'],
-  },
-  resolver: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['resolved', 'unresolvable'] },
-      summary: { type: 'string' },
-    },
-    required: ['verdict', 'summary'],
   },
   epicReview: {
     type: 'object',
@@ -2468,12 +2406,6 @@ const AGENT_CALLS = {
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
-    ),
-  resolver: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.resolver(values),
-      agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
     ),
   epicReview: (hooks, values, tag) =>
     askAgent(
@@ -3020,34 +2952,10 @@ function bumpText(bump) {
 }
 
 async function syncMasterStep(hooks, ctx) {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
-  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
-  if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
-  }
-  return { ...syncVerdict(start, 'merged'), ...found };
+  const out = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
+  return { ...syncVerdict(out), conflicts: out?.conflicts ?? [], version: out?.version ?? null };
 }
-async function resolveAndContinue(hooks, ctx, pending) {
-  if (pending.length === 0) {
-    return syncFailure(
-      `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
-    );
-  }
-  const values = { batch: ctx.batch, pending, reportPath: `${ctx.reportDir}/resolve.md` };
-  const answer = await AGENT_CALLS.resolver(hooks, values, ctx.tag);
-  if (answer?.verdict !== 'resolved') {
-    const said = answer === null ? 'returned nothing' : `said ${answer.summary}`;
-    return syncFailure(`the resolver ${said}; merge left in progress in ${ctx.batch}`);
-  }
-  const done = await runTool(
-    hooks,
-    'sync-master',
-    [ctx.batch, '--continue'],
-    runPlace(ctx, `${ctx.tag}-continue`),
-  );
-  return syncVerdict(done, 'resolved');
-}
-function syncVerdict(out, merged) {
+function syncVerdict(out) {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
     return {
       verdict: 'up-to-date',
@@ -3058,7 +2966,7 @@ function syncVerdict(out, merged) {
   }
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
-      verdict: merged,
+      verdict: 'merged',
       commit: out.commit,
       upstream: out.upstream ?? null,
       message: `merged origin/master as ${out.commit}`,
@@ -3068,9 +2976,6 @@ function syncVerdict(out, merged) {
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
     return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
-  return syncFailure(message);
-}
-function syncFailure(message) {
   return { verdict: 'failed', commit: null, upstream: null, message };
 }
 

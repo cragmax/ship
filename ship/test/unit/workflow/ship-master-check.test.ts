@@ -31,7 +31,6 @@ const SYNC_MERGED = {
   upstream: 'origin1',
   conflicts: [],
   version: null,
-  pending: [],
 };
 
 describe('runShip — the master check', () => {
@@ -327,7 +326,6 @@ describe('runShip — the master check', () => {
         upstream: null,
         conflicts: [],
         version: null,
-        pending: [],
       },
       'runner:preflight:list': {
         ...PREFLIGHT_OK,

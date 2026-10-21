@@ -13,7 +13,7 @@ export const meta = {
     {
       title: 'Merge',
       detail:
-        "the epic end's merge step: doc indexes resolved, the version line re-bumped, a code conflict stops",
+        "the epic end's merge step: the lockfile regenerated, the version line re-bumped, any other conflict stops",
     },
     {
       title: 'Push',
@@ -73,7 +73,6 @@ const STAGES = {
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
   scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
-  resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
@@ -137,8 +136,8 @@ const RESYNC_PHASES = [
   {
     title: RESYNC_PHASE_TITLES.merge,
     detail:
-      "the epic end's merge step: doc indexes resolved, the version line re-bumped, " +
-      'a code conflict stops',
+      "the epic end's merge step: the lockfile regenerated, the version line re-bumped, " +
+      'any other conflict stops',
   },
   {
     title: RESYNC_PHASE_TITLES.push,
@@ -271,12 +270,6 @@ const PROMPTS = {
   standardsReview: (values) => sliceReviewPrompt(values),
   scriptApiTsdoc: (values) =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  resolver: (values) =>
-    [
-      `Batch worktree: ${values.batch}`,
-      `Pending paths: ${values.pending.join(', ')}`,
-      `Report file: ${values.reportPath}`,
-    ].join('\n'),
   epicReview: (values) =>
     [
       `Batch worktree: ${values.batch}`,
@@ -357,8 +350,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -444,8 +435,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -528,8 +517,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -593,8 +580,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -649,8 +634,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -703,8 +686,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -758,8 +739,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -825,8 +804,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -882,8 +859,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -932,8 +907,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -950,10 +923,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           required: ['step', 'message'],
         },
       },
-      outcome: {
-        type: ['string', 'null'],
-        enum: ['up-to-date', 'merged', 'needs-resolution', null],
-      },
+      outcome: { type: ['string', 'null'], enum: ['up-to-date', 'merged', null] },
       commit: { type: ['string', 'null'] },
       upstream: { type: ['string', 'null'] },
       conflicts: {
@@ -962,7 +932,7 @@ const TOOL_ENVELOPE_SCHEMAS = {
           type: 'object',
           properties: {
             path: { type: 'string' },
-            kind: { type: 'string', enum: ['lockfile', 'doc-index', 'package', 'code'] },
+            kind: { type: 'string', enum: ['lockfile', 'package', 'code'] },
             landedBy: { type: 'array', items: { type: 'string' } },
           },
           required: ['path', 'kind', 'landedBy'],
@@ -978,18 +948,8 @@ const TOOL_ENVELOPE_SCHEMAS = {
         },
         required: ['base', 'ours', 'theirs', 'result'],
       },
-      pending: { type: 'array', items: { type: 'string' } },
     },
-    required: [
-      'status',
-      'errors',
-      'outcome',
-      'commit',
-      'upstream',
-      'conflicts',
-      'version',
-      'pending',
-    ],
+    required: ['status', 'errors', 'outcome', 'commit', 'upstream', 'conflicts', 'version'],
   },
   bump: {
     type: 'object',
@@ -1020,8 +980,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1074,8 +1032,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1131,8 +1087,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1201,8 +1155,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1251,8 +1203,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1302,8 +1252,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1353,8 +1301,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'preflight-failed',
           'slices-live',
           'code-conflict',
-          'no-merge-in-progress',
-          'unresolved',
           'nothing-to-bump',
           'pr-exists',
           'no-open-pr',
@@ -1575,14 +1521,6 @@ const AGENT_OUTPUT_SCHEMAS = {
       summary: { type: 'string' },
     },
     required: ['verdict', 'sha', 'summary'],
-  },
-  resolver: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['resolved', 'unresolvable'] },
-      summary: { type: 'string' },
-    },
-    required: ['verdict', 'summary'],
   },
   epicReview: {
     type: 'object',
@@ -1873,193 +1811,11 @@ function spentTarget(run) {
   return { path: run.path };
 }
 
-function runSetIssues(runSet) {
-  const all = new Set();
-  for (const entry of runSet) {
-    for (const issue of entry.issues) all.add(issue);
-  }
-  return [...all].sort((a, b) => a - b);
-}
-function findCycles(issues, edges) {
-  const adj = adjacency(issues, edges);
-  const cycles = stronglyConnected(adj).filter(
-    (c) => c.length > 1 || c.some((n) => adj.get(n)?.includes(n) === true),
-  );
-  for (const cycle of cycles) cycle.sort((a, b) => a - b);
-  cycles.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0));
-  return cycles;
-}
-function transitiveDependents(roots, edges) {
-  const next = new Map();
-  for (const e of edges) {
-    const out = next.get(e.blocker) ?? [];
-    out.push(e.dependent);
-    next.set(e.blocker, out);
-  }
-  const seen = new Set(roots);
-  const reached = [];
-  const walk = (v) => {
-    for (const w of next.get(v) ?? []) {
-      if (seen.has(w)) continue;
-      seen.add(w);
-      reached.push(w);
-      walk(w);
-    }
-  };
-  for (const r of roots) walk(r);
-  return reached.sort((a, b) => a - b);
-}
-function adjacency(issues, edges) {
-  const adj = new Map();
-  for (const n of issues) adj.set(n, []);
-  for (const e of edges) {
-    if (adj.has(e.dependent)) adj.get(e.blocker)?.push(e.dependent);
-  }
-  return adj;
-}
-function stronglyConnected(adj) {
-  const visited = new Map();
-  const stack = [];
-  const onStack = new Set();
-  const components = [];
-  const popComponent = (root) => {
-    const component = [];
-    for (let w = stack.pop(); w !== undefined; w = w === root ? undefined : stack.pop()) {
-      onStack.delete(w);
-      component.push(w);
-    }
-    return component;
-  };
-  const visit = (v) => {
-    const node = { index: visited.size, low: visited.size };
-    visited.set(v, node);
-    stack.push(v);
-    onStack.add(v);
-    for (const w of adj.get(v) ?? []) {
-      const seen = visited.get(w);
-      if (seen === undefined) node.low = Math.min(node.low, visit(w).low);
-      else if (onStack.has(w)) node.low = Math.min(node.low, seen.index);
-    }
-    if (node.low === node.index) components.push(popComponent(v));
-    return node;
-  };
-  for (const v of adj.keys()) if (!visited.has(v)) visit(v);
-  return components;
-}
-
-function overlapSchema(issues) {
-  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
-  const { pairs, liveOverlaps } = base.properties;
-  const issue = { type: 'integer', enum: issues };
-  return {
-    ...base,
-    properties: {
-      ...base.properties,
-      pairs: {
-        ...pairs,
-        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
-      },
-      liveOverlaps: {
-        ...liveOverlaps,
-        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
-      },
-    },
-  };
-}
-async function askAgent(hooks, prompt, options) {
-  const out = await hooks.agent(prompt, options);
-  return typeof out === 'object' && out !== null ? out : null;
-}
-const AGENT_CALLS = {
-  issueReadiness: (hooks, values) =>
-    askAgent(
-      hooks,
-      PROMPTS.issueReadiness(values),
-      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
-    ),
-  issueOverlap: (hooks, values) =>
-    askAgent(
-      hooks,
-      PROMPTS.issueOverlap(values),
-      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
-    ),
-  tdd: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
-  specReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.specReview(values),
-      agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
-    ),
-  testReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.testReview(values),
-      agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
-    ),
-  standardsReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.standardsReview(values),
-      agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
-    ),
-  scriptApiTsdoc: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.scriptApiTsdoc(values),
-      agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
-    ),
-  resolver: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.resolver(values),
-      agentOptions('resolver', tag, AGENT_OUTPUT_SCHEMAS.resolver),
-    ),
-  epicReview: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.epicReview(values),
-      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
-    ),
-  retro: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
-  prWriter: (hooks, values, tag) =>
-    askAgent(
-      hooks,
-      PROMPTS.prWriter(values),
-      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
-    ),
-};
-
 async function syncMasterStep(hooks, ctx) {
-  const start = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
-  const found = { conflicts: start?.conflicts ?? [], version: start?.version ?? null };
-  if (start?.status === 'conflict' && start.outcome === 'needs-resolution') {
-    return { ...(await resolveAndContinue(hooks, ctx, start.pending ?? [])), ...found };
-  }
-  return { ...syncVerdict(start, 'merged'), ...found };
+  const out = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
+  return { ...syncVerdict(out), conflicts: out?.conflicts ?? [], version: out?.version ?? null };
 }
-async function resolveAndContinue(hooks, ctx, pending) {
-  if (pending.length === 0) {
-    return syncFailure(
-      `sync-master needs resolution but named no path; merge left in ${ctx.batch}`,
-    );
-  }
-  const values = { batch: ctx.batch, pending, reportPath: `${ctx.reportDir}/resolve.md` };
-  const answer = await AGENT_CALLS.resolver(hooks, values, ctx.tag);
-  if (answer?.verdict !== 'resolved') {
-    const said = answer === null ? 'returned nothing' : `said ${answer.summary}`;
-    return syncFailure(`the resolver ${said}; merge left in progress in ${ctx.batch}`);
-  }
-  const done = await runTool(
-    hooks,
-    'sync-master',
-    [ctx.batch, '--continue'],
-    runPlace(ctx, `${ctx.tag}-continue`),
-  );
-  return syncVerdict(done, 'resolved');
-}
-function syncVerdict(out, merged) {
+function syncVerdict(out) {
   if (out?.status === 'ok' && out.outcome === 'up-to-date') {
     return {
       verdict: 'up-to-date',
@@ -2070,7 +1826,7 @@ function syncVerdict(out, merged) {
   }
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
-      verdict: merged,
+      verdict: 'merged',
       commit: out.commit,
       upstream: out.upstream ?? null,
       message: `merged origin/master as ${out.commit}`,
@@ -2080,9 +1836,6 @@ function syncVerdict(out, merged) {
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
     return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
-  return syncFailure(message);
-}
-function syncFailure(message) {
   return { verdict: 'failed', commit: null, upstream: null, message };
 }
 

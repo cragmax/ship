@@ -10,8 +10,7 @@
  * ({@link StepFailure}); any other throw is step `internal`, a bad command line step `usage`, and
  * an envelope that fails its schema step `envelope` (`schemas.ts` `guardEnvelope`). `conflict` —
  * `harvest` and `land`: the change cannot apply to the batch's current head, the batch back at a
- * verified-clean `HEAD`; `sync-master`: the merge stopped on doc-index conflicts a resolver must
- * edit, its merge kept in progress ({@link Conflict}).
+ * verified-clean `HEAD` ({@link Conflict}).
  */
 
 import type { z } from 'zod';

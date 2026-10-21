@@ -37,8 +37,7 @@ decision 4):
 - **Kept in place:** the stage agent files in `.claude/agents/` (`tdd`,
   `spec-review`, `test-review`, `standards-review`, `script-api-tsdoc`,
   `issue-readiness`, `issue-overlap`, `epic-review`, `retro`, `pr`,
-  `resolve-index-conflicts`, `runner`) and the run-only `unattended-agent`
-  skill.
+  `runner`) and the run-only `unattended-agent` skill.
 - **The run layout,** gitignored: `.claude/worktrees/ship-*` (batch and slice
   worktrees) and `reports/ship-*` (run roots), `reports/kept/`.
 

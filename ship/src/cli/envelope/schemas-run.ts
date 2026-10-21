@@ -164,11 +164,10 @@ export const LandResultSchema = ResultBaseSchema.extend({
 
 /**
  * How `sync-master` treats a conflicted path: `lockfile` is regenerated,
- * `doc-index` goes to a resolver, `package` — a `package.json` conflict
- * confined to the top-level version line — is resolved by the version rule,
- * `code` refuses the merge.
+ * `package` — a `package.json` conflict confined to the top-level version
+ * line — is resolved by the version rule, `code` refuses the merge.
  */
-export const ConflictKindSchema = z.enum(['lockfile', 'doc-index', 'package', 'code']);
+export const ConflictKindSchema = z.enum(['lockfile', 'package', 'code']);
 
 /** One path the `origin/master` merge conflicts on. */
 export const ConflictPathSchema = z.object({
@@ -200,35 +199,30 @@ export const VersionLineSchema = VersionTripleSchema.extend({
   result: z.string(),
 });
 
-/** Envelope of `sync-master <batch> [--continue]`; `worktree` is the batch. */
+/** Envelope of `sync-master <batch>`; `worktree` is the batch. */
 export const SyncMasterResultSchema = ResultBaseSchema.extend({
   /**
    * `up-to-date`: `origin/master` was already merged; `merged`: the merge
-   * commit landed; `needs-resolution` (status `conflict`): doc-index paths
-   * await a resolver, the merge kept in progress. `null` otherwise.
+   * commit landed. `null` otherwise.
    */
-  outcome: z.enum(['up-to-date', 'merged', 'needs-resolution']).nullable(),
+  outcome: z.enum(['up-to-date', 'merged']).nullable(),
   /** The merge commit; `null` unless `outcome` is `merged`. */
   commit: z.string().nullable(),
   /**
    * The `origin/master` sha the batch now contains — merged by this call or
-   * found already merged: read from `origin/master` after the fetch (start
-   * mode), or from `MERGE_HEAD` before a stopped merge's commit (`--continue`,
-   * and start mode's own finish). The high-water mark the epic end's master
-   * check measures `origin` against. `null` unless `outcome` is
-   * `up-to-date` or `merged`.
+   * found already merged — read from `origin/master` after the fetch. The
+   * high-water mark the epic end's master check measures `origin` against.
+   * `null` unless `outcome` is `up-to-date` or `merged`.
    */
   upstream: z.string().nullable(),
-  /** Every path the merge conflicts on, classified; start mode only. */
+  /** Every path the merge conflicts on, classified. */
   conflicts: z.array(ConflictPathSchema),
   /**
-   * The versions the merge saw; start mode only, once the merge-base is
-   * known. `null` when any of the three `package.json` copies is missing or
-   * has no top-level version line.
+   * The versions the merge saw, once the merge-base is known. `null` when
+   * any of the three `package.json` copies is missing or has no top-level
+   * version line.
    */
   version: VersionLineSchema.nullable(),
-  /** The paths still unmerged for a resolver, repository-relative, sorted; empty once merged. */
-  pending: z.array(z.string()),
   /** Which batch refreshes ran on the merged tree. */
   refreshed: z.object({ ci: z.boolean(), build: z.boolean() }),
   /** The log files the merge and commit output went to, in the order written. */

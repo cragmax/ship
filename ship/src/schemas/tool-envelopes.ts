@@ -119,7 +119,6 @@ export const TOOL_ENVELOPES = {
     upstream: true,
     conflicts: true,
     version: true,
-    pending: true,
   }).extend({ errors: ERRORS }),
   bump: BumpResultSchema.pick({ ...STATUS, kind: true, from: true, to: true, commit: true }).extend(
     { errors: ERRORS },

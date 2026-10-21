@@ -5,14 +5,7 @@ import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { runResync } from '../../../src/workflow/resync.js';
 
 import { BATCH, liveRuns, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
-import {
-  attachOk,
-  BRANCH,
-  DOC_INDEX_CONFLICT,
-  OK,
-  publishOk,
-  resyncHooks,
-} from './_fake-resync.js';
+import { attachOk, BRANCH, MERGED, OK, publishOk, resyncHooks } from './_fake-resync.js';
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
@@ -95,7 +88,6 @@ describe('runResync — merge and push', () => {
         upstream: 'origin1',
         conflicts: [{ path: 'package.json', kind: 'package', landedBy: ['chore: theirs'] }],
         version,
-        pending: [],
       },
     });
 
@@ -125,7 +117,6 @@ describe('runResync — merge and push', () => {
           upstream: null,
           conflicts: [CODE_CONFLICT],
           version: null,
-          pending: [],
           errors: [{ step: 'probe', message: 'would conflict in code: src/x.ts' }],
         },
       },
@@ -143,19 +134,10 @@ describe('runResync — merge and push', () => {
           upstream: null,
           conflicts: [],
           version: null,
-          pending: [],
           errors: [{ step: 'build', message: 'npm run build exited 1' }],
         },
       },
       conflicts: [],
-    },
-    {
-      name: 'an unresolvable doc index',
-      responses: {
-        ...DOC_INDEX_CONFLICT,
-        resolver: { verdict: 'unresolvable', summary: 'the rows contradict' },
-      },
-      conflicts: DOC_INDEX_CONFLICT['runner:sync-master:resync'].conflicts,
     },
   ])('stops before the push on $name', async (c) => {
     const run = resyncHooks(c.responses);
@@ -382,17 +364,14 @@ describe('runResync — attach', () => {
 
 describe('runResync — tiers and phases', () => {
   it('runs every call at its STAGES tier and enters each phase in order', async () => {
-    const run = resyncHooks(DOC_INDEX_CONFLICT);
+    const run = resyncHooks(MERGED);
 
     await runResync(run.hooks, BRANCH);
 
     for (const call of run.calls) {
-      const row = call.label.startsWith('resolver') ? STAGES.resolver : STAGES.runner;
-      expect({ agentType: call.agentType, model: call.model, effort: call.effort }).toEqual({
-        agentType: row.agentType,
-        model: row.model,
-        effort: 'effort' in row ? row.effort : undefined,
-      });
+      expect({ agentType: call.agentType, model: call.model, effort: call.effort }).toEqual(
+        STAGES.runner,
+      );
     }
     expect(run.phases).toEqual(['Pre-flight', 'Merge', 'Push']);
     expect(RESYNC_META.phases).toEqual(RESYNC_PHASES);
@@ -400,8 +379,8 @@ describe('runResync — tiers and phases', () => {
 });
 
 describe('runResync — order', () => {
-  it('runs live runs, attach, merge, resolver, continue, then the push', async () => {
-    const run = resyncHooks(DOC_INDEX_CONFLICT);
+  it('runs live runs, attach, merge, then the push', async () => {
+    const run = resyncHooks(MERGED);
 
     const report = await runResync(run.hooks, BRANCH);
 
@@ -409,8 +388,6 @@ describe('runResync — order', () => {
       'runner:live-runs:resync',
       'runner:cut-batch:resync',
       'runner:sync-master:resync',
-      'resolver:resync',
-      'runner:sync-master:resync-continue',
       'runner:publish:resync',
     ]);
     expect(report).toMatchObject({ status: 'done', branch: BRANCH, pushed: true });

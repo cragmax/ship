@@ -219,16 +219,6 @@ export interface PrWriterValues {
   readonly reportDir: string;
 }
 
-/** The doc-index resolver's values. */
-export interface ResolverValues {
-  /** The batch worktree, its `origin/master` merge in progress. */
-  readonly batch: string;
-  /** The doc-index paths still unmerged. */
-  readonly pending: readonly string[];
-  /** The full report. */
-  readonly reportPath: string;
-}
-
 /**
  * Hooks bound to the run's main checkout: every agent prompt, runner and judgment stage alike,
  * starts with a `Checkout: <checkout>` line, so an agent works from it, never from its start
@@ -417,12 +407,6 @@ export const PROMPTS = {
   standardsReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
   scriptApiTsdoc: (values: ScriptApiTsdocValues): string =>
     [...sliceCommitLines(values), `Report file: ${values.reportPath}`].join('\n'),
-  resolver: (values: ResolverValues): string =>
-    [
-      `Batch worktree: ${values.batch}`,
-      `Pending paths: ${values.pending.join(', ')}`,
-      `Report file: ${values.reportPath}`,
-    ].join('\n'),
   epicReview: (values: EpicReviewValues): string =>
     [
       `Batch worktree: ${values.batch}`,

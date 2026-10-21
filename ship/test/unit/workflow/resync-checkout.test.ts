@@ -5,15 +5,15 @@ import { describe, expect, it } from 'vitest';
 import { runResync } from '../../../src/workflow/resync.js';
 
 import { checkoutLines, liveRuns, MAIN } from './_fake-hooks.js';
-import { attachOk, BRANCH, DOC_INDEX_CONFLICT, resyncHooks } from './_fake-resync.js';
+import { attachOk, BRANCH, MERGED, resyncHooks } from './_fake-resync.js';
 
 describe('runResync — every call after live-runs runs from the main checkout', () => {
-  it('gives every runner and agent call after live-runs a Checkout line naming its worktree, the spent-run cleanup included, and live-runs none', async () => {
+  it('gives every runner call after live-runs a Checkout line naming its worktree, the spent-run cleanup included, and live-runs none', async () => {
     const live = liveRuns({})['runner:live-runs'];
     const run = resyncHooks({
       'runner:live-runs': { ...live, worktree: MAIN },
       'runner:cut-batch': attachOk(true),
-      ...DOC_INDEX_CONFLICT,
+      ...MERGED,
     });
 
     const report = await runResync(run.hooks, BRANCH);
@@ -27,8 +27,6 @@ describe('runResync — every call after live-runs runs from the main checkout',
       { label: 'runner:cut-batch:resync', checkout: [`Checkout: ${MAIN}`] },
       { label: 'runner:provision-batch:resync', checkout: [`Checkout: ${MAIN}`] },
       { label: 'runner:sync-master:resync', checkout: [`Checkout: ${MAIN}`] },
-      { label: 'resolver:resync', checkout: [`Checkout: ${MAIN}`] },
-      { label: 'runner:sync-master:resync-continue', checkout: [`Checkout: ${MAIN}`] },
       { label: 'runner:publish:resync', checkout: [`Checkout: ${MAIN}`] },
     ]);
   });

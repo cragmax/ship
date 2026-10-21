@@ -1,18 +1,10 @@
 /**
  * `fakeHooks` answers for driving `runResync` — the TS source in
  * `resync.test.ts`, a fresh render in `resync-rendered.test.ts`: the
- * run branch's batch reused, the push `ok`, and a merge that stops on a doc
- * index for the resolver.
+ * run branch's batch reused, the push `ok`, and a merge that lands.
  */
 
-import {
-  BATCH,
-  DOC_INDEX_MERGED,
-  DOC_INDEX_STOP,
-  fakeHooks,
-  REPORT_DIR,
-  type FakeRun,
-} from './_fake-hooks.js';
+import { BATCH, fakeHooks, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
 
 /** Fields every `ok` worktree-CLI output carries. */
 export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
@@ -55,11 +47,16 @@ const RESYNC_OK: Readonly<Record<string, unknown>> = {
   'runner:publish': publishOk(true),
 };
 
-/** A `sync-master` start stopped on a doc index, the resolver, and the `--continue`. */
-export const DOC_INDEX_CONFLICT = {
-  'runner:sync-master:resync': DOC_INDEX_STOP,
-  resolver: { verdict: 'resolved', summary: 'kept both rows' },
-  'runner:sync-master:resync-continue': DOC_INDEX_MERGED,
+/** A `sync-master` that merges `origin/master`. */
+export const MERGED = {
+  'runner:sync-master:resync': {
+    ...OK,
+    outcome: 'merged',
+    commit: 'merge1',
+    upstream: 'origin1',
+    conflicts: [],
+    version: null,
+  },
 };
 
 /**

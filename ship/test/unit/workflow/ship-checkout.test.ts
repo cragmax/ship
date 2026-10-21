@@ -7,7 +7,6 @@ import { runShip } from '../../../src/workflow/ship.js';
 import {
   BATCH,
   checkoutLines,
-  DOC_INDEX_CONFLICT,
   fakeHooks,
   liveRuns,
   MAIN,
@@ -42,7 +41,7 @@ function laterLabelsAtMain(run: FakeRun): string[] {
 
 describe('runShip — every runner after pre-flight runs from the main checkout', () => {
   it('gives every runner call after preflight a Checkout line naming its worktree, the cleanup and the epic end included, and the preflight call none', async () => {
-    const run = fakeHooks({ ...AT_MAIN, ...liveRuns({}), ...DOC_INDEX_CONFLICT });
+    const run = fakeHooks({ ...AT_MAIN, ...liveRuns({}) });
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -59,7 +58,6 @@ describe('runShip — every runner after pre-flight runs from the main checkout'
         'runner:cut-slice:7-1',
         'runner:land:7-1',
         'runner:sync-master:list',
-        'runner:sync-master:list-continue',
         'runner:bump:list',
         'runner:preflight:list',
         'runner:check-master:list',
@@ -114,7 +112,7 @@ describe('runShip — every runner after pre-flight runs from the main checkout'
 
 describe('runShip — every agent after pre-flight works from the main checkout', () => {
   it('gives every judgment agent’s prompt, pre-flight’s two included, one Checkout line naming preflight’s worktree', async () => {
-    const run = fakeHooks({ ...AT_MAIN, ...liveRuns({ spent: false }), ...DOC_INDEX_CONFLICT });
+    const run = fakeHooks({ ...AT_MAIN, ...liveRuns({ spent: false }) });
 
     const report = await runShip(run.hooks, 'issues 7');
 
@@ -130,7 +128,6 @@ describe('runShip — every agent after pre-flight works from the main checkout'
         'specReview:7-1',
         'testReview:7-1',
         'standardsReview:7-1',
-        'resolver:list',
         'epicReview:list',
         'retro:list',
         'prWriter:list',

@@ -7,7 +7,7 @@
  *
  * Every filesystem path in an envelope is absolute with forward slashes; the path lists of
  * `harvest`, `land`, `staged-guard`, `live-runs` and `sync-master` (`files`, `conflicts`,
- * `pending`, `expected`, `staged`, `missing`, `unexpected`, `landed`) are repository-relative, as
+ * `expected`, `staged`, `missing`, `unexpected`, `landed`) are repository-relative, as
  * git spells them. Every count, port and number is an integer.
  *
  * Nothing here parses an envelope but {@link guardEnvelope}, which never prints the parse output.
@@ -67,12 +67,8 @@ export const RefusalReasonSchema = z.enum([
   'preflight-failed',
   // Sync-master: another worktree's `node_modules` links into the batch's; the message names each.
   'slices-live',
-  // Sync-master: the merge would conflict outside the lockfile and the doc indexes; nothing merged.
+  // Sync-master: the merge would conflict beyond the lockfile and version line; nothing merged.
   'code-conflict',
-  // Sync-master `--continue`: the batch has no merge in progress.
-  'no-merge-in-progress',
-  // Sync-master `--continue`: a conflicted path is outside the doc indexes or still holds markers.
-  'unresolved',
   // Bump: the batch has no commits of its own since `origin/master`.
   'nothing-to-bump',
   // Publish: the run branch already has an open PR; the message names it.

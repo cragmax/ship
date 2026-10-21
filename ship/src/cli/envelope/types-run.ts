@@ -60,7 +60,7 @@ export type ConflictPath = z.infer<typeof ConflictPathSchema>;
 /** The `package.json` versions a merge saw, and the one it ends on. */
 export type VersionLine = z.infer<typeof VersionLineSchema>;
 
-/** Envelope of `sync-master <batch> [--continue]`. */
+/** Envelope of `sync-master <batch>`. */
 export type SyncMasterResult = z.infer<typeof SyncMasterResultSchema>;
 
 /** Envelope of `bump <batch>`. */

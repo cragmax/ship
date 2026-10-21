@@ -6,9 +6,7 @@ import { STAGES, type StageName, type StageRow } from '../../../src/workflow/sta
 import { runShip } from '../../../src/workflow/ship.js';
 
 import {
-  DOC_INDEX,
   BATCH,
-  DOC_INDEX_CONFLICT,
   fakeHooks,
   GATE_OK,
   inTurn,
@@ -138,7 +136,6 @@ const SCENARIOS = [
   { name: 'land batch-dirty', responses: { 'runner:land': LAND_BATCH_DIRTY }, args: 'issues 7' },
   { name: 'blocked tdd', responses: TDD_STALE, args: 'issues 7' },
   { name: 'dead tdd', responses: { tdd: null }, args: 'issues 7' },
-  { name: 'doc-index conflict', responses: DOC_INDEX_CONFLICT, args: 'issues 7' },
   { name: 'two issues', responses: TWO_ISSUES, args: 'issues 7 8' },
   {
     name: 'two epics',
@@ -1118,7 +1115,6 @@ describe('runShip — an attempt that does not land', () => {
         upstream: null,
         conflicts: [],
         version: null,
-        pending: [],
       },
     });
 
@@ -1903,57 +1899,38 @@ describe('runShip — the slice’s changed files after an amend', () => {
 });
 
 describe('runShip — the epic end', () => {
-  it('resolves a doc-index conflict, then continues the merge, before the bump', async () => {
-    const run = fakeHooks(DOC_INDEX_CONFLICT);
-
-    const report = await runShip(run.hooks, 'issues 7');
-
-    expect(
-      labels(run).filter((l) => /^(runner:(sync-master|bump|publish)|resolver)/.test(l)),
-    ).toEqual([
-      'runner:sync-master:list',
-      'resolver:list',
-      'runner:sync-master:list-continue',
-      'runner:bump:list',
-      'runner:publish:list',
-    ]);
-    expect(run.calls.find((c) => c.label === 'runner:sync-master:list-continue')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
-      'sync-master',
-      BATCH,
-      '--continue',
-    ]);
-    expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv.slice(-2)).toEqual([
-      '--synced',
-      'origin1',
-    ]);
-    expect(promptOf(run, 'resolver:list').split('\n')).toEqual([
-      'Checkout: C:/src/main',
-      `Batch worktree: ${BATCH}`,
-      `Pending paths: ${DOC_INDEX}`,
-      `Report file: ${REPORT_DIR}/resolve.md`,
-    ]);
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Master sync: resolved at merge1',
-    );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
-  });
-
-  it('leaves the merge in progress when the resolver cannot resolve: no --continue, no bump', async () => {
+  it('merges origin/master before the bump, syncing the master check to its upstream', async () => {
     const run = fakeHooks({
-      ...DOC_INDEX_CONFLICT,
-      resolver: { verdict: 'unresolvable', summary: 'the rows contradict' },
+      'runner:sync-master:list': {
+        ...OK,
+        outcome: 'merged',
+        commit: 'merge1',
+        upstream: 'origin1',
+        conflicts: [],
+        version: null,
+      },
     });
 
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([
       'runner:sync-master:list',
+      'runner:bump:list',
+      'runner:publish:list',
     ]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'stopped',
-      message: `master sync failed: the resolver said the rows contradict; merge left in progress in ${BATCH}`,
-    });
+    expect(run.calls.find((c) => c.label === 'runner:sync-master:list')?.argv).toEqual([
+      'ship/src/cli/worktree.ts',
+      'sync-master',
+      BATCH,
+    ]);
+    expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv.slice(-2)).toEqual([
+      '--synced',
+      'origin1',
+    ]);
+    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
+      '- Master sync: merged at merge1',
+    );
+    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
   });
 
   it.each([
@@ -2479,7 +2456,6 @@ describe('agent-call tiers', () => {
       testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
       standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
       scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
-      resolver: { agentType: 'resolve-index-conflicts', model: 'opus', effort: 'medium' },
       epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
       retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
       prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },
