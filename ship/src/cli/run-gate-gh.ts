@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 
-import { formatZodIssues } from '../../../src/contracts/index.js';
+import { formatZodIssues } from '../../../framework/src/contracts/index.js';
 
 import { parseBlockedBySection } from '../core/gate/run-gate-blocked-by.js';
 import {
