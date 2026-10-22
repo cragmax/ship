@@ -221,6 +221,7 @@ describe('land', () => {
   it.each([
     { path: 'src/feature.ts', content: 'changed\n', built: true },
     { path: 'tsconfig.json', content: 'changed\n', built: true },
+    { path: 'config/tsconfig.build.json', content: 'changed\n', built: true },
     { path: 'package.json', content: BUMPED_PACKAGE, built: true },
     { path: 'tooling/tool.ts', content: 'changed\n', built: false },
     { path: 'docs/notes.md', content: 'changed\n', built: false },

@@ -176,8 +176,15 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
   }
 }
 
-/** The files `npm run build` reads besides `src/`: its script and `tsc`'s config. */
-const BUILD_FILES: readonly string[] = ['package.json', 'tsconfig.json'];
+/**
+ * The files `npm run build` reads besides `src/`: its script, `tsc`'s config and the root config
+ * that one extends.
+ */
+const BUILD_FILES: readonly string[] = [
+  'package.json',
+  'config/tsconfig.build.json',
+  'tsconfig.json',
+];
 
 /**
  * Whether a change touches a path the batch's `dist/` is built from: the
