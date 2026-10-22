@@ -1,13 +1,8 @@
 # Git
 
-This category covers **git**, which paper-harness's own
-tooling drives (the unattended-run worktree tooling), rather than the
-Minecraft-side stack it tests against; facts here are stamped against the git
-release in their **Platform** line, and a git release can move them.
+This category covers **git** as Ship's worktree and branch tooling drives it. Facts here are stamped against the git release in their **Platform** line, and a git release can move them.
 
-## Repo PF-1 · `git branch -d` deletes a branch merged to its upstream even when it is not merged to `HEAD`
-
-Formerly PF-61.
+## Ship PF-8 · `git branch -d` deletes a branch merged to its upstream even when it is not merged to `HEAD`
 
 - **Claim.** `git branch -d <branch>` treats a branch as merged when it is merged
   to its configured upstream (`<branch>@{upstream}`), not only when it is merged
@@ -58,9 +53,7 @@ Formerly PF-61.
   `ship/src/cli/commands/retire-run.ts`), which uses `merge-base --is-ancestor` +
   `git branch -D` for this reason.
 
-## Repo PF-12 · `git worktree remove --force` leaves the directory behind when it holds a live junction, and spares the junction target
-
-Formerly PF-91.
+## Ship PF-13 · `git worktree remove --force` leaves the directory behind when it holds a live junction, and spares the junction target
 
 - **Claim.** On Windows, `git worktree remove --force <wt>` exits 0 and unregisters the worktree but leaves `<wt>` on disk holding the untracked junction. Git does not follow the junction: the target's contents are intact. Without `--force` it refuses (exit 128, "contains modified or untracked files").
 - **Implication.** Teardown must unlink every link before `git worktree remove` and assert none remain (`assertNoLinksRemain`), because a later recursive delete of the leftover directory could follow the junction.
@@ -77,22 +70,3 @@ Formerly PF-91.
 
 - **Last verified.** 2026-10-10.
 - **Relied on by.** `ship/src/cli/commands/teardown.ts` (`assertNoLinksRemain`).
-
-## Repo PF-16 · `commit-msg` runs for a merge commit, with `MERGE_HEAD` set
-
-Formerly PF-105.
-
-- **Claim.** git runs the `commit-msg` hook for a merge commit, both the commit a clean `git merge --no-edit` makes itself and the `git commit --no-edit` that concludes a conflicted merge. Both times `git rev-parse -q --verify MERGE_HEAD` succeeds inside the hook, and the message file holds git's `Merge branch '<name>'`.
-- **Implication.** A `commit-msg` check that enforces a message format must skip merge commits itself, and `MERGE_HEAD` tells it one is being made.
-- **Platform.** `git version 2.43.0` (Linux).
-- **Established.** Local driver in a scratch repo, a `commit-msg` hook printing whether `MERGE_HEAD` resolves and the message's first line:
-
-  ```text
-  == clean merge:
-  HOOK: MERGE_HEAD set, msg=Merge branch 'side'
-  == conflicted merge then commit --no-edit:
-  HOOK: MERGE_HEAD set, msg=Merge branch 's2'
-  ```
-
-- **Last verified.** 2026-10-13.
-- **Relied on by.** `tooling/hooks/commit-msg.ts` (the merge skip).
