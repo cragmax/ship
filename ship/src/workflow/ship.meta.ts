@@ -25,6 +25,7 @@ export const SHIP_META: WorkflowMeta = {
     '{ epics | issues, exclude?, preflightOnly?, maxSlices?, attach? }. ' +
     'Given bare numbers, ask: epics or issues? Never choose. ' +
     'Resume (`resumeFromRunId`) only a one-epic or one-list `--max-slices 1` run ' +
-    'whose script is unchanged; recover others by hand.',
+    'whose script is unchanged; recover others by hand. ' +
+    'While it runs, never `cd` in the session: use absolute paths (Ship PF-2).',
   phases: SHIP_PHASES,
 };

@@ -1,6 +1,6 @@
 # Claude Code as the session
 
-This category covers **Claude Code** as the session a run's agents work in: what a worktree's agents load, how an agent file preloads skills, and the language server a teardown leaves behind. Facts here are version-stamped against the **Claude Code** release in their **Platform** line; a release can move them, so re-verify before relying on one.
+This category covers **Claude Code** as the session a run's agents work in: what a worktree's agents load, how an agent file preloads skills and the LSP tool, and the language server a teardown leaves behind. Facts here are version-stamped against the **Claude Code** release in their **Platform** line; a release can move them, so re-verify before relying on one.
 
 ## Ship PF-14 · A worktree directly under `.claude/worktrees/` gets the main checkout's path-scoped rules on a read, never its own `CLAUDE.md` or rules
 
@@ -64,3 +64,12 @@ This category covers **Claude Code** as the session a run's agents work in: what
 
 - **Last verified.** 2026-10-15.
 - **Relied on by.** `ship/src/cli/commands/tsserver-restart.ts` (`restartSessionTsserver`, run by `teardown` after it removes a worktree).
+
+## Ship PF-18 · An agent file whose `tools:` lists `LSP` without `ToolSearch` gets the LSP tool preloaded
+
+- **Claim.** An agent whose frontmatter `tools:` names `LSP` and not `ToolSearch` starts with the `LSP` tool directly callable. With `ToolSearch` also listed, `LSP` stays deferred until one ToolSearch call loads it; with neither, the agent has no `LSP` (a workflow `agent()` with `agentType: 'tdd'` then had exactly its listed tools).
+- **Implication.** A code-reading agent file lists `LSP` alone, never `LSP, ToolSearch`.
+- **Platform.** Claude Code 2.1.296 with the `typescript-lsp` plugin (user scope), Windows 11. Tested through a nested `claude -p`, not an interactive workflow run.
+- **Established.** 2026-10-10, nested `claude -p` sessions with probe agent files: `tools: Read, Grep, LSP, ToolSearch` → LSP deferred, one ToolSearch loaded it and goToDefinition answered; `tools: Read, Grep, LSP` → LSP preloaded and answered. A just-started server answered goToDefinition with the import line, not the definition.
+- **Last verified.** 2026-10-10.
+- **Relied on by.** The `tools:` line of the code-reading agents in `.claude/agents/` (`tdd.md`, the review agents, `issue-readiness.md`, `issue-overlap.md`).
