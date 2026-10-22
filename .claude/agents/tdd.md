@@ -42,7 +42,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 ## Checkpoint overrides
 
 - **_split decision_**: build the issue as written, and record the thickness and the split you would have made under the report's deviations.
-- **_commit_**: make exactly one commit, per § Commit, named in the report rather than a reply.
+- **_commit_**: make exactly one commit, per § Commit.
 
 ## Commit line
 
