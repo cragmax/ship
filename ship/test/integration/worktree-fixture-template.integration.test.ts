@@ -114,7 +114,7 @@ describe('the template repos', () => {
         VITEST_BIN,
         'run',
         '--config',
-        'vitest.config.ts',
+        'config/vitest.config.ts',
         '--dir',
         'ship/test/fixtures/worktree-fixture-template',
         '--reporter=dot',

@@ -121,7 +121,7 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
       expect(existsSync(join(slice, 'dist', 'index.js'))).toBe(true);
       expect(lstatSync(join(slice, 'dist')).isSymbolicLink()).toBe(false);
       const config = readFileSync(join(slice, 'vitest.worktree.config.ts'), 'utf8');
-      expect(config).toContain("from './vitest.config'");
+      expect(config).toContain("from './config/vitest.config'");
       expect(config).toContain("cacheDir: './.vitest-cache'");
       expect(prov.json.env).toEqual({ PH_PROJECT_DIR: toPosix(batch) });
       const junction = { path: toPosix(sliceModules), target: toPosix(batchModules) };
@@ -681,7 +681,10 @@ describe('teardown keeping an unlanded attempt’s work', () => {
         { write: { 'committed.txt': 'committed on the slice branch\n' } },
         'slice work',
       );
-      writeFileSync(join(slice, 'vitest.config.ts'), 'export default { edited: true };\n');
+      writeFileSync(
+        join(slice, 'config', 'vitest.config.ts'),
+        'export default { edited: true };\n',
+      );
       writeFileSync(join(slice, 'untracked.txt'), 'never staged\n');
       writeFileSync(join(slice, 'latin1.txt'), LATIN1);
       // regression: the user's diff config and a UTF-8 decode each broke git apply on the patch
@@ -702,7 +705,7 @@ describe('teardown keeping an unlanded attempt’s work', () => {
       expect(readFileSync(join(main, 'committed.txt'), 'utf8')).toBe(
         'committed on the slice branch\n',
       );
-      expect(readFileSync(join(main, 'vitest.config.ts'), 'utf8')).toBe(
+      expect(readFileSync(join(main, 'config', 'vitest.config.ts'), 'utf8')).toBe(
         'export default { edited: true };\n',
       );
       expect(readFileSync(join(main, 'untracked.txt'), 'utf8')).toBe('never staged\n');
@@ -792,7 +795,7 @@ describe.skipIf(!WIN32)('provision', () => {
         realpathSync(join(batch, 'node_modules')),
       );
       const twin = readFileSync(join(slice, 'vitest.worktree.integration.config.ts'), 'utf8');
-      expect(twin).toContain("from './vitest.integration.config'");
+      expect(twin).toContain("from './config/vitest.integration.config'");
       expect(twin).toContain("cacheDir: './.vitest-cache-integration'");
       expect(porcelain(slice)).toBe('');
     },

@@ -46,13 +46,13 @@ interface VitestConfigSpec {
 
 const UNIT_CONFIG: VitestConfigSpec = {
   file: 'vitest.worktree.config.ts',
-  base: './vitest.config',
+  base: './config/vitest.config',
   cacheDir: './.vitest-cache',
 };
 
 const INTEGRATION_CONFIG: VitestConfigSpec = {
   file: 'vitest.worktree.integration.config.ts',
-  base: './vitest.integration.config',
+  base: './config/vitest.integration.config',
   cacheDir: './.vitest-cache-integration',
 };
 

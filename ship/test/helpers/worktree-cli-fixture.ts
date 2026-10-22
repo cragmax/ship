@@ -128,8 +128,9 @@ function writeRepoFiles(main: string, template: string, gitignore: string): void
   cpSync(template, main, { recursive: true });
   writeFileSync(join(main, 'build.js'), BUILD_SCRIPT);
   writeFileSync(join(main, 'check.js'), CHECK_SCRIPT);
-  writeFileSync(join(main, 'vitest.config.ts'), 'export default {};\n');
-  writeFileSync(join(main, 'vitest.integration.config.ts'), 'export default {};\n');
+  mkdirSync(join(main, 'config'));
+  writeFileSync(join(main, 'config', 'vitest.config.ts'), 'export default {};\n');
+  writeFileSync(join(main, 'config', 'vitest.integration.config.ts'), 'export default {};\n');
   writeFileSync(join(main, '.gitignore'), gitignore);
   const registryDir = join(main, 'server-pool', 'src', 'registry');
   mkdirSync(registryDir, { recursive: true });
