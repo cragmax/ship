@@ -14,7 +14,7 @@ import { createInterface } from 'node:readline';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isPidAlive } from '../../../framework/src/contracts/index.js';
+import { isPidAlive } from '../../../src/contracts/index.js';
 import { restartSessionTsserver } from '../../src/cli/commands/tsserver-restart.js';
 
 const WIN32 = process.platform === 'win32';

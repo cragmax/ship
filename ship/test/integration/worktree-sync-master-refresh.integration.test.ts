@@ -117,9 +117,9 @@ describe('sync-master batch refresh', () => {
   }
 
   it.each([
-    { changed: 'framework/src/feature.ts', build: true },
+    { changed: 'src/feature.ts', build: true },
     { changed: 'tsconfig.json', build: true },
-    { changed: 'framework/tsconfig.json', build: true },
+    { changed: 'tsconfig.json', build: true },
     { changed: 'src/feature.ts', build: false },
     { changed: 'tooling/tool.ts', build: false },
     { changed: 'docs/notes.md', build: false },
@@ -225,7 +225,7 @@ describe('sync-master batch refresh', () => {
     const run = makeNpmRun();
     const ours = commitChanges(run.batch, { write: { 'notes.md': 'batch\n' } }, 'feat: batch');
     const theirs = advanceOrigin(root, run.bare, {
-      write: { 'framework/src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
+      write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
     const r = runSyncMaster(run.batch);
@@ -244,7 +244,7 @@ describe('sync-master batch refresh', () => {
     const ours = bumpIn(run.batch, 'patch', 'chore: ours');
     bumpOrigin(run, 'patch', 'chore: theirs');
     advanceOrigin(root, run.bare, {
-      write: { 'framework/src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
+      write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
     const r = runSyncMaster(run.batch);

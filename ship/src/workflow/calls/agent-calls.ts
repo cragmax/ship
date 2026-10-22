@@ -89,8 +89,8 @@ export type TestReviewSkip = 'trivial surface' | 'comment-only';
 /** The Script API TSDoc review's answer. */
 export type ScriptApiTsdocOutput = z.infer<typeof ScriptApiTsdocOutputSchema>;
 
-/** Why a slice's Script API TSDoc review was skipped: it changed nothing under `framework/src/`. */
-export type ScriptApiTsdocSkip = 'no framework/src/ change';
+/** Why a slice's Script API TSDoc review was skipped: it changed nothing under `src/`. */
+export type ScriptApiTsdocSkip = 'no src/ change';
 
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {

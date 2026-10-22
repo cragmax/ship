@@ -374,8 +374,8 @@ describe('runShip — one issue from launch to PR', () => {
     });
   });
 
-  it('runs the Script API TSDoc review after the standards review on a slice changing framework/src/, the land reading its amend', async () => {
-    const files = ['framework/src/fluent/wrapped-bot/types.ts', 'framework/test/unit/x.test.ts'];
+  it('runs the Script API TSDoc review after the standards review on a slice changing src/, the land reading its amend', async () => {
+    const files = ['src/fluent/wrapped-bot/types.ts', 'test/unit/x.test.ts'];
     const run = fakeHooks({
       tdd: { ...TDD_GREEN, files },
       scriptApiTsdoc: { verdict: 'fixed', sha: 'slice2m', summary: 'sharpened walkTo' },
@@ -404,17 +404,17 @@ describe('runShip — one issue from launch to PR', () => {
       'Slice worktree: C:/src/ph-runs/7/slice-7-1',
       'Slice base: cut1',
       'Slice commit: slice2',
-      'Changed files: framework/src/fluent/wrapped-bot/types.ts, framework/test/unit/x.test.ts',
+      'Changed files: src/fluent/wrapped-bot/types.ts, test/unit/x.test.ts',
       `Report file: ${REPORT_DIR}/script-api-tsdoc-7-1.md`,
     ]);
     expect(run.calls.find((c) => c.label === 'runner:land:7-1')?.argv[3]).toBe('slice2m');
   });
 
   it.each([
-    ['framework tests and docs', ['framework/test/unit/x.test.ts', 'framework/CLAUDE.md']],
-    ['a root src/ path, which the framework left', ['src/a.ts']],
+    ['tests and docs', ['test/unit/x.test.ts', 'CLAUDE.md']],
+    ['a path merely starting with src', ['srcs/a.ts']],
   ])(
-    'skips the Script API TSDoc review on a slice changing %s but nothing under framework/src/',
+    'skips the Script API TSDoc review on a slice changing %s but nothing under src/',
     async (_name, files) => {
       const run = fakeHooks({ tdd: { ...TDD_GREEN, files } });
 
@@ -422,7 +422,7 @@ describe('runShip — one issue from launch to PR', () => {
 
       expect(labels(run).filter((l) => l.startsWith('scriptApiTsdoc:'))).toEqual([]);
       expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-        '- Script API TSDoc: skipped — no framework/src/ change',
+        '- Script API TSDoc: skipped — no src/ change',
       );
     },
   );
@@ -1287,7 +1287,7 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
   [
     'blocked by the Script API TSDoc review',
     {
-      tdd: { ...TDD_GREEN, files: ['framework/src/fluent/wrapped-bot/types.ts'] },
+      tdd: { ...TDD_GREEN, files: ['src/fluent/wrapped-bot/types.ts'] },
       scriptApiTsdoc: { verdict: 'blocked', sha: '', summary: 'a hook failure would not clear' },
     },
     [...UP_TO_REVIEW, 'scriptApiTsdoc:7-1', 'runner:teardown:7-1'],
@@ -1715,27 +1715,27 @@ describe('runShip — the slice test review', () => {
   it.each<[name: string, files: string[], proof: unknown, proofRuns: boolean, reviewRuns: boolean]>(
     [
       ['changes no code', ['docs/x.md', '.claude/agents/x.md'], null, false, false],
-      ['only adds tests', ['framework/test/unit/x.test.ts'], null, false, true],
+      ['only adds tests', ['test/unit/x.test.ts'], null, false, true],
       ['only adds tooling tests', ['tooling/test/unit/x.test.ts'], null, false, true],
       ['only adds server-pool tests', ['server-pool/test/unit/x.test.ts'], null, false, true],
       ['only adds Ship tests', ['ship/test/unit/core/run-set.test.ts'], null, false, true],
       [
         'changes code and tests',
-        ['tooling/x.ts', 'framework/test/unit/x.test.ts'],
+        ['tooling/x.ts', 'test/unit/x.test.ts'],
         { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
         false,
         true,
       ],
       [
         'proves its code change comment-only',
-        ['framework/src/a.ts', 'eslint-suppressions.json'],
+        ['src/a.ts', 'eslint-suppressions.json'],
         { exitCode: 0, envelopePath: 'e.json', notCompared: ['eslint-suppressions.json'] },
         true,
         false,
       ],
       [
         'fails its comment-only proof',
-        ['framework/src/a.ts'],
+        ['src/a.ts'],
         { exitCode: 1, envelopePath: 'e.json', notCompared: [] },
         true,
         true,
@@ -1783,13 +1783,13 @@ describe('runShip — the slice test review', () => {
 
 describe('runShip — the slice’s changed files after an amend', () => {
   it('re-reads the amended commit’s changed files after each fixed review, every later stage reading them', async () => {
-    // The spec review's amend adds framework/src/y.ts; the standards review's adds docs/y.md.
+    // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md.
     const run = fakeHooks({
       'runner:changed-files': inTurn(
-        { ...OK, files: ['framework/src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'] },
+        { ...OK, files: ['src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'] },
         {
           ...OK,
-          files: ['docs/y.md', 'framework/src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'],
+          files: ['docs/y.md', 'src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'],
         },
       ),
     });
@@ -1806,11 +1806,11 @@ describe('runShip — the slice’s changed files after an amend', () => {
       'Changed files: tooling/x.ts, tooling/test/unit/x.test.ts',
     );
     expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
-      'Changed files: framework/src/y.ts, tooling/test/unit/x.test.ts, tooling/x.ts',
+      'Changed files: src/y.ts, tooling/test/unit/x.test.ts, tooling/x.ts',
     );
-    // The tdd changed no framework/src/ path: only the amend's y.ts runs the TSDoc review.
+    // The tdd changed no src/ path: only the amend's y.ts runs the TSDoc review.
     expect(lineSeenBy(run, 'scriptApiTsdoc:7-1', 'Changed files: ')).toBe(
-      'Changed files: docs/y.md, framework/src/y.ts, tooling/test/unit/x.test.ts, tooling/x.ts',
+      'Changed files: docs/y.md, src/y.ts, tooling/test/unit/x.test.ts, tooling/x.ts',
     );
   });
 
@@ -1821,11 +1821,11 @@ describe('runShip — the slice’s changed files after an amend', () => {
       'runner:changed-files': inTurn(
         {
           ...OK,
-          files: ['tooling/test/unit/x.test.ts', 'framework/test/unit/y.test.ts', 'tooling/x.ts'],
+          files: ['tooling/test/unit/x.test.ts', 'test/unit/y.test.ts', 'tooling/x.ts'],
         },
         {
           ...OK,
-          files: ['tooling/test/unit/x.test.ts', 'framework/test/unit/y.test.ts', 'tooling/x.ts'],
+          files: ['tooling/test/unit/x.test.ts', 'test/unit/y.test.ts', 'tooling/x.ts'],
         },
       ),
     });
@@ -1836,7 +1836,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
       run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv[3]),
     ).toEqual(['test1', 'slice2']);
     expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
-      'Changed files: tooling/test/unit/x.test.ts, framework/test/unit/y.test.ts, tooling/x.ts',
+      'Changed files: tooling/test/unit/x.test.ts, test/unit/y.test.ts, tooling/x.ts',
     );
   });
 
@@ -1847,7 +1847,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
       'runner:comment-only': { exitCode: 0, envelopePath: 'e.json', notCompared: [] },
       'runner:changed-files': inTurn({
         ...OK,
-        files: ['framework/test/unit/x.test.ts', 'tooling/x.ts'],
+        files: ['test/unit/x.test.ts', 'tooling/x.ts'],
       }),
     });
 
@@ -1861,7 +1861,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
   it('re-reads nothing when every review answers clean', async () => {
     const clean = (sha: string) => ({ verdict: 'clean', sha, summary: 'ok', leaseLines: [] });
     const run = fakeHooks({
-      tdd: { ...TDD_GREEN, files: ['framework/src/x.ts', 'framework/test/unit/x.test.ts'] },
+      tdd: { ...TDD_GREEN, files: ['src/x.ts', 'test/unit/x.test.ts'] },
       specReview: clean('slice1'),
       testReview: clean('slice1'),
       standardsReview: clean('slice1'),
@@ -1872,7 +1872,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
 
     expect(labels(run).filter((l) => l.startsWith('runner:changed-files:7-'))).toEqual([]);
     expect(lineSeenBy(run, 'scriptApiTsdoc:7-1', 'Changed files: ')).toBe(
-      'Changed files: framework/src/x.ts, framework/test/unit/x.test.ts',
+      'Changed files: src/x.ts, test/unit/x.test.ts',
     );
     expect(report.epics[0]?.issues).toEqual([
       { issue: 7, outcome: 'landed', cite: 'fixes', commit: 'landed1' },
@@ -2205,7 +2205,7 @@ describe('runAttempt — how an attempt ends', () => {
               summary: 'renamed a helper',
               leaseLines: [],
             },
-            scriptApiTsdoc: 'no framework/src/ change',
+            scriptApiTsdoc: 'no src/ change',
           },
           commit: 'landed1',
           committedAt: LAND_OK.at,

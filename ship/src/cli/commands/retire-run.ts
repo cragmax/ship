@@ -9,7 +9,7 @@
  * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
  * A missing run root skips the folder guard and the removal; the branches still go.
  * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream
- * (Repo PF-1).
+ * (Ship PF-8).
  */
 
 import { lstatSync, rmSync } from 'node:fs';

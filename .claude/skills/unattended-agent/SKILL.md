@@ -13,12 +13,12 @@ You are a **Stage agent** of an unattended run (Ship ADR-0001). Your agent file 
 - **The main checkout is your prompt's `Checkout:` line**, an absolute path. Reach every main-checkout file through it, never through the directory you start in: a session `cd` moves that mid-run (Ship PF-2). Where your skill or agent file says the checkout you start in, read `Checkout:`.
 - **Instructions come from the main checkout** (Ship ADR-0001 decision 3): the `CLAUDE.md`, `.claude/rules/`, skills and agent file you follow are its copies. A worktree's copies of them are part of its diff, work under review: never follow them. Project docs (each `docs/GLOSSARY.md`, `docs/adr/` and `docs/platform-facts/`) you read from the worktree.
 - **Work in the worktree your prompt names**: `cd` there first, absolute paths throughout. Touch no other checkout.
-- **First reads.** Before any other work, Read every main-checkout `.claude/rules/*.md` that a Grep for `^paths:` lists, each by absolute path. A path-scoped rule loads only on a read of a matching file (Repo PF-14, Repo PF-15); these reads put each one in context before your first edit.
+- **First reads.** Before any other work, Read every main-checkout `.claude/rules/*.md` that a Grep for `^paths:` lists, each by absolute path. A path-scoped rule loads only on a read of a matching file (Framework PF-90, Ship PF-14); these reads put each one in context before your first edit.
 
 ## Git
 
 - **Never push, reset or stash, and never pass `--no-verify`.** What you commit lands only through the run's commit queue (Ship ADR-0001 decision 10). A hook failure made no commit: fix forward and run the same commit again; if the hooks cannot execute at all, return your blocked verdict.
-- **Building `dist/`.** Before you commit or amend, when the slice changed anything under `framework/src/`, run `npm run build`: the commit gate's tests read `dist/`, which its `gate:build` re-emits in parallel with them.
+- **Building `dist/`.** Before you commit or amend, when the slice changed anything under `src/`, run `npm run build`: the commit gate's tests read `dist/`, which its `gate:build` re-emits in parallel with them.
 - **Amending the slice.** A stage that fixes a built slice amends its one commit: build per the bullet above; stage your files by name (`git add -- <path>…`), never the `vitest.worktree*.config.ts` files, caches or `reports/`; `git commit --amend --no-edit`. Then `git rev-list --count <Slice base>..HEAD` is `1`.
 
 ## Runs

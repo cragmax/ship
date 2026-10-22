@@ -32,7 +32,7 @@ export const RUN_UPSTREAM = `origin/${RUN_BASE_BRANCH}`;
 
 /**
  * Where every run worktree lives, relative to the main checkout. A direct child, never deeper: a
- * worktree there takes its path-scoped rules from the main checkout, never its own (Repo PF-15).
+ * worktree there takes its path-scoped rules from the main checkout, never its own (Ship PF-14).
  */
 const WORKTREES_DIR = '.claude/worktrees';
 

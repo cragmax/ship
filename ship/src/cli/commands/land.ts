@@ -176,21 +176,21 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
   }
 }
 
-/** The files `npm run build` reads besides `framework/src/`: its script and `tsc`'s configs. */
-const BUILD_FILES: readonly string[] = ['package.json', 'tsconfig.json', 'framework/tsconfig.json'];
+/** The files `npm run build` reads besides `src/`: its script and `tsc`'s config. */
+const BUILD_FILES: readonly string[] = ['package.json', 'tsconfig.json'];
 
 /**
  * Whether a change touches a path the batch's `dist/` is built from: the
  * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
  * gate's `gate:build` re-emits in parallel with them, so the build makes it
- * current first. Only `framework/src/` builds into `dist/` (Repo ADR-0006 decision 5).
+ * current first. Only `src/` builds into `dist/` (Framework ADR-0045 decision 6).
  * `sync-master` asks it of what the merge brings.
  *
  * @param files - Repository-relative paths changed.
- * @returns `true` when any lies under `framework/src/` or is one of {@link BUILD_FILES}.
+ * @returns `true` when any lies under `src/` or is one of {@link BUILD_FILES}.
  */
 export function needsBuild(files: readonly string[]): boolean {
-  return files.some((file) => file.startsWith('framework/src/') || BUILD_FILES.includes(file));
+  return files.some((file) => file.startsWith('src/') || BUILD_FILES.includes(file));
 }
 
 /** Re-verify the batch clean, never throwing: `false` when residue remains or git cannot tell. */

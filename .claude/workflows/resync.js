@@ -80,14 +80,7 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = [
-  'framework/src/',
-  'tooling/',
-  'framework/test/',
-  'server-pool/',
-  'ship/src/',
-  'ship/test/',
-];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/', 'ship/src/', 'ship/test/'];
 function anyUnder(files, prefixes) {
   return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
 }
@@ -111,7 +104,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Script API TSDoc (framework/src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,

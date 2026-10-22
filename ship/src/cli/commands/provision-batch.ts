@@ -82,7 +82,7 @@ export function provisionBatch(options: ProvisionBatchOptions): ProvisionBatchRe
 }
 
 /**
- * `npm ci` wipes main's `node_modules` or a link target: junction (Repo PF-4), symlink (unprobed).
+ * `npm ci` wipes main's `node_modules` or a link target: junction (Ship PF-9), symlink (unprobed).
  * @throws Refusal `self-hosted`, `main-worktree`, `report-dir-inside-worktree` (report dir in a
  *   linked worktree); StepFailure `preconditions`: not a worktree root, or a linked `node_modules`.
  */

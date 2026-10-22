@@ -219,9 +219,9 @@ describe('land', () => {
   });
 
   it.each([
-    { path: 'framework/src/feature.ts', content: 'changed\n', built: true },
+    { path: 'src/feature.ts', content: 'changed\n', built: true },
     { path: 'tsconfig.json', content: 'changed\n', built: true },
-    { path: 'framework/tsconfig.json', content: 'changed\n', built: true },
+    { path: 'tsconfig.json', content: 'changed\n', built: true },
     { path: 'src/feature.ts', content: 'changed\n', built: false },
     { path: 'package.json', content: BUMPED_PACKAGE, built: true },
     { path: 'tooling/tool.ts', content: 'changed\n', built: false },
@@ -238,11 +238,7 @@ describe('land', () => {
 
   it('rolls back a slice whose build fails, the batch clean at the cut', TIMEOUT, () => {
     const run = makeRun({ 'package.json': FIXTURE_PACKAGE, 'build.js': 'process.exit(3);\n' });
-    const sha = commitChanges(
-      run.slice,
-      { write: { 'framework/src/feature.ts': 'changed\n' } },
-      'slice',
-    );
+    const sha = commitChanges(run.slice, { write: { 'src/feature.ts': 'changed\n' } }, 'slice');
 
     const r = land(run.batch, sha, run.cut);
 
@@ -257,7 +253,7 @@ describe('land', () => {
     expect(r.json.errors[0]?.step).toBe('build');
     expect(headSha(run.batch)).toBe(run.cut);
     expect(porcelain(run.batch)).toBe('');
-    expect(existsSync(join(run.batch, 'framework/src/feature.ts'))).toBe(false);
+    expect(existsSync(join(run.batch, 'src/feature.ts'))).toBe(false);
   });
 
   it.each([

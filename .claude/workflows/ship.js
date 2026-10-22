@@ -13,7 +13,7 @@ export const meta = {
     {
       title: 'Issues',
       detail:
-        'per issue, in dependency order: tdd, spec review, test review, standards review, Script API TSDoc (framework/src/ only), land',
+        'per issue, in dependency order: tdd, spec review, test review, standards review, Script API TSDoc (src/ only), land',
     },
     {
       title: 'Epic end',
@@ -42,14 +42,7 @@ const STAGES = {
 const MAX_SLICES = 4;
 const PROBE_CAP_MINUTES = 15;
 const PROBES_PER_STAGE = 3;
-const CODE_PREFIXES = [
-  'framework/src/',
-  'tooling/',
-  'framework/test/',
-  'server-pool/',
-  'ship/src/',
-  'ship/test/',
-];
+const CODE_PREFIXES = ['src/', 'tooling/', 'test/', 'server-pool/', 'ship/src/', 'ship/test/'];
 function anyUnder(files, prefixes) {
   return files.some((path) => prefixes.some((prefix) => path.startsWith(prefix)));
 }
@@ -73,7 +66,7 @@ const SHIP_PHASES = [
     title: PHASE_TITLES.issues,
     detail:
       'per issue, in dependency order: tdd, spec review, test review, standards review, ' +
-      'Script API TSDoc (framework/src/ only), land',
+      'Script API TSDoc (src/ only), land',
   },
   {
     title: PHASE_TITLES.epicEnd,
@@ -2474,12 +2467,12 @@ const GH_BODY_LIMIT = 65_536;
 
 const PLATFORM_WIDE_PATHS = [
   'ph-plugin/',
-  'framework/src/fluent/ph-plugin-protocol.ts',
-  'framework/src/rcon/',
-  'framework/src/engine/bot/',
-  'framework/src/engine/state/bot-list.ts',
+  'src/fluent/ph-plugin-protocol.ts',
+  'src/rcon/',
+  'src/engine/bot/',
+  'src/engine/state/bot-list.ts',
   'server-pool/',
-  'framework/src/world-state-reset/',
+  'src/world-state-reset/',
   'tooling/integration/',
   'tooling/lib/integration-tiers.ts',
   'tooling/hooks/push-scope.ts',
@@ -2492,7 +2485,7 @@ const PLATFORM_WIDE_PATHS = [
   'vitest.config.ts',
   'vitest.integration.config.ts',
   'vitest.bodies.config.ts',
-  'framework/test/helpers/',
+  'test/helpers/',
   'tooling/test/helpers/',
   'package.json',
   'package-lock.json',
@@ -3482,7 +3475,7 @@ async function testReviewStage(s) {
   );
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
-const TEST_PREFIXES = ['framework/test/', 'tooling/test/', 'server-pool/test/', 'ship/test/'];
+const TEST_PREFIXES = ['test/', 'tooling/test/', 'server-pool/test/', 'ship/test/'];
 async function testSkip(s) {
   const { files } = s;
   if (isTrivialSurface(files)) return 'trivial surface';
@@ -3510,8 +3503,8 @@ async function standardsReviewStage(s) {
 }
 async function scriptApiTsdocStage(s) {
   const { at } = s;
-  if (!s.files.some((path) => path.startsWith('framework/src/'))) {
-    return { next: { ...s, scriptApiTsdoc: 'no framework/src/ change' } };
+  if (!s.files.some((path) => path.startsWith('src/'))) {
+    return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
   }
   const values = {
     ...sliceCommitValues(s),
