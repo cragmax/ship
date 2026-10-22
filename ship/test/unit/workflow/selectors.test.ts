@@ -19,7 +19,7 @@ describe('isTrivialSurface', () => {
     [
       "ship/'s docs only",
       [
-        'ship/CLAUDE.md',
+        'ship/README.md',
         'ship/docs/adr/0001-unattended-runs-rendered-scheduler-reviewed-slices-pr-gate.md',
       ],
       true,
