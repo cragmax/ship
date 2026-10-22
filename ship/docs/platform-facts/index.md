@@ -2,7 +2,7 @@
 
 The `ship/` subproject's series of platform facts: the Claude Code workflow runtime
 unattended runs execute in, and the tools Ship drives. Facts here are cited
-`Ship PF-N`, inside this subproject too. The record format, prose rules, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`; the root [docs/platform-facts/index.md](../../../docs/platform-facts/index.md) maps the subprojects.
+`Ship PF-N`, inside this subproject too. The record format, admission bar and living-ness rules are the `probe` skill's `PLATFORM-FACTS-FORMAT.md`; the root [docs/platform-facts/index.md](../../../docs/platform-facts/index.md) maps the subprojects.
 
 ## Categories
 
