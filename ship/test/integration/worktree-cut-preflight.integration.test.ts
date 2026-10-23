@@ -8,13 +8,12 @@
  * @integrationTier standalone
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../../tooling/lib/strings.js';
 import { preflight, type WarmProbe } from '../../src/cli/commands/preflight.js';
 import type { PreflightResult } from '../../src/cli/envelope/types-run.js';
 import {
@@ -30,7 +29,12 @@ import {
   writeFakeGh,
   type FakeGhResponse,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  makePlainMain,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -41,20 +45,12 @@ let root: string;
 let main: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-cut-')));
-  main = makeGitRepo(root, {
-    'base.txt': 'base\n',
-    '.gitignore': '/.claude/worktrees/\n/reports/\n',
-  });
+  root = makeTempRoot('ph-wt-cut-');
+  main = makePlainMain(root);
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /**

@@ -5,13 +5,8 @@
  * @integrationTier standalone
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import { checkMaster } from '../../src/cli/commands/check-master.js';
 import type { CheckMasterResult } from '../../src/cli/envelope/types-run.js';
 import {
@@ -21,7 +16,7 @@ import {
   makeBareOrigin,
   makeGitRepo,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import { makeTempRoot, removeTempDirs, runCli } from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -34,20 +29,31 @@ let bare: string;
 let first: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-master-')));
+  root = makeTempRoot('ph-wt-master-');
   main = makeGitRepo(root, { 'base.txt': 'base\n' });
   bare = makeBareOrigin(root, main);
   first = headSha(main);
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
+
+/** Point origin's master back at the launch sha `first`. */
+function rewindOrigin(): void {
+  mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+}
+
+/**
+ * Push a commit to origin and fetch it into main, then {@link rewindOrigin}; returns the pushed
+ * sha, which main has seen and origin no longer holds.
+ */
+function pushFetchRewind(): string {
+  const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
+  mustRun('git', ['fetch', '-q', 'origin'], main);
+  rewindOrigin();
+  return pushed;
+}
 
 describe('check-master', () => {
   it('refuses a local master rewound since the launch, naming both shas, exit 1', TIMEOUT, () => {
@@ -104,9 +110,7 @@ describe('check-master', () => {
   });
 
   it("refuses origin's master rewound since the launch without a synced sha", TIMEOUT, () => {
-    const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
-    mustRun('git', ['fetch', '-q', 'origin'], main);
-    mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+    const pushed = pushFetchRewind();
 
     const r = checkMaster({ main, local: first, remote: pushed, synced: null });
 
@@ -150,9 +154,7 @@ describe('check-master', () => {
     "refuses origin's master rewound since the launch, even level with the synced sha",
     TIMEOUT,
     () => {
-      const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
-      mustRun('git', ['fetch', '-q', 'origin'], main);
-      mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+      const pushed = pushFetchRewind();
 
       const r = checkMaster({ main, local: first, remote: pushed, synced: first });
 
@@ -165,9 +167,7 @@ describe('check-master', () => {
   );
 
   it('refuses origin rewound to its launch sha behind the synced sha', TIMEOUT, () => {
-    const synced = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
-    mustRun('git', ['fetch', '-q', 'origin'], main);
-    mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+    const synced = pushFetchRewind();
 
     const r = checkMaster({ main, local: first, remote: first, synced });
 
@@ -182,9 +182,7 @@ describe('check-master', () => {
     'refuses origin force-moved to a descendant of its launch lacking the synced sha',
     TIMEOUT,
     () => {
-      const synced = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
-      mustRun('git', ['fetch', '-q', 'origin'], main);
-      mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+      const synced = pushFetchRewind();
       const other = advanceOrigin(root, bare, { write: { 'other.txt': 'o\n' } });
 
       const r = checkMaster({ main, local: first, remote: first, synced });
@@ -218,7 +216,7 @@ describe('check-master', () => {
     // Kept on another origin branch: origin's master back at the launch needs
     // no fetch, so only the synced comparison's own fetch can find it.
     mustRun('git', ['update-ref', 'refs/heads/kept', synced], bare);
-    mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+    rewindOrigin();
 
     const r = checkMaster({ main, local: first, remote: first, synced });
 
