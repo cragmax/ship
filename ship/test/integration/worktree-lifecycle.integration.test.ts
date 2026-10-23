@@ -11,14 +11,12 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,14 +36,16 @@ import type {
 } from '../../src/cli/envelope/types.js';
 import {
   expectUsageFailure,
+  type FixtureRepoOptions,
   isJunction,
   isRegistered,
   listTree,
   makeFixtureRepo,
+  makeTempRoot,
   prebuildNpmTemplate,
+  removeTempDirs,
   runCli,
   seedBatch,
-  type FixtureRepoOptions,
 } from '../helpers/worktree-cli-fixture.js';
 import {
   addWorktree,
@@ -64,16 +64,12 @@ prebuildNpmTemplate();
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'ph-wt-'));
+  root = makeTempRoot('ph-wt-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir. rmSync does not follow junctions.
-  }
+  // rmSync does not follow junctions, so a link's target outside root survives.
+  removeTempDirs([root]);
 });
 
 interface Layout {

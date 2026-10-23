@@ -6,13 +6,10 @@
  * @integrationTier standalone
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import {
   advanceOrigin,
   advanceOriginByMerge,
@@ -24,7 +21,7 @@ import {
   withOriginAndBatch,
   type FixtureRun,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runSyncMaster } from '../helpers/worktree-cli-fixture.js';
+import { makeTempRoot, removeTempDirs, runSyncMaster } from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -33,16 +30,11 @@ const DOC_INDEX = 'docs/GLOSSARY.md';
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-')));
+  root = makeTempRoot('ph-wt-sync-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /** A repo with a bare origin and a batch worktree on `ship/r` cut from `master`. */

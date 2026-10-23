@@ -7,13 +7,10 @@
  * @integrationTier standalone
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import {
   advanceOrigin,
   commitChanges,
@@ -26,7 +23,9 @@ import {
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
+  makeTempRoot,
   prebuildNpmTemplate,
+  removeTempDirs,
   runSyncMaster,
 } from '../helpers/worktree-cli-fixture.js';
 import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
@@ -44,16 +43,11 @@ prebuildNpmTemplate();
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-')));
+  root = makeTempRoot('ph-wt-sync-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /**
