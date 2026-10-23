@@ -1,6 +1,6 @@
 # Claude Code as the session
 
-This category covers **Claude Code** as the session a run's agents work in: what a worktree's agents load, how an agent file preloads skills and the LSP tool, and the language server a teardown leaves behind. Facts here are version-stamped against the **Claude Code** release in their **Platform** line; a release can move them, so re-verify before relying on one.
+This category covers **Claude Code** as the session a run's agents work in: what a worktree's agents load, how an agent file preloads skills and the LSP tool, the language server a teardown leaves behind, and what that server answers while it loads a project. Facts here are version-stamped against the **Claude Code** release in their **Platform** line; a release can move them, so re-verify before relying on one.
 
 ## Ship PF-14 · A worktree directly under `.claude/worktrees/` gets the main checkout's path-scoped rules on a read, never its own `CLAUDE.md` or rules
 
@@ -73,3 +73,21 @@ This category covers **Claude Code** as the session a run's agents work in: what
 - **Established.** 2026-10-10, nested `claude -p` sessions with probe agent files: `tools: Read, Grep, LSP, ToolSearch` → LSP deferred, one ToolSearch loaded it and goToDefinition answered; `tools: Read, Grep, LSP` → LSP preloaded and answered. A just-started server answered goToDefinition with the import line, not the definition.
 - **Last verified.** 2026-10-10.
 - **Relied on by.** The `tools:` line of the code-reading agents in `.claude/agents/` (`tdd.md`, the review agents, `issue-readiness.md`, `issue-overlap.md`).
+
+## Ship PF-19 · While tsserver loads a configured project, a references request gets the open file's own occurrences only
+
+- **Claim.** A `textDocument/references` request sent right after `textDocument/didOpen`, while tsserver is still loading the configured project, is answered with the occurrences in the open file only, and no error says the answer is partial. The same request sent once the project has loaded returns the occurrences in every file of the project. The early answer comes from the syntax-only server that typescript-language-server runs beside the semantic one (`--serverMode partialSemantic`, Ship PF-17), which sees open files only (unprobed: the driver read the answers, not which server sent them).
+- **Implication.** If a first `findReferences` answer lists only the open file's occurrences, ask again before treating the symbol as unused elsewhere.
+- **Platform.** typescript-language-server 6.0.2 (global install) over stdio, TypeScript 5.9.3 (the repo's `node_modules/typescript`, passed as `tsserver.path`), Node 24.19.0, Windows 11.
+- **Established.** 2026-10-23, #1714. A throwaway Node driver spawned typescript-language-server 6.0.2 with `--stdio` against TypeScript 5.9.3, sent `initialize` with the repo as its root, opened `src/config/loader.ts`, sent `textDocument/references` on `loadConfig` at once, waited 90 s, and sent the same request again. Deciding output:
+
+  ```text
+     428ms notify $/progress {"kind":"begin","title":"Initializing JS/TS language features…"}
+     529ms refs#1 (sent at open, during project load) locations=1 files=1 trees=src
+      src/config/loader.ts 1
+    8358ms notify $/progress {"kind":"end"}
+   90676ms refs#2 (after wait) locations=44 files=13 trees=server-pool,src,test
+  ```
+
+- **Last verified.** 2026-10-23.
+- **Relied on by.** The `LSP` line of `CLAUDE.md` (a first answer from a cold index is asked again).
