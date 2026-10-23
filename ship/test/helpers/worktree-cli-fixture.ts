@@ -284,7 +284,9 @@ export function expectUsageFailure(run: CliRun<ResultBase>): void {
 export function runSyncMaster(batch: string, ...flags: string[]): CliRun<SyncMasterResult> {
   const r = runCli<SyncMasterResult>(['sync-master', batch, ...flags]);
   onTestFinished(() => {
-    removeTempDirs(r.json.logs.map((log) => dirname(log)));
+    // A usage failure or a throw prints the bare `ResultBase` envelope, which has no `logs`.
+    const { logs = [] } = r.json as Partial<SyncMasterResult>;
+    removeTempDirs(logs.map((log) => dirname(log)));
   });
   return r;
 }
