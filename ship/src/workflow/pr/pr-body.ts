@@ -28,7 +28,6 @@ import type { PushedChanges } from '../../../../tooling/hooks/lib/push-scope.js'
 import type {
   CommitSpec,
   EpicReviewOutput,
-  OverlapConfidence,
   PrWriterOutput,
   ProbeRecord,
   RetroFinding,
@@ -38,7 +37,7 @@ import type {
 import type { ReleasedEdge } from '../../core/scheduler/run-scheduler.types.js';
 import type { ForwardMove, PassedMasterCheck } from '../epic-end/master-check.js';
 import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
-import type { OverlapEdge, OverlapRecord } from '../preflight.js';
+import type { OverlapEdge, OverlapRecord, UnsurePair } from '../preflight.js';
 import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from '../epic-end/sync-master-step.js';
 import type { BumpOutput, KeptWork } from '../calls/tool-calls.js';
@@ -94,8 +93,6 @@ export type ScheduleBlocker =
       readonly issue: number;
       /** `overlap`: an edge pre-flight's overlap estimate added. */
       readonly source: 'overlap';
-      /** issue-overlap's word for the edge. */
-      readonly confidence: OverlapConfidence;
       /** How the blocking issue settled without landing, releasing the edge; absent when not. */
       readonly released?: ReleasedEdge['trigger'];
     };
@@ -361,8 +358,9 @@ interface FittedPrBody {
  * @param input - The epic's report.
  * @returns The {@link renderPrBody} body and no comment when it is within
  *   {@link GH_BODY_LIMIT}. Otherwise every movable section with at least one
- *   line moves out — `Overlap edges`, `Schedule`, `Retro findings`, in that
- *   order; an empty one stays in the body as `None.` — its lines in the body
+ *   line moves out — `Overlap edges`, `Unsure overlap pairs`, `Schedule`,
+ *   `Retro findings`, in that order; an empty one stays in the body as `None.`,
+ *   but for `Unsure overlap pairs`, left out — its lines in the body
  *   replaced by one line naming the limit and the comment's report-dir file.
  *   A body still over the limit after the move is returned as it is:
  *   `publish` refuses it before the push.
@@ -542,6 +540,9 @@ function runReportLines(
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
+    ...(input.overlap.unsure.length === 0
+      ? []
+      : movableSection(input, UNSURE_PAIRS_SECTION, moved)),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
     ...movableSection(input, RETRO_FINDINGS_SECTION, moved),
@@ -562,6 +563,12 @@ const OVERLAP_EDGES_SECTION: MovableSection = {
   lines: (input) => overlapLines(input.overlap.added),
 };
 
+const UNSURE_PAIRS_SECTION: MovableSection = {
+  heading: 'Unsure overlap pairs',
+  file: 'pr-comment-unsure-overlap-pairs.md',
+  lines: (input) => input.overlap.unsure.map(unsurePairLine),
+};
+
 const SCHEDULE_SECTION: MovableSection = {
   heading: 'Schedule',
   file: 'pr-comment-schedule.md',
@@ -577,6 +584,7 @@ const RETRO_FINDINGS_SECTION: MovableSection = {
 /** The movable sections, in the order {@link fitPrBody} moves them. */
 const MOVABLE_SECTIONS: readonly MovableSection[] = [
   OVERLAP_EDGES_SECTION,
+  UNSURE_PAIRS_SECTION,
   SCHEDULE_SECTION,
   RETRO_FINDINGS_SECTION,
 ];
@@ -667,13 +675,13 @@ function epicAnswerLines(answer: EpicReviewOutput): string[] {
 }
 
 /**
- * One `- #B → #D1, #D2 (<confidence>): <reason>` line per group of edges sharing
- * blocker, confidence and reason; groups and dependents in edge order.
+ * One `- #B → #D1, #D2: <reason>` line per group of edges sharing blocker and reason; groups and
+ * dependents in edge order.
  */
 function overlapLines(edges: readonly OverlapEdge[]): string[] {
   const groups = new Map<string, { readonly edge: OverlapEdge; readonly dependents: string[] }>();
   for (const edge of edges) {
-    const key = JSON.stringify([edge.blocker, edge.confidence, edge.reason]);
+    const key = JSON.stringify([edge.blocker, edge.reason]);
     const dependent = `#${String(edge.dependent)}`;
     const group = groups.get(key);
     if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
@@ -681,8 +689,17 @@ function overlapLines(edges: readonly OverlapEdge[]): string[] {
   }
   return [...groups.values()].map(
     ({ edge, dependents }) =>
-      `- #${String(edge.blocker)} → ${dependents.join(', ')} (${edge.confidence}): ${edge.reason}`,
+      `- #${String(edge.blocker)} → ${dependents.join(', ')}: ${edge.reason}`,
   );
+}
+
+/**
+ * `- #A and #B, reported, not ordered; shared <paths>: <reason>`, each path a code span, the
+ * `; shared <paths>` part left out when the pair names none.
+ */
+function unsurePairLine(pair: UnsurePair): string {
+  const shared = pair.shared.length === 0 ? '' : `; shared ${pair.shared.map(codeSpan).join(', ')}`;
+  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${pair.reason}`;
 }
 
 /** One issue's schedule line: `never` for a missing instant, `none` for no blockers or size. */
@@ -700,13 +717,12 @@ function scheduleLine(entry: ScheduleEntry): string {
 }
 
 /**
- * `#B (declared)` or `#B (overlap, <confidence>)`, a released edge's parentheses ending
- * `, released: <trigger>`.
+ * `#B (declared)` or `#B (overlap)`, a released edge's parentheses ending `, released: <trigger>`.
  */
 function blockerText(blocker: ScheduleBlocker): string {
   if (blocker.source === 'declared') return `#${String(blocker.issue)} (declared)`;
   const released = blocker.released === undefined ? '' : `, released: ${blocker.released}`;
-  return `#${String(blocker.issue)} (overlap, ${blocker.confidence}${released})`;
+  return `#${String(blocker.issue)} (overlap${released})`;
 }
 
 /** The lease totals' lines: per engine, per issue, then each unparsed line. */

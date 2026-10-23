@@ -500,9 +500,8 @@ function scheduleBlocker(
   dependent: number,
   overlap: OverlapRecord,
 ): ScheduleBlocker {
-  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
-  if (added === undefined) return { issue: blocker, source: 'declared' };
-  return { issue: blocker, source: 'overlap', confidence: added.confidence };
+  const added = overlap.added.some((e) => e.blocker === blocker && e.dependent === dependent);
+  return { issue: blocker, source: added ? 'overlap' : 'declared' };
 }
 
 /** The part of the run's overlap record that concerns one entry. */

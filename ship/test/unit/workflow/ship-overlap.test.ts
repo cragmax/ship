@@ -69,7 +69,7 @@ describe('runShip — the overlap estimate', () => {
       status: 'preflight-ok',
       graph: { runSet: [{ epic: null, issues: [7, 8] }], edges: [{ blocker: 7, dependent: 8 }] },
       overlap: {
-        added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: REASON }],
+        added: [{ blocker: 7, dependent: 8, reason: REASON }],
         sequenced: [],
         areaMap: 'read',
       },
@@ -108,7 +108,7 @@ describe('runShip — the overlap estimate', () => {
     const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
 
     expect(report.overlap).toEqual({
-      added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: REASON }],
+      added: [{ blocker: 7, dependent: 8, reason: REASON }],
       sequenced: [],
       unsure: [],
       areaMap: 'read',
@@ -130,7 +130,7 @@ describe('runShip — the overlap estimate', () => {
     expect(report).toMatchObject({ status: 'done', epics: [{ outcome: 'pr' }] });
   });
 
-  it('names an overlap blocker’s source and confidence on its PR body schedule line', async () => {
+  it('names an overlap blocker’s source on its PR body schedule line', async () => {
     const run = fakeHooks({
       ...SEVEN_EIGHT,
       issueOverlap: estimate({ a: 8, b: 7, confidence: 'likely' }),
@@ -143,7 +143,7 @@ describe('runShip — the overlap estimate', () => {
       .filter((l) => /^- #\d+: blockers /.test(l));
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
-      '- #8: blockers #7 (overlap, likely); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
+      '- #8: blockers #7 (overlap); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
     ]);
   });
 
@@ -197,7 +197,7 @@ describe('runShip — the overlap estimate', () => {
     const report = await runShip(run.hooks, 'issues 7 8 9 --preflight-only');
 
     expect(report.overlap).toEqual({
-      added: [{ blocker: 7, dependent: 9, confidence: 'likely', reason: REASON }],
+      added: [{ blocker: 7, dependent: 9, reason: REASON }],
       sequenced: [],
       unsure: [
         { a: 9, b: 8, shared: ['src/a.ts', 'src/b.ts'], reason: 'both in the engine area' },
@@ -205,6 +205,31 @@ describe('runShip — the overlap estimate', () => {
       ],
       areaMap: 'read',
     });
+  });
+
+  it('lists an unsure pair within the list in the PR body’s run report, reported, not ordered', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      issueOverlap: estimate({
+        a: 7,
+        b: 8,
+        confidence: 'unsure',
+        shared: ['src/a.ts', 'src/b.ts'],
+      }),
+    });
+
+    await runShip(run.hooks, 'issues 7 8');
+
+    const lines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '').split(
+      '\n',
+    );
+    const at = lines.indexOf('## Unsure overlap pairs');
+    expect(lines.slice(at, at + 4)).toEqual([
+      '## Unsure overlap pairs',
+      '',
+      `- #7 and #8, reported, not ordered; shared \`src/a.ts\`, \`src/b.ts\`: ${REASON}`,
+      '',
+    ]);
   });
 
   it('lists an issue’s declared and overlap blockers ascending, each with its source', async () => {
@@ -226,7 +251,7 @@ describe('runShip — the overlap estimate', () => {
       [],
       [],
       [
-        { issue: 7, source: 'overlap', confidence: 'likely' },
+        { issue: 7, source: 'overlap' },
         { issue: 8, source: 'declared' },
       ],
     ]);
@@ -293,11 +318,11 @@ describe('runShip — the overlap estimate', () => {
     expect(report.epics.map((e) => e.schedule)).toEqual([
       [
         { issue: 1, blockers: [], ...never },
-        { issue: 4, blockers: [{ issue: 1, source: 'overlap', confidence: 'likely' }], ...never },
+        { issue: 4, blockers: [{ issue: 1, source: 'overlap' }], ...never },
       ],
       [
         { issue: 2, blockers: [{ issue: 1, source: 'declared' }], ...never },
-        { issue: 3, blockers: [{ issue: 2, source: 'overlap', confidence: 'likely' }], ...never },
+        { issue: 3, blockers: [{ issue: 2, source: 'overlap' }], ...never },
       ],
     ]);
   });
@@ -367,9 +392,9 @@ describe('runShip — the overlap estimate', () => {
     const edgeLines = (label: string): string[] =>
       (run.calls.find((c) => c.label === label)?.prompt ?? '')
         .split('\n')
-        .filter((l) => /^- #\d+ → #\d+ /.test(l));
-    expect(edgeLines('runner:publish:epic-1')).toEqual([`- #1 → #2 (likely): ${REASON}`]);
-    expect(edgeLines('runner:publish:epic-2')).toEqual([`- #3 → #4 (likely): ${REASON}`]);
+        .filter((l) => /^- #\d+ → #\d+/.test(l));
+    expect(edgeLines('runner:publish:epic-1')).toEqual([`- #1 → #2: ${REASON}`]);
+    expect(edgeLines('runner:publish:epic-2')).toEqual([`- #3 → #4: ${REASON}`]);
   });
 
   it.each([
@@ -527,14 +552,14 @@ describe('runShip — an overlap edge whose head lands nothing', () => {
 
     expect(report.epics[0]?.schedule.map((s) => s.blockers)).toEqual([
       [],
-      [{ issue: 7, source: 'overlap', confidence: 'likely', released: 'blocked' }],
+      [{ issue: 7, source: 'overlap', released: 'blocked' }],
     ]);
     const scheduleLines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '')
       .split('\n')
       .filter((l) => /^- #\d+: blockers /.test(l));
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed never; attempts 1; size none',
-      '- #8: blockers #7 (overlap, likely, released: blocked); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
+      '- #8: blockers #7 (overlap, released: blocked); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
     ]);
   });
 

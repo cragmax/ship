@@ -35,7 +35,6 @@ import type { PreflightCheck, PreflightResult } from '../cli/envelope/types-run.
 import {
   AGENT_CALLS,
   type EstimatedPair,
-  type OverlapConfidence,
   type IssueReadiness,
   type ReadinessVerdict,
 } from './calls/agent-calls.js';
@@ -124,10 +123,8 @@ interface PreflightOutcome {
   readonly checkout: string | null;
 }
 
-/** An overlap edge pre-flight added, with `issue-overlap`'s word for it. */
+/** An overlap edge pre-flight added from a `likely` pair, with `issue-overlap`'s reason for it. */
 export type OverlapEdge = RunEdge & {
-  /** How sure `issue-overlap` was. */
-  readonly confidence: OverlapConfidence;
   /** What backs it. */
   readonly reason: string;
 };
@@ -306,7 +303,7 @@ async function settleOverlap(
   }
   if (live.length > 0) return withRefusals(found, live);
   const overlap: OverlapRecord = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
+    added: merged.added.map((e) => ({ ...e, reason: pairReason(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     unsure: unsureWithin.map(({ a, b, shared, reason }) => ({ a, b, shared, reason })),
     areaMap: estimate.areaMap,
@@ -356,14 +353,9 @@ function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[
   };
 }
 
-/** `issue-overlap`'s confidence and reason for one unordered pair: its first matching pair's. */
-function pairWord(
-  a: number,
-  b: number,
-  pairs: readonly EstimatedPair[],
-): Pick<OverlapEdge, 'confidence' | 'reason'> {
-  const word = pairs.find((p) => samePair(p, a, b));
-  return { confidence: word?.confidence ?? 'unsure', reason: word?.reason ?? '' };
+/** `issue-overlap`'s reason for one unordered pair: its first matching pair's. */
+function pairReason(a: number, b: number, pairs: readonly EstimatedPair[]): string {
+  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
 }
 
 /** Whether an estimated pair is the unordered pair `{a, b}`, in either order. */

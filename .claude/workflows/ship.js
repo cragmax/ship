@@ -2790,6 +2790,9 @@ function runReportLines(input, moved = new Set()) {
     `- Report dir: \`${input.reportDir}\``,
     '',
     ...movableSection(input, OVERLAP_EDGES_SECTION, moved),
+    ...(input.overlap.unsure.length === 0
+      ? []
+      : movableSection(input, UNSURE_PAIRS_SECTION, moved)),
     ...movableSection(input, SCHEDULE_SECTION, moved),
     ...section('Lease timings', leaseLines(input.leases)),
     ...movableSection(input, RETRO_FINDINGS_SECTION, moved),
@@ -2799,6 +2802,11 @@ const OVERLAP_EDGES_SECTION = {
   heading: 'Overlap edges',
   file: 'pr-comment-overlap-edges.md',
   lines: (input) => overlapLines(input.overlap.added),
+};
+const UNSURE_PAIRS_SECTION = {
+  heading: 'Unsure overlap pairs',
+  file: 'pr-comment-unsure-overlap-pairs.md',
+  lines: (input) => input.overlap.unsure.map(unsurePairLine),
 };
 const SCHEDULE_SECTION = {
   heading: 'Schedule',
@@ -2810,7 +2818,12 @@ const RETRO_FINDINGS_SECTION = {
   file: 'pr-comment-retro-findings.md',
   lines: (input) => retroLines(input.retro),
 };
-const MOVABLE_SECTIONS = [OVERLAP_EDGES_SECTION, SCHEDULE_SECTION, RETRO_FINDINGS_SECTION];
+const MOVABLE_SECTIONS = [
+  OVERLAP_EDGES_SECTION,
+  UNSURE_PAIRS_SECTION,
+  SCHEDULE_SECTION,
+  RETRO_FINDINGS_SECTION,
+];
 function movableSection(input, movable, moved) {
   if (!moved.has(movable)) return section(movable.heading, movable.lines(input));
   const limit = String(GH_BODY_LIMIT);
@@ -2864,7 +2877,7 @@ function epicAnswerLines(answer) {
 function overlapLines(edges) {
   const groups = new Map();
   for (const edge of edges) {
-    const key = JSON.stringify([edge.blocker, edge.confidence, edge.reason]);
+    const key = JSON.stringify([edge.blocker, edge.reason]);
     const dependent = `#${String(edge.dependent)}`;
     const group = groups.get(key);
     if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
@@ -2872,8 +2885,12 @@ function overlapLines(edges) {
   }
   return [...groups.values()].map(
     ({ edge, dependents }) =>
-      `- #${String(edge.blocker)} → ${dependents.join(', ')} (${edge.confidence}): ${edge.reason}`,
+      `- #${String(edge.blocker)} → ${dependents.join(', ')}: ${edge.reason}`,
   );
+}
+function unsurePairLine(pair) {
+  const shared = pair.shared.length === 0 ? '' : `; shared ${pair.shared.map(codeSpan).join(', ')}`;
+  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${pair.reason}`;
 }
 function scheduleLine(entry) {
   const blockers =
@@ -2890,7 +2907,7 @@ function scheduleLine(entry) {
 function blockerText(blocker) {
   if (blocker.source === 'declared') return `#${String(blocker.issue)} (declared)`;
   const released = blocker.released === undefined ? '' : `, released: ${blocker.released}`;
-  return `#${String(blocker.issue)} (overlap, ${blocker.confidence}${released})`;
+  return `#${String(blocker.issue)} (overlap${released})`;
 }
 function leaseLines(leases) {
   return [
@@ -3986,9 +4003,8 @@ function neverStarted(issue, graph, overlap) {
   return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
 }
 function scheduleBlocker(blocker, dependent, overlap) {
-  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
-  if (added === undefined) return { issue: blocker, source: 'declared' };
-  return { issue: blocker, source: 'overlap', confidence: added.confidence };
+  const added = overlap.added.some((e) => e.blocker === blocker && e.dependent === dependent);
+  return { issue: blocker, source: added ? 'overlap' : 'declared' };
 }
 function entryOverlap(d, i) {
   const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
@@ -4239,7 +4255,7 @@ async function settleOverlap(hooks, found, attach) {
   }
   if (live.length > 0) return withRefusals(found, live);
   const overlap = {
-    added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
+    added: merged.added.map((e) => ({ ...e, reason: pairReason(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
     unsure: unsureWithin.map(({ a, b, shared, reason }) => ({ a, b, shared, reason })),
     areaMap: estimate.areaMap,
@@ -4274,9 +4290,8 @@ function crossEpicRefusal(pair, pairs) {
       '; epics in one run must be code-disjoint',
   };
 }
-function pairWord(a, b, pairs) {
-  const word = pairs.find((p) => samePair(p, a, b));
-  return { confidence: word?.confidence ?? 'unsure', reason: word?.reason ?? '' };
+function pairReason(a, b, pairs) {
+  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
 }
 function samePair(p, a, b) {
   return (p.a === a && p.b === b) || (p.a === b && p.b === a);
