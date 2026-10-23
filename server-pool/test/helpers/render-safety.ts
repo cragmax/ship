@@ -8,6 +8,11 @@ import { basename } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
 
+/** `source` with its block and line comments removed. */
+export function stripComments(source: string): string {
+  return source.replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
 /**
  * Declares the `<file name> render safety` suite: the file at `path` has no import or re-export
  * and never uses a token that reaches outside a pure function.
@@ -17,8 +22,7 @@ import { describe, it, expect } from 'vitest';
  */
 export function describeRenderSafety(path: string): void {
   describe(`${basename(path)} render safety`, () => {
-    const source = readFileSync(path, 'utf8');
-    const code = source.replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const code = stripComments(readFileSync(path, 'utf8'));
 
     it('has no import statement or re-export', () => {
       const lines = code.split('\n').map((line) => line.trim());

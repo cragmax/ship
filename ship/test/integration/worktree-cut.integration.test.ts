@@ -21,6 +21,7 @@ import {
   writeFakeGh,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import {
+  expectUsageFailure,
   makePlainMain,
   makeTempRoot,
   removeTempDirs,
@@ -260,8 +261,7 @@ describe('usage errors', () => {
     { name: 'preflight --slug with a glob slug', args: ['preflight', 'm', '--slug', 'epic-1,*'] },
   ])('exits 2 with a stamped usage envelope for $name', TIMEOUT, ({ args }) => {
     const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.errors[0]?.step).toBe('usage');
+    expectUsageFailure(run);
     expect(run.json.at).toMatch(ISO_INSTANT);
   });
 });

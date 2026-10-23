@@ -9,6 +9,7 @@ import type {
   SchedulerInput,
   Transition,
 } from '../../../../src/core/scheduler/run-scheduler.types.js';
+import { stripComments } from '../../../../../server-pool/test/helpers/render-safety.js';
 
 /** Create, then feed each event in turn; returns every transition, the initial one first. */
 function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
@@ -335,13 +336,10 @@ describe('advance — duplicate edges', () => {
 
 describe('run-scheduler render safety', () => {
   // Read as text: the render step concatenates the type-stripped run-set.ts and
-  // run-scheduler.ts into one scope. Comments are stripped first (the same two
-  // regexes as server-pool/test/helpers/render-safety.ts) so the header TSDoc
-  // may name forbidden tokens.
+  // run-scheduler.ts into one scope. Comments are stripped first so the header
+  // TSDoc may name forbidden tokens.
   const code = (file: string): string =>
-    readFileSync(resolve(import.meta.dirname, '../../../../src/core', file), 'utf8')
-      .replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '')
-      .replace(/\/\/[^\n]*/g, '');
+    stripComments(readFileSync(resolve(import.meta.dirname, '../../../../src/core', file), 'utf8'));
   const scheduler = code('scheduler/run-scheduler.ts');
   const types = code('scheduler/run-scheduler.types.ts');
   const runSet = code('run-set.ts');

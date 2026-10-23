@@ -27,7 +27,12 @@ import {
   stagedNames,
   type Changes,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { makeTempRoot, removeTempDirs, runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  expectUsageFailure,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
@@ -437,8 +442,6 @@ describe('usage errors', () => {
       args: ['land', 'b', '--base', 'c', '--message-file', 'm', '--log', 'l'],
     },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.errors[0]?.step).toBe('usage');
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });

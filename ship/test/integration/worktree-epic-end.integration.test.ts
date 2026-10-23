@@ -30,7 +30,12 @@ import {
   writeFakeGh,
   type FakePrComment,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { makeTempRoot, removeTempDirs, runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  expectUsageFailure,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
@@ -384,9 +389,7 @@ describe('usage errors', () => {
       args: ['post-pr-comment', 'b', '--pr', '0', '--comment-file', 'f'],
     },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.errors[0]?.step).toBe('usage');
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });
 

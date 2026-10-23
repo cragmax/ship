@@ -16,9 +16,9 @@ import {
   writeRenderedWorkflows,
   type WorkflowSpec,
 } from '../../../src/build/workflow-render.js';
-import { WORKFLOWS } from '../../../src/build/render-workflows.js';
 import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { SHIP_META } from '../../../src/workflow/ship.meta.js';
+import { workflowSpec } from '../workflow/_render.js';
 
 const ROOT = resolve(import.meta.dirname, '../../../..');
 const TAIL = 'return await runShip({ agent, parallel, pipeline, phase, log }, args);\n';
@@ -45,12 +45,6 @@ const FORBIDDEN = [
   'setInterval',
   'queueMicrotask',
 ];
-
-const shipSpec = (): WorkflowSpec => {
-  const spec = WORKFLOWS.find((w) => w.name === 'ship');
-  if (spec === undefined) throw new Error('no ship row in WORKFLOWS');
-  return spec;
-};
 
 /** A source reader over in-memory files, keyed by repo-relative path. */
 const fixture = (files: Readonly<Record<string, string>>) => {
@@ -97,7 +91,7 @@ const FIXTURE_SPEC: WorkflowSpec = {
 describe('the ship render', () => {
   let out = '';
   beforeAll(async () => {
-    out = await renderWorkflow(shipSpec(), ROOT);
+    out = await renderWorkflow(workflowSpec('ship'), ROOT);
   });
 
   it('opens with the meta literal, deep-equal to SHIP_META, then the generated-by line', () => {
@@ -139,7 +133,7 @@ describe('the ship render', () => {
   });
 
   it('is already prettier-formatted', async () => {
-    const outPath = join(ROOT, shipSpec().out);
+    const outPath = join(ROOT, workflowSpec('ship').out);
     const config = await prettier.resolveConfig(outPath);
 
     expect(await prettier.format(out, { ...config, filepath: outPath })).toBe(out);
@@ -154,23 +148,18 @@ describe('the ship render', () => {
     // A Windows checkout (autocrlf) reads the sources CRLF, a Linux one LF.
     const eol = (to: string) => (path: string) => readFileSync(path, 'utf8').replace(/\r?\n/g, to);
 
-    const fromLf = await renderWorkflow(shipSpec(), ROOT, eol('\n'));
+    const fromLf = await renderWorkflow(workflowSpec('ship'), ROOT, eol('\n'));
 
-    expect(await renderWorkflow(shipSpec(), ROOT, eol('\r\n'))).toBe(fromLf);
+    expect(await renderWorkflow(workflowSpec('ship'), ROOT, eol('\r\n'))).toBe(fromLf);
     expect(fromLf).toBe(out);
     expect(fromLf).not.toContain('\r');
   });
 });
 
 describe('the resync render', () => {
-  const resyncSpec = (): WorkflowSpec => {
-    const spec = WORKFLOWS.find((w) => w.name === 'resync');
-    if (spec === undefined) throw new Error('no resync row in WORKFLOWS');
-    return spec;
-  };
   let out = '';
   beforeAll(async () => {
-    out = await renderWorkflow(resyncSpec(), ROOT);
+    out = await renderWorkflow(workflowSpec('resync'), ROOT);
   });
 
   it('opens with the meta literal, deep-equal to RESYNC_META, then the generated-by line', () => {
@@ -192,15 +181,15 @@ describe('the resync render', () => {
   });
 
   it('is already prettier-formatted', async () => {
-    const outPath = join(ROOT, resyncSpec().out);
+    const outPath = join(ROOT, workflowSpec('resync').out);
     const config = await prettier.resolveConfig(outPath);
 
     expect(await prettier.format(out, { ...config, filepath: outPath })).toBe(out);
   });
 
   it('shares the merge step with ship, and reaches no worktree CLI and no epic end', () => {
-    const resync = workflowClosure(ROOT, resyncSpec().entry);
-    const ship = workflowClosure(ROOT, shipSpec().entry);
+    const resync = workflowClosure(ROOT, workflowSpec('resync').entry);
+    const ship = workflowClosure(ROOT, workflowSpec('ship').entry);
 
     expect(resync).toContain('ship/src/workflow/epic-end/sync-master-step.ts');
     expect(ship).toContain('ship/src/workflow/epic-end/sync-master-step.ts');
@@ -228,7 +217,7 @@ describe('the render closure', () => {
   });
 
   it('takes the ship closure through run-set.ts and leaves out type-only modules', () => {
-    const files = workflowClosure(ROOT, shipSpec().entry);
+    const files = workflowClosure(ROOT, workflowSpec('ship').entry);
 
     expect(files).toContain('ship/src/core/run-set.ts');
     expect(files).not.toContain('ship/src/workflow/runtime.types.ts');
@@ -237,7 +226,7 @@ describe('the render closure', () => {
   });
 
   it('takes the scheduler and the lease-line parser into the ship closure, never the CLIs', () => {
-    const files = workflowClosure(ROOT, shipSpec().entry);
+    const files = workflowClosure(ROOT, workflowSpec('ship').entry);
     const at = (file: string): number => files.indexOf(file);
 
     expect(files).toContain('ship/src/core/scheduler/run-scheduler.ts');
@@ -255,8 +244,7 @@ describe('the render closure', () => {
   it.each(['ship', 'resync'])(
     'takes the emitted schema module into the %s closure, never its zod sources',
     async (name) => {
-      const spec = WORKFLOWS.find((w) => w.name === name);
-      if (spec === undefined) throw new Error(`no ${name} row in WORKFLOWS`);
+      const spec = workflowSpec(name);
       const files = workflowClosure(ROOT, spec.entry);
 
       expect(files).toContain('ship/src/workflow/schemas.generated.ts');
@@ -318,14 +306,14 @@ describe('the render guards', () => {
 
 describe('checkRenderedWorkflows and writeRenderedWorkflows', () => {
   let dir = '';
-  let spec: WorkflowSpec = shipSpec();
+  let spec: WorkflowSpec = workflowSpec('ship');
   let rendered = '';
   beforeAll(async () => {
-    rendered = await renderWorkflow(shipSpec(), ROOT);
+    rendered = await renderWorkflow(workflowSpec('ship'), ROOT);
   });
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'workflow-render-'));
-    spec = { ...shipSpec(), out: join(dir, 'ship.js') };
+    spec = { ...workflowSpec('ship'), out: join(dir, 'ship.js') };
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });

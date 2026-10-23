@@ -5,7 +5,7 @@
 import { resolve } from 'node:path';
 import vm from 'node:vm';
 
-import { renderWorkflow } from '../../../src/build/workflow-render.js';
+import { renderWorkflow, type WorkflowSpec } from '../../../src/build/workflow-render.js';
 import { WORKFLOWS } from '../../../src/build/render-workflows.js';
 
 import type { FakeRun } from './_fake-hooks.js';
@@ -13,16 +13,27 @@ import type { FakeRun } from './_fake-hooks.js';
 const ROOT = resolve(import.meta.dirname, '../../../..');
 
 /**
+ * The `WORKFLOWS` row named `name`.
+ *
+ * @param name - The row's name.
+ * @returns The row.
+ * @throws {@link Error} when `WORKFLOWS` has no row of that name.
+ */
+export function workflowSpec(name: string): WorkflowSpec {
+  const spec = WORKFLOWS.find((w) => w.name === name);
+  if (spec === undefined) throw new Error(`no ${name} row in WORKFLOWS`);
+  return spec;
+}
+
+/**
  * Render the `WORKFLOWS` row named `name` from the current sources.
  *
  * @param name - The row's name.
  * @returns The rendered script.
- * @throws {@link Error} when `WORKFLOWS` has no row of that name, or as {@link renderWorkflow}.
+ * @throws {@link Error} as {@link workflowSpec} or {@link renderWorkflow}.
  */
 export async function renderFresh(name: string): Promise<string> {
-  const spec = WORKFLOWS.find((w) => w.name === name);
-  if (spec === undefined) throw new Error(`no ${name} row in WORKFLOWS`);
-  return renderWorkflow(spec, ROOT);
+  return renderWorkflow(workflowSpec(name), ROOT);
 }
 
 // eslint-disable-next-line local/comment-budget -- jsdoc/require-param forces a tag per parameter
