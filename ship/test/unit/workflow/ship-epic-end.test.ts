@@ -10,7 +10,9 @@ import {
   fakeHooks,
   GATE_OK,
   inTurn,
+  LAND_BATCH_DIRTY,
   LAND_OK,
+  labels,
   masterMoved,
   OK,
   readyVerdict,
@@ -47,13 +49,20 @@ const STANDARDS_REVIEW_LEASED = {
   leaseLines: ['with-lease: waited 0.5s for paper@localhost:25702, held 12.5s'],
 };
 
-const LAND_BATCH_DIRTY = {
-  ...LAND_OK,
-  status: 'refused',
-  reason: 'batch-dirty',
-  commit: null,
-  batchClean: false,
-  errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
+/** A master sync refused on a code conflict in `src/a.ts`. */
+const SYNC_CODE_CONFLICT = {
+  'runner:sync-master': {
+    exitCode: 1,
+    envelopePath: 'e.json',
+    status: 'refused',
+    reason: 'code-conflict',
+    errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
+    outcome: null,
+    commit: null,
+    upstream: null,
+    conflicts: [],
+    version: null,
+  },
 };
 
 // Up to date, but naming no origin/master sha: the master check stops the epic
@@ -69,8 +78,6 @@ const SYNC_NO_UPSTREAM = {
   conflicts: [],
   version: null,
 };
-
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 /**
  * The prompt of a recorded call.
@@ -349,20 +356,7 @@ describe('runShip — the retro', () => {
   it.each([
     [
       'a master sync code conflict',
-      {
-        'runner:sync-master': {
-          exitCode: 1,
-          envelopePath: 'e.json',
-          status: 'refused',
-          reason: 'code-conflict',
-          errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
-          outcome: null,
-          commit: null,
-          upstream: null,
-          conflicts: [],
-          version: null,
-        },
-      },
+      SYNC_CODE_CONFLICT,
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
     ],
     [
@@ -1099,20 +1093,7 @@ describe('runShip — a stop before the publish carries no recovery', () => {
   it.each([
     [
       'a master sync code conflict',
-      {
-        'runner:sync-master': {
-          exitCode: 1,
-          envelopePath: 'e.json',
-          status: 'refused',
-          reason: 'code-conflict',
-          errors: [{ step: 'merge', message: 'src/a.ts conflicts' }],
-          outcome: null,
-          commit: null,
-          upstream: null,
-          conflicts: [],
-          version: null,
-        },
-      },
+      SYNC_CODE_CONFLICT,
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
     ],
     [

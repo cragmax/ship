@@ -6,10 +6,13 @@ import {
   fakeHooks,
   GATE_OK,
   inTurn,
+  LAND_BATCH_DIRTY,
+  LAND_CONFLICT,
   LAND_OK,
+  labels,
   readyVerdict,
   TDD_BLOCKED,
-  type FakeRun,
+  when,
   type RecordedCall,
 } from './_fake-hooks.js';
 import { epicRun, holdable, idle } from './_fake-parallel.js';
@@ -22,24 +25,6 @@ const CUT_OK = {
   branch: 'slice/x',
   base: 'cut1',
   slice: 'C:/src/ph-runs/7/slice',
-};
-
-const LAND_CONFLICT = {
-  ...LAND_OK,
-  status: 'conflict',
-  commit: null,
-  conflicts: ['tooling/x.ts'],
-  rolledBack: true,
-  errors: [{ step: 'cherry-pick', message: 'tooling/x.ts would not apply' }],
-};
-
-const LAND_BATCH_DIRTY = {
-  ...LAND_OK,
-  status: 'refused',
-  reason: 'batch-dirty',
-  commit: null,
-  batchClean: false,
-  errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
 /**
@@ -58,21 +43,6 @@ const list = (
     issues: issues.map((issue) => readyVerdict(issue)),
   },
 });
-
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
-
-/**
- * Where an entry sits on the timeline.
- *
- * @param run - The fake run.
- * @param entry - `call <label>` or `log <message>`.
- * @returns Its first index; fails the test when absent.
- */
-const when = (run: FakeRun, entry: string): number => {
-  const at = run.timeline.indexOf(entry);
-  expect(at, `${entry} on the timeline`).toBeGreaterThan(-1);
-  return at;
-};
 
 describe('runShip — issues in flight at once', () => {
   it('authors three independent issues concurrently under the cap', async () => {
@@ -373,8 +343,15 @@ describe('runShip — epics side by side', () => {
     ]);
   });
 
-  it('merges master into one epic at a time', async () => {
-    const hold = holdable(/^runner:sync-master:/);
+  /**
+   * Launch `epics 1 2`, one issue each, holding every call `match` accepts, and let it run to a
+   * standstill.
+   *
+   * @param match - The labels to hold.
+   * @returns The hold, the fake run, and the launch's promise.
+   */
+  async function launchTwoEpicsHolding(match: RegExp) {
+    const hold = holdable(match);
     const run = fakeHooks(
       epicRun([
         { epic: 1, issues: [1] },
@@ -382,15 +359,28 @@ describe('runShip — epics side by side', () => {
       ]),
       { gate: hold.gate },
     );
-
     const done = runShip(run.hooks, 'epics 1 2');
     await idle();
+    return { hold, run, done };
+  }
 
-    expect(labels(run).filter((l) => /^runner:teardown:\d/.test(l))).toHaveLength(2);
-    expect(labels(run).filter((l) => l.startsWith('runner:sync-master'))).toHaveLength(1);
+  /**
+   * Release the first held call and let the run reach its next standstill.
+   *
+   * @param hold - The run's hold.
+   */
+  async function releaseFirst(hold: ReturnType<typeof holdable>): Promise<void> {
     const [first = ''] = hold.held();
     hold.release(first);
     await idle();
+  }
+
+  it('merges master into one epic at a time', async () => {
+    const { hold, run, done } = await launchTwoEpicsHolding(/^runner:sync-master:/);
+
+    expect(labels(run).filter((l) => /^runner:teardown:\d/.test(l))).toHaveLength(2);
+    expect(labels(run).filter((l) => l.startsWith('runner:sync-master'))).toHaveLength(1);
+    await releaseFirst(hold);
     expect(labels(run).filter((l) => l.startsWith('runner:sync-master'))).toHaveLength(2);
     hold.releaseAll();
     await done;
@@ -401,22 +391,10 @@ describe('runShip — epics side by side', () => {
     ['reads the main checkout at the epic end', 'runner:preflight:epic-'],
     ['checks master', 'runner:check-master:epic-'],
   ])('%s for one epic at a time', async (_name, prefix) => {
-    const hold = holdable(new RegExp(`^${prefix}`));
-    const run = fakeHooks(
-      epicRun([
-        { epic: 1, issues: [1] },
-        { epic: 2, issues: [3] },
-      ]),
-      { gate: hold.gate },
-    );
-
-    const done = runShip(run.hooks, 'epics 1 2');
-    await idle();
+    const { hold, run, done } = await launchTwoEpicsHolding(new RegExp(`^${prefix}`));
 
     expect(labels(run).filter((l) => l.startsWith(prefix))).toHaveLength(1);
-    const [first = ''] = hold.held();
-    hold.release(first);
-    await idle();
+    await releaseFirst(hold);
     expect(labels(run).filter((l) => l.startsWith(prefix))).toHaveLength(2);
     hold.releaseAll();
     await done;

@@ -1,36 +1,22 @@
 // Executes a fresh in-memory render of the current sources (renderWorkflow over WORKFLOWS):
 // ship.test.ts drives the TS sources, so a defect only the render carries passes it.
 // The committed file's freshness is gate:codegen's.
-import { resolve } from 'node:path';
 import vm from 'node:vm';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { renderWorkflow } from '../../../src/build/workflow-render.js';
-import { WORKFLOWS } from '../../../src/build/render-workflows.js';
 import { SHIP_META } from '../../../src/workflow/ship.meta.js';
 import { runShip } from '../../../src/workflow/ship.js';
 
-import { fakeHooks, GATE_OK, LAND_OK, liveRuns, TDD_GREEN, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, GATE_OK, LAND_OK, liveRuns, TDD_GREEN } from './_fake-hooks.js';
+import { renderFresh, runRendered } from './_render.js';
 
-const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
 
 let shipJs = '';
 beforeAll(async () => {
-  const spec = WORKFLOWS.find((w) => w.name === 'ship');
-  if (spec === undefined) throw new Error('no ship row in WORKFLOWS');
-  shipJs = await renderWorkflow(spec, ROOT);
+  shipJs = await renderFresh('ship');
 });
-
-/** Run a rendered `ship.js` over a fake run's hooks. */
-function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
-  // The runtime's wrapper (observed): the file, `export` dropped, as an async function
-  // body; hooks + `args` as globals.
-  const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
-  // eslint-disable-next-line sonarjs/code-eval -- runs a fresh render of the repo's own sources, never user input
-  return vm.runInContext(script, vm.createContext({ ...run.hooks, args })) as Promise<unknown>;
-}
 
 /**
  * Drive the TS source and the render through one launch, each over its own fake hooks.

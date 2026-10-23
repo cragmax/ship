@@ -10,7 +10,10 @@ import {
   fakeHooks,
   GATE_OK,
   inTurn,
+  LAND_BATCH_DIRTY,
+  LAND_CONFLICT,
   LAND_OK,
+  labels,
   LIVE_RUNS_NONE,
   liveRuns,
   OK,
@@ -19,6 +22,7 @@ import {
   TDD_BLOCKED,
   TDD_GREEN,
   readyVerdict,
+  when,
   type FakeRun,
 } from './_fake-hooks.js';
 import { epicRun, holdable, idle } from './_fake-parallel.js';
@@ -69,24 +73,6 @@ const SEVEN_STALE_BLOCKS_EIGHT = {
       readyVerdict(9),
     ],
   },
-};
-
-const LAND_CONFLICT = {
-  ...LAND_OK,
-  status: 'conflict',
-  commit: null,
-  conflicts: ['tooling/x.ts'],
-  rolledBack: true,
-  errors: [{ step: 'cherry-pick', message: 'tooling/x.ts would not apply' }],
-};
-
-const LAND_BATCH_DIRTY = {
-  ...LAND_OK,
-  status: 'refused',
-  reason: 'batch-dirty',
-  commit: null,
-  batchClean: false,
-  errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
 const TEARDOWN_SHRANK = {
@@ -680,27 +666,6 @@ describe('runShip — every tool failure is a refusal', () => {
     ]);
   });
 });
-
-/**
- * The recorded labels, in call order.
- *
- * @param run - The fake run.
- * @returns Each call's label.
- */
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
-
-/**
- * Where an entry sits on the timeline.
- *
- * @param run - The fake run.
- * @param entry - `call <label>` or `log <message>`.
- * @returns Its first index; fails the test when absent.
- */
-const when = (run: FakeRun, entry: string): number => {
-  const at = run.timeline.indexOf(entry);
-  expect(at, `${entry} on the timeline`).toBeGreaterThan(-1);
-  return at;
-};
 
 /**
  * The prompt of a recorded call.

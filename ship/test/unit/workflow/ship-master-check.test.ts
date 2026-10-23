@@ -2,15 +2,26 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../src/workflow/ship.js';
 
-import { fakeHooks, masterMoved, PREFLIGHT_OK, type FakeRun } from './_fake-hooks.js';
+import { fakeHooks, labels, masterMoved, PREFLIGHT_OK, type FakeRun } from './_fake-hooks.js';
 
 /**
- * The recorded labels, in call order.
+ * The argv of the epic end's check-master call against the launch snapshot in
+ * {@link PREFLIGHT_OK}.
  *
- * @param run - The fake run.
- * @returns Each call's label.
+ * @param synced - The `--synced` sha.
+ * @returns The words after `node --import tsx`.
  */
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
+const checkMasterArgv = (synced: string): string[] => [
+  'ship/src/cli/worktree.ts',
+  'check-master',
+  'C:/src/main',
+  '--local',
+  'local0',
+  '--remote',
+  'origin0',
+  '--synced',
+  synced,
+];
 
 /**
  * The publish calls a run made.
@@ -20,6 +31,28 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
  */
 const publishes = (run: FakeRun): string[] =>
   labels(run).filter((l) => l.startsWith('runner:publish'));
+
+/**
+ * Assert the epic stopped on a master check that never ran: no check-master call, no publish.
+ *
+ * @param run - The fake run.
+ * @param report - Its report.
+ * @param stop - The stop's message, `mainUntouched` and failure.
+ */
+function expectStoppedUnchecked(
+  run: FakeRun,
+  report: Awaited<ReturnType<typeof runShip>>,
+  stop: { message: string; mainUntouched: boolean | null; failure: string },
+): void {
+  expect(labels(run).filter((l) => l.startsWith('runner:check-master'))).toEqual([]);
+  expect(publishes(run)).toEqual([]);
+  expect(report.epics[0]).toMatchObject({
+    outcome: 'stopped',
+    message: stop.message,
+    mainUntouched: stop.mainUntouched,
+    masterCheck: { passed: false, local: null, remote: null, failure: stop.failure },
+  });
+}
 
 const SYNC_MERGED = {
   exitCode: 0,
@@ -42,17 +75,9 @@ describe('runShip — the master check', () => {
     const report = await runShip(run.hooks, 'issues 7');
 
     expect(publishes(run)).toEqual([]);
-    expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
-      'check-master',
-      'C:/src/main',
-      '--local',
-      'local0',
-      '--remote',
-      'origin0',
-      '--synced',
-      'origin0',
-    ]);
+    expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual(
+      checkMasterArgv('origin0'),
+    );
     expect(report.epics[0]).toMatchObject({
       outcome: 'stopped',
       message:
@@ -84,17 +109,9 @@ describe('runShip — the master check', () => {
       const report = await runShip(run.hooks, 'issues 7');
 
       expect(publishes(run)).toEqual([]);
-      expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual([
-        'ship/src/cli/worktree.ts',
-        'check-master',
-        'C:/src/main',
-        '--local',
-        'local0',
-        '--remote',
-        'origin0',
-        '--synced',
-        'origin1',
-      ]);
+      expect(run.calls.find((c) => c.label === 'runner:check-master:list')?.argv).toEqual(
+        checkMasterArgv('origin1'),
+      );
       expect(report.epics[0]).toMatchObject({
         outcome: 'stopped',
         message: `master check failed: origin master rewound: launch origin0, synced origin1, now ${current} — restore it from origin1`,
@@ -257,18 +274,10 @@ describe('runShip — the master check', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check-master'))).toEqual([]);
-    expect(publishes(run)).toEqual([]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'stopped',
+    expectStoppedUnchecked(run, report, {
       message: 'master check failed: no launch snapshot of master to check against',
       mainUntouched: null,
-      masterCheck: {
-        passed: false,
-        local: null,
-        remote: null,
-        failure: 'no launch snapshot of master to check against',
-      },
+      failure: 'no launch snapshot of master to check against',
     });
   });
 
@@ -279,18 +288,10 @@ describe('runShip — the master check', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:check-master'))).toEqual([]);
-    expect(publishes(run)).toEqual([]);
-    expect(report.epics[0]).toMatchObject({
-      outcome: 'stopped',
+    expectStoppedUnchecked(run, report, {
       message: 'master check failed: master sync named no origin/master sha to check against',
       mainUntouched: true,
-      masterCheck: {
-        passed: false,
-        local: null,
-        remote: null,
-        failure: 'master sync named no origin/master sha to check against',
-      },
+      failure: 'master sync named no origin/master sha to check against',
     });
   });
 

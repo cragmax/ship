@@ -41,6 +41,23 @@ function gate(
   });
 }
 
+/**
+ * The gate over two epic entries: 100's issue 101 waits on 200's issue 201, and 102 on 101.
+ *
+ * @param opts - The gate's mode; `refuse` by default.
+ * @returns The verdict.
+ */
+function crossEpicGate(opts: { mode?: GateMode } = {}): ReturnType<typeof evaluateRunGate> {
+  return gate(
+    [
+      { epic: 100, issues: [101, 102] },
+      { epic: 200, issues: [201] },
+    ],
+    [issue(101, { blockedBy: [201] }), issue(102, { blockedBy: [101] }), issue(201)],
+    opts,
+  );
+}
+
 describe('evaluateRunGate — per-issue rules', () => {
   it('an explicit list, all open + labelled, no blockers → ok', () => {
     expect(gate([{ epic: null, issues: [3, 5, 9] }], [issue(9), issue(3), issue(5)])).toEqual({
@@ -223,15 +240,7 @@ describe('evaluateRunGate — run-level rules', () => {
   });
 
   it('a blocker in a different epic entry → refused with cross-epic-blocker, no edge', () => {
-    expect(
-      gate(
-        [
-          { epic: 100, issues: [101, 102] },
-          { epic: 200, issues: [201] },
-        ],
-        [issue(101, { blockedBy: [201] }), issue(102, { blockedBy: [101] }), issue(201)],
-      ),
-    ).toEqual({
+    expect(crossEpicGate()).toEqual({
       verdict: 'refused',
       mode: 'refuse',
       runSet: [
@@ -437,16 +446,7 @@ describe('evaluateRunGate — exclude mode', () => {
   });
 
   it('a cross-epic dependent drops with its dependents; the blocker stays; an emptied entry goes', () => {
-    expect(
-      gate(
-        [
-          { epic: 100, issues: [101, 102] },
-          { epic: 200, issues: [201] },
-        ],
-        [issue(101, { blockedBy: [201] }), issue(102, { blockedBy: [101] }), issue(201)],
-        { mode: 'exclude' },
-      ),
-    ).toEqual({
+    expect(crossEpicGate({ mode: 'exclude' })).toEqual({
       verdict: 'ok',
       mode: 'exclude',
       runSet: [{ epic: 200, issues: [201] }],
