@@ -493,9 +493,11 @@ async function afterAmend<T extends BuiltSlice>(
 ): Promise<Step<T>> {
   const step = afterReview(s.at, label, out, next);
   if ('stop' in step || out?.verdict !== 'fixed') return step;
-  const files = await reread(s, label, step.next.sha, s.base);
+  const [files, amended] = await Promise.all([
+    reread(s, label, step.next.sha, s.base),
+    reread(s, label, step.next.sha, s.tdd.sha),
+  ]);
   if ('stop' in files) return files;
-  const amended = await reread(s, label, step.next.sha, s.tdd.sha);
   if ('stop' in amended) return amended;
   return { next: { ...step.next, files: files.next, amended: amended.next } };
 }

@@ -1956,7 +1956,9 @@ describe('runShip — the slice’s changed files after an amend', () => {
       labels(run).filter((l) => /^(runner:(changed-files|teardown)|testReview):7-/.test(l)),
     ).toEqual([
       'runner:changed-files:7-1',
+      'runner:changed-files:7-1',
       'runner:teardown:7-1',
+      'runner:changed-files:7-2',
       'runner:changed-files:7-2',
       'runner:teardown:7-2',
     ]);

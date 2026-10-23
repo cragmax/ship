@@ -184,7 +184,7 @@ function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
 }
 
 /** Each issue's entry index. */
-function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
+export function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
   const entryOf = new Map<number, number>();
   graph.runSet.forEach((entry, i) => {
     for (const n of entry.issues) entryOf.set(n, i);

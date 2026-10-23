@@ -3579,9 +3579,11 @@ function afterReview(at, label, out, next) {
 async function afterAmend(s, label, out, next) {
   const step = afterReview(s.at, label, out, next);
   if ('stop' in step || out?.verdict !== 'fixed') return step;
-  const files = await reread(s, label, step.next.sha, s.base);
+  const [files, amended] = await Promise.all([
+    reread(s, label, step.next.sha, s.base),
+    reread(s, label, step.next.sha, s.tdd.sha),
+  ]);
   if ('stop' in files) return files;
-  const amended = await reread(s, label, step.next.sha, s.tdd.sha);
   if ('stop' in amended) return amended;
   return { next: { ...step.next, files: files.next, amended: amended.next } };
 }
@@ -4240,12 +4242,14 @@ async function settleOverlap(hooks, found, attach) {
     issue: o.issue,
     message: `${o.branch}: ${o.reason}`,
   }));
+  const graph = { runSet: values.runSet, edges: values.edges };
+  const entryOf = overlapEntryIndex(graph);
   const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
-  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, values.runSet));
-  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
+  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, entryOf));
+  const pairs = estimated.filter((p) => !isUnsureWithinEntry(p, entryOf));
   let merged;
   try {
-    merged = mergeOverlapEdges({ runSet: values.runSet, edges: values.edges }, pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [...live, { kind: 'overlap-estimate-failed', message }]);
@@ -4262,13 +4266,13 @@ async function settleOverlap(hooks, found, attach) {
   };
   return { ...found, graph: merged.graph, overlap };
 }
-function isUnsureWithinEntry(pair, runSet) {
-  const entry = (n) => runSet.findIndex((e) => e.issues.includes(n));
+function isUnsureWithinEntry(pair, entryOf) {
+  const entry = entryOf.get(pair.a);
   return (
     pair.confidence === 'unsure' &&
     pair.a !== pair.b &&
-    entry(pair.a) !== -1 &&
-    entry(pair.a) === entry(pair.b)
+    entry !== undefined &&
+    entry === entryOf.get(pair.b)
   );
 }
 function generatedOnly(pair) {

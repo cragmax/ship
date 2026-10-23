@@ -19,6 +19,7 @@ import { GENERATED_FILES } from '../core/generated-files.js';
 import type { GateFailure } from '../core/gate/run-gate.js';
 import {
   mergeOverlapEdges,
+  overlapEntryIndex,
   type OverlapCrossPair,
   type OverlapMerge,
   type OverlapPair,
@@ -288,12 +289,14 @@ async function settleOverlap(
   const live = estimate.liveOverlaps.map(
     (o): ShipRefusal => ({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.reason}` }),
   );
+  const graph: RunGraph = { runSet: values.runSet, edges: values.edges };
+  const entryOf = overlapEntryIndex(graph);
   const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
-  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, values.runSet));
-  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
+  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, entryOf));
+  const pairs = estimated.filter((p) => !isUnsureWithinEntry(p, entryOf));
   let merged: OverlapMerge;
   try {
-    merged = mergeOverlapEdges({ runSet: values.runSet, edges: values.edges }, pairs);
+    merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return withRefusals(found, [...live, { kind: 'overlap-estimate-failed', message }]);
@@ -315,13 +318,13 @@ async function settleOverlap(
  * Whether a pair is `unsure` and joins two distinct issues of one entry: such a pair orders no
  * slices (Ship ADR-0001 decision 6), while one across entries still refuses the launch.
  */
-function isUnsureWithinEntry(pair: EstimatedPair, runSet: RunGraph['runSet']): boolean {
-  const entry = (n: number): number => runSet.findIndex((e) => e.issues.includes(n));
+function isUnsureWithinEntry(pair: EstimatedPair, entryOf: ReadonlyMap<number, number>): boolean {
+  const entry = entryOf.get(pair.a);
   return (
     pair.confidence === 'unsure' &&
     pair.a !== pair.b &&
-    entry(pair.a) !== -1 &&
-    entry(pair.a) === entry(pair.b)
+    entry !== undefined &&
+    entry === entryOf.get(pair.b)
   );
 }
 

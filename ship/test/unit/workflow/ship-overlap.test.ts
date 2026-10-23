@@ -44,6 +44,13 @@ const estimate = (
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
+/** A call's prompt lines; fails the test when there is no such call. */
+const promptLines = (run: FakeRun, label: string): string[] => {
+  const call = run.calls.find((c) => c.label === label);
+  expect(call, `a ${label} call`).toBeDefined();
+  return call?.prompt.split('\n') ?? [];
+};
+
 describe('runShip — the overlap estimate', () => {
   it('asks no issue-overlap for a one-issue run with no live run', async () => {
     const run = fakeHooks();
@@ -138,9 +145,9 @@ describe('runShip — the overlap estimate', () => {
 
     await runShip(run.hooks, 'issues 7 8');
 
-    const scheduleLines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '')
-      .split('\n')
-      .filter((l) => /^- #\d+: blockers /.test(l));
+    const scheduleLines = promptLines(run, 'runner:publish:list').filter((l) =>
+      /^- #\d+: blockers /.test(l),
+    );
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #8: blockers #7 (overlap); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
@@ -220,9 +227,7 @@ describe('runShip — the overlap estimate', () => {
 
     await runShip(run.hooks, 'issues 7 8');
 
-    const lines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '').split(
-      '\n',
-    );
+    const lines = promptLines(run, 'runner:publish:list');
     const at = lines.indexOf('## Unsure overlap pairs');
     expect(lines.slice(at, at + 4)).toEqual([
       '## Unsure overlap pairs',
@@ -390,9 +395,7 @@ describe('runShip — the overlap estimate', () => {
     await runShip(run.hooks, 'epics 1 2');
 
     const edgeLines = (label: string): string[] =>
-      (run.calls.find((c) => c.label === label)?.prompt ?? '')
-        .split('\n')
-        .filter((l) => /^- #\d+ → #\d+/.test(l));
+      promptLines(run, label).filter((l) => /^- #\d+ → #\d+/.test(l));
     expect(edgeLines('runner:publish:epic-1')).toEqual([`- #1 → #2: ${REASON}`]);
     expect(edgeLines('runner:publish:epic-2')).toEqual([`- #3 → #4: ${REASON}`]);
   });
@@ -554,9 +557,9 @@ describe('runShip — an overlap edge whose head lands nothing', () => {
       [],
       [{ issue: 7, source: 'overlap', released: 'blocked' }],
     ]);
-    const scheduleLines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '')
-      .split('\n')
-      .filter((l) => /^- #\d+: blockers /.test(l));
+    const scheduleLines = promptLines(run, 'runner:publish:list').filter((l) =>
+      /^- #\d+: blockers /.test(l),
+    );
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed never; attempts 1; size none',
       '- #8: blockers #7 (overlap, released: blocked); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
