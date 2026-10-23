@@ -34,13 +34,14 @@ describe('issue-readiness’s PR head', () => {
 });
 
 describe('a slice review’s Passed at line', () => {
-  it('says none when the tdd ran no test green', () => {
-    const prompt = PROMPTS.specReview({
+  /** A spec review prompt's lines at slice commit `sha`; the tdd ran nothing green at slice1. */
+  const reviewLines = (sha: string): string[] =>
+    PROMPTS.specReview({
       issue: 7,
       slice: 'C:/r/slice-7-1',
       base: 'cut1',
       reportDir: REPORTS,
-      sha: 'slice1',
+      sha,
       files: ['docs/x.md'],
       reportPath: `${REPORTS}/spec-review-7-1.md`,
       passed: {
@@ -50,10 +51,17 @@ describe('a slice review’s Passed at line', () => {
         amended: [],
       },
       lease: { main: 'C:/r/main', projectDir: 'C:/r/slice-7-1', registry: `${REPORTS}/pool.json` },
-    });
+    }).split('\n');
 
-    expect(prompt.split('\n').filter((l) => l.startsWith('Passed at '))).toEqual([
+  it('says none when the tdd ran no test green', () => {
+    expect(reviewLines('slice1').filter((l) => l.startsWith('Passed at '))).toEqual([
       'Passed at slice1: none',
+    ]);
+  });
+
+  it('says none when the amends that moved the slice commit changed no path', () => {
+    expect(reviewLines('spec1').filter((l) => l.startsWith('Amended since: '))).toEqual([
+      'Amended since: the slice commit spec1 differs from slice1; the amends changed none',
     ]);
   });
 });

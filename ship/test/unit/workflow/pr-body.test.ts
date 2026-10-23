@@ -1626,6 +1626,22 @@ describe('renderPrBody — unsure overlap pairs', () => {
   it('leaves the section out when no pair is unsure', () => {
     expect(renderPrBody(INPUT).split('\n')).not.toContain('## Unsure overlap pairs');
   });
+
+  it('keeps a multi-line reason on its pair’s one bullet', () => {
+    const unsure = [
+      { a: 8, b: 7, shared: [], reason: 'both touch the run report\n- and preflight' },
+    ];
+
+    const lines = renderPrBody({ ...INPUT, overlap: { ...INPUT.overlap, unsure } }).split('\n');
+
+    const at = lines.indexOf('## Unsure overlap pairs');
+    expect(lines.slice(at, at + 4)).toEqual([
+      '## Unsure overlap pairs',
+      '',
+      '- #8 and #7, reported, not ordered: both touch the run report - and preflight',
+      '',
+    ]);
+  });
 });
 
 describe('renderAttachedSection', () => {

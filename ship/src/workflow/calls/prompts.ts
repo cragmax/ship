@@ -490,17 +490,19 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
 /**
  * The `Passed at <sha>:` block: the tdd's green test files at its commit and its evidence, then,
  * once an amend has moved the slice commit off that sha, an `Amended since:` line naming the move
- * and the paths the amends changed.
+ * and the paths the amends changed. An empty list reads `none`.
  */
 function passedLines(passed: PassedValues, current: string): string[] {
+  const listed = (paths: readonly string[]): string =>
+    paths.length === 0 ? 'none' : paths.join(', ');
   return [
-    `Passed at ${passed.sha}: ${passed.tests.length === 0 ? 'none' : passed.tests.join(', ')}`,
+    `Passed at ${passed.sha}: ${listed(passed.tests)}`,
     `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
     ...(current === passed.sha
       ? []
       : [
           `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
-            `the amends changed ${passed.amended.join(', ')}`,
+            `the amends changed ${listed(passed.amended)}`,
         ]),
   ];
 }

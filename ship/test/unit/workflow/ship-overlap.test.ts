@@ -288,6 +288,36 @@ describe('runShip — the overlap estimate', () => {
     ]);
   });
 
+  it.each([
+    [
+      'the declared edges already order',
+      [{ blocker: 7, dependent: 8 }],
+      estimate({ a: 8, b: 7, confidence: 'unsure' }),
+      { added: [], sequenced: [{ a: 7, b: 8 }], unsure: [], areaMap: 'read' },
+    ],
+    [
+      'a likely pair also names',
+      [],
+      estimate({ a: 7, b: 8, confidence: 'likely' }, { a: 8, b: 7, confidence: 'unsure' }),
+      {
+        added: [{ blocker: 7, dependent: 8, reason: REASON }],
+        sequenced: [],
+        unsure: [],
+        areaMap: 'read',
+      },
+    ],
+  ])('records no unsure pair that %s', async (_name, edges, issueOverlap, overlap) => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }], edges },
+      issueOverlap,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 --preflight-only');
+
+    expect(report.overlap).toEqual(overlap);
+  });
+
   it('reports each blocker’s source for a failed cut’s never-started issues, stopped and dropped alike', async () => {
     // Epic 1's failed cut drops 2 and 3 through the declared 1 → 2, so both
     // of ship.ts's never-started paths render.

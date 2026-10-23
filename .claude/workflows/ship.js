@@ -766,14 +766,15 @@ function sliceReviewPrompt(values) {
   ].join('\n');
 }
 function passedLines(passed, current) {
+  const listed = (paths) => (paths.length === 0 ? 'none' : paths.join(', '));
   return [
-    `Passed at ${passed.sha}: ${passed.tests.length === 0 ? 'none' : passed.tests.join(', ')}`,
+    `Passed at ${passed.sha}: ${listed(passed.tests)}`,
     `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
     ...(current === passed.sha
       ? []
       : [
           `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
-            `the amends changed ${passed.amended.join(', ')}`,
+            `the amends changed ${listed(passed.amended)}`,
         ]),
   ];
 }
@@ -2890,7 +2891,7 @@ function overlapLines(edges) {
 }
 function unsurePairLine(pair) {
   const shared = pair.shared.length === 0 ? '' : `; shared ${pair.shared.map(codeSpan).join(', ')}`;
-  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${pair.reason}`;
+  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${oneLine(pair.reason)}`;
 }
 function scheduleLine(entry) {
   const blockers =
@@ -4243,10 +4244,9 @@ async function settleOverlap(hooks, found, attach) {
     message: `${o.branch}: ${o.reason}`,
   }));
   const graph = { runSet: values.runSet, edges: values.edges };
-  const entryOf = overlapEntryIndex(graph);
   const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
-  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, entryOf));
-  const pairs = estimated.filter((p) => !isUnsureWithinEntry(p, entryOf));
+  const unsureWithin = unsureWithinEntry(graph, estimated);
+  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
   let merged;
   try {
     merged = mergeOverlapEdges(graph, pairs);
@@ -4266,14 +4266,22 @@ async function settleOverlap(hooks, found, attach) {
   };
   return { ...found, graph: merged.graph, overlap };
 }
-function isUnsureWithinEntry(pair, entryOf) {
-  const entry = entryOf.get(pair.a);
-  return (
-    pair.confidence === 'unsure' &&
-    pair.a !== pair.b &&
-    entry !== undefined &&
-    entry === entryOf.get(pair.b)
-  );
+function unsureWithinEntry(graph, pairs) {
+  const entryOf = overlapEntryIndex(graph);
+  const ordered = (p) =>
+    transitiveDependents([p.a], graph.edges).includes(p.b) ||
+    transitiveDependents([p.b], graph.edges).includes(p.a);
+  return pairs.filter((p) => {
+    const entry = entryOf.get(p.a);
+    return (
+      p.confidence === 'unsure' &&
+      p.a !== p.b &&
+      entry !== undefined &&
+      entry === entryOf.get(p.b) &&
+      !ordered(p) &&
+      !pairs.some((q) => q.confidence === 'likely' && samePair(q, p.a, p.b))
+    );
+  });
 }
 function generatedOnly(pair) {
   return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));

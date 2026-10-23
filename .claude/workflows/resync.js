@@ -316,14 +316,15 @@ function sliceReviewPrompt(values) {
   ].join('\n');
 }
 function passedLines(passed, current) {
+  const listed = (paths) => (paths.length === 0 ? 'none' : paths.join(', '));
   return [
-    `Passed at ${passed.sha}: ${passed.tests.length === 0 ? 'none' : passed.tests.join(', ')}`,
+    `Passed at ${passed.sha}: ${listed(passed.tests)}`,
     `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
     ...(current === passed.sha
       ? []
       : [
           `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
-            `the amends changed ${passed.amended.join(', ')}`,
+            `the amends changed ${listed(passed.amended)}`,
         ]),
   ];
 }

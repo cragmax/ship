@@ -290,10 +290,9 @@ async function settleOverlap(
     (o): ShipRefusal => ({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.reason}` }),
   );
   const graph: RunGraph = { runSet: values.runSet, edges: values.edges };
-  const entryOf = overlapEntryIndex(graph);
   const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
-  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, entryOf));
-  const pairs = estimated.filter((p) => !isUnsureWithinEntry(p, entryOf));
+  const unsureWithin = unsureWithinEntry(graph, estimated);
+  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
   let merged: OverlapMerge;
   try {
     merged = mergeOverlapEdges(graph, pairs);
@@ -315,17 +314,26 @@ async function settleOverlap(
 }
 
 /**
- * Whether a pair is `unsure` and joins two distinct issues of one entry: such a pair orders no
- * slices (Ship ADR-0001 decision 6), while one across entries still refuses the launch.
+ * The `unsure` pairs joining two distinct issues of one entry that neither the declared edges
+ * order nor a `likely` pair names: such a pair orders no slices (Ship ADR-0001 decision 6), while
+ * one across entries still refuses the launch and the merge records the others.
  */
-function isUnsureWithinEntry(pair: EstimatedPair, entryOf: ReadonlyMap<number, number>): boolean {
-  const entry = entryOf.get(pair.a);
-  return (
-    pair.confidence === 'unsure' &&
-    pair.a !== pair.b &&
-    entry !== undefined &&
-    entry === entryOf.get(pair.b)
-  );
+function unsureWithinEntry(graph: RunGraph, pairs: readonly EstimatedPair[]): EstimatedPair[] {
+  const entryOf = overlapEntryIndex(graph);
+  const ordered = (p: EstimatedPair): boolean =>
+    transitiveDependents([p.a], graph.edges).includes(p.b) ||
+    transitiveDependents([p.b], graph.edges).includes(p.a);
+  return pairs.filter((p) => {
+    const entry = entryOf.get(p.a);
+    return (
+      p.confidence === 'unsure' &&
+      p.a !== p.b &&
+      entry !== undefined &&
+      entry === entryOf.get(p.b) &&
+      !ordered(p) &&
+      !pairs.some((q) => q.confidence === 'likely' && samePair(q, p.a, p.b))
+    );
+  });
 }
 
 function generatedOnly(pair: EstimatedPair): boolean {

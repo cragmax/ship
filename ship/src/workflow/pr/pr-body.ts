@@ -699,7 +699,7 @@ function overlapLines(edges: readonly OverlapEdge[]): string[] {
  */
 function unsurePairLine(pair: UnsurePair): string {
   const shared = pair.shared.length === 0 ? '' : `; shared ${pair.shared.map(codeSpan).join(', ')}`;
-  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${pair.reason}`;
+  return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${oneLine(pair.reason)}`;
 }
 
 /** One issue's schedule line: `never` for a missing instant, `none` for no blockers or size. */
