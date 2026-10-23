@@ -84,6 +84,8 @@ interface Drive {
   scheduler: SchedulerState | null;
   readonly flights: Map<string, Promise<Note>>;
   readonly attempts: Map<number, number>;
+  /** The kept patch of each issue whose last attempt a harvest conflict ended, by issue. */
+  readonly previousPatches: Map<number, string>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
   /** Each entry's halt state; an entry it lacks is `running`. */
@@ -122,6 +124,7 @@ function newDrive(input: DriveInput): Drive {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
+    previousPatches: new Map(),
     timing: new Map(),
     halts: new Map(),
     outcomes: new Map(),
@@ -182,8 +185,22 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     committedAt,
     size,
   });
+  keepPreviousPatch(d, issue, ending);
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+
+/**
+ * Hold the ending's kept patch for the issue's next attempt when a harvest conflict ended it, so
+ * the requeued tdd starts from it; any other ending drops the issue's held patch.
+ */
+function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void {
+  const patch =
+    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
+      ? (ending.kept?.patch ?? null)
+      : null;
+  if (patch === null) d.previousPatches.delete(issue);
+  else d.previousPatches.set(issue, patch);
 }
 
 /** What settling reads of an ending; a `landed` one's primary is `committed`. */
@@ -322,7 +339,10 @@ function startAttempt(d: Drive, issue: number): void {
   if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
   const attempt = d.attempts.get(issue) ?? 1;
   d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt));
+  d.flights.set(
+    `issue:${String(issue)}`,
+    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
+  );
 }
 
 /**

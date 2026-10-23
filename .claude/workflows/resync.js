@@ -246,6 +246,7 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
       `Kept dir: ${values.keptDir}`,
+      ...(values.previousPatch === null ? [] : [`Previous patch: ${values.previousPatch}`]),
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,

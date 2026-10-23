@@ -24,6 +24,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - `Issue command:` — the command that writes it; run it verbatim.
 - `Report file:` — where your full report goes.
 - `Kept dir:` — where an attempt that does not land keeps its work once you return: `slice.patch`, the diff from the slice base to every file git does not ignore, and a copy of your report under its own name. The attempt's end removes the worktree, and the run's end may remove the report file's directory.
+- `Previous patch:` — present only when a harvest conflict requeued this attempt: the previous attempt's kept `slice.patch`, its one commit after every review amend (§ Limits).
 - `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
 - `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
@@ -33,6 +34,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 ## Limits
 
 - **Read the issue from its file.** Run the `Issue command:` line verbatim with Bash, then Read the `Issue file:`: the body, then each comment under its `----- comment by … -----` line, the triage brief among them. `gh issue view` into the tool output overflows it on a long thread.
+- **A previous patch is resumed, not rebuilt.** Given a `Previous patch:` line, skip the `tdd` skill's cycles: `git apply --3way` the patch in the slice worktree, resolve each conflict against the slice base (the current epic head), rerun only the tests the conflicted files make relevant, then commit per § Commit. The reviews run in full on the result. `evidence` is `kind` `none`, its `reason` naming the resumed patch.
 - **An overtaken issue is not built.** A behaviour it asks for is already in the slice, a symbol it names is gone, or a SHA it cites does not resolve → return `BLOCKED` before any commit, the evidence in `reason`.
 - **A falsified probe** of a claim the issue names as the mechanism → `BLOCKED`, the counterexample in `reason`; of a claim only the issue's outcome rests on → build another mechanism that reaches it.
 - **Run only the tests the change makes relevant**: those `.claude/rules/testing.md` § Which tests a change runs names, beside each cycle's own red-green runs.

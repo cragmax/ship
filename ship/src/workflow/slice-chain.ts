@@ -142,6 +142,8 @@ interface AttemptId {
   readonly ctx: EntryContext;
   readonly issue: number;
   readonly attempt: number;
+  /** The previous attempt's kept patch, handed to the tdd; `null` for none. */
+  readonly previousPatch: string | null;
   /** `<issue>-<attempt>`: the attempt's label detail and file-name stem. */
   readonly tag: string;
   readonly place: ToolPlace;
@@ -216,15 +218,17 @@ interface AuthoredSlice extends ReviewedSlice {
 }
 
 /**
- * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice. Resolves to the
- * attempt's first note — for an authored slice, one carrying the queued landing; never rejects.
+ * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice, its tdd handed
+ * `previousPatch` when not `null`. Resolves to the attempt's first note — for an authored slice,
+ * one carrying the queued landing; never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
   issue: number,
   attempt: number,
+  previousPatch: string | null,
 ): Promise<AttemptNote> {
-  const at = attemptId(ctx, issue, attempt);
+  const at = attemptId(ctx, issue, attempt, previousPatch);
   const opened = await openSlice(at).catch(
     (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
   );
@@ -240,9 +244,14 @@ export async function runAttempt(
 }
 
 /** Who the attempt is, its tag `<issue>-<attempt>`. */
-function attemptId(ctx: EntryContext, issue: number, attempt: number): AttemptId {
+function attemptId(
+  ctx: EntryContext,
+  issue: number,
+  attempt: number,
+  previousPatch: string | null,
+): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx, tag) };
+  return { ctx, issue, attempt, previousPatch, tag, place: runPlace(ctx, tag) };
 }
 
 /** Re-check the issue, then cut its slice, each at a boundary that sees a halt. */
@@ -353,6 +362,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
     reportDir: at.ctx.reportDir,
     reportPath: tddReportPath(at),
     keptDir: s.keptDir,
+    previousPatch: at.previousPatch,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),

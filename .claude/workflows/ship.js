@@ -696,6 +696,7 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
       `Kept dir: ${values.keptDir}`,
+      ...(values.previousPatch === null ? [] : [`Previous patch: ${values.previousPatch}`]),
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
@@ -3368,8 +3369,8 @@ async function mainUntouched(input) {
 }
 
 const NO_CUT = { slice: null, startedAt: null };
-async function runAttempt(ctx, issue, attempt) {
-  const at = attemptId(ctx, issue, attempt);
+async function runAttempt(ctx, issue, attempt, previousPatch) {
+  const at = attemptId(ctx, issue, attempt, previousPatch);
   const opened = await openSlice(at).catch((err) => ({ stop: stageThrew(at, err), cut: NO_CUT }));
   if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
   const cut = opened.next;
@@ -3381,9 +3382,9 @@ async function runAttempt(ctx, issue, attempt) {
     .then((outcome) => endAttempt(at, cut, outcome));
   return { kind: 'authored', issue, landing };
 }
-function attemptId(ctx, issue, attempt) {
+function attemptId(ctx, issue, attempt, previousPatch) {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx, tag) };
+  return { ctx, issue, attempt, previousPatch, tag, place: runPlace(ctx, tag) };
 }
 async function openSlice(at) {
   const ready = await atBoundary({ next: at }, at, recheckStage);
@@ -3466,6 +3467,7 @@ async function tddStage(s) {
     reportDir: at.ctx.reportDir,
     reportPath: tddReportPath(at),
     keptDir: s.keptDir,
+    previousPatch: at.previousPatch,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -3680,6 +3682,7 @@ function newDrive(input) {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
+    previousPatches: new Map(),
     timing: new Map(),
     halts: new Map(),
     outcomes: new Map(),
@@ -3735,8 +3738,17 @@ function settle(d, issue, ending) {
     committedAt,
     size,
   });
+  keepPreviousPatch(d, issue, ending);
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+function keepPreviousPatch(d, issue, ending) {
+  const patch =
+    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
+      ? (ending.kept?.patch ?? null)
+      : null;
+  if (patch === null) d.previousPatches.delete(issue);
+  else d.previousPatches.set(issue, patch);
 }
 function endingFacts(issue, ending) {
   switch (ending.kind) {
@@ -3837,7 +3849,10 @@ function startAttempt(d, issue) {
   if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
   const attempt = d.attempts.get(issue) ?? 1;
   d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt));
+  d.flights.set(
+    `issue:${String(issue)}`,
+    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
+  );
 }
 function endEpic(d, i) {
   const landed = d.landed.get(i) ?? [];

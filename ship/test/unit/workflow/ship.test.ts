@@ -877,6 +877,66 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
+  describe('a requeued attempt is handed its previous attempt’s patch', () => {
+    const PATCH = 'C:/src/main/reports/kept/slice-7-1-2026-09-29T10-00-00-000Z/slice.patch';
+    const keeping = (patch: string | null): object => ({
+      ...OK,
+      removed: true,
+      registered: false,
+      kept: patch === null ? null : { patch, report: null },
+    });
+    // Attempt 1's teardown keeps its patch; every later one keeps nothing.
+    const KEEPS_FIRST = { 'runner:teardown': inTurn(keeping(PATCH), keeping(null)) };
+    const patchLines = (run: FakeRun, label: string): string[] =>
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Previous patch: '));
+
+    it('names the kept patch in the tdd prompt of the attempt a harvest conflict requeued', async () => {
+      const run = fakeHooks({ ...KEEPS_FIRST, 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-2')).toEqual([`Previous patch: ${PATCH}`]);
+      expect(patchLines(run, 'tdd:7-1')).toEqual([]);
+    });
+
+    it('names the latest attempt’s patch when a second harvest conflict requeues again', async () => {
+      const SECOND = 'C:/src/main/reports/kept/slice-7-2-2026-09-29T11-00-00-000Z/slice.patch';
+      const run = fakeHooks({
+        'runner:teardown': inTurn(keeping(PATCH), keeping(SECOND), keeping(null)),
+        'runner:land': inTurn(LAND_CONFLICT, LAND_CONFLICT, LAND_OK),
+      });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-3')).toEqual([`Previous patch: ${SECOND}`]);
+    });
+
+    it('hands no previous patch to the attempt an agent-death retry started', async () => {
+      const run = fakeHooks({ ...KEEPS_FIRST, tdd: inTurn(null, TDD_GREEN) });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run)).toContain('tdd:7-2');
+      expect(patchLines(run, 'tdd:7-2')).toEqual([]);
+    });
+
+    it('hands no previous patch to the retry of a requeued attempt whose agent died', async () => {
+      const run = fakeHooks({
+        ...KEEPS_FIRST,
+        'runner:land': inTurn(LAND_CONFLICT, LAND_OK),
+        tdd: inTurn(TDD_GREEN, null, TDD_GREEN),
+      });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-2')).toEqual([`Previous patch: ${PATCH}`]);
+      expect(labels(run)).toContain('tdd:7-3');
+      expect(patchLines(run, 'tdd:7-3')).toEqual([]);
+    });
+  });
+
   describe('a blocked issue hears why', () => {
     const COMMENT_FILE = `${REPORT_DIR}/issue-comment-7.md`;
 
@@ -2213,7 +2273,7 @@ describe('runAttempt — how an attempt ends', () => {
     async (_name, responses, ending) => {
       const run = fakeHooks(responses);
 
-      const note = await runAttempt(entry(run, false), 7, 1);
+      const note = await runAttempt(entry(run, false), 7, 1, null);
       const end = note.kind === 'authored' ? await note.landing : note;
 
       expect(end).toEqual({ kind: 'ended', issue: 7, ending });
@@ -2223,7 +2283,7 @@ describe('runAttempt — how an attempt ends', () => {
   it('stops an attempt of a halting entry at its first stage boundary, before the re-check', async () => {
     const run = fakeHooks();
 
-    const note = await runAttempt(entry(run, true), 7, 1);
+    const note = await runAttempt(entry(run, true), 7, 1, null);
 
     expect(labels(run)).toEqual([]);
     expect(note).toMatchObject({
@@ -2235,7 +2295,7 @@ describe('runAttempt — how an attempt ends', () => {
   it('ends with the landing’s halt, not its teardown’s, when both call for one', async () => {
     const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY, 'runner:teardown': TEARDOWN_SHRANK });
 
-    const note = await runAttempt(entry(run, false), 7, 1);
+    const note = await runAttempt(entry(run, false), 7, 1, null);
     const end = note.kind === 'authored' ? await note.landing : note;
 
     expect(end).toMatchObject({

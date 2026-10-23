@@ -111,6 +111,11 @@ export interface TddValues {
   readonly reportPath: string;
   /** Where the attempt's work and report are kept should it not land. */
   readonly keptDir: string;
+  /**
+   * The previous attempt's kept `slice.patch` when a harvest conflict requeued this one, the
+   * slice's one commit after every review amend; `null` otherwise.
+   */
+  readonly previousPatch: string | null;
   /** Where the commit message goes; the commit and the landing both read it. */
   readonly messagePath: string;
   /** The commit message, its first line and closing keyword left as placeholders. */
@@ -390,6 +395,7 @@ export const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
       `Kept dir: ${values.keptDir}`,
+      ...(values.previousPatch === null ? [] : [`Previous patch: ${values.previousPatch}`]),
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
