@@ -77,64 +77,6 @@ export function planVersionRule(
 }
 
 /**
- * `package.json` at the merge-base, the batch's `HEAD` and `origin/master`; `null` when a copy is
- * missing (or git cannot show it) or has no top-level version line — never a throw.
- */
-function readVersions(batch: string, mergeBase: string): PackageCopies | null {
-  const base = showPackageJson(batch, mergeBase);
-  const ours = showPackageJson(batch, 'HEAD');
-  const theirs = showPackageJson(batch, RUN_UPSTREAM);
-  if (base === null || ours === null || theirs === null) return null;
-  const b = readVersionLine(base);
-  const o = readVersionLine(ours);
-  const t = readVersionLine(theirs);
-  if (b === null || o === null || t === null) return null;
-
-  return { versions: { base: b, ours: o, theirs: t }, texts: { base, ours, theirs } };
-}
-
-/** One `package.json` copy's text with one final newline; `null` when git cannot show it. */
-function showPackageJson(batch: string, rev: string): string | null {
-  const r = runCaptured('git', ['-C', batch, 'show', `${rev}:${PACKAGE_JSON}`], {
-    cwd: process.cwd(),
-  });
-
-  return r.exitCode === 0 ? `${r.stdout}\n` : null;
-}
-
-/**
- * Merge the copies, every version line set to the base's so a version-only change never conflicts,
- * then set {@link targetVersion}'s; `null` on a conflict beyond the version line. Throws
- * StepFailure `version` from {@link setVersionLine}, {@link targetVersion} or `git merge-file`.
- */
-function mergedPackageJson(batch: string, copies: PackageCopies): string | null {
-  const { versions, texts } = copies;
-  const target = targetVersion(versions);
-  const dir = mkdtempSync(join(tmpdir(), 'ph-worktree-version-'));
-
-  try {
-    const path = (name: keyof VersionTriple): string => {
-      const file = join(dir, `${name}.json`);
-      writeFileSync(file, setVersionLine(texts[name], versions.base));
-
-      return file;
-    };
-
-    const [ours, base, theirs] = [path('ours'), path('base'), path('theirs')];
-    const r = runCaptured('git', ['-C', batch, 'merge-file', '-p', ours, base, theirs], {
-      cwd: process.cwd(),
-    });
-
-    if (r.exitCode === 0) return setVersionLine(`${r.stdout}\n`, target);
-    if (r.exitCode > 0 && r.exitCode <= MERGE_FILE_MAX_CONFLICTS) return null;
-
-    throw new StepFailure('version', `git merge-file exited ${String(r.exitCode)}`, r.tail);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/**
  * Apply the rule mid-merge: write and stage the merged `package.json`, then
  * — when the lockfile is tracked — regenerate it against that file (from
  * `origin/master`'s copy when it conflicted) and stage it.
@@ -177,6 +119,64 @@ export function regenerateLockfile(batch: string, conflicted: boolean): void {
     timeoutMs: NPM_TIMEOUT_MS,
   });
   git(batch, ['add', '--', LOCKFILE], 'lockfile');
+}
+
+/**
+ * Merge the copies, every version line set to the base's so a version-only change never conflicts,
+ * then set {@link targetVersion}'s; `null` on a conflict beyond the version line. Throws
+ * StepFailure `version` from {@link setVersionLine}, {@link targetVersion} or `git merge-file`.
+ */
+function mergedPackageJson(batch: string, copies: PackageCopies): string | null {
+  const { versions, texts } = copies;
+  const target = targetVersion(versions);
+  const dir = mkdtempSync(join(tmpdir(), 'ph-worktree-version-'));
+
+  try {
+    const path = (name: keyof VersionTriple): string => {
+      const file = join(dir, `${name}.json`);
+      writeFileSync(file, setVersionLine(texts[name], versions.base));
+
+      return file;
+    };
+
+    const [ours, base, theirs] = [path('ours'), path('base'), path('theirs')];
+    const r = runCaptured('git', ['-C', batch, 'merge-file', '-p', ours, base, theirs], {
+      cwd: process.cwd(),
+    });
+
+    if (r.exitCode === 0) return setVersionLine(`${r.stdout}\n`, target);
+    if (r.exitCode > 0 && r.exitCode <= MERGE_FILE_MAX_CONFLICTS) return null;
+
+    throw new StepFailure('version', `git merge-file exited ${String(r.exitCode)}`, r.tail);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * `package.json` at the merge-base, the batch's `HEAD` and `origin/master`; `null` when a copy is
+ * missing (or git cannot show it) or has no top-level version line — never a throw.
+ */
+function readVersions(batch: string, mergeBase: string): PackageCopies | null {
+  const base = showPackageJson(batch, mergeBase);
+  const ours = showPackageJson(batch, 'HEAD');
+  const theirs = showPackageJson(batch, RUN_UPSTREAM);
+  if (base === null || ours === null || theirs === null) return null;
+  const b = readVersionLine(base);
+  const o = readVersionLine(ours);
+  const t = readVersionLine(theirs);
+  if (b === null || o === null || t === null) return null;
+
+  return { versions: { base: b, ours: o, theirs: t }, texts: { base, ours, theirs } };
+}
+
+/** One `package.json` copy's text with one final newline; `null` when git cannot show it. */
+function showPackageJson(batch: string, rev: string): string | null {
+  const r = runCaptured('git', ['-C', batch, 'show', `${rev}:${PACKAGE_JSON}`], {
+    cwd: process.cwd(),
+  });
+
+  return r.exitCode === 0 ? `${r.stdout}\n` : null;
 }
 
 /** Whether `HEAD` tracks repository-relative `path`: `git cat-file -e HEAD:<path>` succeeds. */

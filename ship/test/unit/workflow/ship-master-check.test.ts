@@ -32,28 +32,6 @@ const checkMasterArgv = (synced: string): string[] => [
 const publishes = (run: FakeRun): string[] =>
   labels(run).filter((l) => l.startsWith('runner:publish'));
 
-/**
- * Assert the epic stopped on a master check that never ran: no check-master call, no publish.
- *
- * @param run - The fake run.
- * @param report - Its report.
- * @param stop - The stop's message, `mainUntouched` and failure.
- */
-function expectStoppedUnchecked(
-  run: FakeRun,
-  report: Awaited<ReturnType<typeof runShip>>,
-  stop: { message: string; mainUntouched: boolean | null; failure: string },
-): void {
-  expect(labels(run).filter((l) => l.startsWith('runner:check-master'))).toEqual([]);
-  expect(publishes(run)).toEqual([]);
-  expect(report.epics[0]).toMatchObject({
-    outcome: 'stopped',
-    message: stop.message,
-    mainUntouched: stop.mainUntouched,
-    masterCheck: { passed: false, local: null, remote: null, failure: stop.failure },
-  });
-}
-
 const SYNC_MERGED = {
   exitCode: 0,
   envelopePath: 'e.json',
@@ -341,3 +319,25 @@ describe('runShip — the master check', () => {
     expect(report.epics[0]).not.toHaveProperty('masterCheck');
   });
 });
+
+/**
+ * Assert the epic stopped on a master check that never ran: no check-master call, no publish.
+ *
+ * @param run - The fake run.
+ * @param report - Its report.
+ * @param stop - The stop's message, `mainUntouched` and failure.
+ */
+function expectStoppedUnchecked(
+  run: FakeRun,
+  report: Awaited<ReturnType<typeof runShip>>,
+  stop: { message: string; mainUntouched: boolean | null; failure: string },
+): void {
+  expect(labels(run).filter((l) => l.startsWith('runner:check-master'))).toEqual([]);
+  expect(publishes(run)).toEqual([]);
+  expect(report.epics[0]).toMatchObject({
+    outcome: 'stopped',
+    message: stop.message,
+    mainUntouched: stop.mainUntouched,
+    masterCheck: { passed: false, local: null, remote: null, failure: stop.failure },
+  });
+}

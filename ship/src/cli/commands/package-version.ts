@@ -37,21 +37,6 @@ const VERSION_LINE = /^ {2}"version": "([^"]*)"(,?)(\r?)$/gmu;
 const PLAIN_VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
 
 /**
- * The three components of a plain version: `[major, minor, patch]`.
- *
- * @throws StepFailure `version` unless it is a plain `x.y.z`.
- */
-function components(version: string): [number, number, number] {
-  const m = PLAIN_VERSION.exec(version);
-
-  if (m === null) {
-    throw new StepFailure('version', `'${version}' is not a plain x.y.z version`);
-  }
-
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
-}
-
-/**
  * Which component moved from `from` to `to`.
  *
  * @returns The first differing component, `major` first; `none` when equal.
@@ -145,4 +130,19 @@ export function setVersionLine(text: string, version: string): string {
     VERSION_LINE,
     (_line, _old: string, comma: string, cr: string) => `  "version": "${version}"${comma}${cr}`,
   );
+}
+
+/**
+ * The three components of a plain version: `[major, minor, patch]`.
+ *
+ * @throws StepFailure `version` unless it is a plain `x.y.z`.
+ */
+function components(version: string): [number, number, number] {
+  const m = PLAIN_VERSION.exec(version);
+
+  if (m === null) {
+    throw new StepFailure('version', `'${version}' is not a plain x.y.z version`);
+  }
+
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
 }

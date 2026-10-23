@@ -18,34 +18,6 @@ beforeAll(async () => {
   shipJs = await renderFresh('ship');
 });
 
-/**
- * Drive the TS source and the render through one launch, each over its own fake hooks.
- *
- * @param args - The launch arguments.
- * @param responses - Per-label answers over the fakes' defaults, given to both runs.
- * @returns Both fake runs, the source's report and the render's.
- */
-async function runBoth(args: string, responses: Readonly<Record<string, unknown>> = {}) {
-  const source = fakeHooks(responses);
-  const rendered = fakeHooks(responses);
-  const expected = await runShip(source.hooks, args);
-  const report = await runRendered(shipJs, rendered, args);
-
-  return { source, rendered, expected, report };
-}
-
-/**
- * Assert the render ran exactly as the source did.
- *
- * @param both - What {@link runBoth} resolved to.
- */
-function expectSameRun(both: Awaited<ReturnType<typeof runBoth>>): void {
-  expect(both.report).toEqual(both.expected);
-  expect(both.rendered.calls).toEqual(both.source.calls);
-  expect(both.rendered.timeline).toEqual(both.source.timeline);
-  expect(both.rendered.phases).toEqual(both.source.phases);
-}
-
 describe('ship.js — a fresh render of the current sources', () => {
   it('opens with a meta literal that evaluates to SHIP_META', () => {
     const end = shipJs.indexOf('\n};\n');
@@ -106,3 +78,31 @@ describe('ship.js — a fresh render of the current sources', () => {
     expectSameRun(both);
   });
 });
+
+/**
+ * Drive the TS source and the render through one launch, each over its own fake hooks.
+ *
+ * @param args - The launch arguments.
+ * @param responses - Per-label answers over the fakes' defaults, given to both runs.
+ * @returns Both fake runs, the source's report and the render's.
+ */
+async function runBoth(args: string, responses: Readonly<Record<string, unknown>> = {}) {
+  const source = fakeHooks(responses);
+  const rendered = fakeHooks(responses);
+  const expected = await runShip(source.hooks, args);
+  const report = await runRendered(shipJs, rendered, args);
+
+  return { source, rendered, expected, report };
+}
+
+/**
+ * Assert the render ran exactly as the source did.
+ *
+ * @param both - What {@link runBoth} resolved to.
+ */
+function expectSameRun(both: Awaited<ReturnType<typeof runBoth>>): void {
+  expect(both.report).toEqual(both.expected);
+  expect(both.rendered.calls).toEqual(both.source.calls);
+  expect(both.rendered.timeline).toEqual(both.source.timeline);
+  expect(both.rendered.phases).toEqual(both.source.phases);
+}

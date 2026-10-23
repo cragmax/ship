@@ -155,18 +155,6 @@ export class Conflict extends StepFailure {
 }
 
 /**
- * The status a {@link StepFailure} maps to.
- *
- * @param err - The failure.
- * @returns `conflict`, `refused` or `failed` by the failure's class.
- */
-function statusOf(err: StepFailure): CommandStatus {
-  if (err instanceof Conflict) return 'conflict';
-
-  return err instanceof Refusal ? 'refused' : 'failed';
-}
-
-/**
  * Record a caught throw on an envelope, mapped to a status as the file
  * header describes.
  *
@@ -191,4 +179,16 @@ export function recordFailure(result: ResultBase, err: unknown): void {
     step: 'internal',
     message: err instanceof Error ? err.message : String(err),
   });
+}
+
+/**
+ * The status a {@link StepFailure} maps to.
+ *
+ * @param err - The failure.
+ * @returns `conflict`, `refused` or `failed` by the failure's class.
+ */
+function statusOf(err: StepFailure): CommandStatus {
+  if (err instanceof Conflict) return 'conflict';
+
+  return err instanceof Refusal ? 'refused' : 'failed';
 }

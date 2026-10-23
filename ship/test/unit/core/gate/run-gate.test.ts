@@ -14,50 +14,6 @@ import type { RunSet } from '../../../../src/core/run-set.js';
 // pinned once, by substring, in the `failure messages` block.
 const MSG = expect.any(String) as unknown as string;
 
-function issue(
-  number: number,
-  opts: { state?: IssueState; labels?: readonly string[]; blockedBy?: readonly number[] } = {},
-): IssueFacts {
-  return {
-    number,
-    state: opts.state ?? 'OPEN',
-    labels: opts.labels ?? ['ready-for-agent'],
-    blockedBy: opts.blockedBy ?? [],
-  };
-}
-
-function gate(
-  runSet: RunSet,
-  facts: readonly IssueFacts[],
-  opts: { mode?: GateMode; blockerStates?: Readonly<Record<number, IssueState>> } = {},
-): ReturnType<typeof evaluateRunGate> {
-  return evaluateRunGate({
-    runSet,
-    facts,
-    blockerStates: new Map(
-      Object.entries(opts.blockerStates ?? {}).map(([n, s]) => [Number(n), s] as const),
-    ),
-    mode: opts.mode ?? 'refuse',
-  });
-}
-
-/**
- * The gate over two epic entries: 100's issue 101 waits on 200's issue 201, and 102 on 101.
- *
- * @param opts - The gate's mode; `refuse` by default.
- * @returns The verdict.
- */
-function crossEpicGate(opts: { mode?: GateMode } = {}): ReturnType<typeof evaluateRunGate> {
-  return gate(
-    [
-      { epic: 100, issues: [101, 102] },
-      { epic: 200, issues: [201] },
-    ],
-    [issue(101, { blockedBy: [201] }), issue(102, { blockedBy: [101] }), issue(201)],
-    opts,
-  );
-}
-
 describe('evaluateRunGate — per-issue rules', () => {
   it('an explicit list, all open + labelled, no blockers → ok', () => {
     expect(gate([{ epic: null, issues: [3, 5, 9] }], [issue(9), issue(3), issue(5)])).toEqual({
@@ -162,6 +118,33 @@ describe('evaluateRunGate — per-issue rules', () => {
   });
 });
 
+function issue(
+  number: number,
+  opts: { state?: IssueState; labels?: readonly string[]; blockedBy?: readonly number[] } = {},
+): IssueFacts {
+  return {
+    number,
+    state: opts.state ?? 'OPEN',
+    labels: opts.labels ?? ['ready-for-agent'],
+    blockedBy: opts.blockedBy ?? [],
+  };
+}
+
+function gate(
+  runSet: RunSet,
+  facts: readonly IssueFacts[],
+  opts: { mode?: GateMode; blockerStates?: Readonly<Record<number, IssueState>> } = {},
+): ReturnType<typeof evaluateRunGate> {
+  return evaluateRunGate({
+    runSet,
+    facts,
+    blockerStates: new Map(
+      Object.entries(opts.blockerStates ?? {}).map(([n, s]) => [Number(n), s] as const),
+    ),
+    mode: opts.mode ?? 'refuse',
+  });
+}
+
 describe('evaluateRunGate — run-level rules', () => {
   it('a 2-cycle and a self-loop → refused with one cycle failure per component', () => {
     expect(
@@ -255,6 +238,23 @@ describe('evaluateRunGate — run-level rules', () => {
     });
   });
 });
+
+/**
+ * The gate over two epic entries: 100's issue 101 waits on 200's issue 201, and 102 on 101.
+ *
+ * @param opts - The gate's mode; `refuse` by default.
+ * @returns The verdict.
+ */
+function crossEpicGate(opts: { mode?: GateMode } = {}): ReturnType<typeof evaluateRunGate> {
+  return gate(
+    [
+      { epic: 100, issues: [101, 102] },
+      { epic: 200, issues: [201] },
+    ],
+    [issue(101, { blockedBy: [201] }), issue(102, { blockedBy: [101] }), issue(201)],
+    opts,
+  );
+}
 
 describe('evaluateRunGate — exclude mode', () => {
   it('a cycle still refuses, in the refused shape: every failure listed, nothing excluded', () => {

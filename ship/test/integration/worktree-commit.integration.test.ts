@@ -42,31 +42,6 @@ afterEach(() => {
   }
 });
 
-/** Point the repo's hooks at a `pre-commit` that prints {@link HOOK_SAYS} and exits `exit`. */
-function installExitHook(main: string, exit: number): void {
-  installHook(root, main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit ${String(exit)}\n`);
-}
-
-function writeMessage(text: string): string {
-  const file = `${root}/message.txt`;
-  writeFileSync(file, text);
-
-  return file;
-}
-
-function commitCli(main: string, files: readonly string[]) {
-  const message = writeMessage('docs(docs): fixture commit\n');
-
-  return runCli<CommitResult>(['commit', '--message-file', message, '--', ...files], {
-    cwd: main,
-  });
-}
-
-/** The paths a commit changed, sorted. */
-function committedNames(dir: string, sha: string): string[] {
-  return gitPathList(dir, ['diff-tree', '-r', '--no-commit-id', '--name-only', '-z', sha]);
-}
-
 describe('commit', () => {
   it(
     'commits exactly the named paths and leaves an earlier staged change unstaged in the tree',
@@ -148,3 +123,28 @@ describe('commit', () => {
     expect(headSha(main)).toBe(before);
   });
 });
+
+function commitCli(main: string, files: readonly string[]) {
+  const message = writeMessage('docs(docs): fixture commit\n');
+
+  return runCli<CommitResult>(['commit', '--message-file', message, '--', ...files], {
+    cwd: main,
+  });
+}
+
+function writeMessage(text: string): string {
+  const file = `${root}/message.txt`;
+  writeFileSync(file, text);
+
+  return file;
+}
+
+/** The paths a commit changed, sorted. */
+function committedNames(dir: string, sha: string): string[] {
+  return gitPathList(dir, ['diff-tree', '-r', '--no-commit-id', '--name-only', '-z', sha]);
+}
+
+/** Point the repo's hooks at a `pre-commit` that prints {@link HOOK_SAYS} and exits `exit`. */
+function installExitHook(main: string, exit: number): void {
+  installHook(root, main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit ${String(exit)}\n`);
+}

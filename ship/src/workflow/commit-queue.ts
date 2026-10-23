@@ -79,23 +79,6 @@ export function createCommitQueue(): CommitQueue {
 type LandingClass = 'committed' | 'conflict' | 'blocked' | 'halt';
 
 /**
- * Classify a landing (`null`: no output): `committed` for an `ok` with its commit; on a clean
- * batch, `conflict`, or `blocked` for `slice-not-single-commit` or a rolled-back `commit`/`build`
- * step; anything else, a batch not verified clean included, is `halt`.
- */
-function classifyLanding(land: LandOutput | null): LandingClass {
-  if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
-  if (land?.batchClean !== true) return 'halt';
-  if (land.status === 'conflict') return 'conflict';
-  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') return 'blocked';
-  const step = land.errors?.[0]?.step;
-  const rolledBackStep = step === 'commit' || step === 'build';
-  if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
-
-  return 'halt';
-}
-
-/**
  * The event a landing ends its attempt with, by {@link classifyLanding}.
  *
  * @returns `committed`, `harvest-conflict`, `blocked` (naming the landing)
@@ -176,4 +159,21 @@ export function settleEvents(
   }
 
   return { events: [primary], entry: at.entry };
+}
+
+/**
+ * Classify a landing (`null`: no output): `committed` for an `ok` with its commit; on a clean
+ * batch, `conflict`, or `blocked` for `slice-not-single-commit` or a rolled-back `commit`/`build`
+ * step; anything else, a batch not verified clean included, is `halt`.
+ */
+function classifyLanding(land: LandOutput | null): LandingClass {
+  if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
+  if (land?.batchClean !== true) return 'halt';
+  if (land.status === 'conflict') return 'conflict';
+  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') return 'blocked';
+  const step = land.errors?.[0]?.step;
+  const rolledBackStep = step === 'commit' || step === 'build';
+  if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
+
+  return 'halt';
 }

@@ -70,34 +70,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
-function makeRun(branch = 'ship/r'): FixtureRun {
-  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
-}
-
-/** A run whose batch pushed `ship/r` once, then committed one more change locally. */
-function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly head: string } {
-  const run = makeRun();
-  const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
-  mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
-  const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
-
-  return { ...run, pushed, head };
-}
-
-/** A {@link pushedThenAhead} run whose origin `ship/r` then gained a commit the batch lacks. */
-function divergedFromOrigin(): FixtureRun & { readonly originSha: string } {
-  const run = pushedThenAhead();
-  const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
-
-  return { ...run, originSha };
-}
-
-/** Whether the bare origin has the branch. */
-function onOrigin(bare: string, branch: string): boolean {
-  return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], bare).exitCode === 0;
-}
-
 describe('publish', () => {
   const TITLE = 'feat(build): ship r';
   const BODY = '## Summary\n\nfixes #1\n';
@@ -257,6 +229,16 @@ describe('publish', () => {
   });
 });
 
+/** Whether the bare origin has the branch. */
+function onOrigin(bare: string, branch: string): boolean {
+  return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], bare).exitCode === 0;
+}
+
+/** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
+function makeRun(branch = 'ship/r'): FixtureRun {
+  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
+}
+
 describe('publish --push-only', () => {
   const OPEN_5 = { 'ship/r': { prs: [{ number: 5, state: 'OPEN' }] } };
 
@@ -400,6 +382,24 @@ describe('publish --push-only', () => {
     expect(readFakePrViewCount(bin, 5)).toBe(1);
   });
 });
+
+/** A run whose batch pushed `ship/r` once, then committed one more change locally. */
+function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly head: string } {
+  const run = makeRun();
+  const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+  mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+  const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+
+  return { ...run, pushed, head };
+}
+
+/** A {@link pushedThenAhead} run whose origin `ship/r` then gained a commit the batch lacks. */
+function divergedFromOrigin(): FixtureRun & { readonly originSha: string } {
+  const run = pushedThenAhead();
+  const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
+
+  return { ...run, originSha };
+}
 
 describe('publish (in-process)', () => {
   it('gives the push spawn the push budget and the log file', TIMEOUT, () => {

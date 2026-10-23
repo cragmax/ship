@@ -271,70 +271,8 @@ export function shellWord(word: string): string {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 }
 
-/**
- * A text to copy to disk byte for byte: `<title>: <path>`, then the text's
- * lines between a begin and an end marker line. The file holds those lines,
- * each ending in a newline.
- */
-function verbatimBlock(title: string, file: FileToWrite): string[] {
-  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
-
-  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
-}
-
 /** The vitest config a slice worktree's server-tier runs use. */
 const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
-
-/** `npx tsx` running the main checkout's repo-relative `tool` on the slice's project, registry. */
-function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
-  return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/${tool}`),
-  ];
-}
-
-/**
- * The lease command template a slice's server-tier runs use.
- *
- * @param lease - Its values.
- * @returns The command, `<angle>` placeholders for the agent to fill.
- */
-function leaseCommand(lease: LeaseValues): string {
-  return [
-    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
-    '--type <paper|folia> --version <version>',
-    `--registry ${shellWord(lease.registry)}`,
-    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
-  ].join(' ');
-}
-
-/**
- * The command a slice's full server-tier run uses: the main checkout's pool runner over the run's
- * registry, every shard of both engines at once under `with-lease`, nothing stood up.
- *
- * @param lease - Its values.
- */
-function fullServerTierCommand(lease: LeaseValues): string {
-  return [
-    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
-    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
-  ].join(' ');
-}
-
-/**
- * A slice's server-tier recipe: the lease command template, where its
- * version comes from, the full server-tier command, and the probe caps.
- */
-function serverTierLines(lease: LeaseValues): string[] {
-  return [
-    `Lease command: ${leaseCommand(lease)}`,
-    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Full server tier: ${fullServerTierCommand(lease)}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
-  ];
-}
 
 /**
  * The jq program that prints an issue as markdown: a `# <title>` line, the
@@ -345,45 +283,6 @@ function serverTierLines(lease: LeaseValues): string[] {
 const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
-
-/** Where an issue's text goes: `<reportDir>/issues/<issue>.md`. */
-function issueFile(issue: number, reportDir: string): string {
-  return `${reportDir}/issues/${String(issue)}.md`;
-}
-
-/**
- * Where an issue's text goes and the command that writes it there — so the
- * agent reads the issue from a file, never from `gh` output in its context.
- * `key` names the two lines (`<key> file:`, `<key> command:`).
- */
-function issueLines(issue: number, reportDir: string, key = 'Issue'): string[] {
-  const dir = `${reportDir}/issues`;
-  const file = issueFile(issue, reportDir);
-
-  return [
-    `${key} file: ${file}`,
-    [
-      `${key} command: mkdir -p ${shellWord(dir)} &&`,
-      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
-      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
-    ].join(' '),
-  ];
-}
-
-/** An issue's number as prompts spell it. */
-function issueRef(issue: number): string {
-  return `#${String(issue)}`;
-}
-
-/**
- * An entry's epic as the epic-end prompts spell it.
- *
- * @param epic - The epic; `null` for an explicit list.
- * @returns `an explicit issue list` for `null`, else `#<epic>`.
- */
-function epicLabel(epic: number | null): string {
-  return epic === null ? 'an explicit issue list' : issueRef(epic);
-}
 
 /** Every stage's prompt builder. */
 export const PROMPTS = {
@@ -464,6 +363,107 @@ export const PROMPTS = {
       `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
+
+/** An issue's number as prompts spell it. */
+function issueRef(issue: number): string {
+  return `#${String(issue)}`;
+}
+
+/**
+ * An entry's epic as the epic-end prompts spell it.
+ *
+ * @param epic - The epic; `null` for an explicit list.
+ * @returns `an explicit issue list` for `null`, else `#<epic>`.
+ */
+function epicLabel(epic: number | null): string {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
+
+/**
+ * A slice's server-tier recipe: the lease command template, where its
+ * version comes from, the full server-tier command, and the probe caps.
+ */
+function serverTierLines(lease: LeaseValues): string[] {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
+  ];
+}
+
+/**
+ * The command a slice's full server-tier run uses: the main checkout's pool runner over the run's
+ * registry, every shard of both engines at once under `with-lease`, nothing stood up.
+ *
+ * @param lease - Its values.
+ */
+function fullServerTierCommand(lease: LeaseValues): string {
+  return [
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
+  ].join(' ');
+}
+
+/** `npx tsx` running the main checkout's repo-relative `tool` on the slice's project, registry. */
+function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/${tool}`),
+  ];
+}
+
+/**
+ * The lease command template a slice's server-tier runs use.
+ *
+ * @param lease - Its values.
+ * @returns The command, `<angle>` placeholders for the agent to fill.
+ */
+function leaseCommand(lease: LeaseValues): string {
+  return [
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
+    '--type <paper|folia> --version <version>',
+    `--registry ${shellWord(lease.registry)}`,
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
+  ].join(' ');
+}
+
+/** Where an issue's text goes: `<reportDir>/issues/<issue>.md`. */
+function issueFile(issue: number, reportDir: string): string {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
+
+/**
+ * Where an issue's text goes and the command that writes it there — so the
+ * agent reads the issue from a file, never from `gh` output in its context.
+ * `key` names the two lines (`<key> file:`, `<key> command:`).
+ */
+function issueLines(issue: number, reportDir: string, key = 'Issue'): string[] {
+  const dir = `${reportDir}/issues`;
+  const file = issueFile(issue, reportDir);
+
+  return [
+    `${key} file: ${file}`,
+    [
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
+
+/**
+ * A text to copy to disk byte for byte: `<title>: <path>`, then the text's
+ * lines between a begin and an end marker line. The file holds those lines,
+ * each ending in a newline.
+ */
+function verbatimBlock(title: string, file: FileToWrite): string[] {
+  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
+
+  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
+}
 
 function sliceHeadLines(values: SliceHeadValues): string[] {
   return [

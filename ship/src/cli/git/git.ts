@@ -228,23 +228,6 @@ export function assertStatusUnchanged(dir: string, before: readonly string[]): v
 }
 
 /**
- * Resolve where `path` sits in its repository.
- *
- * @throws StepFailure for `step` when `path` is missing or not inside a git
- *   repository.
- */
-function worktreeIdentity(path: string, step: string): WorktreeIdentity {
-  const [toplevel = '', commonDir = ''] = git(
-    path,
-    ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'],
-    step,
-  ).split(/\r?\n/u);
-  const main = listWorktrees(path, step)[0]?.path ?? '';
-
-  return { toplevel, commonDir, main };
-}
-
-/**
  * Identify `path` and require it to be a registered worktree root.
  *
  * @throws StepFailure for `step` when `path` is missing, outside any
@@ -297,19 +280,6 @@ export function assertNotSelfHosted(target: string, selfPath: string): void {
 }
 
 /**
- * Canonical comparison form of a path: absolute, symlinks resolved when the
- * path exists, forward slashes, no trailing slash, case-folded on win32.
- */
-function canonical(path: string): string {
-  const abs = resolve(path);
-  const real = existsSync(abs) ? realpathSync.native(abs) : abs;
-  const posix = toPosix(real);
-  const trimmed = posix.endsWith('/') ? posix.slice(0, -1) : posix;
-
-  return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
-}
-
-/**
  * Whether two paths name the same location.
  *
  * @returns `true` when their canonical forms match.
@@ -328,4 +298,34 @@ export function isInside(child: string, parent: string): boolean {
   const p = canonical(parent);
 
   return c === p || c.startsWith(`${p}/`);
+}
+
+/**
+ * Canonical comparison form of a path: absolute, symlinks resolved when the
+ * path exists, forward slashes, no trailing slash, case-folded on win32.
+ */
+function canonical(path: string): string {
+  const abs = resolve(path);
+  const real = existsSync(abs) ? realpathSync.native(abs) : abs;
+  const posix = toPosix(real);
+  const trimmed = posix.endsWith('/') ? posix.slice(0, -1) : posix;
+
+  return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
+}
+
+/**
+ * Resolve where `path` sits in its repository.
+ *
+ * @throws StepFailure for `step` when `path` is missing or not inside a git
+ *   repository.
+ */
+function worktreeIdentity(path: string, step: string): WorktreeIdentity {
+  const [toplevel = '', commonDir = ''] = git(
+    path,
+    ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'],
+    step,
+  ).split(/\r?\n/u);
+  const main = listWorktrees(path, step)[0]?.path ?? '';
+
+  return { toplevel, commonDir, main };
 }

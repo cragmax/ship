@@ -39,23 +39,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/** Point origin's master back at the launch sha `first`. */
-function rewindOrigin(): void {
-  mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
-}
-
-/**
- * Push a commit to origin and fetch it into main, then {@link rewindOrigin}; returns the pushed
- * sha, which main has seen and origin no longer holds.
- */
-function pushFetchRewind(): string {
-  const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
-  mustRun('git', ['fetch', '-q', 'origin'], main);
-  rewindOrigin();
-
-  return pushed;
-}
-
 describe('check-master', () => {
   it('refuses a local master rewound since the launch, naming both shas, exit 1', TIMEOUT, () => {
     const second = commitChanges(main, { write: { 'local.txt': 'local\n' } }, 'maintainer commit');
@@ -330,3 +313,20 @@ describe('check-master', () => {
     expect(r).toMatchObject({ ...outcome, local: null, remote: null });
   });
 });
+
+/** Point origin's master back at the launch sha `first`. */
+function rewindOrigin(): void {
+  mustRun('git', ['update-ref', 'refs/heads/master', first], bare);
+}
+
+/**
+ * Push a commit to origin and fetch it into main, then {@link rewindOrigin}; returns the pushed
+ * sha, which main has seen and origin no longer holds.
+ */
+function pushFetchRewind(): string {
+  const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
+  mustRun('git', ['fetch', '-q', 'origin'], main);
+  rewindOrigin();
+
+  return pushed;
+}

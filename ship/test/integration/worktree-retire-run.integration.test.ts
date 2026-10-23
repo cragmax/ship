@@ -44,59 +44,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-function cutRun(): void {
-  const cut = runCli<CutBatchResult>(['cut-batch', main, '--issues', '7']);
-  expect(cut.json.status, JSON.stringify(cut.json)).toBe('ok');
-}
-
-function tearDown(): void {
-  const down = runCli<TeardownResult>(['teardown', batch]);
-  expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
-}
-
-/** A cut run with one commit landed in `origin/master`, its batch still standing. */
-function mergedRun(): void {
-  cutRun();
-  commitChanges(batch, {}, 'landed');
-  mustRun('git', ['push', '-q', 'origin', 'ship/7:master'], main);
-  mustRun('git', ['fetch', '-q', 'origin'], main);
-}
-
-/** A spent run: a merged run with its batch torn down, and the run root left holding reports. */
-function spentRun(): void {
-  mergedRun();
-  tearDown();
-  mkdirSync(`${runRoot}/plans`);
-  writeFileSync(`${runRoot}/plans/x.md`, 'x\n');
-}
-
-function branchResolves(branch = 'ship/7'): boolean {
-  return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], main).exitCode === 0;
-}
-
-/** Create `name` on a new commit off main's HEAD, so it is in no other branch. */
-function sliceBranch(name: string): void {
-  const sha = mustRun('git', ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', name], main).trim();
-  mustRun('git', ['branch', name, sha], main);
-}
-
-/** Retire `ship/7`, unmerged, and assert the refusal deleted neither it nor `slice/7/1-1`. */
-function expectBranchUnmergedRefusal(): void {
-  const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
-
-  expect(r.code, JSON.stringify(r.json)).toBe(1);
-  expect(r.json).toMatchObject({
-    status: 'refused',
-    reason: 'branch-unmerged',
-    branchDeleted: false,
-    rootRemoved: false,
-  });
-  expect(r.json.errors[0]?.step).toBe('branch-guard');
-  expect(r.json.sliceBranches).toEqual([]);
-  expect(branchResolves()).toBe(true);
-  expect(branchResolves('slice/7/1-1')).toBe(true);
-}
-
 describe('retire-run', () => {
   it('deletes a merged run branch and its run root, so the run can be cut again', TIMEOUT, () => {
     spentRun();
@@ -314,6 +261,59 @@ describe('retire-run', () => {
     expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 });
+
+function branchResolves(branch = 'ship/7'): boolean {
+  return runIn('git', ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], main).exitCode === 0;
+}
+
+/** Retire `ship/7`, unmerged, and assert the refusal deleted neither it nor `slice/7/1-1`. */
+function expectBranchUnmergedRefusal(): void {
+  const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+  expect(r.code, JSON.stringify(r.json)).toBe(1);
+  expect(r.json).toMatchObject({
+    status: 'refused',
+    reason: 'branch-unmerged',
+    branchDeleted: false,
+    rootRemoved: false,
+  });
+  expect(r.json.errors[0]?.step).toBe('branch-guard');
+  expect(r.json.sliceBranches).toEqual([]);
+  expect(branchResolves()).toBe(true);
+  expect(branchResolves('slice/7/1-1')).toBe(true);
+}
+
+/** Create `name` on a new commit off main's HEAD, so it is in no other branch. */
+function sliceBranch(name: string): void {
+  const sha = mustRun('git', ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', name], main).trim();
+  mustRun('git', ['branch', name, sha], main);
+}
+
+function cutRun(): void {
+  const cut = runCli<CutBatchResult>(['cut-batch', main, '--issues', '7']);
+  expect(cut.json.status, JSON.stringify(cut.json)).toBe('ok');
+}
+
+function tearDown(): void {
+  const down = runCli<TeardownResult>(['teardown', batch]);
+  expect(down.json.status, JSON.stringify(down.json)).toBe('ok');
+}
+
+/** A spent run: a merged run with its batch torn down, and the run root left holding reports. */
+function spentRun(): void {
+  mergedRun();
+  tearDown();
+  mkdirSync(`${runRoot}/plans`);
+  writeFileSync(`${runRoot}/plans/x.md`, 'x\n');
+}
+
+/** A cut run with one commit landed in `origin/master`, its batch still standing. */
+function mergedRun(): void {
+  cutRun();
+  commitChanges(batch, {}, 'landed');
+  mustRun('git', ['push', '-q', 'origin', 'ship/7:master'], main);
+  mustRun('git', ['fetch', '-q', 'origin'], main);
+}
 
 describe('teardown — gone worktree', () => {
   it.each([

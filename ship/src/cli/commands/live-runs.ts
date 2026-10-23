@@ -92,118 +92,6 @@ export function liveRuns(input: { readonly main: string }): LiveRunsResult {
 }
 
 /**
- * Require `main` to be the repository's main checkout root.
- *
- * @throws StepFailure `preconditions` when it is not a worktree root, or is a linked worktree.
- */
-function requireMainCheckout(main: string): void {
-  const identity = requireWorktreeRoot(main, 'preconditions');
-
-  if (!samePath(identity.main, main)) {
-    throw new StepFailure(
-      'preconditions',
-      `${main} is not the main checkout (the main checkout is ${identity.main})`,
-    );
-  }
-}
-
-/**
- * Describe one run, every git and `gh` query run in `main`; a failed PR lookup sets `result`
- * `failed` with a `pr-state` error naming the branch.
- *
- * @throws StepFailure `runs` when git fails.
- */
-function describeRun(
-  main: string,
-  entry: WorktreeEntry,
-  worktrees: readonly WorktreeEntry[],
-  result: LiveRunsResult,
-): LiveRun {
-  const ref = entry.branch ?? '';
-  const branch = ref.slice('refs/heads/'.length);
-  const mergeBase = git(main, ['merge-base', RUN_BASE_BRANCH, ref], 'runs');
-  const { info, error } = lookupPr(main, branch);
-
-  if (error !== undefined) {
-    result.status = 'failed';
-    result.errors.push({ step: 'pr-state', message: `${branch}: ${error}` });
-  }
-
-  const { spent, unverified } = spentOf(main, ref, info);
-
-  return {
-    path: entry.path,
-    branch,
-    ahead: Number(git(main, ['rev-list', '--count', `${RUN_BASE_BRANCH}..${ref}`], 'runs')),
-    mergeBase,
-    landed: gitPaths(main, ['diff', '--name-only', '--no-renames', mergeBase, ref], 'runs').sort(
-      compareStrings,
-    ),
-    dirty: isDirty(entry),
-    pr: info,
-    spent,
-    spentUnverified: unverified,
-    nested: worktrees
-      .map((w) => w.path)
-      .filter((path) => !samePath(path, entry.path) && isInside(path, entry.path)),
-  };
-}
-
-/**
- * Spent: tip `ref` is an ancestor of (or is) its merged or closed PR's head. Both `false` while the
- * PR is open, absent or unknown; `unverified` when its head is unnamed or not a commit here.
- *
- * @throws StepFailure `runs` when `git merge-base --is-ancestor` cannot answer.
- */
-function spentOf(
-  main: string,
-  ref: string,
-  info: PrInfo,
-): { readonly spent: boolean; readonly unverified: boolean } {
-  if (info.state !== 'merged' && info.state !== 'closed')
-    return { spent: false, unverified: false };
-
-  if (info.headOid === null || !isCommit(main, info.headOid)) {
-    return { spent: false, unverified: true };
-  }
-
-  const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', ref, info.headOid], {
-    cwd: process.cwd(),
-  });
-
-  if (r.exitCode === 0) return { spent: true, unverified: false };
-  if (r.exitCode === 1) return { spent: false, unverified: false };
-
-  throw new StepFailure(
-    'runs',
-    `git merge-base --is-ancestor ${ref} ${info.headOid} failed`,
-    r.tail,
-  );
-}
-
-/** Whether `oid` names a commit here. */
-function isCommit(main: string, oid: string): boolean {
-  if (!COMMIT_ID.test(oid)) return false;
-
-  return (
-    runCaptured('git', ['-C', main, 'cat-file', '-e', `${oid}^{commit}`], { cwd: process.cwd() })
-      .exitCode === 0
-  );
-}
-
-/**
- * Whether a run's worktree has uncommitted changes: `null` when git marks it prunable or its
- * directory is missing, where git never runs.
- *
- * @throws StepFailure `runs` when git fails.
- */
-function isDirty(entry: WorktreeEntry): boolean | null {
-  if (entry.prunable || !existsSync(entry.path)) return null;
-
-  return statusEntries(entry.path, 'runs').length > 0;
-}
-
-/**
  * Ask `gh` for a branch's pull requests, in every state, with each head
  * commit, under `GH_TIMEOUT_MS`.
  *
@@ -268,6 +156,118 @@ export function openPr(dir: string, branch: string): number {
   }
 
   return info.number;
+}
+
+/**
+ * Describe one run, every git and `gh` query run in `main`; a failed PR lookup sets `result`
+ * `failed` with a `pr-state` error naming the branch.
+ *
+ * @throws StepFailure `runs` when git fails.
+ */
+function describeRun(
+  main: string,
+  entry: WorktreeEntry,
+  worktrees: readonly WorktreeEntry[],
+  result: LiveRunsResult,
+): LiveRun {
+  const ref = entry.branch ?? '';
+  const branch = ref.slice('refs/heads/'.length);
+  const mergeBase = git(main, ['merge-base', RUN_BASE_BRANCH, ref], 'runs');
+  const { info, error } = lookupPr(main, branch);
+
+  if (error !== undefined) {
+    result.status = 'failed';
+    result.errors.push({ step: 'pr-state', message: `${branch}: ${error}` });
+  }
+
+  const { spent, unverified } = spentOf(main, ref, info);
+
+  return {
+    path: entry.path,
+    branch,
+    ahead: Number(git(main, ['rev-list', '--count', `${RUN_BASE_BRANCH}..${ref}`], 'runs')),
+    mergeBase,
+    landed: gitPaths(main, ['diff', '--name-only', '--no-renames', mergeBase, ref], 'runs').sort(
+      compareStrings,
+    ),
+    dirty: isDirty(entry),
+    pr: info,
+    spent,
+    spentUnverified: unverified,
+    nested: worktrees
+      .map((w) => w.path)
+      .filter((path) => !samePath(path, entry.path) && isInside(path, entry.path)),
+  };
+}
+
+/**
+ * Whether a run's worktree has uncommitted changes: `null` when git marks it prunable or its
+ * directory is missing, where git never runs.
+ *
+ * @throws StepFailure `runs` when git fails.
+ */
+function isDirty(entry: WorktreeEntry): boolean | null {
+  if (entry.prunable || !existsSync(entry.path)) return null;
+
+  return statusEntries(entry.path, 'runs').length > 0;
+}
+
+/**
+ * Spent: tip `ref` is an ancestor of (or is) its merged or closed PR's head. Both `false` while the
+ * PR is open, absent or unknown; `unverified` when its head is unnamed or not a commit here.
+ *
+ * @throws StepFailure `runs` when `git merge-base --is-ancestor` cannot answer.
+ */
+function spentOf(
+  main: string,
+  ref: string,
+  info: PrInfo,
+): { readonly spent: boolean; readonly unverified: boolean } {
+  if (info.state !== 'merged' && info.state !== 'closed')
+    return { spent: false, unverified: false };
+
+  if (info.headOid === null || !isCommit(main, info.headOid)) {
+    return { spent: false, unverified: true };
+  }
+
+  const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', ref, info.headOid], {
+    cwd: process.cwd(),
+  });
+
+  if (r.exitCode === 0) return { spent: true, unverified: false };
+  if (r.exitCode === 1) return { spent: false, unverified: false };
+
+  throw new StepFailure(
+    'runs',
+    `git merge-base --is-ancestor ${ref} ${info.headOid} failed`,
+    r.tail,
+  );
+}
+
+/** Whether `oid` names a commit here. */
+function isCommit(main: string, oid: string): boolean {
+  if (!COMMIT_ID.test(oid)) return false;
+
+  return (
+    runCaptured('git', ['-C', main, 'cat-file', '-e', `${oid}^{commit}`], { cwd: process.cwd() })
+      .exitCode === 0
+  );
+}
+
+/**
+ * Require `main` to be the repository's main checkout root.
+ *
+ * @throws StepFailure `preconditions` when it is not a worktree root, or is a linked worktree.
+ */
+function requireMainCheckout(main: string): void {
+  const identity = requireWorktreeRoot(main, 'preconditions');
+
+  if (!samePath(identity.main, main)) {
+    throw new StepFailure(
+      'preconditions',
+      `${main} is not the main checkout (the main checkout is ${identity.main})`,
+    );
+  }
 }
 
 function unknownPr(error: string): PrLookup {

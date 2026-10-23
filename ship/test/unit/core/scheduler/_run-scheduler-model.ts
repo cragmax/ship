@@ -193,34 +193,6 @@ export function arbChoices(): fc.Arbitrary<Choice[]> {
   );
 }
 
-function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput {
-  let offset = 0;
-  const runSet = sizes.map((size, i) => {
-    const issues = parts.issues.slice(offset, offset + size);
-    offset += size;
-
-    return { epic: i === parts.nullAt ? null : (parts.epics[i] ?? null), issues };
-  });
-  const edges: RunEdge[] = [];
-
-  for (const [e, a, b] of parts.edgePicks) {
-    const issues = runSet[e % runSet.length]?.issues ?? [];
-    const lo = issues[Math.min(a % issues.length, b % issues.length)];
-    const hi = issues[Math.max(a % issues.length, b % issues.length)];
-    if (lo !== undefined && hi !== undefined && lo !== hi)
-      edges.push({ blocker: lo, dependent: hi });
-  }
-
-  const first = edges[0];
-  if (parts.duplicate && first !== undefined) edges.push({ ...first });
-
-  return { runSet, edges, maxSlices: parts.maxSlices };
-}
-
-function ringEdges(ring: readonly number[]): RunEdge[] {
-  return ring.map((blocker, i) => ({ blocker, dependent: ring[(i + 1) % ring.length] ?? blocker }));
-}
-
 // ---------------------------------------------------------------- driver
 
 // eslint-disable-next-line local/comment-budget -- jsdoc/require-param binds here: 3 @param + @returns
@@ -273,26 +245,32 @@ export function runModel(
   return { events, transitions };
 }
 
-/**
- * Every issue reachable from `root` along blocker → dependent edges, root excluded.
- *
- * @param view - The view (its input edges).
- * @param root - The starting issue.
- * @returns The reached issues.
- */
-function closure(view: View, root: number): Set<number> {
-  const reached = new Set<number>();
-  const queue = [root];
+function ringEdges(ring: readonly number[]): RunEdge[] {
+  return ring.map((blocker, i) => ({ blocker, dependent: ring[(i + 1) % ring.length] ?? blocker }));
+}
 
-  for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
-    for (const w of view.dependents.get(v) ?? []) {
-      if (w === root || reached.has(w)) continue;
-      reached.add(w);
-      queue.push(w);
-    }
+function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput {
+  let offset = 0;
+  const runSet = sizes.map((size, i) => {
+    const issues = parts.issues.slice(offset, offset + size);
+    offset += size;
+
+    return { epic: i === parts.nullAt ? null : (parts.epics[i] ?? null), issues };
+  });
+  const edges: RunEdge[] = [];
+
+  for (const [e, a, b] of parts.edgePicks) {
+    const issues = runSet[e % runSet.length]?.issues ?? [];
+    const lo = issues[Math.min(a % issues.length, b % issues.length)];
+    const hi = issues[Math.max(a % issues.length, b % issues.length)];
+    if (lo !== undefined && hi !== undefined && lo !== hi)
+      edges.push({ blocker: lo, dependent: hi });
   }
 
-  return reached;
+  const first = edges[0];
+  if (parts.duplicate && first !== undefined) edges.push({ ...first });
+
+  return { runSet, edges, maxSlices: parts.maxSlices };
 }
 
 /**
@@ -351,22 +329,6 @@ function inHaltedEntry(view: View, issue: number): boolean {
   return epic !== undefined && view.halted.has(epic);
 }
 
-function endCount(view: View, epic: number | null): number {
-  return view.ends.get(epic)?.length ?? 0;
-}
-
-function candidates(view: View, kind: IssueEvent['kind']): number[] {
-  if (kind === 'slot-free') return view.order.filter((i) => view.status.get(i) === 'authoring');
-  if (kind === 'label-removed') return view.order.filter((i) => view.status.get(i) !== 'settled');
-
-  // A halted entry lands nothing more: the consumer never feeds its issues `committed`.
-  if (kind === 'committed') {
-    return view.order.filter((i) => isLive(view.status.get(i)) && !inHaltedEntry(view, i));
-  }
-
-  return view.order.filter((i) => isLive(view.status.get(i)));
-}
-
 function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
   if (choice.kind === 'epic-halt') {
     const open = view.input.runSet.filter(
@@ -388,6 +350,22 @@ function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
     : { kind: choice.kind, issue };
 }
 
+function candidates(view: View, kind: IssueEvent['kind']): number[] {
+  if (kind === 'slot-free') return view.order.filter((i) => view.status.get(i) === 'authoring');
+  if (kind === 'label-removed') return view.order.filter((i) => view.status.get(i) !== 'settled');
+
+  // A halted entry lands nothing more: the consumer never feeds its issues `committed`.
+  if (kind === 'committed') {
+    return view.order.filter((i) => isLive(view.status.get(i)) && !inHaltedEntry(view, i));
+  }
+
+  return view.order.filter((i) => isLive(view.status.get(i)));
+}
+
+function endCount(view: View, epic: number | null): number {
+  return view.ends.get(epic)?.length ?? 0;
+}
+
 interface PreStep {
   readonly settled: ReadonlySet<number>;
   readonly ends: ReadonlyMap<number | null, number>;
@@ -402,23 +380,6 @@ function step(view: View, event: SchedulerEvent | null, actions: readonly Schedu
   if (event !== null) applyEvent(view, event);
   for (const action of actions) applyAction(view, action);
   checkStep(view, event, actions, pre);
-}
-
-/**
- * Halt an entry in the view: its unstarted issues (waiting, ready, or parked
- * for a restart) settle and will never start.
- *
- * @param view - The view.
- * @param epic - The halted entry's epic key.
- */
-function haltEntry(view: View, epic: number | null): void {
-  view.halted.add(epic);
-
-  for (const i of view.input.runSet.find((entry) => entry.epic === epic)?.issues ?? []) {
-    if (view.status.get(i) !== 'unstarted') continue;
-    view.status.set(i, 'settled');
-    view.pendingRestart.delete(i);
-  }
 }
 
 function applyEvent(view: View, event: SchedulerEvent): void {
@@ -463,6 +424,23 @@ function applyEvent(view: View, event: SchedulerEvent): void {
   }
 }
 
+/**
+ * Halt an entry in the view: its unstarted issues (waiting, ready, or parked
+ * for a restart) settle and will never start.
+ *
+ * @param view - The view.
+ * @param epic - The halted entry's epic key.
+ */
+function haltEntry(view: View, epic: number | null): void {
+  view.halted.add(epic);
+
+  for (const i of view.input.runSet.find((entry) => entry.epic === epic)?.issues ?? []) {
+    if (view.status.get(i) !== 'unstarted') continue;
+    view.status.set(i, 'settled');
+    view.pendingRestart.delete(i);
+  }
+}
+
 function applyAction(view: View, action: SchedulerAction): void {
   if (action.kind === 'epic-done' || action.kind === 'epic-halted') {
     view.ends.set(action.epic, [...(view.ends.get(action.epic) ?? []), action.kind]);
@@ -497,17 +475,6 @@ function applyAction(view: View, action: SchedulerAction): void {
 
 // ---------------------------------------------------------------- checker
 
-function violate(invariant: InvariantName, detail: string): never {
-  throw new InvariantViolation(invariant, detail);
-}
-
-function ofKind<K extends SchedulerAction['kind']>(
-  actions: readonly SchedulerAction[],
-  kind: K,
-): Extract<SchedulerAction, { kind: K }>[] {
-  return actions.filter((a): a is Extract<SchedulerAction, { kind: K }> => a.kind === kind);
-}
-
 function checkStep(
   view: View,
   event: SchedulerEvent | null,
@@ -533,6 +500,17 @@ function checkHaltStopsEntry(view: View, actions: readonly SchedulerAction[]): v
   }
 }
 
+function ofKind<K extends SchedulerAction['kind']>(
+  actions: readonly SchedulerAction[],
+  kind: K,
+): Extract<SchedulerAction, { kind: K }>[] {
+  return actions.filter((a): a is Extract<SchedulerAction, { kind: K }> => a.kind === kind);
+}
+
+function violate(invariant: InvariantName, detail: string): never {
+  throw new InvariantViolation(invariant, detail);
+}
+
 function checkDependencyOrder(view: View, actions: readonly SchedulerAction[]): void {
   for (const { issue } of ofKind(actions, 'start')) {
     const early = (view.blockers.get(issue) ?? []).filter((b) => !view.committed.has(b));
@@ -540,13 +518,13 @@ function checkDependencyOrder(view: View, actions: readonly SchedulerAction[]): 
   }
 }
 
-function authoringCount(view: View): number {
-  return view.order.filter((i) => view.status.get(i) === 'authoring').length;
-}
-
 function checkCap(view: View): void {
   const n = authoringCount(view);
   if (n > view.input.maxSlices) violate('cap', `${n} authoring, cap ${view.input.maxSlices}`);
+}
+
+function authoringCount(view: View): number {
+  return view.order.filter((i) => view.status.get(i) === 'authoring').length;
 }
 
 function checkWorkConserving(view: View): void {
@@ -577,6 +555,28 @@ function checkSkipOnlyDependents(
     if (!ok) violate('skip-only-dependents', `skip #${issue} for root #${cause.root}`);
     seen.add(issue);
   }
+}
+
+/**
+ * Every issue reachable from `root` along blocker → dependent edges, root excluded.
+ *
+ * @param view - The view (its input edges).
+ * @param root - The starting issue.
+ * @returns The reached issues.
+ */
+function closure(view: View, root: number): Set<number> {
+  const reached = new Set<number>();
+  const queue = [root];
+
+  for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
+    for (const w of view.dependents.get(v) ?? []) {
+      if (w === root || reached.has(w)) continue;
+      reached.add(w);
+      queue.push(w);
+    }
+  }
+
+  return reached;
 }
 
 function checkSkipClosureComplete(
@@ -641,15 +641,6 @@ function checkEpicDoneWhenSettled(
   }
 }
 
-function checkFinalSkips(view: View): void {
-  const roots = [...view.badRoots.keys()];
-  const expected = new Set(roots.flatMap((root) => [...closure(view, root)]));
-  for (const root of roots) expected.delete(root);
-  const want = [...expected].sort((a, b) => a - b).join();
-  const got = [...view.skipped].sort((a, b) => a - b).join();
-  if (got !== want) violate('skip-closure-complete (final)', `skipped [${got}], want [${want}]`);
-}
-
 function checkEnd(view: View): void {
   checkFinalSkips(view);
   const stranded = [...view.pendingRestart].filter((i) => !view.removedWhileParked.has(i));
@@ -662,6 +653,15 @@ function checkEnd(view: View): void {
     const want = view.halted.has(epic) ? 'epic-halted' : 'epic-done';
     if (got !== want) violate('one-terminal-per-entry', `epic ${epic}: [${got}], want [${want}]`);
   }
+}
+
+function checkFinalSkips(view: View): void {
+  const roots = [...view.badRoots.keys()];
+  const expected = new Set(roots.flatMap((root) => [...closure(view, root)]));
+  for (const root of roots) expected.delete(root);
+  const want = [...expected].sort((a, b) => a - b).join();
+  const got = [...view.skipped].sort((a, b) => a - b).join();
+  if (got !== want) violate('skip-closure-complete (final)', `skipped [${got}], want [${want}]`);
 }
 
 // ---------------------------------------------------------------- mutants
@@ -701,15 +701,6 @@ function mapActions(
   });
 }
 
-function withoutFirst(
-  actions: readonly SchedulerAction[],
-  match: (a: SchedulerAction) => boolean,
-): SchedulerAction[] {
-  const at = actions.findIndex(match);
-
-  return at < 0 ? [...actions] : actions.filter((_, i) => i !== at);
-}
-
 function skipNonDependent(
   view: View,
   event: SchedulerEvent,
@@ -728,13 +719,6 @@ function skipNonDependent(
   if (victim === undefined) return [...actions];
 
   return [...actions, { kind: 'skip', issue: victim, cause: { root, trigger: event.kind } }];
-}
-
-function dropRestartStart(actions: readonly SchedulerAction[]): SchedulerAction[] {
-  const restarted = actions.find((a) => a.kind === 'requeue' || a.kind === 'retry');
-  if (restarted === undefined) return [...actions];
-
-  return withoutFirst(actions, (a) => a.kind === 'start' && a.issue === restarted.issue);
 }
 
 /**
@@ -865,3 +849,19 @@ export const MUTANTS: readonly Mutant[] = [
     ),
   },
 ];
+
+function withoutFirst(
+  actions: readonly SchedulerAction[],
+  match: (a: SchedulerAction) => boolean,
+): SchedulerAction[] {
+  const at = actions.findIndex(match);
+
+  return at < 0 ? [...actions] : actions.filter((_, i) => i !== at);
+}
+
+function dropRestartStart(actions: readonly SchedulerAction[]): SchedulerAction[] {
+  const restarted = actions.find((a) => a.kind === 'requeue' || a.kind === 'retry');
+  if (restarted === undefined) return [...actions];
+
+  return withoutFirst(actions, (a) => a.kind === 'start' && a.issue === restarted.issue);
+}

@@ -2,10 +2,6 @@ import { describe, it, expect } from 'vitest';
 
 import { parseBlockedBySection } from '../../../../src/core/gate/run-gate-blocked-by.js';
 
-function section(...lines: string[]): string {
-  return ['## Parent', '', '- #1025', '', '## Blocked by', '', ...lines, ''].join('\n');
-}
-
 describe('parseBlockedBySection — list-item forms', () => {
   it.each([
     ['- #1031 (declares the run set)', [1031]],
@@ -22,6 +18,10 @@ describe('parseBlockedBySection — list-item forms', () => {
     expect(parseBlockedBySection(section(line))).toEqual(expected);
   });
 });
+
+function section(...lines: string[]): string {
+  return ['## Parent', '', '- #1025', '', '## Blocked by', '', ...lines, ''].join('\n');
+}
 
 // regression: real issue bodies declare blockers with no list marker.
 describe('parseBlockedBySection — marker-less lines', () => {

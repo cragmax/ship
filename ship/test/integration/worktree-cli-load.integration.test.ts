@@ -83,20 +83,6 @@ afterAll(() => {
   }
 });
 
-/** Run the CLI with `args` and return the command modules it loaded, in list order. */
-function loadedCommandModules(args: readonly string[]): { code: number; modules: string[] } {
-  const log = join(root, `load-${String(++runs)}.log`);
-  const { code } = runCli(args, { env: { ...env, PH_LOAD_LOG: log } });
-  const loaded = new Set(
-    readFileSync(log, 'utf8')
-      .split('\n')
-      .map((url) => /\/ship\/src\/cli\/(?:commands|git)\/([a-z-]+)\.ts$/u.exec(url)?.[1])
-      .filter((name) => name !== undefined),
-  );
-
-  return { code, modules: COMMAND_MODULES.filter((m) => loaded.has(m)) };
-}
-
 describe('worktree CLI module loading', () => {
   it('loads no command module for a usage error', TIMEOUT, () => {
     const { code, modules } = loadedCommandModules(['no-such-command']);
@@ -192,3 +178,17 @@ describe('worktree CLI module loading', () => {
     expect(modules).toEqual(expected);
   });
 });
+
+/** Run the CLI with `args` and return the command modules it loaded, in list order. */
+function loadedCommandModules(args: readonly string[]): { code: number; modules: string[] } {
+  const log = join(root, `load-${String(++runs)}.log`);
+  const { code } = runCli(args, { env: { ...env, PH_LOAD_LOG: log } });
+  const loaded = new Set(
+    readFileSync(log, 'utf8')
+      .split('\n')
+      .map((url) => /\/ship\/src\/cli\/(?:commands|git)\/([a-z-]+)\.ts$/u.exec(url)?.[1])
+      .filter((name) => name !== undefined),
+  );
+
+  return { code, modules: COMMAND_MODULES.filter((m) => loaded.has(m)) };
+}

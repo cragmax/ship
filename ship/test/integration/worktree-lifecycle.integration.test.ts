@@ -78,28 +78,6 @@ interface Layout {
   readonly slice: string;
 }
 
-/** A fixture main checkout plus a seeded batch worktree and one slice worktree. */
-function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
-  const main = makeFixtureRepo(root, options);
-  const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
-  seedBatch(batch);
-  const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
-
-  return { main, batch, slice };
-}
-
-/** The real `.gitignore` with its `pattern` line replaced, or dropped when `null`. */
-function gitignoreReplacing(pattern: string, replacement: string | null): string {
-  return readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
-    .split(/\r?\n/u)
-    .flatMap((line) => {
-      if (line.trim() !== pattern) return [line];
-
-      return replacement === null ? [] : [replacement];
-    })
-    .join('\n');
-}
-
 const SCAFFOLD_PATTERN = 'vitest.worktree*.config.ts';
 
 describe.skipIf(!WIN32)('provision + teardown round trip', () => {
@@ -193,6 +171,16 @@ describe.skipIf(!WIN32)('provision + teardown round trip', () => {
     expect(listTree(main)).toEqual(before);
   });
 });
+
+/** A fixture main checkout plus a seeded batch worktree and one slice worktree. */
+function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
+  const main = makeFixtureRepo(root, options);
+  const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
+  seedBatch(batch);
+  const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
+
+  return { main, batch, slice };
+}
 
 describe('provision-batch', () => {
   it(
@@ -350,6 +338,18 @@ describe('provision-batch', () => {
     },
   );
 });
+
+/** The real `.gitignore` with its `pattern` line replaced, or dropped when `null`. */
+function gitignoreReplacing(pattern: string, replacement: string | null): string {
+  return readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      if (line.trim() !== pattern) return [line];
+
+      return replacement === null ? [] : [replacement];
+    })
+    .join('\n');
+}
 
 describe('usage errors', () => {
   it.each([

@@ -56,25 +56,6 @@ interface Pair {
 }
 
 /**
- * A repo whose `ship/batch` worktree and `slice-1` worktree both start at
- * the base commit; the slice commits `slice`, then the batch commits `batch`.
- */
-function slicePair(base: Record<string, string>, slice: Changes, batch?: Changes): Pair {
-  const main = makeGitRepo(root, base);
-  const batchWt = addWorktree(main, `${root}/batch`, 'ship/batch');
-  const sliceWt = addWorktree(main, `${root}/slice`, 'slice-1', 'ship/batch');
-  const sha = commitChanges(sliceWt, slice, 'S');
-  if (batch !== undefined) commitChanges(batchWt, batch, 'B');
-
-  return { main, batch: batchWt, sha };
-}
-
-/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
-function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
-  return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
-}
-
-/**
  * One `no-console` hit.
  *
  * @param n - The logged value, which keeps each line distinct.
@@ -91,22 +72,6 @@ const LINT_BASE = {
   'eslint.config.mjs':
     "export default [{ files: ['**/*.js'], rules: { 'no-console': 'error' } }];\n",
 };
-
-/**
- * An `eslint-suppressions.json` body in ESLint's own format.
- *
- * @param entries - Each file's `no-console` count.
- * @returns The body.
- */
-function supp(entries: Record<string, number>): string {
-  return JSON.stringify(
-    Object.fromEntries(
-      Object.entries(entries).map(([f, n]) => [f, { 'no-console': { count: n } }]),
-    ),
-    null,
-    2,
-  );
-}
 
 describe('harvest', () => {
   it(
@@ -558,6 +523,41 @@ describe('harvest', () => {
     expect(existsSync(join(batch, 'slice-added.txt'))).toBe(false);
   });
 });
+
+/**
+ * An `eslint-suppressions.json` body in ESLint's own format.
+ *
+ * @param entries - Each file's `no-console` count.
+ * @returns The body.
+ */
+function supp(entries: Record<string, number>): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(entries).map(([f, n]) => [f, { 'no-console': { count: n } }]),
+    ),
+    null,
+    2,
+  );
+}
+
+/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
+function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
+  return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
+}
+
+/**
+ * A repo whose `ship/batch` worktree and `slice-1` worktree both start at
+ * the base commit; the slice commits `slice`, then the batch commits `batch`.
+ */
+function slicePair(base: Record<string, string>, slice: Changes, batch?: Changes): Pair {
+  const main = makeGitRepo(root, base);
+  const batchWt = addWorktree(main, `${root}/batch`, 'ship/batch');
+  const sliceWt = addWorktree(main, `${root}/slice`, 'slice-1', 'ship/batch');
+  const sha = commitChanges(sliceWt, slice, 'S');
+  if (batch !== undefined) commitChanges(batchWt, batch, 'B');
+
+  return { main, batch: batchWt, sha };
+}
 
 describe('harvest (in-process)', () => {
   it(

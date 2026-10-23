@@ -116,42 +116,6 @@ type RetroOutput = z.infer<typeof RetroOutputSchema>;
 export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
 
 /**
- * `issue-overlap`'s output schema, built per call: a pair's endpoints and a
- * live overlap's issue may only be the run's issues.
- */
-function overlapSchema(issues: readonly number[]): JsonSchema {
-  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
-  const { pairs, liveOverlaps } = base.properties;
-  const issue = { type: 'integer', enum: issues } as const;
-
-  return {
-    ...base,
-    properties: {
-      ...base.properties,
-      pairs: {
-        ...pairs,
-        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
-      },
-      liveOverlaps: {
-        ...liveOverlaps,
-        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
-      },
-    },
-  };
-}
-
-/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
-async function askAgent<T>(
-  hooks: WorkflowHooks,
-  prompt: string,
-  options: AgentOptions,
-): Promise<T | null> {
-  const out = await hooks.agent(prompt, options);
-
-  return typeof out === 'object' && out !== null ? (out as T) : null;
-}
-
-/**
  * One wrapper per judgment stage; `tag` tells the call from the stage's
  * others (`7-1`). `issue-readiness` and `issue-overlap` run once per launch,
  * so they take none.
@@ -218,3 +182,39 @@ export const AGENT_CALLS = {
       agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
+
+/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
+async function askAgent<T>(
+  hooks: WorkflowHooks,
+  prompt: string,
+  options: AgentOptions,
+): Promise<T | null> {
+  const out = await hooks.agent(prompt, options);
+
+  return typeof out === 'object' && out !== null ? (out as T) : null;
+}
+
+/**
+ * `issue-overlap`'s output schema, built per call: a pair's endpoints and a
+ * live overlap's issue may only be the run's issues.
+ */
+function overlapSchema(issues: readonly number[]): JsonSchema {
+  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
+  const { pairs, liveOverlaps } = base.properties;
+  const issue = { type: 'integer', enum: issues } as const;
+
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      pairs: {
+        ...pairs,
+        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
+      },
+      liveOverlaps: {
+        ...liveOverlaps,
+        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
+      },
+    },
+  };
+}

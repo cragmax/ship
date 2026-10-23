@@ -43,17 +43,6 @@ export interface RestartDeps {
 /** The environment variable, set to `off`, that disables the restart (the test configs set it). */
 const RESTART_SWITCH = 'PH_TSSERVER_RESTART';
 
-function defaultDeps(): RestartDeps {
-  return {
-    disabled: process.env[RESTART_SWITCH] === 'off',
-    platform: process.platform,
-    selfPid: process.pid,
-    sessionImage: 'claude.exe',
-    listProcesses: listWindowsProcesses,
-    kill: (pid) => process.kill(pid),
-  };
-}
-
 /**
  * Kill every semantic tsserver (a `node` running `tsserver.js`, never with
  * `--serverMode partialSemantic`) among the descendants of the nearest
@@ -87,6 +76,11 @@ export function restartSessionTsserver(deps: Partial<RestartDeps> = {}): Tsserve
   return killAll(session, targets, kill);
 }
 
+/** A skip record. */
+export function skipped(reason: TsserverSkipReason, detail: string | null = null): TsserverRestart {
+  return { outcome: 'skipped', reason, detail };
+}
+
 /** Kill each target, recording the pids killed, or `kill-failed` when none was. */
 function killAll(
   session: number,
@@ -110,9 +104,15 @@ function killAll(
   return { outcome: 'restarted', session, killed };
 }
 
-/** A skip record. */
-export function skipped(reason: TsserverSkipReason, detail: string | null = null): TsserverRestart {
-  return { outcome: 'skipped', reason, detail };
+function defaultDeps(): RestartDeps {
+  return {
+    disabled: process.env[RESTART_SWITCH] === 'off',
+    platform: process.platform,
+    selfPid: process.pid,
+    sessionImage: 'claude.exe',
+    listProcesses: listWindowsProcesses,
+    kill: (pid) => process.kill(pid),
+  };
 }
 
 /** The pid of the nearest strict ancestor of `pid` named `image`, or `null`. */

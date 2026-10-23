@@ -77,96 +77,26 @@ export function exitCodeFor(result: GateVerdict | IssueCheck): number {
 }
 
 /**
- * Split the post-subcommand tokens into numbers and the `--exclude` flag.
+ * CLI shell: parse, gather, print, set the exit code (output contract in the
+ * file header). Every error lands in the one catch, before stdout is written.
  *
- * @throws On an unknown flag, a non-positive-integer piece, or a duplicate.
+ * @param argv - `process.argv.slice(2)`.
+ * @param gh - The `gh` port.
  */
-function parseOperands(tokens: readonly string[]): {
-  operands: Operand[];
-  exclude: string | undefined;
-} {
-  const operands: Operand[] = [];
-  let exclude: string | undefined;
+export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
+  try {
+    const args = parseRunGateArgs(argv);
+    const result =
+      args.kind === 'check'
+        ? await gatherCheck(args.issue, gh)
+        : await gatherAndEvaluate(args.spec, args.mode, gh);
 
-  for (const token of tokens) {
-    if (token.startsWith('--')) exclude = parseFlag(token);
-    else for (const value of parseNumberToken(token)) addOperand(operands, { value, token });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.exitCode = exitCodeFor(result);
+  } catch (error) {
+    process.stderr.write(`${describeError(error)}\n`);
+    process.exitCode = 2;
   }
-
-  return { operands, exclude };
-}
-
-/**
- * Accept the one known flag.
- *
- * @throws When it is not `--exclude`.
- */
-function parseFlag(token: string): string {
-  if (token !== '--exclude') throw usageError(`unknown flag '${token}'`);
-
-  return token;
-}
-
-/**
- * Split one token on commas into issue numbers; empty pieces (`1027,`) are
- * skipped so a comma-then-space list splits cleanly across tokens.
- *
- * @throws When a piece is not a positive integer.
- */
-function parseNumberToken(token: string): number[] {
-  return token
-    .split(',')
-    .filter((p) => p !== '')
-    .map((piece) => parseIssueNumber(piece, token));
-}
-
-/**
- * Append an operand, refusing a repeat.
- *
- * @throws When its number is already present.
- */
-function addOperand(operands: Operand[], operand: Operand): void {
-  if (operands.some((o) => o.value === operand.value)) {
-    throw usageError(`duplicate issue number ${String(operand.value)} in '${operand.token}'`);
-  }
-
-  operands.push(operand);
-}
-
-/**
- * Parse one number piece (`N` or `#N`).
- *
- * @throws When the piece is not a positive integer.
- */
-function parseIssueNumber(piece: string, token: string): number {
-  const digits = /^#?(\d+)$/.exec(piece.trim())?.[1];
-  const value = digits === undefined ? Number.NaN : Number(digits);
-
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw usageError(`not a positive issue number: '${token}'`);
-  }
-
-  return value;
-}
-
-/**
- * Build `check` arguments.
- *
- * @throws When `--exclude` is given or there is more than one number.
- */
-function checkArgs(operands: readonly Operand[], exclude: string | undefined): RunGateArgs {
-  if (exclude !== undefined) throw usageError(`'${exclude}' does not apply to check`);
-  const [first, extra] = operands;
-  if (extra !== undefined)
-    throw usageError(`check takes exactly one issue; extra '${extra.token}'`);
-  if (first === undefined) throw usageError('check takes exactly one issue');
-
-  return { kind: 'check', issue: first.value };
-}
-
-/** A usage error carrying the usage line. */
-function usageError(reason: string): Error {
-  return new Error(`run-gate: ${reason}\n${USAGE}`);
 }
 
 /**
@@ -192,27 +122,97 @@ async function ghJson(args: readonly string[]): Promise<unknown> {
   }
 }
 
-/**
- * CLI shell: parse, gather, print, set the exit code (output contract in the
- * file header). Every error lands in the one catch, before stdout is written.
- *
- * @param argv - `process.argv.slice(2)`.
- * @param gh - The `gh` port.
- */
-export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
-  try {
-    const args = parseRunGateArgs(argv);
-    const result =
-      args.kind === 'check'
-        ? await gatherCheck(args.issue, gh)
-        : await gatherAndEvaluate(args.spec, args.mode, gh);
+/** A usage error carrying the usage line. */
+function usageError(reason: string): Error {
+  return new Error(`run-gate: ${reason}\n${USAGE}`);
+}
 
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    process.exitCode = exitCodeFor(result);
-  } catch (error) {
-    process.stderr.write(`${describeError(error)}\n`);
-    process.exitCode = 2;
+/**
+ * Build `check` arguments.
+ *
+ * @throws When `--exclude` is given or there is more than one number.
+ */
+function checkArgs(operands: readonly Operand[], exclude: string | undefined): RunGateArgs {
+  if (exclude !== undefined) throw usageError(`'${exclude}' does not apply to check`);
+  const [first, extra] = operands;
+  if (extra !== undefined)
+    throw usageError(`check takes exactly one issue; extra '${extra.token}'`);
+  if (first === undefined) throw usageError('check takes exactly one issue');
+
+  return { kind: 'check', issue: first.value };
+}
+
+/**
+ * Split the post-subcommand tokens into numbers and the `--exclude` flag.
+ *
+ * @throws On an unknown flag, a non-positive-integer piece, or a duplicate.
+ */
+function parseOperands(tokens: readonly string[]): {
+  operands: Operand[];
+  exclude: string | undefined;
+} {
+  const operands: Operand[] = [];
+  let exclude: string | undefined;
+
+  for (const token of tokens) {
+    if (token.startsWith('--')) exclude = parseFlag(token);
+    else for (const value of parseNumberToken(token)) addOperand(operands, { value, token });
   }
+
+  return { operands, exclude };
+}
+
+/**
+ * Append an operand, refusing a repeat.
+ *
+ * @throws When its number is already present.
+ */
+function addOperand(operands: Operand[], operand: Operand): void {
+  if (operands.some((o) => o.value === operand.value)) {
+    throw usageError(`duplicate issue number ${String(operand.value)} in '${operand.token}'`);
+  }
+
+  operands.push(operand);
+}
+
+/**
+ * Split one token on commas into issue numbers; empty pieces (`1027,`) are
+ * skipped so a comma-then-space list splits cleanly across tokens.
+ *
+ * @throws When a piece is not a positive integer.
+ */
+function parseNumberToken(token: string): number[] {
+  return token
+    .split(',')
+    .filter((p) => p !== '')
+    .map((piece) => parseIssueNumber(piece, token));
+}
+
+/**
+ * Parse one number piece (`N` or `#N`).
+ *
+ * @throws When the piece is not a positive integer.
+ */
+function parseIssueNumber(piece: string, token: string): number {
+  const digits = /^#?(\d+)$/.exec(piece.trim())?.[1];
+  const value = digits === undefined ? Number.NaN : Number(digits);
+
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw usageError(`not a positive issue number: '${token}'`);
+  }
+
+  return value;
+}
+
+/**
+ * Accept the one known flag.
+ *
+ * @throws When it is not `--exclude`.
+ */
+function parseFlag(token: string): string {
+  if (token !== '--exclude') throw usageError(`unknown flag '${token}'`);
+
+  return token;
 }
 
 // Entry-point guard: run `main()` only when executed as a script, not when

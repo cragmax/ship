@@ -50,45 +50,9 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/**
- * Point the fixture repo's hooks at a `pre-commit` that appends `MERGE_HEAD`
- * (empty when none) to a log and passes.
- *
- * @returns The log's path.
- */
-function recordCommits(main: string): string {
-  const log = `${root}/pre-commit.log`;
-  installHook(
-    root,
-    main,
-    'pre-commit',
-    `#!/bin/sh\ngit rev-parse -q --verify MERGE_HEAD >> "${log}"\nexit 0\n`,
-  );
-
-  return log;
-}
-
-/** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
-function show(dir: string, path: string): string {
-  return readFileSync(join(dir, path), 'utf8');
-}
-
 interface Lockfile {
   readonly version: string;
   readonly packages: Record<string, { readonly version?: string } | undefined>;
-}
-
-/** A checkout's parsed lockfile. */
-function lockOf(dir: string): Lockfile {
-  return JSON.parse(show(dir, LOCKFILE)) as Lockfile;
-}
-
-/** The `version` fields of a checkout's package.json and lockfile. */
-function versionsOf(dir: string): { pkg: string; lock: string; lockRoot: string } {
-  const pkg = JSON.parse(show(dir, 'package.json')) as { version: string };
-  const lock = lockOf(dir);
-
-  return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
 }
 
 describe('sync-master batch refresh', () => {
@@ -279,3 +243,39 @@ describe('sync-master batch refresh', () => {
     expect(readFileSync(r.json.logs.at(-1) ?? '', 'utf8')).toContain(HOOK_SAYS);
   });
 });
+
+/** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
+function show(dir: string, path: string): string {
+  return readFileSync(join(dir, path), 'utf8');
+}
+
+/** A checkout's parsed lockfile. */
+function lockOf(dir: string): Lockfile {
+  return JSON.parse(show(dir, LOCKFILE)) as Lockfile;
+}
+
+/** The `version` fields of a checkout's package.json and lockfile. */
+function versionsOf(dir: string): { pkg: string; lock: string; lockRoot: string } {
+  const pkg = JSON.parse(show(dir, 'package.json')) as { version: string };
+  const lock = lockOf(dir);
+
+  return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
+}
+
+/**
+ * Point the fixture repo's hooks at a `pre-commit` that appends `MERGE_HEAD`
+ * (empty when none) to a log and passes.
+ *
+ * @returns The log's path.
+ */
+function recordCommits(main: string): string {
+  const log = `${root}/pre-commit.log`;
+  installHook(
+    root,
+    main,
+    'pre-commit',
+    `#!/bin/sh\ngit rev-parse -q --verify MERGE_HEAD >> "${log}"\nexit 0\n`,
+  );
+
+  return log;
+}

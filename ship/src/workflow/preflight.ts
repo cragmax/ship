@@ -199,77 +199,33 @@ export async function runPreflight(
   return settleOverlap(bound, settleReadiness(found, readiness, args.exclude), args.attach);
 }
 
-/** The outcome of a `preflight` that named no main checkout: its refusals, and nothing else ran. */
-function unanchored(checks: PreflightOutput | null): PreflightOutcome {
-  const found = checkRefusals(checks);
-  const refusals: ShipRefusal[] =
-    found.length > 0
-      ? found
-      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
+/**
+ * Drop `issues` from a graph together with their transitive dependents, every edge with a dropped
+ * endpoint, and every entry left empty — so the result is a valid scheduler input whenever `graph`
+ * is. An issue not in the graph is ignored.
+ */
+export function dropWithDependents(graph: RunGraph, issues: readonly number[]): DropResult {
+  const inGraph = new Set(runSetIssues(graph.runSet));
+  const roots = issues.filter((n) => inGraph.has(n));
+  const dependents = transitiveDependents(roots, graph.edges);
+  const gone = new Set([...roots, ...dependents]);
 
   return {
-    refusals,
-    dropped: [],
-    graph: null,
-    main: null,
-    overlap: null,
-    live: null,
-    checkout: null,
+    graph: {
+      runSet: graph.runSet
+        .map((entry) => ({ epic: entry.epic, issues: entry.issues.filter((n) => !gone.has(n)) }))
+        .filter((entry) => entry.issues.length > 0),
+      edges: graph.edges.filter((e) => !gone.has(e.blocker) && !gone.has(e.dependent)),
+    },
+    dependents,
   };
 }
 
-/**
- * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
- * or the list's.
- */
-function preflightArgv(args: ShipArgs): string[] {
-  if (args.attach !== null) return ['.', '--attach', args.attach];
-  const slugs =
-    args.selection === 'epics'
-      ? args.numbers.map((epic) => runSlug({ epic }))
-      : [runSlug({ issues: args.numbers })];
+/** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
+function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
+  const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
 
-  return ['.', '--slug', slugs.join(',')];
-}
-
-/**
- * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
- * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
- * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
- */
-function exemptSpentSlices(
-  checks: PreflightOutput | null,
-  live: LiveRunsOutput | null,
-): PreflightOutput | null {
-  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
-  const all = checks.problems ?? [];
-  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
-  const problems = all.filter(
-    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
-  );
-
-  if (problems.length === all.length) return checks;
-  if (problems.length > 0) return { ...checks, problems };
-  const ok: PreflightOutput = { ...checks, status: 'ok', problems };
-  delete ok.reason;
-
-  return ok;
-}
-
-/**
- * What `issue-overlap` is asked: a run set of two or more issues, or of one with an unspent live
- * run (for an attached run, any but its target, judged against its PR head); `null` for neither.
- */
-function overlapValues(found: PreflightOutcome, attach: string | null): IssueOverlapValues | null {
-  const { graph } = found;
-  if (graph === null) return null;
-  const liveRuns: LiveRunFiles[] = (found.live?.runs ?? [])
-    .filter((r) => !r.spent && r.branch !== attach)
-    .map((r) => ({ branch: r.branch, landed: r.landed }));
-  const count = runSetIssues(graph.runSet).length;
-  if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
-
-  return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
+  return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 
 /**
@@ -328,6 +284,45 @@ async function settleOverlap(
   return { ...found, graph: merged.graph, overlap };
 }
 
+/** `issue-overlap`'s reason for one unordered pair: its first matching pair's. */
+function pairReason(a: number, b: number, pairs: readonly EstimatedPair[]): string {
+  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
+}
+
+/** Whether an estimated pair is the unordered pair `{a, b}`, in either order. */
+function samePair(p: OverlapPair, a: number, b: number): boolean {
+  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
+}
+
+/**
+ * The refusal of a pair across epics, on its first issue — any confidence: epics in one run must
+ * be code-disjoint.
+ */
+function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[]): ShipRefusal {
+  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
+  const epic = (e: number | null): string =>
+    e === null ? 'the explicit list' : `epic #${String(e)}`;
+  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+
+  return {
+    kind: 'overlap-cross-epic',
+    issue: pair.a,
+    message:
+      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
+      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
+      '; epics in one run must be code-disjoint',
+  };
+}
+
+/** The outcome with more refusals, its `overlap` set to `null`. */
+function withRefusals(found: PreflightOutcome, refusals: readonly ShipRefusal[]): PreflightOutcome {
+  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+}
+
+function generatedOnly(pair: EstimatedPair): boolean {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
+}
+
 /**
  * The `unsure` pairs joining two distinct issues of one entry that neither the declared edges
  * order nor a `likely` pair names: such a pair orders no slices (Ship ADR-0001 decision 6), while
@@ -353,71 +348,76 @@ function unsureWithinEntry(graph: RunGraph, pairs: readonly EstimatedPair[]): Es
   });
 }
 
-function generatedOnly(pair: EstimatedPair): boolean {
-  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
-}
+/**
+ * What `issue-overlap` is asked: a run set of two or more issues, or of one with an unspent live
+ * run (for an attached run, any but its target, judged against its PR head); `null` for neither.
+ */
+function overlapValues(found: PreflightOutcome, attach: string | null): IssueOverlapValues | null {
+  const { graph } = found;
+  if (graph === null) return null;
+  const liveRuns: LiveRunFiles[] = (found.live?.runs ?? [])
+    .filter((r) => !r.spent && r.branch !== attach)
+    .map((r) => ({ branch: r.branch, landed: r.landed }));
+  const count = runSetIssues(graph.runSet).length;
+  if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
 
-/** The outcome with more refusals, its `overlap` set to `null`. */
-function withRefusals(found: PreflightOutcome, refusals: readonly ShipRefusal[]): PreflightOutcome {
-  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+  return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
 }
 
 /**
- * The refusal of a pair across epics, on its first issue — any confidence: epics in one run must
- * be code-disjoint.
+ * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
+ * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
+ * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
  */
-function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[]): ShipRefusal {
-  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
-  const epic = (e: number | null): string =>
-    e === null ? 'the explicit list' : `epic #${String(e)}`;
-  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+function exemptSpentSlices(
+  checks: PreflightOutput | null,
+  live: LiveRunsOutput | null,
+): PreflightOutput | null {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
 
-  return {
-    kind: 'overlap-cross-epic',
-    issue: pair.a,
-    message:
-      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
-      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
-      '; epics in one run must be code-disjoint',
-  };
-}
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok: PreflightOutput = { ...checks, status: 'ok', problems };
+  delete ok.reason;
 
-/** `issue-overlap`'s reason for one unordered pair: its first matching pair's. */
-function pairReason(a: number, b: number, pairs: readonly EstimatedPair[]): string {
-  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
-}
-
-/** Whether an estimated pair is the unordered pair `{a, b}`, in either order. */
-function samePair(p: OverlapPair, a: number, b: number): boolean {
-  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
-}
-
-/** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
-function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
-  const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
-
-  return snapshot === undefined || snapshot === null ? null : { snapshot };
+  return ok;
 }
 
 /**
- * Drop `issues` from a graph together with their transitive dependents, every edge with a dropped
- * endpoint, and every entry left empty — so the result is a valid scheduler input whenever `graph`
- * is. An issue not in the graph is ignored.
+ * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
+ * or the list's.
  */
-export function dropWithDependents(graph: RunGraph, issues: readonly number[]): DropResult {
-  const inGraph = new Set(runSetIssues(graph.runSet));
-  const roots = issues.filter((n) => inGraph.has(n));
-  const dependents = transitiveDependents(roots, graph.edges);
-  const gone = new Set([...roots, ...dependents]);
+function preflightArgv(args: ShipArgs): string[] {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+
+  return ['.', '--slug', slugs.join(',')];
+}
+
+/** The outcome of a `preflight` that named no main checkout: its refusals, and nothing else ran. */
+function unanchored(checks: PreflightOutput | null): PreflightOutcome {
+  const found = checkRefusals(checks);
+  const refusals: ShipRefusal[] =
+    found.length > 0
+      ? found
+      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
 
   return {
-    graph: {
-      runSet: graph.runSet
-        .map((entry) => ({ epic: entry.epic, issues: entry.issues.filter((n) => !gone.has(n)) }))
-        .filter((entry) => entry.issues.length > 0),
-      edges: graph.edges.filter((e) => !gone.has(e.blocker) && !gone.has(e.dependent)),
-    },
-    dependents,
+    refusals,
+    dropped: [],
+    graph: null,
+    main: null,
+    overlap: null,
+    live: null,
+    checkout: null,
   };
 }
 
@@ -501,25 +501,6 @@ const RUBRIC_POINTS = [
   ['specified', 'specified'],
 ] as const;
 
-/** An issue's failures, in order: `stale` for the tree, `not-ready` naming each failed point. */
-function readinessFailures(
-  v: ReadinessVerdict,
-): { readonly cause: 'stale' | 'not-ready'; readonly message: string }[] {
-  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
-
-  return [
-    ...(v.current.pass ? [] : [{ cause: 'stale' as const, message: v.current.evidence }]),
-    ...(failed.length === 0
-      ? []
-      : [
-          {
-            cause: 'not-ready' as const,
-            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
-          },
-        ]),
-  ];
-}
-
 /**
  * Fold `issue-readiness`'s verdict in: outside exclude mode each stale or not-ready failure
  * refuses; in exclude mode such an issue drops with its dependents.
@@ -579,6 +560,25 @@ function settleReadiness(
   ];
 
   return { ...found, refusals, dropped, graph };
+}
+
+/** An issue's failures, in order: `stale` for the tree, `not-ready` naming each failed point. */
+function readinessFailures(
+  v: ReadinessVerdict,
+): { readonly cause: 'stale' | 'not-ready'; readonly message: string }[] {
+  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
+
+  return [
+    ...(v.current.pass ? [] : [{ cause: 'stale' as const, message: v.current.evidence }]),
+    ...(failed.length === 0
+      ? []
+      : [
+          {
+            cause: 'not-ready' as const,
+            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
+          },
+        ]),
+  ];
 }
 
 /** Why a tool gave no usable verdict: its stderr tail, first error or refusal reason. */

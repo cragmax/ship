@@ -92,21 +92,6 @@ interface CommandSpec {
 /** Arity of a command taking only its target. */
 const NO_REST = { min: 0, max: 0 } as const;
 
-/**
- * Resolve a CLI path against the starting cwd into envelope form.
- *
- * @param path - Path as given on the command line.
- * @returns Absolute forward-slash path.
- */
-function toTarget(path: string): string {
-  return toPosix(resolve(path));
-}
-
-/** Read a required value flag, resolved as a path ({@link toTarget}). */
-function pathFlag(args: ParsedArgs, flag: string): string {
-  return toTarget(args.values.get(flag) ?? '');
-}
-
 const COMMANDS: Readonly<Record<string, CommandSpec>> = {
   provision: {
     schema: ProvisionResultSchema,
@@ -417,116 +402,74 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
 };
 
 /**
- * Parse one subcommand's arguments against its spec; a `--` ends the flags.
+ * Run one CLI invocation.
  *
- * @throws UsageError on an unknown flag, a flag missing its value, a missing
- *   required flag, or a positional count outside the spec's range.
+ * @param argv - `process.argv.slice(2)`.
+ * @returns Resolves to the envelope, stamped with its `at` instant on every
+ *   path (ok, refused, failed, usage), and the process exit code; never
+ *   rejects. The stamped envelope is checked against its schema
+ *   ({@link guardEnvelope}): one that fails it is replaced by a `failed`
+ *   envelope at step `envelope`, exit code `1`; an unchecked envelope is
+ *   never returned.
  */
-function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
-  const values = new Map<string, string>();
-  const switches = new Set<string>();
-  const { flags, positionals, trailing } = splitAtDashes(argv, spec);
-
-  for (let i = 0; i < flags.length; i++) {
-    const arg = flags[i] ?? '';
-    if (spec.switchFlags.includes(arg)) switches.add(arg);
-    else if (spec.valueFlags.includes(arg) || spec.optionFlags?.includes(arg) === true) {
-      values.set(arg, requireValue(flags[++i], arg));
-    } else if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
-    else positionals.push(arg);
-  }
-
-  positionals.push(...trailing);
-  assertArity(positionals.length, spec.rest);
-  const missing = spec.valueFlags.find((flag) => !values.has(flag));
-  if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
-  const [target = '', ...rest] = positionals;
-
-  return { target: toTarget(target), rest, values, switches };
-}
-
-/**
- * Split argv at its first `--` into the arguments before it and the positionals after it; the
- * positional list starts with the cwd target for a {@link CommandSpec.cwdTarget} command.
- */
-function splitAtDashes(
+export async function runWorktreeCli(
   argv: readonly string[],
-  spec: CommandSpec,
-): { flags: readonly string[]; positionals: string[]; trailing: readonly string[] } {
-  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+): Promise<{ result: ResultBase; exitCode: number }> {
+  const { result, exitCode, schema } = await dispatch(argv);
+  result.at = new Date().toISOString();
+  const guarded = guardEnvelope(result, schema);
 
-  return {
-    flags: argv.slice(0, end),
-    positionals: spec.cwdTarget === true ? ['.'] : [],
-    trailing: argv.slice(end + 1),
-  };
+  return { result: guarded, exitCode: guarded === result ? exitCode : 1 };
 }
 
 /**
- * Check the positional count: one target path plus `rest.min`..`rest.max`
- * further arguments.
- *
- * @throws UsageError naming the expectation and the count.
+ * The wait between `publish --push-only`'s mergeable reads from `PH_WORKTREE_POLL_MS`, a test-only
+ * seam: its value when a positive decimal integer, else `undefined` (the command's default).
  */
-function assertArity(count: number, rest: CommandSpec['rest']): void {
-  if (count >= 1 + rest.min && count <= 1 + rest.max) return;
-  let expected = 'one positional path';
-  if (rest.max === Infinity) expected += ` plus at least ${String(rest.min)} more`;
-  else if (rest.max === rest.min && rest.max > 0) expected += ` plus ${String(rest.max)} more`;
-  else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
+function pollMsFromEnv(): number | undefined {
+  const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
 
-  throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
+  return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
 }
 
 /**
- * Read `teardown`'s keep flags: `--keep-to` and `--base` go together; `--report` needs them.
+ * Read `publish`'s mode: `push-only` for `--push-only` alone, `create` for `--title` and
+ * `--body-file` together.
  *
- * @returns The request, its paths resolved ({@link toTarget}); `null` with none of the flags.
- * @throws UsageError for any other combination.
+ * @throws UsageError when `--push-only` comes with either or `--draft`, or either is missing.
  */
-function keepFlags(args: ParsedArgs): KeepRequest | null {
-  const dir = args.values.get('--keep-to');
-  const base = args.values.get('--base');
-  const report = args.values.get('--report');
-  if (dir === undefined && base === undefined && report === undefined) return null;
+function publishMode(args: ParsedArgs): 'push-only' | 'create' {
+  const given = [
+    ...['--title', '--body-file'].filter((flag) => args.values.has(flag)),
+    ...(args.switches.has('--draft') ? ['--draft'] : []),
+  ];
 
-  if (dir === undefined || base === undefined) {
-    throw new UsageError('teardown --keep-to and --base go together; --report needs both');
+  if (args.switches.has('--push-only')) {
+    if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
+
+    return 'push-only';
   }
 
-  return {
-    dir: toTarget(dir),
-    base,
-    ...(report === undefined ? {} : { report: toTarget(report) }),
-  };
+  const missing = ['--title', '--body-file'].find((flag) => !args.values.has(flag));
+  if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
+
+  return 'create';
 }
 
 /**
- * Read a positive-integer value (an issue, epic or attempt number).
+ * Read `cut-slice`'s slice: `--issue N --attempt K`.
  *
- * @throws UsageError unless `text` is a positive integer in decimal.
+ * @throws UsageError when either is missing or a number is bad.
  */
-function positiveInt(text: string, flag: string): number {
-  if (!/^[1-9]\d*$/u.test(text)) {
-    throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
+function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
+  const issue = args.values.get('--issue');
+  const attempt = args.values.get('--attempt');
+
+  if (issue === undefined || attempt === undefined) {
+    throw new UsageError('cut-slice takes --issue N --attempt K');
   }
 
-  return Number(text);
-}
-
-/**
- * Read `preflight`'s `--slug`: run slugs, comma-separated, each in `runSlug`'s domain.
- *
- * @throws UsageError for an empty or malformed slug.
- */
-function slugList(text: string): string[] {
-  const slugs = text.split(',');
-
-  if (slugs.some((slug) => !RUN_BRANCH_SHAPE.test(`ship/${slug}`))) {
-    throw new UsageError(`flag --slug needs run slugs separated by commas, got '${text}'`);
-  }
-
-  return slugs;
+  return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
 }
 
 /**
@@ -556,87 +499,69 @@ function batchSelection(
 }
 
 /**
- * Read `cut-slice`'s slice: `--issue N --attempt K`.
+ * Read `preflight`'s `--slug`: run slugs, comma-separated, each in `runSlug`'s domain.
  *
- * @throws UsageError when either is missing or a number is bad.
+ * @throws UsageError for an empty or malformed slug.
  */
-function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
-  const issue = args.values.get('--issue');
-  const attempt = args.values.get('--attempt');
+function slugList(text: string): string[] {
+  const slugs = text.split(',');
 
-  if (issue === undefined || attempt === undefined) {
-    throw new UsageError('cut-slice takes --issue N --attempt K');
+  if (slugs.some((slug) => !RUN_BRANCH_SHAPE.test(`ship/${slug}`))) {
+    throw new UsageError(`flag --slug needs run slugs separated by commas, got '${text}'`);
   }
 
-  return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
+  return slugs;
 }
 
 /**
- * Read `publish`'s mode: `push-only` for `--push-only` alone, `create` for `--title` and
- * `--body-file` together.
+ * Read a positive-integer value (an issue, epic or attempt number).
  *
- * @throws UsageError when `--push-only` comes with either or `--draft`, or either is missing.
+ * @throws UsageError unless `text` is a positive integer in decimal.
  */
-function publishMode(args: ParsedArgs): 'push-only' | 'create' {
-  const given = [
-    ...['--title', '--body-file'].filter((flag) => args.values.has(flag)),
-    ...(args.switches.has('--draft') ? ['--draft'] : []),
-  ];
-
-  if (args.switches.has('--push-only')) {
-    if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
-
-    return 'push-only';
+function positiveInt(text: string, flag: string): number {
+  if (!/^[1-9]\d*$/u.test(text)) {
+    throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
   }
 
-  const missing = ['--title', '--body-file'].find((flag) => !args.values.has(flag));
-  if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
-
-  return 'create';
+  return Number(text);
 }
 
 /**
- * The wait between `publish --push-only`'s mergeable reads from `PH_WORKTREE_POLL_MS`, a test-only
- * seam: its value when a positive decimal integer, else `undefined` (the command's default).
- */
-function pollMsFromEnv(): number | undefined {
-  const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
-
-  return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
-}
-
-/**
- * Check a value flag was followed by a value.
+ * Read `teardown`'s keep flags: `--keep-to` and `--base` go together; `--report` needs them.
  *
- * @throws UsageError when the value is absent or is itself a flag.
+ * @returns The request, its paths resolved ({@link toTarget}); `null` with none of the flags.
+ * @throws UsageError for any other combination.
  */
-function requireValue(value: string | undefined, flag: string): string {
-  if (value === undefined || value.startsWith('--')) {
-    throw new UsageError(`flag ${flag} needs a value`);
+function keepFlags(args: ParsedArgs): KeepRequest | null {
+  const dir = args.values.get('--keep-to');
+  const base = args.values.get('--base');
+  const report = args.values.get('--report');
+  if (dir === undefined && base === undefined && report === undefined) return null;
+
+  if (dir === undefined || base === undefined) {
+    throw new UsageError('teardown --keep-to and --base go together; --report needs both');
   }
 
-  return value;
+  return {
+    dir: toTarget(dir),
+    base,
+    ...(report === undefined ? {} : { report: toTarget(report) }),
+  };
+}
+
+/** Read a required value flag, resolved as a path ({@link toTarget}). */
+function pathFlag(args: ParsedArgs, flag: string): string {
+  return toTarget(args.values.get(flag) ?? '');
 }
 
 /**
- * Run one CLI invocation.
+ * Resolve a CLI path against the starting cwd into envelope form.
  *
- * @param argv - `process.argv.slice(2)`.
- * @returns Resolves to the envelope, stamped with its `at` instant on every
- *   path (ok, refused, failed, usage), and the process exit code; never
- *   rejects. The stamped envelope is checked against its schema
- *   ({@link guardEnvelope}): one that fails it is replaced by a `failed`
- *   envelope at step `envelope`, exit code `1`; an unchecked envelope is
- *   never returned.
+ * @param path - Path as given on the command line.
+ * @returns Absolute forward-slash path.
  */
-export async function runWorktreeCli(
-  argv: readonly string[],
-): Promise<{ result: ResultBase; exitCode: number }> {
-  const { result, exitCode, schema } = await dispatch(argv);
-  result.at = new Date().toISOString();
-  const guarded = guardEnvelope(result, schema);
-
-  return { result: guarded, exitCode: guarded === result ? exitCode : 1 };
+function toTarget(path: string): string {
+  return toPosix(resolve(path));
 }
 
 /**
@@ -667,6 +592,81 @@ async function dispatch(
 
     return { result: base, exitCode: 1, schema: ResultBaseSchema };
   }
+}
+
+/**
+ * Parse one subcommand's arguments against its spec; a `--` ends the flags.
+ *
+ * @throws UsageError on an unknown flag, a flag missing its value, a missing
+ *   required flag, or a positional count outside the spec's range.
+ */
+function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
+  const values = new Map<string, string>();
+  const switches = new Set<string>();
+  const { flags, positionals, trailing } = splitAtDashes(argv, spec);
+
+  for (let i = 0; i < flags.length; i++) {
+    const arg = flags[i] ?? '';
+    if (spec.switchFlags.includes(arg)) switches.add(arg);
+    else if (spec.valueFlags.includes(arg) || spec.optionFlags?.includes(arg) === true) {
+      values.set(arg, requireValue(flags[++i], arg));
+    } else if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
+    else positionals.push(arg);
+  }
+
+  positionals.push(...trailing);
+  assertArity(positionals.length, spec.rest);
+  const missing = spec.valueFlags.find((flag) => !values.has(flag));
+  if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
+  const [target = '', ...rest] = positionals;
+
+  return { target: toTarget(target), rest, values, switches };
+}
+
+/**
+ * Check a value flag was followed by a value.
+ *
+ * @throws UsageError when the value is absent or is itself a flag.
+ */
+function requireValue(value: string | undefined, flag: string): string {
+  if (value === undefined || value.startsWith('--')) {
+    throw new UsageError(`flag ${flag} needs a value`);
+  }
+
+  return value;
+}
+
+/**
+ * Check the positional count: one target path plus `rest.min`..`rest.max`
+ * further arguments.
+ *
+ * @throws UsageError naming the expectation and the count.
+ */
+function assertArity(count: number, rest: CommandSpec['rest']): void {
+  if (count >= 1 + rest.min && count <= 1 + rest.max) return;
+  let expected = 'one positional path';
+  if (rest.max === Infinity) expected += ` plus at least ${String(rest.min)} more`;
+  else if (rest.max === rest.min && rest.max > 0) expected += ` plus ${String(rest.max)} more`;
+  else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
+
+  throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
+}
+
+/**
+ * Split argv at its first `--` into the arguments before it and the positionals after it; the
+ * positional list starts with the cwd target for a {@link CommandSpec.cwdTarget} command.
+ */
+function splitAtDashes(
+  argv: readonly string[],
+  spec: CommandSpec,
+): { flags: readonly string[]; positionals: string[]; trailing: readonly string[] } {
+  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+
+  return {
+    flags: argv.slice(0, end),
+    positionals: spec.cwdTarget === true ? ['.'] : [],
+    trailing: argv.slice(end + 1),
+  };
 }
 
 // Entry-point guard: run only when executed as a script, not when imported.

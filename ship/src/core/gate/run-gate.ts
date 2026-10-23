@@ -166,21 +166,6 @@ export function resolveRunSet(
 }
 
 /**
- * One spec epic's sub-issues.
- *
- * @throws When the caller supplied no sub-issue list for a spec epic.
- */
-function childrenOf(
-  epicChildren: ReadonlyMap<number, readonly EpicChild[]>,
-  epic: number,
-): readonly EpicChild[] {
-  const children = epicChildren.get(epic);
-  if (children === undefined) throw new Error(`run-gate: no sub-issues for epic ${ref(epic)}`);
-
-  return children;
-}
-
-/**
  * R11: whether one issue is ready — OPEN and labelled exactly
  * {@link READY_LABEL}. Blockers are deliberately never checked: mid-run, an
  * in-set blocker stays OPEN until the run's PR merges its `fixes #N`, so a
@@ -253,6 +238,21 @@ export function evaluateRunGate(input: RunGateInput): GateVerdict {
   );
 
   return verdict('ok', { runSet: kept, edges: keptEdges }, analysis.failures, excluded);
+}
+
+/**
+ * One spec epic's sub-issues.
+ *
+ * @throws When the caller supplied no sub-issue list for a spec epic.
+ */
+function childrenOf(
+  epicChildren: ReadonlyMap<number, readonly EpicChild[]>,
+  epic: number,
+): readonly EpicChild[] {
+  const children = epicChildren.get(epic);
+  if (children === undefined) throw new Error(`run-gate: no sub-issues for epic ${ref(epic)}`);
+
+  return children;
 }
 
 /**

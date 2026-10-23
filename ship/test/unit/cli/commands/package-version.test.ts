@@ -9,17 +9,6 @@ import {
 } from '../../../../src/cli/commands/package-version.js';
 import { StepFailure } from '../../../../src/cli/envelope/types.js';
 
-/** The step a throwing call's `StepFailure` names; `null` when it does not throw one. */
-function failedStep(fn: () => unknown): string | null {
-  try {
-    fn();
-  } catch (err) {
-    return err instanceof StepFailure ? err.step : null;
-  }
-
-  return null;
-}
-
 describe('versionDelta', () => {
   it.each([
     ['1.2.3', 'none'],
@@ -41,6 +30,17 @@ describe('bumpVersion', () => {
     expect(failedStep(() => bumpVersion(version, 'patch'))).toBe('version');
   });
 });
+
+/** The step a throwing call's `StepFailure` names; `null` when it does not throw one. */
+function failedStep(fn: () => unknown): string | null {
+  try {
+    fn();
+  } catch (err) {
+    return err instanceof StepFailure ? err.step : null;
+  }
+
+  return null;
+}
 
 describe('targetVersion', () => {
   it.each([

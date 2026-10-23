@@ -41,18 +41,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/** Run `live-runs` against the fixture main with a fake `gh` answering `responses`. */
-function liveRuns(responses: Record<string, FakeGhResponse>): {
-  code: number;
-  json: LiveRunsResult;
-  run: (branch: string) => LiveRun | undefined;
-} {
-  const bin = writeFakeGh(root, responses);
-  const { code, json } = runCli<LiveRunsResult>(['live-runs', main], { env: prependPath(bin) });
-
-  return { code, json, run: (branch) => json.runs.find((r) => r.branch === branch) };
-}
-
 describe('live-runs', () => {
   it('reports every ship/* worktree with its commits, files, status and PR', TIMEOUT, () => {
     const a = addWorktree(main, `${root}/a`, 'ship/a');
@@ -227,6 +215,18 @@ describe('live-runs', () => {
     },
   );
 });
+
+/** Run `live-runs` against the fixture main with a fake `gh` answering `responses`. */
+function liveRuns(responses: Record<string, FakeGhResponse>): {
+  code: number;
+  json: LiveRunsResult;
+  run: (branch: string) => LiveRun | undefined;
+} {
+  const bin = writeFakeGh(root, responses);
+  const { code, json } = runCli<LiveRunsResult>(['live-runs', main], { env: prependPath(bin) });
+
+  return { code, json, run: (branch) => json.runs.find((r) => r.branch === branch) };
+}
 
 describe('usage errors', () => {
   it.each([

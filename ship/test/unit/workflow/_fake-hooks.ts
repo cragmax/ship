@@ -465,64 +465,12 @@ export function fakeHooks(
   return { hooks, calls, phases, timeline, violations };
 }
 
-/**
- * The default re-read of an amended slice commit: an amend that adds no path, so the tdd's files.
- *
- * @param tdd - The run's tdd answer, `undefined` for {@link TDD_GREEN}.
- * @returns An `ok` `changed-files` answer.
- */
-function amendReread(tdd: unknown): Readonly<Record<string, unknown>> {
-  const files = (tdd as { readonly files?: unknown } | null | undefined)?.files ?? TDD_FILES;
-
-  return { ...OK, files };
-}
-
-/**
- * Fail the running test when it finishes with a violation recorded, its
- * error naming each violation line.
- *
- * @param violations - The run's violation lines, read when the test finishes.
- */
-function failTestOnViolations(violations: readonly string[]): void {
-  onTestFinished(() => {
-    if (violations.length > 0) {
-      throw new Error(`fake answers broke their call schemas:\n${violations.join('\n')}`);
-    }
-  });
-}
-
 /** Where a part of an answer sits, and where its violations go. */
 interface AnswerPlace {
   /** `<label>` then `.key` / `[i]` steps. */
   readonly at: string;
   /** The run's violation lines. */
   readonly violations: string[];
-}
-
-/**
- * A value as a schema, when it is one (a plain object).
- *
- * @param value - The value.
- * @returns It, or `undefined` for anything else.
- */
-function schemaOf(value: unknown): JsonSchema | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as JsonSchema)
-    : undefined;
-}
-
-function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPlace): unknown {
-  if (schema === undefined || value === undefined) return value;
-  checkType(value, schema, place);
-  if (value === null) return value;
-  checkEnum(value, schema, place);
-  if (Array.isArray(value)) return conformItems(value, schema, place);
-  const properties = schemaOf(schema['properties']);
-  if (typeof value !== 'object' || properties === undefined) return value;
-  const record = value as Readonly<Record<string, unknown>>;
-  checkRequired(record, schema, place);
-
-  return pickProperties(record, properties, place);
 }
 
 /** How each JSON Schema `type` name tells its values. */
@@ -534,117 +482,6 @@ const TYPE_TESTS: Readonly<Record<string, (value: unknown) => boolean>> = {
   array: (v) => Array.isArray(v),
   object: (v) => schemaOf(v) !== undefined,
 };
-
-/**
- * Record a value of none of its schema's `type`s.
- *
- * @param value - The value, `null` included.
- * @param schema - Its schema; one without a `type` allows anything.
- * @param place - Where it sits.
- */
-function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
-  const type = schema['type'];
-  if (type === undefined) return;
-  const types = (Array.isArray(type) ? type : [type]) as readonly string[];
-
-  if (!types.some((t) => TYPE_TESTS[t]?.(value) === true)) {
-    place.violations.push(`${place.at}: ${JSON.stringify(value)} is not ${types.join(' or ')}`);
-  }
-}
-
-/**
- * Record a value its schema's `enum` does not allow.
- *
- * @param value - The value.
- * @param schema - Its schema.
- * @param place - Where it sits.
- */
-function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
-  const allowed = schema['enum'];
-
-  if (Array.isArray(allowed) && !allowed.includes(value)) {
-    place.violations.push(`${place.at}: ${JSON.stringify(value)} is off the enum`);
-  }
-}
-
-function conformItems(value: readonly unknown[], schema: JsonSchema, place: AnswerPlace): unknown {
-  const items = schemaOf(schema['items']);
-  if (items === undefined) return value;
-
-  return value.map((v, i) => conform(v, items, { ...place, at: `${place.at}[${String(i)}]` }));
-}
-
-/**
- * Record each `required` key an object lacks, or holds as `undefined` (which JSON drops).
- *
- * @param record - The object.
- * @param schema - Its schema.
- * @param place - Where it sits.
- */
-function checkRequired(
-  record: Readonly<Record<string, unknown>>,
-  schema: JsonSchema,
-  place: AnswerPlace,
-): void {
-  const required = schema['required'];
-  if (!Array.isArray(required)) return;
-
-  for (const key of required as unknown[]) {
-    if (typeof key === 'string' && (!Object.hasOwn(record, key) || record[key] === undefined)) {
-      place.violations.push(`${place.at}: lacks required ${key}`);
-    }
-  }
-}
-
-function pickProperties(
-  record: Readonly<Record<string, unknown>>,
-  properties: JsonSchema,
-  place: AnswerPlace,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-
-  for (const [key, sub] of Object.entries(properties)) {
-    if (Object.hasOwn(record, key)) {
-      out[key] = conform(record[key], schemaOf(sub), { ...place, at: `${place.at}.${key}` });
-    }
-  }
-
-  return out;
-}
-
-/**
- * The table key answering `label`: the label itself, else its longest held `:`-prefix.
- *
- * @param table - The response table.
- * @param label - The call's label.
- * @returns The key; `undefined` when none is held.
- */
-function tableKey(table: Readonly<Record<string, unknown>>, label: string): string | undefined {
-  const parts = label.split(':');
-
-  for (let n = parts.length; n > 0; n--) {
-    const key = parts.slice(0, n).join(':');
-    if (Object.hasOwn(table, key)) return key;
-  }
-
-  return undefined;
-}
-
-/**
- * The words after `node --import tsx` on a prompt's `Command:` line, each unquoted
- * (a `'…'` span is one word, `'\''` a literal quote).
- *
- * @param prompt - The prompt.
- * @returns The words; `[]` when the prompt has no such line.
- */
-function commandWords(prompt: string): string[] {
-  const line = prompt.split('\n').find((l) => l.startsWith('Command: node --import tsx '));
-  if (line === undefined) return [];
-  const words =
-    line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
-
-  return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
-}
 
 /**
  * The recorded labels, in call order.
@@ -686,4 +523,167 @@ export function checkoutLines(
     label: c.label,
     checkout: c.prompt.split('\n').filter((l) => l.startsWith('Checkout:')),
   }));
+}
+
+/**
+ * The words after `node --import tsx` on a prompt's `Command:` line, each unquoted
+ * (a `'…'` span is one word, `'\''` a literal quote).
+ *
+ * @param prompt - The prompt.
+ * @returns The words; `[]` when the prompt has no such line.
+ */
+function commandWords(prompt: string): string[] {
+  const line = prompt.split('\n').find((l) => l.startsWith('Command: node --import tsx '));
+  if (line === undefined) return [];
+  const words =
+    line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
+
+  return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
+}
+
+/**
+ * The table key answering `label`: the label itself, else its longest held `:`-prefix.
+ *
+ * @param table - The response table.
+ * @param label - The call's label.
+ * @returns The key; `undefined` when none is held.
+ */
+function tableKey(table: Readonly<Record<string, unknown>>, label: string): string | undefined {
+  const parts = label.split(':');
+
+  for (let n = parts.length; n > 0; n--) {
+    const key = parts.slice(0, n).join(':');
+    if (Object.hasOwn(table, key)) return key;
+  }
+
+  return undefined;
+}
+
+function pickProperties(
+  record: Readonly<Record<string, unknown>>,
+  properties: JsonSchema,
+  place: AnswerPlace,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+
+  for (const [key, sub] of Object.entries(properties)) {
+    if (Object.hasOwn(record, key)) {
+      out[key] = conform(record[key], schemaOf(sub), { ...place, at: `${place.at}.${key}` });
+    }
+  }
+
+  return out;
+}
+
+function conformItems(value: readonly unknown[], schema: JsonSchema, place: AnswerPlace): unknown {
+  const items = schemaOf(schema['items']);
+  if (items === undefined) return value;
+
+  return value.map((v, i) => conform(v, items, { ...place, at: `${place.at}[${String(i)}]` }));
+}
+
+function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPlace): unknown {
+  if (schema === undefined || value === undefined) return value;
+  checkType(value, schema, place);
+  if (value === null) return value;
+  checkEnum(value, schema, place);
+  if (Array.isArray(value)) return conformItems(value, schema, place);
+  const properties = schemaOf(schema['properties']);
+  if (typeof value !== 'object' || properties === undefined) return value;
+  const record = value as Readonly<Record<string, unknown>>;
+  checkRequired(record, schema, place);
+
+  return pickProperties(record, properties, place);
+}
+
+/**
+ * Record each `required` key an object lacks, or holds as `undefined` (which JSON drops).
+ *
+ * @param record - The object.
+ * @param schema - Its schema.
+ * @param place - Where it sits.
+ */
+function checkRequired(
+  record: Readonly<Record<string, unknown>>,
+  schema: JsonSchema,
+  place: AnswerPlace,
+): void {
+  const required = schema['required'];
+  if (!Array.isArray(required)) return;
+
+  for (const key of required as unknown[]) {
+    if (typeof key === 'string' && (!Object.hasOwn(record, key) || record[key] === undefined)) {
+      place.violations.push(`${place.at}: lacks required ${key}`);
+    }
+  }
+}
+
+/**
+ * Record a value its schema's `enum` does not allow.
+ *
+ * @param value - The value.
+ * @param schema - Its schema.
+ * @param place - Where it sits.
+ */
+function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
+  const allowed = schema['enum'];
+
+  if (Array.isArray(allowed) && !allowed.includes(value)) {
+    place.violations.push(`${place.at}: ${JSON.stringify(value)} is off the enum`);
+  }
+}
+
+/**
+ * Record a value of none of its schema's `type`s.
+ *
+ * @param value - The value, `null` included.
+ * @param schema - Its schema; one without a `type` allows anything.
+ * @param place - Where it sits.
+ */
+function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
+  const type = schema['type'];
+  if (type === undefined) return;
+  const types = (Array.isArray(type) ? type : [type]) as readonly string[];
+
+  if (!types.some((t) => TYPE_TESTS[t]?.(value) === true)) {
+    place.violations.push(`${place.at}: ${JSON.stringify(value)} is not ${types.join(' or ')}`);
+  }
+}
+
+/**
+ * A value as a schema, when it is one (a plain object).
+ *
+ * @param value - The value.
+ * @returns It, or `undefined` for anything else.
+ */
+function schemaOf(value: unknown): JsonSchema | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonSchema)
+    : undefined;
+}
+
+/**
+ * Fail the running test when it finishes with a violation recorded, its
+ * error naming each violation line.
+ *
+ * @param violations - The run's violation lines, read when the test finishes.
+ */
+function failTestOnViolations(violations: readonly string[]): void {
+  onTestFinished(() => {
+    if (violations.length > 0) {
+      throw new Error(`fake answers broke their call schemas:\n${violations.join('\n')}`);
+    }
+  });
+}
+
+/**
+ * The default re-read of an amended slice commit: an amend that adds no path, so the tdd's files.
+ *
+ * @param tdd - The run's tdd answer, `undefined` for {@link TDD_GREEN}.
+ * @returns An `ok` `changed-files` answer.
+ */
+function amendReread(tdd: unknown): Readonly<Record<string, unknown>> {
+  const files = (tdd as { readonly files?: unknown } | null | undefined)?.files ?? TDD_FILES;
+
+  return { ...OK, files };
 }

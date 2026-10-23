@@ -158,65 +158,10 @@ const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 function shellWord(word) {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 }
-function verbatimBlock(title, file) {
-  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
-  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
-}
 const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
-function mainToolPrefix(lease, tool) {
-  return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/${tool}`),
-  ];
-}
-function leaseCommand(lease) {
-  return [
-    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
-    '--type <paper|folia> --version <version>',
-    `--registry ${shellWord(lease.registry)}`,
-    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
-  ].join(' ');
-}
-function fullServerTierCommand(lease) {
-  return [
-    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
-    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
-  ].join(' ');
-}
-function serverTierLines(lease) {
-  return [
-    `Lease command: ${leaseCommand(lease)}`,
-    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Full server tier: ${fullServerTierCommand(lease)}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
-  ];
-}
 const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
-function issueFile(issue, reportDir) {
-  return `${reportDir}/issues/${String(issue)}.md`;
-}
-function issueLines(issue, reportDir, key = 'Issue') {
-  const dir = `${reportDir}/issues`;
-  const file = issueFile(issue, reportDir);
-  return [
-    `${key} file: ${file}`,
-    [
-      `${key} command: mkdir -p ${shellWord(dir)} &&`,
-      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
-      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
-    ].join(' '),
-  ];
-}
-function issueRef(issue) {
-  return `#${String(issue)}`;
-}
-function epicLabel(epic) {
-  return epic === null ? 'an explicit issue list' : issueRef(epic);
-}
 const PROMPTS = {
   runner: (values) =>
     [
@@ -295,6 +240,61 @@ const PROMPTS = {
       `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
+function issueRef(issue) {
+  return `#${String(issue)}`;
+}
+function epicLabel(epic) {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
+function serverTierLines(lease) {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
+  ];
+}
+function fullServerTierCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
+  ].join(' ');
+}
+function mainToolPrefix(lease, tool) {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/${tool}`),
+  ];
+}
+function leaseCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
+    '--type <paper|folia> --version <version>',
+    `--registry ${shellWord(lease.registry)}`,
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
+  ].join(' ');
+}
+function issueFile(issue, reportDir) {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
+function issueLines(issue, reportDir, key = 'Issue') {
+  const dir = `${reportDir}/issues`;
+  const file = issueFile(issue, reportDir);
+  return [
+    `${key} file: ${file}`,
+    [
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
+function verbatimBlock(title, file) {
+  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
+  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
+}
 function sliceHeadLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
@@ -1657,21 +1657,6 @@ const RUN_GRAPH = {
     },
   },
 };
-function toolSchema(consumed) {
-  return {
-    type: 'object',
-    properties: {
-      exitCode: INTEGER,
-      envelopePath: STRING,
-      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
-      ...consumed.properties,
-    },
-    required: ['exitCode', 'envelopePath', ...consumed.required],
-  };
-}
-function envelopeSchema(name) {
-  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
-}
 const TOOL_SCHEMAS = {
   preflight: envelopeSchema('preflight'),
   'run-gate': toolSchema({
@@ -1749,9 +1734,6 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
   );
   return typeof out === 'object' && out !== null ? out : null;
 }
-function toolWords(name, argv) {
-  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
-}
 const PR_PLACEHOLDER = '<pr>';
 function toolCommandLine(name, argv) {
   return toolWords(name, argv)
@@ -1763,6 +1745,24 @@ function envelopeProblem(tool, out) {
   const reason = out.reason === undefined ? '' : ` (${out.reason})`;
   const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
+}
+function toolWords(name, argv) {
+  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+function envelopeSchema(name) {
+  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
+}
+function toolSchema(consumed) {
+  return {
+    type: 'object',
+    properties: {
+      exitCode: INTEGER,
+      envelopePath: STRING,
+      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
+      ...consumed.properties,
+    },
+    required: ['exitCode', 'envelopePath', ...consumed.required],
+  };
 }
 
 async function cleanupSpent(hooks, live) {

@@ -35,21 +35,6 @@ prebuildNpmTemplate();
 
 const roots: string[] = [];
 
-function freshRoot(): string {
-  const root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-template-')));
-  roots.push(root);
-
-  return root;
-}
-
-function originUrl(repo: string): string {
-  return toPosix(mustRun('git', ['remote', 'get-url', 'origin'], repo).trim());
-}
-
-async function pastOneSecond(): Promise<void> {
-  await new Promise((done) => setTimeout(done, PAST_ONE_SECOND_MS));
-}
-
 afterEach(() => {
   for (const root of roots.splice(0)) {
     try {
@@ -101,6 +86,21 @@ describe('makeGitRepo and makeBareOrigin', () => {
     expect(headSha(b, 'origin/master')).toBe(moved);
   });
 });
+
+async function pastOneSecond(): Promise<void> {
+  await new Promise((done) => setTimeout(done, PAST_ONE_SECOND_MS));
+}
+
+function originUrl(repo: string): string {
+  return toPosix(mustRun('git', ['remote', 'get-url', 'origin'], repo).trim());
+}
+
+function freshRoot(): string {
+  const root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-template-')));
+  roots.push(root);
+
+  return root;
+}
 
 describe('the template repos', () => {
   it("are removed after the test file's last test", TIMEOUT, () => {

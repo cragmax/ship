@@ -608,65 +608,10 @@ const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 function shellWord(word) {
   return PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 }
-function verbatimBlock(title, file) {
-  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
-  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
-}
 const WORKTREE_INTEGRATION_CONFIG = 'vitest.worktree.integration.config.ts';
-function mainToolPrefix(lease, tool) {
-  return [
-    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
-    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
-    'npx tsx',
-    shellWord(`${lease.main}/${tool}`),
-  ];
-}
-function leaseCommand(lease) {
-  return [
-    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
-    '--type <paper|folia> --version <version>',
-    `--registry ${shellWord(lease.registry)}`,
-    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
-  ].join(' ');
-}
-function fullServerTierCommand(lease) {
-  return [
-    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
-    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
-  ].join(' ');
-}
-function serverTierLines(lease) {
-  return [
-    `Lease command: ${leaseCommand(lease)}`,
-    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
-    `Full server tier: ${fullServerTierCommand(lease)}`,
-    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
-  ];
-}
 const ISSUE_TEXT_JQ =
   '"# \\(.title)", "state: \\(.state)", "labels: \\([.labels[].name] | join(", "))", "", .body, ' +
   '(.comments[] | "", "----- comment by \\(.author.login) at \\(.createdAt) -----", .body)';
-function issueFile(issue, reportDir) {
-  return `${reportDir}/issues/${String(issue)}.md`;
-}
-function issueLines(issue, reportDir, key = 'Issue') {
-  const dir = `${reportDir}/issues`;
-  const file = issueFile(issue, reportDir);
-  return [
-    `${key} file: ${file}`,
-    [
-      `${key} command: mkdir -p ${shellWord(dir)} &&`,
-      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
-      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
-    ].join(' '),
-  ];
-}
-function issueRef(issue) {
-  return `#${String(issue)}`;
-}
-function epicLabel(epic) {
-  return epic === null ? 'an explicit issue list' : issueRef(epic);
-}
 const PROMPTS = {
   runner: (values) =>
     [
@@ -745,6 +690,61 @@ const PROMPTS = {
       `Report dir: ${values.reportDir}`,
     ].join('\n'),
 };
+function issueRef(issue) {
+  return `#${String(issue)}`;
+}
+function epicLabel(epic) {
+  return epic === null ? 'an explicit issue list' : issueRef(epic);
+}
+function serverTierLines(lease) {
+  return [
+    `Lease command: ${leaseCommand(lease)}`,
+    `Lease version: the version of the chosen type's entry in ${lease.registry}`,
+    `Full server tier: ${fullServerTierCommand(lease)}`,
+    `Probe caps: ${String(PROBE_CAP_MINUTES)} min per probe, ${String(PROBES_PER_STAGE)} probes per stage`,
+  ];
+}
+function fullServerTierCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'tooling/integration/run-integration.ts'),
+    `pool --no-standup --config ${WORKTREE_INTEGRATION_CONFIG}`,
+  ].join(' ');
+}
+function mainToolPrefix(lease, tool) {
+  return [
+    `PH_PROJECT_DIR=${shellWord(lease.projectDir)}`,
+    `PH_POOL_REGISTRY=${shellWord(lease.registry)}`,
+    'npx tsx',
+    shellWord(`${lease.main}/${tool}`),
+  ];
+}
+function leaseCommand(lease) {
+  return [
+    ...mainToolPrefix(lease, 'server-pool/src/with-lease.ts'),
+    '--type <paper|folia> --version <version>',
+    `--registry ${shellWord(lease.registry)}`,
+    `--timeout 600000 -- npx vitest run --config ${WORKTREE_INTEGRATION_CONFIG} <files>`,
+  ].join(' ');
+}
+function issueFile(issue, reportDir) {
+  return `${reportDir}/issues/${String(issue)}.md`;
+}
+function issueLines(issue, reportDir, key = 'Issue') {
+  const dir = `${reportDir}/issues`;
+  const file = issueFile(issue, reportDir);
+  return [
+    `${key} file: ${file}`,
+    [
+      `${key} command: mkdir -p ${shellWord(dir)} &&`,
+      `gh issue view ${String(issue)} --json title,state,labels,body,comments`,
+      `--jq ${shellWord(ISSUE_TEXT_JQ)} > ${shellWord(file)}`,
+    ].join(' '),
+  ];
+}
+function verbatimBlock(title, file) {
+  const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
+  return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
+}
 function sliceHeadLines(values) {
   return [
     `Issue: ${issueRef(values.issue)}`,
@@ -2107,21 +2107,6 @@ const RUN_GRAPH = {
     },
   },
 };
-function toolSchema(consumed) {
-  return {
-    type: 'object',
-    properties: {
-      exitCode: INTEGER,
-      envelopePath: STRING,
-      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
-      ...consumed.properties,
-    },
-    required: ['exitCode', 'envelopePath', ...consumed.required],
-  };
-}
-function envelopeSchema(name) {
-  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
-}
 const TOOL_SCHEMAS = {
   preflight: envelopeSchema('preflight'),
   'run-gate': toolSchema({
@@ -2199,9 +2184,6 @@ async function runTool(hooks, name, argv, place = PRE_CUT) {
   );
   return typeof out === 'object' && out !== null ? out : null;
 }
-function toolWords(name, argv) {
-  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
-}
 const PR_PLACEHOLDER = '<pr>';
 function toolCommandLine(name, argv) {
   return toolWords(name, argv)
@@ -2213,6 +2195,24 @@ function envelopeProblem(tool, out) {
   const reason = out.reason === undefined ? '' : ` (${out.reason})`;
   const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
+}
+function toolWords(name, argv) {
+  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+function envelopeSchema(name) {
+  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
+}
+function toolSchema(consumed) {
+  return {
+    type: 'object',
+    properties: {
+      exitCode: INTEGER,
+      envelopePath: STRING,
+      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
+      ...consumed.properties,
+    },
+    required: ['exitCode', 'envelopePath', ...consumed.required],
+  };
 }
 
 function createCommitQueue() {
@@ -2227,16 +2227,6 @@ function createCommitQueue() {
       return run;
     },
   };
-}
-function classifyLanding(land) {
-  if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
-  if (land?.batchClean !== true) return 'halt';
-  if (land.status === 'conflict') return 'conflict';
-  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') return 'blocked';
-  const step = land.errors?.[0]?.step;
-  const rolledBackStep = step === 'commit' || step === 'build';
-  if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
-  return 'halt';
 }
 function landingEvent(land, at) {
   const reason = envelopeProblem('land', land);
@@ -2273,6 +2263,16 @@ function settleEvents(primary, halt, at) {
   }
   return { events: [primary], entry: at.entry };
 }
+function classifyLanding(land) {
+  if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';
+  if (land?.batchClean !== true) return 'halt';
+  if (land.status === 'conflict') return 'conflict';
+  if (land.status === 'refused' && land.reason === 'slice-not-single-commit') return 'blocked';
+  const step = land.errors?.[0]?.step;
+  const rolledBackStep = step === 'commit' || step === 'build';
+  if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
+  return 'halt';
+}
 
 const LEASE_LINE =
   /^[ \t]*with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
@@ -2294,13 +2294,6 @@ function formatLeaseWaitLine(wait) {
 function leaseWaitedOn(holder) {
   if (holder === null) return LEASE_UNKNOWN_HOLDER;
   return `${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)})`;
-}
-function leaseHolderLabel(cwd) {
-  return cwd
-    .split(/[\\/]/u)
-    .filter((segment) => segment !== '')
-    .slice(-2)
-    .join('/');
 }
 function parseLeaseLine(line) {
   const match = LEASE_LINE.exec(line);
@@ -2355,6 +2348,13 @@ function aggregateLeaseTimings(samples) {
     unparsed,
   };
 }
+function leaseHolderLabel(cwd) {
+  return cwd
+    .split(/[\\/]/u)
+    .filter((segment) => segment !== '')
+    .slice(-2)
+    .join('/');
+}
 function leaseIsWaitLine(sample) {
   return 'line' in sample && LEASE_WAIT_LINE.test(sample.line);
 }
@@ -2377,29 +2377,6 @@ function leaseTenths(seconds) {
   return Math.round(seconds * 10) / 10;
 }
 
-function overlapSchema(issues) {
-  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
-  const { pairs, liveOverlaps } = base.properties;
-  const issue = { type: 'integer', enum: issues };
-  return {
-    ...base,
-    properties: {
-      ...base.properties,
-      pairs: {
-        ...pairs,
-        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
-      },
-      liveOverlaps: {
-        ...liveOverlaps,
-        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
-      },
-    },
-  };
-}
-async function askAgent(hooks, prompt, options) {
-  const out = await hooks.agent(prompt, options);
-  return typeof out === 'object' && out !== null ? out : null;
-}
 const AGENT_CALLS = {
   issueReadiness: (hooks, values) =>
     askAgent(
@@ -2454,6 +2431,29 @@ const AGENT_CALLS = {
       agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
+async function askAgent(hooks, prompt, options) {
+  const out = await hooks.agent(prompt, options);
+  return typeof out === 'object' && out !== null ? out : null;
+}
+function overlapSchema(issues) {
+  const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
+  const { pairs, liveOverlaps } = base.properties;
+  const issue = { type: 'integer', enum: issues };
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      pairs: {
+        ...pairs,
+        items: { ...pairs.items, properties: { ...pairs.items.properties, a: issue, b: issue } },
+      },
+      liveOverlaps: {
+        ...liveOverlaps,
+        items: { ...liveOverlaps.items, properties: { ...liveOverlaps.items.properties, issue } },
+      },
+    },
+  };
+}
 
 const NO_LAUNCH = 'no launch snapshot of master to check against';
 const NO_SYNCED = 'master sync named no origin/master sha to check against';
@@ -2544,6 +2544,22 @@ function evidenceBullet(issue, evidence) {
   }
   return tracerBullet(ref, evidence);
 }
+function codeSpan(text) {
+  const longest = longestBacktickRun(text);
+  if (longest === 0) return `\`${text}\``;
+  const delimiter = '`'.repeat(longest + 1);
+  return `${delimiter} ${text} ${delimiter}`;
+}
+function oneLine(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(' ');
+}
+function longestBacktickRun(text) {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+}
 function tracerBullet(ref, evidence) {
   const red = oneLine(evidence.red);
   const green = oneLine(evidence.green);
@@ -2572,22 +2588,6 @@ function codeBlock(pseudocode) {
 function codeFence(pseudocode) {
   return '`'.repeat(Math.max(3, longestBacktickRun(pseudocode) + 1));
 }
-function codeSpan(text) {
-  const longest = longestBacktickRun(text);
-  if (longest === 0) return `\`${text}\``;
-  const delimiter = '`'.repeat(longest + 1);
-  return `${delimiter} ${text} ${delimiter}`;
-}
-function longestBacktickRun(text) {
-  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
-}
-function oneLine(text) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .join(' ');
-}
 
 function summaryLines(writer) {
   if (writer === null) return ['Summary unavailable — the PR writer returned nothing'];
@@ -2615,17 +2615,6 @@ const CLOSING_REFS = [
   new RegExp(String.raw`${CLOSING_KEYWORD}([\w./-]*#\d+)`, 'giu'),
   new RegExp(String.raw`${CLOSING_KEYWORD}(https?://\S+/\d+)`, 'giu'),
 ];
-function neutralText(text, closing = new Set()) {
-  return CLOSING_REFS.reduce(
-    (out, pattern) =>
-      out.replace(pattern, (match, word, gap, ref) =>
-        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
-          ? match
-          : `${word}${gap}(see ${ref})`,
-      ),
-    text,
-  );
-}
 function renderBlockedComment(input) {
   const run =
     input.pr === undefined
@@ -2640,25 +2629,11 @@ function renderBlockedComment(input) {
     '',
   ].join('\n');
 }
-function whereKept(input) {
-  const { patch = null, report = null } = input.kept ?? {};
-  const parts = [
-    ...(patch === null ? [] : [`patch \`${patch}\``]),
-    ...(report === null ? [] : [`tdd report \`${report}\``]),
-  ];
-  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
-}
-function subjectLine(commit) {
-  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
-}
 function commitMessage(issue, tdd) {
   return issueMessage(subjectLine(tdd.commit), `${tdd.closes} #${String(issue)}`);
 }
 function commitMessageTemplate(issue) {
   return issueMessage('<type>(<scope>): <subject>', `<fixes|see> #${String(issue)}`);
-}
-function issueMessage(subject, cite) {
-  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 function prTitle(input) {
   const [only] = input.landed;
@@ -2690,19 +2665,6 @@ function fitPrBody(input) {
     })),
   };
 }
-function prBody(input, moved) {
-  const body = [
-    ...section('Epic review', epicReviewLines(input.epicReview)),
-    ...section('Summary', summaryLines(input.writer)),
-    ...section('Evidence', evidenceList(input.landed)),
-    ...section('Merge Danger', mergeDangerLines(input.writer)),
-    ...section('Tests at push', testsAtPushLines(input.pushed)),
-    ...section('Issues', issueListLines(input)),
-    ...recordedSection(input.landed, 2),
-    ...reportBlock(input, moved),
-  ].join('\n');
-  return neutralText(body, closingIssues(input.landed));
-}
 function renderAttachedSection(input) {
   const report =
     input.reportComment === null
@@ -2728,6 +2690,44 @@ function renderAttachedReport(input) {
   ).join('\n');
   return neutralText(text);
 }
+function prBody(input, moved) {
+  const body = [
+    ...section('Epic review', epicReviewLines(input.epicReview)),
+    ...section('Summary', summaryLines(input.writer)),
+    ...section('Evidence', evidenceList(input.landed)),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Tests at push', testsAtPushLines(input.pushed)),
+    ...section('Issues', issueListLines(input)),
+    ...recordedSection(input.landed, 2),
+    ...reportBlock(input, moved),
+  ].join('\n');
+  return neutralText(body, closingIssues(input.landed));
+}
+function issueMessage(subject, cite) {
+  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
+}
+function subjectLine(commit) {
+  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
+}
+function whereKept(input) {
+  const { patch = null, report = null } = input.kept ?? {};
+  const parts = [
+    ...(patch === null ? [] : [`patch \`${patch}\``]),
+    ...(report === null ? [] : [`tdd report \`${report}\``]),
+  ];
+  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
+}
+function neutralText(text, closing = new Set()) {
+  return CLOSING_REFS.reduce(
+    (out, pattern) =>
+      out.replace(pattern, (match, word, gap, ref) =>
+        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
+          ? match
+          : `${word}${gap}(see ${ref})`,
+      ),
+    text,
+  );
+}
 function evidenceList(landed) {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
 }
@@ -2751,12 +2751,6 @@ function testsAtPushLines(pushed) {
   }
   return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
-function recordedItems(landed) {
-  return landed.tdd.recorded
-    .map(oneLine)
-    .filter((entry) => entry !== '')
-    .map(codeSpan);
-}
 function recordedSection(landed, depth) {
   const lines = landed.flatMap((l) => {
     const items = recordedItems(l);
@@ -2765,6 +2759,12 @@ function recordedSection(landed, depth) {
       : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
   });
   return lines.length === 0 ? [] : section('Recorded', lines, depth);
+}
+function recordedItems(landed) {
+  return landed.tdd.recorded
+    .map(oneLine)
+    .filter((entry) => entry !== '')
+    .map(codeSpan);
 }
 function closingIssues(landed) {
   return new Set(landed.filter((l) => l.tdd.closes === 'fixes').map((l) => l.issue));
@@ -3728,130 +3728,43 @@ async function drive(input) {
   }
   return input.entries.map((_entry, i) => entryReport(d, i));
 }
-function newDrive(input) {
-  const d = {
-    input,
-    contexts: [],
-    scheduler: null,
-    flights: new Map(),
-    attempts: new Map(),
-    previousPatches: new Map(),
-    timing: new Map(),
-    halts: new Map(),
-    outcomes: new Map(),
-    landed: new Map(),
-    residue: new Map(),
-    ends: new Map(),
-    released: [],
-    repoLock: createCommitQueue(),
-    epicEndEntered: false,
+function neverStarted(issue, graph, overlap) {
+  const blockers = graph.edges
+    .filter((e) => e.dependent === issue)
+    .map((e) => e.blocker)
+    .sort((a, b) => a - b)
+    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+}
+function entryReport(d, i) {
+  const end = d.ends.get(i);
+  if (end !== undefined) return end;
+  const entry = d.input.entries[i];
+  return {
+    epic: entry?.epic ?? null,
+    branch: entry?.branch ?? '',
+    outcome: 'halted',
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
   };
-  input.entries.forEach((entry, i) => {
-    d.contexts.push({
-      ...entry,
-      hooks: input.hooks,
-      queue: createCommitQueue(),
-      isHalting: () => haltOf(d, i) !== 'running',
-      markHalting: () => {
-        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
-      },
+}
+function scheduleOf(d, i) {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+  return issues.map((issue) => {
+    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
+    const blockers = entry.blockers.map((b) => {
+      const released = d.released.find(
+        (r) => r.blocker === b.issue && r.dependent === issue,
+      )?.trigger;
+      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
     });
+    return { ...entry, blockers, ...d.timing.get(issue) };
   });
-  return d;
 }
-function haltOf(d, i) {
-  return d.halts.get(i) ?? 'running';
-}
-function flightKey(note) {
-  return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
-}
-function onNote(d, note) {
-  if (note.kind === 'epic-end') {
-    d.ends.set(note.entry, note.report);
-  } else if (note.kind === 'authored') {
-    d.flights.set(flightKey(note), note.landing);
-  } else {
-    settle(d, note.issue, note.ending);
-  }
-}
-function settle(d, issue, ending) {
-  const i = entryOfIssue(d, issue);
-  const epic = d.input.entries[i]?.epic ?? null;
-  const { primary, committedAt, size } = endingFacts(issue, ending);
-  const { events, entry } = settleEvents(primary, ending.halt, {
-    issue,
-    epic,
-    entry: haltOf(d, i),
-  });
-  d.halts.set(i, entry);
-  if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.timing.set(issue, {
-    attempts: d.attempts.get(issue) ?? 1,
-    startedAt: ending.startedAt,
-    committedAt,
-    size,
-  });
-  keepPreviousPatch(d, issue, ending);
-  record(d, i, issue, ending, events);
-  feed(d, events);
-}
-function keepPreviousPatch(d, issue, ending) {
-  const patch =
-    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
-      ? (ending.kept?.patch ?? null)
-      : null;
-  if (patch === null) d.previousPatches.delete(issue);
-  else d.previousPatches.set(issue, patch);
-}
-function endingFacts(issue, ending) {
-  switch (ending.kind) {
-    case 'landed':
-      return {
-        primary: { kind: 'committed', issue },
-        committedAt: ending.committedAt,
-        size: ending.size,
-      };
-    case 'unlanded':
-      return { primary: ending.primary, committedAt: null, size: null };
-  }
-}
-function record(d, i, issue, ending, events) {
-  const committed = events.some((e) => e.kind === 'committed');
-  if (ending.kind === 'landed' && committed) {
-    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
-  }
-  const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
-  if (report !== null) d.outcomes.set(issue, report);
-}
-function issueOutcome(issue, ending, committed, halted) {
-  switch (ending.kind) {
-    case 'landed':
-      return committed
-        ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
-        : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
-    case 'unlanded': {
-      const outcome = unlandedOutcome(issue, ending.primary, halted);
-      return outcome === null || ending.kept === null ? outcome : { ...outcome, kept: ending.kept };
-    }
-  }
-}
-function unlandedOutcome(issue, primary, halted) {
-  const reason = 'reason' in primary ? primary.reason : undefined;
-  if (halted)
-    return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
-  if (primary.kind === 'blocked')
-    return { issue, outcome: 'blocked', cite: 'see', reason: primary.reason };
-  if (primary.kind === 'label-removed') {
-    return { issue, outcome: 'removed', cite: 'see', reason: 'no longer open and ready-for-agent' };
-  }
-  return null;
-}
-function feed(d, events) {
-  for (const event of events) {
-    d.input.hooks.log(`fed ${event.kind} ${eventSubject(event)}`);
-    if (d.scheduler === null) throw new Error('ship: fed an event before the scheduler started');
-    apply(d, advance(d.scheduler, event));
-  }
+function issueReports(d, i) {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+  return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
 }
 function apply(d, t) {
   d.scheduler = t.state;
@@ -3897,14 +3810,33 @@ function act(d, action) {
       break;
   }
 }
-function startAttempt(d, issue) {
-  const ctx = d.contexts[entryOfIssue(d, issue)];
-  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
-  const attempt = d.attempts.get(issue) ?? 1;
-  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
+function endUnshipped(d, i, outcome) {
+  const entry = d.input.entries[i];
+  if (entry === undefined) return;
+  const input = {
+    hooks: d.input.hooks,
+    entry,
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
+  };
+  const report = unshippedEpicEnd(input, outcome).catch(() => ({
+    epic: entry.epic,
+    branch: entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+    retro: null,
+  }));
+  startEnd(d, i, report);
+}
+function startEnd(d, i, report) {
+  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
+  d.epicEndEntered = true;
   d.flights.set(
-    `issue:${String(issue)}`,
-    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
+    `epic:${String(i)}`,
+    report.then((r) => ({ kind: 'epic-end', entry: i, report: r })),
   );
 }
 function endEpic(d, i) {
@@ -3938,72 +3870,140 @@ function endEpic(d, i) {
   }));
   startEnd(d, i, report);
 }
-function endUnshipped(d, i, outcome) {
-  const entry = d.input.entries[i];
-  if (entry === undefined) return;
-  const input = {
-    hooks: d.input.hooks,
-    entry,
-    issues: issueReports(d, i),
-    schedule: scheduleOf(d, i),
-    residue: d.residue.get(i) ?? [],
-  };
-  const report = unshippedEpicEnd(input, outcome).catch(() => ({
-    epic: entry.epic,
-    branch: entry.branch,
-    outcome,
-    issues: input.issues,
-    schedule: input.schedule,
-    residue: input.residue,
-    retro: null,
-  }));
-  startEnd(d, i, report);
-}
-function startEnd(d, i, report) {
-  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
-  d.epicEndEntered = true;
+function startAttempt(d, issue) {
+  const ctx = d.contexts[entryOfIssue(d, issue)];
+  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
+  const attempt = d.attempts.get(issue) ?? 1;
+  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
   d.flights.set(
-    `epic:${String(i)}`,
-    report.then((r) => ({ kind: 'epic-end', entry: i, report: r })),
+    `issue:${String(issue)}`,
+    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
   );
 }
-function entryReport(d, i) {
-  const end = d.ends.get(i);
-  if (end !== undefined) return end;
-  const entry = d.input.entries[i];
-  return {
-    epic: entry?.epic ?? null,
-    branch: entry?.branch ?? '',
-    outcome: 'halted',
-    issues: issueReports(d, i),
-    schedule: scheduleOf(d, i),
-    residue: d.residue.get(i) ?? [],
-  };
+function onNote(d, note) {
+  if (note.kind === 'epic-end') {
+    d.ends.set(note.entry, note.report);
+  } else if (note.kind === 'authored') {
+    d.flights.set(flightKey(note), note.landing);
+  } else {
+    settle(d, note.issue, note.ending);
+  }
 }
-function issueReports(d, i) {
-  const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
-}
-function scheduleOf(d, i) {
-  const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => {
-    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
-    const blockers = entry.blockers.map((b) => {
-      const released = d.released.find(
-        (r) => r.blocker === b.issue && r.dependent === issue,
-      )?.trigger;
-      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
-    });
-    return { ...entry, blockers, ...d.timing.get(issue) };
+function settle(d, issue, ending) {
+  const i = entryOfIssue(d, issue);
+  const epic = d.input.entries[i]?.epic ?? null;
+  const { primary, committedAt, size } = endingFacts(issue, ending);
+  const { events, entry } = settleEvents(primary, ending.halt, {
+    issue,
+    epic,
+    entry: haltOf(d, i),
   });
+  d.halts.set(i, entry);
+  if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
+  d.timing.set(issue, {
+    attempts: d.attempts.get(issue) ?? 1,
+    startedAt: ending.startedAt,
+    committedAt,
+    size,
+  });
+  keepPreviousPatch(d, issue, ending);
+  record(d, i, issue, ending, events);
+  feed(d, events);
 }
-function neverStarted(issue, graph, overlap) {
-  const blockers = graph.edges
-    .filter((e) => e.dependent === issue)
-    .map((e) => e.blocker)
-    .sort((a, b) => a - b)
-    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+function feed(d, events) {
+  for (const event of events) {
+    d.input.hooks.log(`fed ${event.kind} ${eventSubject(event)}`);
+    if (d.scheduler === null) throw new Error('ship: fed an event before the scheduler started');
+    apply(d, advance(d.scheduler, event));
+  }
+}
+function record(d, i, issue, ending, events) {
+  const committed = events.some((e) => e.kind === 'committed');
+  if (ending.kind === 'landed' && committed) {
+    d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
+  }
+  const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
+  if (report !== null) d.outcomes.set(issue, report);
+}
+function issueOutcome(issue, ending, committed, halted) {
+  switch (ending.kind) {
+    case 'landed':
+      return committed
+        ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
+        : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
+    case 'unlanded': {
+      const outcome = unlandedOutcome(issue, ending.primary, halted);
+      return outcome === null || ending.kept === null ? outcome : { ...outcome, kept: ending.kept };
+    }
+  }
+}
+function unlandedOutcome(issue, primary, halted) {
+  const reason = 'reason' in primary ? primary.reason : undefined;
+  if (halted)
+    return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
+  if (primary.kind === 'blocked')
+    return { issue, outcome: 'blocked', cite: 'see', reason: primary.reason };
+  if (primary.kind === 'label-removed') {
+    return { issue, outcome: 'removed', cite: 'see', reason: 'no longer open and ready-for-agent' };
+  }
+  return null;
+}
+function endingFacts(issue, ending) {
+  switch (ending.kind) {
+    case 'landed':
+      return {
+        primary: { kind: 'committed', issue },
+        committedAt: ending.committedAt,
+        size: ending.size,
+      };
+    case 'unlanded':
+      return { primary: ending.primary, committedAt: null, size: null };
+  }
+}
+function keepPreviousPatch(d, issue, ending) {
+  const patch =
+    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
+      ? (ending.kept?.patch ?? null)
+      : null;
+  if (patch === null) d.previousPatches.delete(issue);
+  else d.previousPatches.set(issue, patch);
+}
+function flightKey(note) {
+  return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
+}
+function haltOf(d, i) {
+  return d.halts.get(i) ?? 'running';
+}
+function newDrive(input) {
+  const d = {
+    input,
+    contexts: [],
+    scheduler: null,
+    flights: new Map(),
+    attempts: new Map(),
+    previousPatches: new Map(),
+    timing: new Map(),
+    halts: new Map(),
+    outcomes: new Map(),
+    landed: new Map(),
+    residue: new Map(),
+    ends: new Map(),
+    released: [],
+    repoLock: createCommitQueue(),
+    epicEndEntered: false,
+  };
+  input.entries.forEach((entry, i) => {
+    d.contexts.push({
+      ...entry,
+      hooks: input.hooks,
+      queue: createCommitQueue(),
+      isHalting: () => haltOf(d, i) !== 'running',
+      markHalting: () => {
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
+      },
+    });
+  });
+  return d;
 }
 function scheduleBlocker(blocker, dependent, overlap) {
   const added = overlap.added.some((e) => e.blocker === blocker && e.dependent === dependent);
@@ -4057,6 +4057,34 @@ function mergeOverlapEdges(graph, pairs) {
   }
   return overlapDirect(graph, unique);
 }
+function overlapEntryIndex(graph) {
+  const entryOf = new Map();
+  graph.runSet.forEach((entry, i) => {
+    for (const n of entry.issues) entryOf.set(n, i);
+  });
+  return entryOf;
+}
+function overlapDistinct(pairs) {
+  const seen = new Map();
+  for (const p of pairs) {
+    const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
+    seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
+  }
+  return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
+}
+function overlapAssertPairs(issues, pairs) {
+  for (const p of pairs) {
+    const outside = [p.a, p.b].find((n) => !issues.includes(n));
+    if (outside !== undefined) {
+      overlapFail(
+        `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
+      );
+    }
+  }
+  for (const p of pairs) {
+    if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
+  }
+}
 function overlapDirect(graph, pairs) {
   const rank = overlapTopoRank(graph);
   const added = [];
@@ -4099,34 +4127,6 @@ function overlapTopoRank(graph) {
 }
 function overlapShiftIndegree(indegree, edges, by) {
   for (const e of edges) indegree.set(e.dependent, (indegree.get(e.dependent) ?? 0) + by);
-}
-function overlapAssertPairs(issues, pairs) {
-  for (const p of pairs) {
-    const outside = [p.a, p.b].find((n) => !issues.includes(n));
-    if (outside !== undefined) {
-      overlapFail(
-        `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
-      );
-    }
-  }
-  for (const p of pairs) {
-    if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
-  }
-}
-function overlapDistinct(pairs) {
-  const seen = new Map();
-  for (const p of pairs) {
-    const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
-    seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
-  }
-  return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
-}
-function overlapEntryIndex(graph) {
-  const entryOf = new Map();
-  graph.runSet.forEach((entry, i) => {
-    for (const n of entry.issues) entryOf.set(n, i);
-  });
-  return entryOf;
 }
 function overlapDistinctEdges(edges) {
   const seen = new Map();
@@ -4180,52 +4180,24 @@ async function runPreflight(hooks, args) {
   const found = { refusals, dropped: gateDrops(gate), graph, ...at };
   return settleOverlap(bound, settleReadiness(found, readiness, args.exclude), args.attach);
 }
-function unanchored(checks) {
-  const found = checkRefusals(checks);
-  const refusals =
-    found.length > 0
-      ? found
-      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
+function dropWithDependents(graph, issues) {
+  const inGraph = new Set(runSetIssues(graph.runSet));
+  const roots = issues.filter((n) => inGraph.has(n));
+  const dependents = transitiveDependents(roots, graph.edges);
+  const gone = new Set([...roots, ...dependents]);
   return {
-    refusals,
-    dropped: [],
-    graph: null,
-    main: null,
-    overlap: null,
-    live: null,
-    checkout: null,
+    graph: {
+      runSet: graph.runSet
+        .map((entry) => ({ epic: entry.epic, issues: entry.issues.filter((n) => !gone.has(n)) }))
+        .filter((entry) => entry.issues.length > 0),
+      edges: graph.edges.filter((e) => !gone.has(e.blocker) && !gone.has(e.dependent)),
+    },
+    dependents,
   };
 }
-function preflightArgv(args) {
-  if (args.attach !== null) return ['.', '--attach', args.attach];
-  const slugs =
-    args.selection === 'epics'
-      ? args.numbers.map((epic) => runSlug({ epic }))
-      : [runSlug({ issues: args.numbers })];
-  return ['.', '--slug', slugs.join(',')];
-}
-function exemptSpentSlices(checks, live) {
-  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
-  const all = checks.problems ?? [];
-  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
-  const problems = all.filter(
-    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
-  );
-  if (problems.length === all.length) return checks;
-  if (problems.length > 0) return { ...checks, problems };
-  const ok = { ...checks, status: 'ok', problems };
-  delete ok.reason;
-  return ok;
-}
-function overlapValues(found, attach) {
-  const { graph } = found;
-  if (graph === null) return null;
-  const liveRuns = (found.live?.runs ?? [])
-    .filter((r) => !r.spent && r.branch !== attach)
-    .map((r) => ({ branch: r.branch, landed: r.landed }));
-  const count = runSetIssues(graph.runSet).length;
-  if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
-  return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
+function mainSnapshot(checks) {
+  const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
+  return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 async function settleOverlap(hooks, found, attach) {
   const values = overlapValues(found, attach);
@@ -4266,6 +4238,31 @@ async function settleOverlap(hooks, found, attach) {
   };
   return { ...found, graph: merged.graph, overlap };
 }
+function pairReason(a, b, pairs) {
+  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
+}
+function samePair(p, a, b) {
+  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
+}
+function crossEpicRefusal(pair, pairs) {
+  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
+  const epic = (e) => (e === null ? 'the explicit list' : `epic #${String(e)}`);
+  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+  return {
+    kind: 'overlap-cross-epic',
+    issue: pair.a,
+    message:
+      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
+      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
+      '; epics in one run must be code-disjoint',
+  };
+}
+function withRefusals(found, refusals) {
+  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+}
+function generatedOnly(pair) {
+  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
+}
 function unsureWithinEntry(graph, pairs) {
   const entryOf = overlapEntryIndex(graph);
   const ordered = (p) =>
@@ -4283,48 +4280,51 @@ function unsureWithinEntry(graph, pairs) {
     );
   });
 }
-function generatedOnly(pair) {
-  return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
+function overlapValues(found, attach) {
+  const { graph } = found;
+  if (graph === null) return null;
+  const liveRuns = (found.live?.runs ?? [])
+    .filter((r) => !r.spent && r.branch !== attach)
+    .map((r) => ({ branch: r.branch, landed: r.landed }));
+  const count = runSetIssues(graph.runSet).length;
+  if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
+  return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
 }
-function withRefusals(found, refusals) {
-  return { ...found, refusals: [...found.refusals, ...refusals], overlap: null };
+function exemptSpentSlices(checks, live) {
+  if (checks?.status !== 'refused' || checks.reason !== 'preflight-failed') return checks;
+  const all = checks.problems ?? [];
+  const tails = (live?.runs ?? []).filter((r) => r.spent).map((r) => ` of ${r.branch}`);
+  const problems = all.filter(
+    (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
+  );
+  if (problems.length === all.length) return checks;
+  if (problems.length > 0) return { ...checks, problems };
+  const ok = { ...checks, status: 'ok', problems };
+  delete ok.reason;
+  return ok;
 }
-function crossEpicRefusal(pair, pairs) {
-  const word = pairs.find((p) => samePair(p, pair.a, pair.b));
-  const epic = (e) => (e === null ? 'the explicit list' : `epic #${String(e)}`);
-  const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+function preflightArgv(args) {
+  if (args.attach !== null) return ['.', '--attach', args.attach];
+  const slugs =
+    args.selection === 'epics'
+      ? args.numbers.map((epic) => runSlug({ epic }))
+      : [runSlug({ issues: args.numbers })];
+  return ['.', '--slug', slugs.join(',')];
+}
+function unanchored(checks) {
+  const found = checkRefusals(checks);
+  const refusals =
+    found.length > 0
+      ? found
+      : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
   return {
-    kind: 'overlap-cross-epic',
-    issue: pair.a,
-    message:
-      `#${String(pair.a)} (${epic(pair.epicA)}) and #${String(pair.b)} (${epic(pair.epicB)}) ` +
-      `may overlap (${word?.confidence ?? 'unsure'})${shared}: ${word?.reason ?? 'no reason given'}` +
-      '; epics in one run must be code-disjoint',
-  };
-}
-function pairReason(a, b, pairs) {
-  return pairs.find((p) => samePair(p, a, b))?.reason ?? '';
-}
-function samePair(p, a, b) {
-  return (p.a === a && p.b === b) || (p.a === b && p.b === a);
-}
-function mainSnapshot(checks) {
-  const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
-  return snapshot === undefined || snapshot === null ? null : { snapshot };
-}
-function dropWithDependents(graph, issues) {
-  const inGraph = new Set(runSetIssues(graph.runSet));
-  const roots = issues.filter((n) => inGraph.has(n));
-  const dependents = transitiveDependents(roots, graph.edges);
-  const gone = new Set([...roots, ...dependents]);
-  return {
-    graph: {
-      runSet: graph.runSet
-        .map((entry) => ({ epic: entry.epic, issues: entry.issues.filter((n) => !gone.has(n)) }))
-        .filter((entry) => entry.issues.length > 0),
-      edges: graph.edges.filter((e) => !gone.has(e.blocker) && !gone.has(e.dependent)),
-    },
-    dependents,
+    refusals,
+    dropped: [],
+    graph: null,
+    main: null,
+    overlap: null,
+    live: null,
+    checkout: null,
   };
 }
 function checkRefusals(checks) {
@@ -4374,20 +4374,6 @@ const RUBRIC_POINTS = [
   ['directionDecided', 'direction-decided'],
   ['specified', 'specified'],
 ];
-function readinessFailures(v) {
-  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
-  return [
-    ...(v.current.pass ? [] : [{ cause: 'stale', message: v.current.evidence }]),
-    ...(failed.length === 0
-      ? []
-      : [
-          {
-            cause: 'not-ready',
-            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
-          },
-        ]),
-  ];
-}
 function settleReadiness(found, readiness, exclude) {
   const issues = runSetIssues(found.graph.runSet);
   const verdicts = (readiness?.issues ?? []).filter((v) => issues.includes(v.issue));
@@ -4429,6 +4415,20 @@ function settleReadiness(found, readiness, exclude) {
     })),
   ];
   return { ...found, refusals, dropped, graph };
+}
+function readinessFailures(v) {
+  const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
+  return [
+    ...(v.current.pass ? [] : [{ cause: 'stale', message: v.current.evidence }]),
+    ...(failed.length === 0
+      ? []
+      : [
+          {
+            cause: 'not-ready',
+            message: failed.map(([key, name]) => `${name}: ${v[key].evidence}`).join('; '),
+          },
+        ]),
+  ];
 }
 function toolError(out, what) {
   if (out === null) return `the runner returned nothing for ${what}`;

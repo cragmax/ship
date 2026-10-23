@@ -23,26 +23,6 @@ const TWO_INDEPENDENT = {
  */
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
-/**
- * Ship `args` over {@link TWO_INDEPENDENT}, its answers settled at once or
- * one per standstill in `order`.
- */
-async function shipUnder(
-  order: SettleOrder | 'at once',
-  args: string,
-): Promise<{ run: FakeRun; report: ShipReport }> {
-  if (order === 'at once') {
-    const run = fakeHooks(TWO_INDEPENDENT);
-
-    return { run, report: await runShip(run.hooks, args) };
-  }
-
-  const pump = settleInOrder(order);
-  const run = fakeHooks(TWO_INDEPENDENT, { gate: pump.gate });
-
-  return { run, report: await pump.drain(runShip(run.hooks, args)) };
-}
-
 describe('runShip — call order under different settle timings', () => {
   it('makes the same agent() calls in the same order through the epic end at --max-slices 1, however its answers settle', async () => {
     const args = 'issues 7 8 --max-slices 1';
@@ -99,3 +79,23 @@ describe('runShip — call order under different settle timings', () => {
     expect(sorted(newest.run)).toEqual(sorted(oldest.run));
   });
 });
+
+/**
+ * Ship `args` over {@link TWO_INDEPENDENT}, its answers settled at once or
+ * one per standstill in `order`.
+ */
+async function shipUnder(
+  order: SettleOrder | 'at once',
+  args: string,
+): Promise<{ run: FakeRun; report: ShipReport }> {
+  if (order === 'at once') {
+    const run = fakeHooks(TWO_INDEPENDENT);
+
+    return { run, report: await runShip(run.hooks, args) };
+  }
+
+  const pump = settleInOrder(order);
+  const run = fakeHooks(TWO_INDEPENDENT, { gate: pump.gate });
+
+  return { run, report: await pump.drain(runShip(run.hooks, args)) };
+}

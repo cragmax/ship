@@ -100,6 +100,45 @@ export function mergeOverlapEdges(graph: RunGraph, pairs: readonly OverlapPair[]
   return overlapDirect(graph, unique);
 }
 
+/** Each issue's entry index. */
+export function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
+  const entryOf = new Map<number, number>();
+  graph.runSet.forEach((entry, i) => {
+    for (const n of entry.issues) entryOf.set(n, i);
+  });
+
+  return entryOf;
+}
+
+/** Each unordered pair once, `a` smaller than `b`, sorted. */
+function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
+  const seen = new Map<string, OverlapPair>();
+
+  for (const p of pairs) {
+    const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
+    seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
+  }
+
+  return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
+}
+
+/** Reject a pair naming an issue outside the run set, then a pair naming one issue twice. */
+function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPair[]): void {
+  for (const p of pairs) {
+    const outside = [p.a, p.b].find((n) => !issues.includes(n));
+
+    if (outside !== undefined) {
+      overlapFail(
+        `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
+      );
+    }
+  }
+
+  for (const p of pairs) {
+    if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
+  }
+}
+
 /** Direct each in-entry pair (distinct, `a` smaller than `b`) and merge it in: the `ok` outcome. */
 function overlapDirect(graph: RunGraph, pairs: readonly OverlapPair[]): OverlapMerge {
   const rank = overlapTopoRank(graph);
@@ -167,45 +206,6 @@ function overlapShiftIndegree(
   by: number,
 ): void {
   for (const e of edges) indegree.set(e.dependent, (indegree.get(e.dependent) ?? 0) + by);
-}
-
-/** Reject a pair naming an issue outside the run set, then a pair naming one issue twice. */
-function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPair[]): void {
-  for (const p of pairs) {
-    const outside = [p.a, p.b].find((n) => !issues.includes(n));
-
-    if (outside !== undefined) {
-      overlapFail(
-        `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
-      );
-    }
-  }
-
-  for (const p of pairs) {
-    if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
-  }
-}
-
-/** Each unordered pair once, `a` smaller than `b`, sorted. */
-function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
-  const seen = new Map<string, OverlapPair>();
-
-  for (const p of pairs) {
-    const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
-    seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
-  }
-
-  return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
-}
-
-/** Each issue's entry index. */
-export function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> {
-  const entryOf = new Map<number, number>();
-  graph.runSet.forEach((entry, i) => {
-    for (const n of entry.issues) entryOf.set(n, i);
-  });
-
-  return entryOf;
 }
 
 /** Each edge once, first occurrences kept. */

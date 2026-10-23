@@ -78,15 +78,6 @@ export interface CaptureOptions {
 }
 
 /**
- * Keep the last {@link TAIL_LINES} lines of `text`.
- *
- * @returns The trailing lines, joined with `\n`.
- */
-function lastLines(text: string): string {
-  return text.split(/\r?\n/u).slice(-TAIL_LINES).join('\n');
-}
-
-/**
  * Run a child with captured output, never throwing on a child failure.
  *
  * @remarks
@@ -120,42 +111,6 @@ export function runCaptured(
   if (options.logFile !== undefined) output += writeLog(options.logFile, output);
 
   return { exitCode: r.exitCode ?? -1, stdout: r.stdout, tail: lastLines(output) };
-}
-
-/**
- * What the child printed, then execa's message after a budget kill (else a killed child reads as
- * a bare exit `-1`), or that message alone when it printed nothing; on win32 a budget kill then
- * appends {@link orphanWarning}'s line.
- */
-function outputOf(all: string, timedOut: boolean, failure: string, cwd: string): string {
-  const warning = timedOut && process.platform === 'win32' ? `\n${orphanWarning(cwd)}` : '';
-  if (all.trim() === '') return failure + warning;
-
-  return (timedOut ? `${all}\n${failure}` : all) + warning;
-}
-
-/**
- * The Windows budget-kill line (the file header has the why), naming `cwd` as given — for a
- * `git -C` spawn the CLI's own cwd. No remediation command: survivors cannot be found by `cwd`.
- */
-function orphanWarning(cwd: string): string {
-  return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
-}
-
-/**
- * Write the whole output to the log file; `''` when written, else a line naming the failure.
- *
- * @silences A failed write: the child's outcome stands — a commit that landed must not read as
- *   failed — and the returned line reaches the caller in the tail.
- */
-function writeLog(file: string, output: string): string {
-  try {
-    writeFileSync(file, output);
-
-    return '';
-  } catch (err) {
-    return `\nlog not written to ${file}: ${err instanceof Error ? err.message : String(err)}`;
-  }
 }
 
 /**
@@ -195,4 +150,49 @@ export function runStep(
   }
 
   return r;
+}
+
+/**
+ * Write the whole output to the log file; `''` when written, else a line naming the failure.
+ *
+ * @silences A failed write: the child's outcome stands — a commit that landed must not read as
+ *   failed — and the returned line reaches the caller in the tail.
+ */
+function writeLog(file: string, output: string): string {
+  try {
+    writeFileSync(file, output);
+
+    return '';
+  } catch (err) {
+    return `\nlog not written to ${file}: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/**
+ * What the child printed, then execa's message after a budget kill (else a killed child reads as
+ * a bare exit `-1`), or that message alone when it printed nothing; on win32 a budget kill then
+ * appends {@link orphanWarning}'s line.
+ */
+function outputOf(all: string, timedOut: boolean, failure: string, cwd: string): string {
+  const warning = timedOut && process.platform === 'win32' ? `\n${orphanWarning(cwd)}` : '';
+  if (all.trim() === '') return failure + warning;
+
+  return (timedOut ? `${all}\n${failure}` : all) + warning;
+}
+
+/**
+ * The Windows budget-kill line (the file header has the why), naming `cwd` as given — for a
+ * `git -C` spawn the CLI's own cwd. No remediation command: survivors cannot be found by `cwd`.
+ */
+function orphanWarning(cwd: string): string {
+  return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
+}
+
+/**
+ * Keep the last {@link TAIL_LINES} lines of `text`.
+ *
+ * @returns The trailing lines, joined with `\n`.
+ */
+function lastLines(text: string): string {
+  return text.split(/\r?\n/u).slice(-TAIL_LINES).join('\n');
 }

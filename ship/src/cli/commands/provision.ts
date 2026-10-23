@@ -70,17 +70,6 @@ interface Run {
   readonly created: Created[];
 }
 
-/** Render a merged vitest config: the base plus a top-level `cacheDir`. */
-function renderConfig(spec: VitestConfigSpec): string {
-  return [
-    "import { defineConfig, mergeConfig } from 'vitest/config';",
-    `import baseConfig from '${spec.base}';`,
-    '',
-    `export default mergeConfig(baseConfig, defineConfig({ cacheDir: '${spec.cacheDir}' }));`,
-    '',
-  ].join('\n');
-}
-
 /**
  * Provision a slice worktree.
  *
@@ -221,6 +210,17 @@ function writeVitestConfigs(run: Run): void {
     writeFileSync(path, renderConfig(spec));
     run.result.vitestConfigs.push(path);
   }
+}
+
+/** Render a merged vitest config: the base plus a top-level `cacheDir`. */
+function renderConfig(spec: VitestConfigSpec): string {
+  return [
+    "import { defineConfig, mergeConfig } from 'vitest/config';",
+    `import baseConfig from '${spec.base}';`,
+    '',
+    `export default mergeConfig(baseConfig, defineConfig({ cacheDir: '${spec.cacheDir}' }));`,
+    '',
+  ].join('\n');
 }
 
 /**

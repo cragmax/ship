@@ -49,38 +49,6 @@ afterEach(() => {
   logDirs.clear();
 });
 
-/** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
-function makeRun(branch = 'ship/r'): FixtureRun {
-  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
-}
-
-/** The `version` fields of a checkout's package.json and lockfile. */
-function versions(dir: string): { pkg: string; lock: string; lockRoot: string } {
-  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version: string };
-  const lock = JSON.parse(readFileSync(join(dir, 'package-lock.json'), 'utf8')) as {
-    version: string;
-    packages: Record<string, { version: string }>;
-  };
-
-  return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
-}
-
-/** Run `bump` on the batch, recording the log dir it leaves. */
-function runBump(batch: string): ReturnType<typeof runCli<BumpResult>> {
-  const r = runCli<BumpResult>(['bump', batch]);
-  if (r.json.log !== null) logDirs.add(dirname(r.json.log));
-
-  return r;
-}
-
-/** The paths a commit changes against its first parent. */
-function commitPaths(dir: string, sha: string): string[] {
-  return mustRun('git', ['diff-tree', '-r', '--no-commit-id', '--name-only', sha], dir)
-    .split(/\r?\n/u)
-    .filter((p) => p !== '')
-    .sort(compareStrings);
-}
-
 describe('bump', () => {
   it(
     'bumps minor for a feat subject, in one commit of package.json and the lockfile',
@@ -259,3 +227,35 @@ describe('bump', () => {
     expect(versions(run.batch)).toEqual({ pkg: '1.0.0', lock: '1.0.0', lockRoot: '1.0.0' });
   });
 });
+
+/** The paths a commit changes against its first parent. */
+function commitPaths(dir: string, sha: string): string[] {
+  return mustRun('git', ['diff-tree', '-r', '--no-commit-id', '--name-only', sha], dir)
+    .split(/\r?\n/u)
+    .filter((p) => p !== '')
+    .sort(compareStrings);
+}
+
+/** Run `bump` on the batch, recording the log dir it leaves. */
+function runBump(batch: string): ReturnType<typeof runCli<BumpResult>> {
+  const r = runCli<BumpResult>(['bump', batch]);
+  if (r.json.log !== null) logDirs.add(dirname(r.json.log));
+
+  return r;
+}
+
+/** The `version` fields of a checkout's package.json and lockfile. */
+function versions(dir: string): { pkg: string; lock: string; lockRoot: string } {
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version: string };
+  const lock = JSON.parse(readFileSync(join(dir, 'package-lock.json'), 'utf8')) as {
+    version: string;
+    packages: Record<string, { version: string }>;
+  };
+
+  return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
+}
+
+/** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
+function makeRun(branch = 'ship/r'): FixtureRun {
+  return withOriginAndBatch(root, makeFixtureRepo(root), branch);
+}

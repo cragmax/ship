@@ -81,36 +81,6 @@ interface CliRun<T extends ResultBase> {
 let npmTemplateDir: string | undefined;
 
 /**
- * The calling test file's npm template directory, built on first use: a packed `fake-dep`
- * tarball plus a fixture `package.json` and its lockfile, all created offline.
- *
- * @throws When `npm pack` or `npm install` fails, carrying its output.
- */
-function npmTemplate(): string {
-  if (npmTemplateDir !== undefined) return npmTemplateDir;
-  const root = join(templatesRoot(), 'npm');
-  const template = join(root, 'template');
-  const depSrc = join(root, 'fake-dep-src');
-  mkdirSync(join(template, 'vendor'), { recursive: true });
-  mkdirSync(depSrc, { recursive: true });
-  writeFileSync(
-    join(depSrc, 'package.json'),
-    JSON.stringify({ name: 'fake-dep', version: '1.0.0', main: 'index.js' }),
-  );
-  writeFileSync(join(depSrc, 'index.js'), "module.exports = 'fake-dep';\n");
-  mustRun('npm', ['pack', '--pack-destination', join(template, 'vendor')], depSrc);
-  writeFileSync(join(template, 'package.json'), `${JSON.stringify(FIXTURE_PACKAGE, null, 2)}\n`);
-  mustRun(
-    'npm',
-    ['install', '--package-lock-only', '--offline', '--no-audit', '--no-fund'],
-    template,
-  );
-  npmTemplateDir = template;
-
-  return template;
-}
-
-/**
  * Build the calling test file's {@link npmTemplate} in a `beforeAll` with its own budget, so the
  * `npm pack` and lockfile install stay out of the first test's timeout. Call it at the top level
  * of a file that uses {@link makeFixtureRepo}.
@@ -125,22 +95,6 @@ export function prebuildNpmTemplate(): void {
 export interface FixtureRepoOptions {
   /** `.gitignore` content; defaults to the real repository's file. */
   readonly gitignore?: string;
-}
-
-function writeRepoFiles(main: string, template: string, gitignore: string): void {
-  cpSync(template, main, { recursive: true });
-  writeFileSync(join(main, 'build.js'), BUILD_SCRIPT);
-  writeFileSync(join(main, 'check.js'), CHECK_SCRIPT);
-  mkdirSync(join(main, 'config'));
-  writeFileSync(join(main, 'config', 'vitest.config.ts'), 'export default {};\n');
-  writeFileSync(join(main, 'config', 'vitest.integration.config.ts'), 'export default {};\n');
-  writeFileSync(join(main, '.gitignore'), gitignore);
-  const registryDir = join(main, 'server-pool', 'src', 'registry');
-  mkdirSync(registryDir, { recursive: true });
-  copyFileSync(
-    join(REPO_ROOT, 'server-pool', 'src', 'registry', 'pool-registry.json'),
-    join(registryDir, 'pool-registry.json'),
-  );
 }
 
 /**
@@ -197,23 +151,6 @@ export function seedBatch(batch: string): string {
   return linkedSrc;
 }
 
-function collectTree(dir: string, base: string, out: string[]): void {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    const rel = toPosix(relative(base, path));
-    const stat = lstatSync(path);
-
-    if (stat.isSymbolicLink()) {
-      out.push(`${rel} -> ${toPosix(readlinkSync(path))}`);
-    } else if (stat.isDirectory()) {
-      out.push(`${rel}/`);
-      collectTree(path, base, out);
-    } else {
-      out.push(rel);
-    }
-  }
-}
-
 /**
  * Sorted relative listing of `dir` — one entry per file, directory (`name/`) and link
  * (`name -> target`) — that does not descend into links. Independent of the CLI's own walker.
@@ -223,32 +160,6 @@ export function listTree(dir: string): string[] {
   collectTree(dir, dir, out);
 
   return out.sort(compareStrings);
-}
-
-/**
- * Parse the CLI's stdout as one JSON envelope line (`command` / `status` / `errors`).
- *
- * @throws When stdout is not exactly one envelope line, quoting stdout and stderr.
- */
-function parseEnvelope(stdout: string, stderr: string): ResultBase {
-  const lines = stdout.split('\n');
-  let json: Partial<ResultBase> | undefined;
-
-  try {
-    json = lines.length === 1 ? (JSON.parse(lines[0] ?? '') as Partial<ResultBase>) : undefined;
-  } catch {
-    json = undefined;
-  }
-
-  if (
-    typeof json?.command !== 'string' ||
-    typeof json.status !== 'string' ||
-    !Array.isArray(json.errors)
-  ) {
-    throw new Error(`stdout is not one result-envelope line:\n${stdout}\nstderr:\n${stderr}`);
-  }
-
-  return json as ResultBase;
 }
 
 /**
@@ -358,4 +269,93 @@ export function isJunction(path: string): boolean {
   );
 
   return r.exitCode === 0 && r.all.trim() === 'Junction';
+}
+
+/**
+ * Parse the CLI's stdout as one JSON envelope line (`command` / `status` / `errors`).
+ *
+ * @throws When stdout is not exactly one envelope line, quoting stdout and stderr.
+ */
+function parseEnvelope(stdout: string, stderr: string): ResultBase {
+  const lines = stdout.split('\n');
+  let json: Partial<ResultBase> | undefined;
+
+  try {
+    json = lines.length === 1 ? (JSON.parse(lines[0] ?? '') as Partial<ResultBase>) : undefined;
+  } catch {
+    json = undefined;
+  }
+
+  if (
+    typeof json?.command !== 'string' ||
+    typeof json.status !== 'string' ||
+    !Array.isArray(json.errors)
+  ) {
+    throw new Error(`stdout is not one result-envelope line:\n${stdout}\nstderr:\n${stderr}`);
+  }
+
+  return json as ResultBase;
+}
+
+function collectTree(dir: string, base: string, out: string[]): void {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const rel = toPosix(relative(base, path));
+    const stat = lstatSync(path);
+
+    if (stat.isSymbolicLink()) {
+      out.push(`${rel} -> ${toPosix(readlinkSync(path))}`);
+    } else if (stat.isDirectory()) {
+      out.push(`${rel}/`);
+      collectTree(path, base, out);
+    } else {
+      out.push(rel);
+    }
+  }
+}
+
+function writeRepoFiles(main: string, template: string, gitignore: string): void {
+  cpSync(template, main, { recursive: true });
+  writeFileSync(join(main, 'build.js'), BUILD_SCRIPT);
+  writeFileSync(join(main, 'check.js'), CHECK_SCRIPT);
+  mkdirSync(join(main, 'config'));
+  writeFileSync(join(main, 'config', 'vitest.config.ts'), 'export default {};\n');
+  writeFileSync(join(main, 'config', 'vitest.integration.config.ts'), 'export default {};\n');
+  writeFileSync(join(main, '.gitignore'), gitignore);
+  const registryDir = join(main, 'server-pool', 'src', 'registry');
+  mkdirSync(registryDir, { recursive: true });
+  copyFileSync(
+    join(REPO_ROOT, 'server-pool', 'src', 'registry', 'pool-registry.json'),
+    join(registryDir, 'pool-registry.json'),
+  );
+}
+
+/**
+ * The calling test file's npm template directory, built on first use: a packed `fake-dep`
+ * tarball plus a fixture `package.json` and its lockfile, all created offline.
+ *
+ * @throws When `npm pack` or `npm install` fails, carrying its output.
+ */
+function npmTemplate(): string {
+  if (npmTemplateDir !== undefined) return npmTemplateDir;
+  const root = join(templatesRoot(), 'npm');
+  const template = join(root, 'template');
+  const depSrc = join(root, 'fake-dep-src');
+  mkdirSync(join(template, 'vendor'), { recursive: true });
+  mkdirSync(depSrc, { recursive: true });
+  writeFileSync(
+    join(depSrc, 'package.json'),
+    JSON.stringify({ name: 'fake-dep', version: '1.0.0', main: 'index.js' }),
+  );
+  writeFileSync(join(depSrc, 'index.js'), "module.exports = 'fake-dep';\n");
+  mustRun('npm', ['pack', '--pack-destination', join(template, 'vendor')], depSrc);
+  writeFileSync(join(template, 'package.json'), `${JSON.stringify(FIXTURE_PACKAGE, null, 2)}\n`);
+  mustRun(
+    'npm',
+    ['install', '--package-lock-only', '--offline', '--no-audit', '--no-fund'],
+    template,
+  );
+  npmTemplateDir = template;
+
+  return template;
 }

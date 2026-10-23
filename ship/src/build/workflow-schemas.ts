@@ -43,27 +43,6 @@ const HEADER = [
 ].join('\n');
 
 /**
- * The module's text as a fresh emission produces it, LF line endings, with the prettier config
- * {@link SCHEMA_MODULE} resolves under the repository `root`; rejects when a source schema
- * leaves the construct set ({@link emitJsonSchema}).
- */
-async function renderSchemaModule(root: string): Promise<string> {
-  const code = [
-    HEADER,
-    '',
-    "/** Each worktree tool's consumed envelope fields. */",
-    `export const TOOL_ENVELOPE_SCHEMAS = ${emitAll(TOOL_ENVELOPES)} as const;`,
-    '',
-    "/** Each judgment agent's output. */",
-    `export const AGENT_OUTPUT_SCHEMAS = ${emitAll(AGENT_OUTPUTS)} as const;`,
-    '',
-  ].join('\n');
-  const config = await prettier.resolveConfig(resolve(root, SCHEMA_MODULE));
-
-  return prettier.format(code, { ...config, parser: 'typescript', endOfLine: 'lf' });
-}
-
-/**
  * The drift check: compare the on-disk module with a fresh emission, line
  * endings normalised. Writes nothing.
  *
@@ -100,6 +79,27 @@ export async function writeSchemaModule(root: string): Promise<string> {
   writeFileSync(out, emitted, 'utf8');
 
   return SCHEMA_MODULE;
+}
+
+/**
+ * The module's text as a fresh emission produces it, LF line endings, with the prettier config
+ * {@link SCHEMA_MODULE} resolves under the repository `root`; rejects when a source schema
+ * leaves the construct set ({@link emitJsonSchema}).
+ */
+async function renderSchemaModule(root: string): Promise<string> {
+  const code = [
+    HEADER,
+    '',
+    "/** Each worktree tool's consumed envelope fields. */",
+    `export const TOOL_ENVELOPE_SCHEMAS = ${emitAll(TOOL_ENVELOPES)} as const;`,
+    '',
+    "/** Each judgment agent's output. */",
+    `export const AGENT_OUTPUT_SCHEMAS = ${emitAll(AGENT_OUTPUTS)} as const;`,
+    '',
+  ].join('\n');
+  const config = await prettier.resolveConfig(resolve(root, SCHEMA_MODULE));
+
+  return prettier.format(code, { ...config, parser: 'typescript', endOfLine: 'lf' });
 }
 
 /**

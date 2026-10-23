@@ -104,25 +104,64 @@ export function land(input: LandInput): LandResult {
 }
 
 /**
- * The size the schedule reports: insertions plus deletions over the slice commit's text
- * files; a binary file adds none.
- *
- * @throws StepFailure `preconditions` when git fails.
+ * The files `npm run build` reads besides `src/`: its script, `tsc`'s config and the root config
+ * that one extends.
  */
-function changedLines(batch: string, sha: string): number {
-  const rows = git(
-    batch,
-    ['diff-tree', '-r', '--no-commit-id', '--numstat', '--no-renames', sha],
-    'preconditions',
-  );
-  let lines = 0;
+const BUILD_FILES: readonly string[] = [
+  'package.json',
+  'config/tsconfig.build.json',
+  'tsconfig.json',
+];
 
-  for (const row of rows.split('\n')) {
-    const [added = '-', removed = '-'] = row.split('\t');
-    lines += (added === '-' ? 0 : Number(added)) + (removed === '-' ? 0 : Number(removed));
+/**
+ * Whether a change touches a path the batch's `dist/` is built from: the
+ * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
+ * gate's `gate:build` re-emits in parallel with them, so the build makes it
+ * current first. Only `src/` builds into `dist/` (Framework ADR-0045 decision 6).
+ * `sync-master` asks it of what the merge brings.
+ *
+ * @param files - Repository-relative paths changed.
+ * @returns `true` when any lies under `src/` or is one of {@link BUILD_FILES}.
+ */
+export function needsBuild(files: readonly string[]): boolean {
+  return files.some((file) => file.startsWith('src/') || BUILD_FILES.includes(file));
+}
+
+/**
+ * Require the staged set to equal the harvest's `files`, a rename as both endpoints
+ * (Ship ADR-0001 decision 10).
+ *
+ * @throws Refusal `staged-mismatch` naming both differences.
+ */
+function assertStagedSet(batch: string, files: readonly string[]): void {
+  const diff = compareSets(files, stagedPaths(batch, 'staged-set'));
+
+  if (diff.missing.length > 0 || diff.unexpected.length > 0) {
+    throw new Refusal(
+      'staged-mismatch',
+      'staged-set',
+      `staged set differs from the harvest — ${formatDifference(diff)}`,
+    );
   }
+}
 
-  return lines;
+/**
+ * Harvest the slice, copying its `files`, `conflicts` and `rolledBack` onto `result`, and on a
+ * non-`ok` harvest its status, reason and errors.
+ *
+ * @returns `true` when staged; `false` when the harvest failed (it rolled back itself).
+ */
+function pick(result: LandResult, batch: string, sha: string, selfPath: string): boolean {
+  const h = harvest({ batch, sha, selfPath });
+  result.files = h.files;
+  result.conflicts = h.conflicts;
+  result.rolledBack = h.rolledBack;
+  if (h.status === 'ok') return true;
+  result.status = h.status;
+  if (h.reason !== undefined) result.reason = h.reason;
+  result.errors.push(...h.errors);
+
+  return false;
 }
 
 /**
@@ -152,64 +191,25 @@ function assertSingleCommit(batch: string, sha: string, base: string): string {
 }
 
 /**
- * Harvest the slice, copying its `files`, `conflicts` and `rolledBack` onto `result`, and on a
- * non-`ok` harvest its status, reason and errors.
+ * The size the schedule reports: insertions plus deletions over the slice commit's text
+ * files; a binary file adds none.
  *
- * @returns `true` when staged; `false` when the harvest failed (it rolled back itself).
+ * @throws StepFailure `preconditions` when git fails.
  */
-function pick(result: LandResult, batch: string, sha: string, selfPath: string): boolean {
-  const h = harvest({ batch, sha, selfPath });
-  result.files = h.files;
-  result.conflicts = h.conflicts;
-  result.rolledBack = h.rolledBack;
-  if (h.status === 'ok') return true;
-  result.status = h.status;
-  if (h.reason !== undefined) result.reason = h.reason;
-  result.errors.push(...h.errors);
+function changedLines(batch: string, sha: string): number {
+  const rows = git(
+    batch,
+    ['diff-tree', '-r', '--no-commit-id', '--numstat', '--no-renames', sha],
+    'preconditions',
+  );
+  let lines = 0;
 
-  return false;
-}
-
-/**
- * Require the staged set to equal the harvest's `files`, a rename as both endpoints
- * (Ship ADR-0001 decision 10).
- *
- * @throws Refusal `staged-mismatch` naming both differences.
- */
-function assertStagedSet(batch: string, files: readonly string[]): void {
-  const diff = compareSets(files, stagedPaths(batch, 'staged-set'));
-
-  if (diff.missing.length > 0 || diff.unexpected.length > 0) {
-    throw new Refusal(
-      'staged-mismatch',
-      'staged-set',
-      `staged set differs from the harvest — ${formatDifference(diff)}`,
-    );
+  for (const row of rows.split('\n')) {
+    const [added = '-', removed = '-'] = row.split('\t');
+    lines += (added === '-' ? 0 : Number(added)) + (removed === '-' ? 0 : Number(removed));
   }
-}
 
-/**
- * The files `npm run build` reads besides `src/`: its script, `tsc`'s config and the root config
- * that one extends.
- */
-const BUILD_FILES: readonly string[] = [
-  'package.json',
-  'config/tsconfig.build.json',
-  'tsconfig.json',
-];
-
-/**
- * Whether a change touches a path the batch's `dist/` is built from: the
- * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
- * gate's `gate:build` re-emits in parallel with them, so the build makes it
- * current first. Only `src/` builds into `dist/` (Framework ADR-0045 decision 6).
- * `sync-master` asks it of what the merge brings.
- *
- * @param files - Repository-relative paths changed.
- * @returns `true` when any lies under `src/` or is one of {@link BUILD_FILES}.
- */
-export function needsBuild(files: readonly string[]): boolean {
-  return files.some((file) => file.startsWith('src/') || BUILD_FILES.includes(file));
+  return lines;
 }
 
 /** Re-verify the batch clean, never throwing: `false` when residue remains or git cannot tell. */

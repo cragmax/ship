@@ -2026,42 +2026,6 @@ describe('runShip — the epic end', () => {
   });
 });
 
-/**
- * Issues 7 and 8 of one issue list: 7's teardown (`teardownKey`) shrinks a
- * source and settles first, so 8's held landing commits after the entry halted.
- */
-async function haltRace(teardownKey: string) {
-  const hold = holdable(/^runner:(teardown:7-1|land:8-1)$/);
-  const run = fakeHooks(
-    {
-      'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
-      issueReadiness: {
-        issues: [7, 8].map((issue) => readyVerdict(issue)),
-      },
-      [teardownKey]: TEARDOWN_SHRANK,
-      'runner:land:8-1': { ...LAND_OK, commit: 'landed8' },
-    },
-    { gate: hold.gate },
-  );
-
-  const done = runShip(run.hooks, 'issues 7 8');
-  await idle();
-  expect(hold.held()).toEqual(['runner:teardown:7-1', 'runner:land:8-1']);
-  hold.release('runner:teardown:7-1');
-  await idle();
-  expect(run.timeline).toContain('log fed epic-halt the issue list');
-  hold.releaseAll();
-  const report = await done;
-
-  expect(run.timeline.filter((e) => e.startsWith('log fed'))).toEqual([
-    'log fed epic-halt the issue list',
-    'log fed blocked #7',
-    'log fed blocked #8',
-  ]);
-
-  return { run, report };
-}
-
 describe('runShip — a halting entry', () => {
   it('feeds one epic-halt when two in-flight issues of the entry stop for it', async () => {
     const run = fakeHooks({
@@ -2240,6 +2204,42 @@ describe('runShip — a halting entry', () => {
     ]);
   });
 });
+
+/**
+ * Issues 7 and 8 of one issue list: 7's teardown (`teardownKey`) shrinks a
+ * source and settles first, so 8's held landing commits after the entry halted.
+ */
+async function haltRace(teardownKey: string) {
+  const hold = holdable(/^runner:(teardown:7-1|land:8-1)$/);
+  const run = fakeHooks(
+    {
+      'runner:run-gate': { ...GATE_OK, runSet: [{ epic: null, issues: [7, 8] }] },
+      issueReadiness: {
+        issues: [7, 8].map((issue) => readyVerdict(issue)),
+      },
+      [teardownKey]: TEARDOWN_SHRANK,
+      'runner:land:8-1': { ...LAND_OK, commit: 'landed8' },
+    },
+    { gate: hold.gate },
+  );
+
+  const done = runShip(run.hooks, 'issues 7 8');
+  await idle();
+  expect(hold.held()).toEqual(['runner:teardown:7-1', 'runner:land:8-1']);
+  hold.release('runner:teardown:7-1');
+  await idle();
+  expect(run.timeline).toContain('log fed epic-halt the issue list');
+  hold.releaseAll();
+  const report = await done;
+
+  expect(run.timeline.filter((e) => e.startsWith('log fed'))).toEqual([
+    'log fed epic-halt the issue list',
+    'log fed blocked #7',
+    'log fed blocked #8',
+  ]);
+
+  return { run, report };
+}
 
 describe('runAttempt — how an attempt ends', () => {
   const entry = (run: FakeRun, halting: boolean): Parameters<typeof runAttempt>[0] => ({

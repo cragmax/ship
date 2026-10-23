@@ -108,6 +108,37 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
 }
 
 /**
+ * Refuse while any other registered worktree's `node_modules` links into
+ * the batch's: the refresh's `npm ci` empties the link target, a live
+ * slice's dependencies with it. `preflight --attach` runs the same check
+ * on an attached run's target batch, through the main checkout.
+ *
+ * @param dir - Any checkout of the repository, to list the worktrees through.
+ * @param batch - The batch worktree; it need not exist.
+ * @throws Refusal `slices-live` naming each such worktree; StepFailure
+ *   `preconditions` when git cannot list the worktrees.
+ */
+export function assertNoLiveSlices(dir: string, batch: string): void {
+  const modules = `${batch}/node_modules`;
+  const live = listWorktrees(dir, 'preconditions')
+    .filter((w) => !samePath(w.path, batch))
+    .filter((w) => {
+      const target = linkTarget(`${w.path}/node_modules`);
+
+      return target !== null && isInside(target, modules);
+    })
+    .map((w) => w.path);
+
+  if (live.length > 0) {
+    throw new Refusal(
+      'slices-live',
+      'preconditions',
+      `node_modules of ${live.join(', ')} link into ${modules}; tear those slices down first`,
+    );
+  }
+}
+
+/**
  * Fetch, probe, merge; a held merge is settled, refreshed, then committed.
  *
  * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; StepFailure per failed step,
@@ -169,37 +200,6 @@ function settleStoppedMerge(batch: string, rule: VersionRule | null): void {
     applyVersionRule(batch, rule.merged, rule.target, unmerged.includes(LOCKFILE));
   } else if (unmerged.includes(LOCKFILE)) {
     regenerateLockfile(batch, true);
-  }
-}
-
-/**
- * Refuse while any other registered worktree's `node_modules` links into
- * the batch's: the refresh's `npm ci` empties the link target, a live
- * slice's dependencies with it. `preflight --attach` runs the same check
- * on an attached run's target batch, through the main checkout.
- *
- * @param dir - Any checkout of the repository, to list the worktrees through.
- * @param batch - The batch worktree; it need not exist.
- * @throws Refusal `slices-live` naming each such worktree; StepFailure
- *   `preconditions` when git cannot list the worktrees.
- */
-export function assertNoLiveSlices(dir: string, batch: string): void {
-  const modules = `${batch}/node_modules`;
-  const live = listWorktrees(dir, 'preconditions')
-    .filter((w) => !samePath(w.path, batch))
-    .filter((w) => {
-      const target = linkTarget(`${w.path}/node_modules`);
-
-      return target !== null && isInside(target, modules);
-    })
-    .map((w) => w.path);
-
-  if (live.length > 0) {
-    throw new Refusal(
-      'slices-live',
-      'preconditions',
-      `node_modules of ${live.join(', ')} link into ${modules}; tear those slices down first`,
-    );
   }
 }
 
@@ -300,15 +300,6 @@ function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
   );
 }
 
-/** A log file in this call's `freshLogDir` directory, recorded on the envelope's `logs`. */
-function logFile(run: Run, name: string): string {
-  run.logDir ??= freshLogDir('sync-master');
-  const path = `${run.logDir}/${name}`;
-  run.result.logs.push(path);
-
-  return path;
-}
-
 /**
  * Merge, output logged; a clean merge commits unless `stop` holds it (`--no-ff --no-commit`, for
  * the version rule to edit the tree): `true` when it committed, `false` when it stopped with
@@ -326,6 +317,15 @@ function merge(run: Run, stop: boolean): boolean {
   if (refExists(run.batch, 'MERGE_HEAD')) return false;
 
   throw new StepFailure('merge', `git merge ${RUN_UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
+}
+
+/** A log file in this call's `freshLogDir` directory, recorded on the envelope's `logs`. */
+function logFile(run: Run, name: string): string {
+  run.logDir ??= freshLogDir('sync-master');
+  const path = `${run.logDir}/${name}`;
+  run.result.logs.push(path);
+
+  return path;
 }
 
 /**

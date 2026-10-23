@@ -134,6 +134,36 @@ export function settleInOrder(order: SettleOrder): SettlePump {
 const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 
 /**
+ * A run of epic entries: the gate's run set and edges, every issue ready, each entry's answers.
+ *
+ * @param entries - Each epic and its issues, in run-set order.
+ * @param edges - The declared edges.
+ * @returns The answers.
+ */
+export function epicRun(
+  entries: readonly { readonly epic: number; readonly issues: readonly number[] }[],
+  edges: readonly { readonly blocker: number; readonly dependent: number }[] = [],
+): Record<string, unknown> {
+  const issues = entries.flatMap((e) => e.issues);
+
+  return {
+    'runner:run-gate': {
+      exitCode: 0,
+      envelopePath: 'g.json',
+      verdict: 'ok',
+      failures: [],
+      excluded: [],
+      runSet: entries,
+      edges,
+    },
+    issueReadiness: {
+      issues: issues.map((issue) => readyVerdict(issue)),
+    },
+    ...Object.fromEntries(entries.flatMap((e) => Object.entries(entryResponses(e.epic)))),
+  };
+}
+
+/**
  * One epic entry's cut, provision and publish answers: batch
  * `C:/src/ph-runs/epic-<E>/batch`, branch `ship/epic-<E>`, PR number `<E>00`.
  *
@@ -168,35 +198,5 @@ function entryResponses(epic: number): Record<string, unknown> {
       pr: { number: epic * 100, url: `https://x/pull/${String(epic * 100)}` },
       mergeable: null,
     },
-  };
-}
-
-/**
- * A run of epic entries: the gate's run set and edges, every issue ready, each entry's answers.
- *
- * @param entries - Each epic and its issues, in run-set order.
- * @param edges - The declared edges.
- * @returns The answers.
- */
-export function epicRun(
-  entries: readonly { readonly epic: number; readonly issues: readonly number[] }[],
-  edges: readonly { readonly blocker: number; readonly dependent: number }[] = [],
-): Record<string, unknown> {
-  const issues = entries.flatMap((e) => e.issues);
-
-  return {
-    'runner:run-gate': {
-      exitCode: 0,
-      envelopePath: 'g.json',
-      verdict: 'ok',
-      failures: [],
-      excluded: [],
-      runSet: entries,
-      edges,
-    },
-    issueReadiness: {
-      issues: issues.map((issue) => readyVerdict(issue)),
-    },
-    ...Object.fromEntries(entries.flatMap((e) => Object.entries(entryResponses(e.epic)))),
   };
 }

@@ -72,68 +72,6 @@ interface Run {
   readonly cut: string;
 }
 
-/** A repo with a batch worktree (on `ship/r` by default) and a slice worktree cut from its HEAD. */
-function makeRun(base: Record<string, string>, batchBranch = 'ship/r'): Run {
-  const main = makeGitRepo(root, base);
-  const batch = addWorktree(main, `${root}/batch`, batchBranch);
-  const cut = headSha(batch);
-  const slice = addWorktree(main, `${root}/slice`, 'slice/r/1-1', cut);
-
-  return { main, batch, slice, cut };
-}
-
-/** Write the message file and run `land` for `sha` cut at `cut`. */
-function land(batch: string, sha: string, cut: string): ReturnType<typeof runCli<LandResult>> {
-  writeFileSync(`${root}/msg.txt`, MESSAGE);
-
-  return runCli<LandResult>([
-    'land',
-    batch,
-    sha,
-    '--base',
-    cut,
-    '--message-file',
-    `${root}/msg.txt`,
-    '--log',
-    `${root}/commit.log`,
-  ]);
-}
-
-/** The paths a commit changes against its parent, a rename as both endpoints. */
-function commitPaths(dir: string, sha: string): string[] {
-  return mustRun(
-    'git',
-    ['diff-tree', '-r', '--no-commit-id', '--name-only', '--no-renames', sha],
-    dir,
-  )
-    .split(/\r?\n/u)
-    .filter((p) => p !== '')
-    .sort(compareStrings);
-}
-
-/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
-function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
-  return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
-}
-
-/** The raw message of a commit, exactly as stored. */
-function rawMessage(dir: string, sha: string): string {
-  const raw = mustRun('git', ['cat-file', 'commit', sha], dir);
-
-  // execa strips the final newline git's stored message always ends with.
-  return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
-}
-
-/** The Windows budget-kill warning for a child started in `cwd`, hand-written as the oracle. */
-function orphanLine(cwd: string): string {
-  return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
-}
-
-/** The last non-blank line of `text`. */
-function lastLine(text: string): string | undefined {
-  return text.trimEnd().split(/\r?\n/u).at(-1);
-}
-
 describe('land', () => {
   it(
     'turns a one-commit slice into exactly one batch commit with the file message',
@@ -299,6 +237,58 @@ describe('land', () => {
   });
 });
 
+/** The raw message of a commit, exactly as stored. */
+function rawMessage(dir: string, sha: string): string {
+  const raw = mustRun('git', ['cat-file', 'commit', sha], dir);
+
+  // execa strips the final newline git's stored message always ends with.
+  return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
+}
+
+/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
+function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
+  return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
+}
+
+/** The paths a commit changes against its parent, a rename as both endpoints. */
+function commitPaths(dir: string, sha: string): string[] {
+  return mustRun(
+    'git',
+    ['diff-tree', '-r', '--no-commit-id', '--name-only', '--no-renames', sha],
+    dir,
+  )
+    .split(/\r?\n/u)
+    .filter((p) => p !== '')
+    .sort(compareStrings);
+}
+
+/** Write the message file and run `land` for `sha` cut at `cut`. */
+function land(batch: string, sha: string, cut: string): ReturnType<typeof runCli<LandResult>> {
+  writeFileSync(`${root}/msg.txt`, MESSAGE);
+
+  return runCli<LandResult>([
+    'land',
+    batch,
+    sha,
+    '--base',
+    cut,
+    '--message-file',
+    `${root}/msg.txt`,
+    '--log',
+    `${root}/commit.log`,
+  ]);
+}
+
+/** A repo with a batch worktree (on `ship/r` by default) and a slice worktree cut from its HEAD. */
+function makeRun(base: Record<string, string>, batchBranch = 'ship/r'): Run {
+  const main = makeGitRepo(root, base);
+  const batch = addWorktree(main, `${root}/batch`, batchBranch);
+  const cut = headSha(batch);
+  const slice = addWorktree(main, `${root}/slice`, 'slice/r/1-1', cut);
+
+  return { main, batch, slice, cut };
+}
+
 describe('land (in-process)', () => {
   it('gives the commit spawn the commit budget and the log file', TIMEOUT, () => {
     const run = makeRun({ 'base.txt': 'base\n' });
@@ -437,6 +427,16 @@ describe('runCaptured budget kill (in-process)', () => {
     expect(readFileSync(log, 'utf8')).not.toContain(orphanLine(root));
   });
 });
+
+/** The last non-blank line of `text`. */
+function lastLine(text: string): string | undefined {
+  return text.trimEnd().split(/\r?\n/u).at(-1);
+}
+
+/** The Windows budget-kill warning for a child started in `cwd`, hand-written as the oracle. */
+function orphanLine(cwd: string): string {
+  return `warning: the budget kill reached only the direct child, started in ${cwd}; its descendants, and the program itself when that child was a launcher, may still be running`;
+}
 
 describe('usage errors', () => {
   it.each([

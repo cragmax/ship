@@ -109,32 +109,6 @@ interface PlacedToken {
 const isJSDoc = (node: ts.Node): boolean =>
   node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode;
 
-/** CRLF reads as LF, as a template literal reads it, so a CRLF checkout matches its LF blob. */
-function codeTokens(fileName: string, source: string): PlacedToken[] {
-  const lf = source.replaceAll('\r\n', '\n');
-  const sf = ts.createSourceFile(fileName, lf, ts.ScriptTarget.Latest, false);
-  const tokens: PlacedToken[] = [];
-
-  const visit = (node: ts.Node, path: string): void => {
-    if (node.kind >= ts.SyntaxKind.FirstToken && node.kind <= ts.SyntaxKind.LastToken) {
-      const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-      tokens.push({ token: { kind: node.kind, text: node.getText(sf), line }, path });
-
-      return;
-    }
-
-    const children = node.getChildren(sf).filter((child) => !isJSDoc(child));
-
-    for (const [i, child] of children.entries()) {
-      visit(child, `${path}/${String(node.kind)}:${String(i)}`);
-    }
-  };
-
-  visit(sf, '');
-
-  return tokens;
-}
-
 /**
  * Compare two versions of a file token by token, on kind, text and place in
  * the syntax tree — so a line break a comment edit adds or removes, which
@@ -267,25 +241,6 @@ const diffRevs = (base: string, head: Head): string[] => {
     : ['--end-of-options', base];
 };
 
-function changedFiles(top: string, { base, head }: Revisions): FileChange[] {
-  const changes = parseNameStatus(
-    gitPaths(top, ['diff', '--name-status', '-M', ...diffRevs(base, head), '--'], 'diff'),
-  );
-
-  if (head.kind !== 'worktree') return changes;
-  const untracked = gitPaths(top, ['ls-files', '--others', '--exclude-standard'], 'untracked');
-
-  return [...changes, ...untracked.map((path) => ({ basePath: null, headPath: path }))];
-}
-
-function readSide(top: string, side: Head, path: string | null): string {
-  if (path === null) return '';
-  if (side.kind === 'worktree') return readFileSync(join(top, path), 'utf8');
-  const spec = side.kind === 'index' ? `:${path}` : `${side.rev}:${path}`;
-
-  return git(top, ['show', '--end-of-options', spec], 'show');
-}
-
 const renderToken = (t: CodeToken): string => {
   const text = t.kind === ts.SyntaxKind.EndOfFileToken ? '<end of file>' : `\`${t.text}\``;
 
@@ -317,4 +272,49 @@ export function formatDifference(d: FileDifference): string {
  */
 export function formatMojibake(m: Mojibake): string {
   return `mojibake at ${m.path}:${String(m.line)}: \`${m.sequence}\``;
+}
+
+function readSide(top: string, side: Head, path: string | null): string {
+  if (path === null) return '';
+  if (side.kind === 'worktree') return readFileSync(join(top, path), 'utf8');
+  const spec = side.kind === 'index' ? `:${path}` : `${side.rev}:${path}`;
+
+  return git(top, ['show', '--end-of-options', spec], 'show');
+}
+
+function changedFiles(top: string, { base, head }: Revisions): FileChange[] {
+  const changes = parseNameStatus(
+    gitPaths(top, ['diff', '--name-status', '-M', ...diffRevs(base, head), '--'], 'diff'),
+  );
+
+  if (head.kind !== 'worktree') return changes;
+  const untracked = gitPaths(top, ['ls-files', '--others', '--exclude-standard'], 'untracked');
+
+  return [...changes, ...untracked.map((path) => ({ basePath: null, headPath: path }))];
+}
+
+/** CRLF reads as LF, as a template literal reads it, so a CRLF checkout matches its LF blob. */
+function codeTokens(fileName: string, source: string): PlacedToken[] {
+  const lf = source.replaceAll('\r\n', '\n');
+  const sf = ts.createSourceFile(fileName, lf, ts.ScriptTarget.Latest, false);
+  const tokens: PlacedToken[] = [];
+
+  const visit = (node: ts.Node, path: string): void => {
+    if (node.kind >= ts.SyntaxKind.FirstToken && node.kind <= ts.SyntaxKind.LastToken) {
+      const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+      tokens.push({ token: { kind: node.kind, text: node.getText(sf), line }, path });
+
+      return;
+    }
+
+    const children = node.getChildren(sf).filter((child) => !isJSDoc(child));
+
+    for (const [i, child] of children.entries()) {
+      visit(child, `${path}/${String(node.kind)}:${String(i)}`);
+    }
+  };
+
+  visit(sf, '');
+
+  return tokens;
 }

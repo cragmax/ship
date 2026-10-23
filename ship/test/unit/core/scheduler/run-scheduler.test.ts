@@ -12,31 +12,6 @@ import type {
 } from '../../../../src/core/scheduler/run-scheduler.types.js';
 import { stripComments } from '../../../../../server-pool/test/helpers/render-safety.js';
 
-/** Create, then feed each event in turn; returns every transition, the initial one first. */
-function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
-  const transitions = [createScheduler(input)];
-
-  for (const event of events) {
-    const last = transitions[transitions.length - 1];
-    if (last === undefined) throw new Error('unreachable');
-    transitions.push(advance(last.state, event));
-  }
-
-  return transitions;
-}
-
-/** The actions of blocking issue 1 in a one-entry run of epic 900 at `maxSlices: 1`. */
-function blockFirst(
-  issues: readonly number[],
-  edges: SchedulerInput['edges'],
-): readonly SchedulerAction[] | undefined {
-  const blocked = play({ runSet: [{ epic: 900, issues }], edges, maxSlices: 1 }, [
-    { kind: 'blocked', issue: 1, reason: 'x' },
-  ]);
-
-  return blocked[1]?.actions;
-}
-
 describe('advance — action order', () => {
   it('emits response, then skips, then starts, then epic-done', () => {
     // R=10 blocks D=11 in epic 900; X=20 alone in epic 800. The second death
@@ -108,6 +83,31 @@ describe('advance — action order', () => {
     ]);
   });
 });
+
+/** Create, then feed each event in turn; returns every transition, the initial one first. */
+function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
+  const transitions = [createScheduler(input)];
+
+  for (const event of events) {
+    const last = transitions[transitions.length - 1];
+    if (last === undefined) throw new Error('unreachable');
+    transitions.push(advance(last.state, event));
+  }
+
+  return transitions;
+}
+
+/** The actions of blocking issue 1 in a one-entry run of epic 900 at `maxSlices: 1`. */
+function blockFirst(
+  issues: readonly number[],
+  edges: SchedulerInput['edges'],
+): readonly SchedulerAction[] | undefined {
+  const blocked = play({ runSet: [{ epic: 900, issues }], edges, maxSlices: 1 }, [
+    { kind: 'blocked', issue: 1, reason: 'x' },
+  ]);
+
+  return blocked[1]?.actions;
+}
 
 describe('advance — protocol violations', () => {
   const input: SchedulerInput = {

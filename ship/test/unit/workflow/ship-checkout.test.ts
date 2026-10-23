@@ -30,16 +30,6 @@ const AT_MAIN = {
   },
 };
 
-/** Asserts the preflight call has no Checkout line and every later one names {@link MAIN}. */
-function laterLabelsAtMain(run: FakeRun): string[] {
-  const [first, ...later] = checkoutLines(run, (c) => c.agentType === 'runner');
-  expect(first).toEqual({ label: 'runner:preflight', checkout: [] });
-  for (const call of later)
-    expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
-
-  return later.map((c) => c.label);
-}
-
 describe('runShip — every runner after pre-flight runs from the main checkout', () => {
   it('gives every runner call after preflight a Checkout line naming its worktree, the cleanup and the epic end included, and the preflight call none', async () => {
     const run = fakeHooks({ ...AT_MAIN, ...liveRuns({}) });
@@ -110,6 +100,16 @@ describe('runShip — every runner after pre-flight runs from the main checkout'
     );
   });
 });
+
+/** Asserts the preflight call has no Checkout line and every later one names {@link MAIN}. */
+function laterLabelsAtMain(run: FakeRun): string[] {
+  const [first, ...later] = checkoutLines(run, (c) => c.agentType === 'runner');
+  expect(first).toEqual({ label: 'runner:preflight', checkout: [] });
+  for (const call of later)
+    expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
+
+  return later.map((c) => c.label);
+}
 
 describe('runShip — every agent after pre-flight works from the main checkout', () => {
   it('gives every judgment agent’s prompt, pre-flight’s two included, one Checkout line naming preflight’s worktree', async () => {

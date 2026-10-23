@@ -17,15 +17,6 @@ const SYNTAX_CMD =
 const LSP_CMD = '"C:\\nodejs\\node.exe" C:/npm/typescript-language-server/lib/cli.mjs --stdio';
 const TEARDOWN_CMD = 'node --import tsx ship/src/cli/worktree.ts teardown C:/wt';
 
-function proc(
-  pid: number,
-  ppid: number,
-  name: string,
-  commandLine: string | null = null,
-): ProcessEntry {
-  return { pid, ppid, name, commandLine };
-}
-
 /** One session's LSP subtree, as Claude Code spawns it: `cmd.exe → language server → tsservers`. */
 function lspTree(session: number, base: number): ProcessEntry[] {
   return [
@@ -34,6 +25,15 @@ function lspTree(session: number, base: number): ProcessEntry[] {
     proc(base + 2, base + 1, 'node.exe', SEMANTIC_CMD),
     proc(base + 3, base + 1, 'node.exe', SYNTAX_CMD),
   ];
+}
+
+function proc(
+  pid: number,
+  ppid: number,
+  name: string,
+  commandLine: string | null = null,
+): ProcessEntry {
+  return { pid, ppid, name, commandLine };
 }
 
 // The teardown (150) runs under session 100's Bash; session 200 is another Claude Code session.
@@ -55,37 +55,6 @@ const NESTED: ProcessEntry[] = [
   proc(320, 305, 'claude.exe'),
   ...lspTree(320, 330),
 ];
-
-/**
- * Deps over a fake process table; each kill is recorded, failing when `failing` names it. Each
- * `omit`ted seam falls back to production.
- */
-function fakeDeps(
-  table: readonly ProcessEntry[],
-  over: Partial<RestartDeps> = {},
-  failing: readonly number[] = [],
-  omit: readonly (keyof RestartDeps)[] = [],
-): { deps: Partial<RestartDeps>; kills: number[] } {
-  const kills: number[] = [];
-  const all: Partial<RestartDeps> = {
-    disabled: false,
-    platform: 'win32',
-    selfPid: 150,
-    sessionImage: 'claude.exe',
-    listProcesses: () => table,
-    kill: (pid) => {
-      kills.push(pid);
-      if (failing.includes(pid))
-        throw Object.assign(new Error('Access is denied'), { code: 'EPERM' });
-    },
-    ...over,
-  };
-  const deps = Object.fromEntries(
-    Object.entries(all).filter(([key]) => !omit.includes(key as keyof RestartDeps)),
-  ) as Partial<RestartDeps>;
-
-  return { kills, deps };
-}
 
 describe('restartSessionTsserver', () => {
   it.each([
@@ -235,3 +204,34 @@ describe('restartSessionTsserver', () => {
     expect(kills).toEqual([]);
   });
 });
+
+/**
+ * Deps over a fake process table; each kill is recorded, failing when `failing` names it. Each
+ * `omit`ted seam falls back to production.
+ */
+function fakeDeps(
+  table: readonly ProcessEntry[],
+  over: Partial<RestartDeps> = {},
+  failing: readonly number[] = [],
+  omit: readonly (keyof RestartDeps)[] = [],
+): { deps: Partial<RestartDeps>; kills: number[] } {
+  const kills: number[] = [];
+  const all: Partial<RestartDeps> = {
+    disabled: false,
+    platform: 'win32',
+    selfPid: 150,
+    sessionImage: 'claude.exe',
+    listProcesses: () => table,
+    kill: (pid) => {
+      kills.push(pid);
+      if (failing.includes(pid))
+        throw Object.assign(new Error('Access is denied'), { code: 'EPERM' });
+    },
+    ...over,
+  };
+  const deps = Object.fromEntries(
+    Object.entries(all).filter(([key]) => !omit.includes(key as keyof RestartDeps)),
+  ) as Partial<RestartDeps>;
+
+  return { kills, deps };
+}

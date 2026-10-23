@@ -261,32 +261,6 @@ const RUN_GRAPH = {
 } as const;
 
 /**
- * A tool output's schema: the runner's fields — `exitCode` and
- * `envelopePath` required, `stderrTail` not — plus the tool's consumed
- * fields, their `required` kept.
- */
-function toolSchema(consumed: {
-  readonly properties: Readonly<Record<string, unknown>>;
-  readonly required: readonly string[];
-}): JsonSchema {
-  return {
-    type: 'object',
-    properties: {
-      exitCode: INTEGER,
-      envelopePath: STRING,
-      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
-      ...consumed.properties,
-    },
-    required: ['exitCode', 'envelopePath', ...consumed.required],
-  };
-}
-
-/** A worktree tool's schema: {@link toolSchema} over its emitted row. */
-function envelopeSchema(name: WorktreeToolName): JsonSchema {
-  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
-}
-
-/**
  * Each tool's output schema: only what the workflow reads. A worktree tool's row is
  * `schemas.generated.ts`' emission of its pick in `ship/src/schemas/tool-envelopes.ts` —
  * the one source of the consumed fields, their schema and their type, and of which are required —
@@ -389,15 +363,6 @@ export async function runTool<N extends ToolName>(
   return typeof out === 'object' && out !== null ? (out as ToolOutputs[N]) : null;
 }
 
-/**
- * A tool call's command words, as the runner runs them from the main checkout: `node --import tsx`,
- * never `npx tsx`, whose Git Bash shim orphans the tool from the session's process tree
- * (Ship PF-16).
- */
-function toolWords(name: ToolName, argv: readonly string[]): string[] {
-  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
-}
-
 /** The word a {@link toolCommandLine} leaves unquoted, for a person to fill: the PR's number. */
 export const PR_PLACEHOLDER = '<pr>';
 
@@ -433,4 +398,39 @@ export function envelopeProblem(
   const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
 
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
+}
+
+/**
+ * A tool call's command words, as the runner runs them from the main checkout: `node --import tsx`,
+ * never `npx tsx`, whose Git Bash shim orphans the tool from the session's process tree
+ * (Ship PF-16).
+ */
+function toolWords(name: ToolName, argv: readonly string[]): string[] {
+  return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
+}
+
+/** A worktree tool's schema: {@link toolSchema} over its emitted row. */
+function envelopeSchema(name: WorktreeToolName): JsonSchema {
+  return toolSchema(TOOL_ENVELOPE_SCHEMAS[name]);
+}
+
+/**
+ * A tool output's schema: the runner's fields — `exitCode` and
+ * `envelopePath` required, `stderrTail` not — plus the tool's consumed
+ * fields, their `required` kept.
+ */
+function toolSchema(consumed: {
+  readonly properties: Readonly<Record<string, unknown>>;
+  readonly required: readonly string[];
+}): JsonSchema {
+  return {
+    type: 'object',
+    properties: {
+      exitCode: INTEGER,
+      envelopePath: STRING,
+      stderrTail: { type: 'string', description: 'the last 20 lines of stderr; only on exit 2' },
+      ...consumed.properties,
+    },
+    required: ['exitCode', 'envelopePath', ...consumed.required],
+  };
 }

@@ -23,6 +23,14 @@ const nodeOf = (value: unknown): JsonSchema | undefined =>
     ? (value as JsonSchema)
     : undefined;
 
+const optionalOf = (schemas: Readonly<Record<string, JsonSchema>>) =>
+  Object.fromEntries(
+    Object.entries(schemas).map(([name, schema]) => [
+      name,
+      optionalPaths(schema).sort(compareStrings),
+    ]),
+  );
+
 /** Every property path (`a.b`, `a[].b`) no `required` list names, at every object level. */
 function optionalPaths(schema: JsonSchema, prefix = ''): string[] {
   const items = nodeOf(schema['items']);
@@ -38,36 +46,6 @@ function optionalPaths(schema: JsonSchema, prefix = ''): string[] {
     return node === undefined ? own : [...own, ...optionalPaths(node, path)];
   });
 }
-
-/** A schema and every node under its `properties` and `items`. */
-function nodes(schema: JsonSchema): JsonSchema[] {
-  const children = [...Object.values(nodeOf(schema['properties']) ?? {}), schema['items']].flatMap(
-    (child) => {
-      const node = nodeOf(child);
-
-      return node === undefined ? [] : nodes(node);
-    },
-  );
-
-  return [schema, ...children];
-}
-
-/** Each node's keys and `type` names, deduplicated and sorted. */
-function constructs(schemas: readonly JsonSchema[]): { keys: string[]; types: string[] } {
-  const all = schemas.flatMap(nodes);
-  const keys = new Set(all.flatMap((n) => Object.keys(n)));
-  const types = new Set(all.flatMap((n) => [n['type'] ?? []].flat() as string[]));
-
-  return { keys: [...keys].sort(compareStrings), types: [...types].sort(compareStrings) };
-}
-
-const optionalOf = (schemas: Readonly<Record<string, JsonSchema>>) =>
-  Object.fromEntries(
-    Object.entries(schemas).map(([name, schema]) => [
-      name,
-      optionalPaths(schema).sort(compareStrings),
-    ]),
-  );
 
 const WORKTREE_OPTIONAL = ['reason', 'stderrTail'];
 
@@ -244,6 +222,28 @@ describe('the construct set', () => {
   });
 });
 
+/** Each node's keys and `type` names, deduplicated and sorted. */
+function constructs(schemas: readonly JsonSchema[]): { keys: string[]; types: string[] } {
+  const all = schemas.flatMap(nodes);
+  const keys = new Set(all.flatMap((n) => Object.keys(n)));
+  const types = new Set(all.flatMap((n) => [n['type'] ?? []].flat() as string[]));
+
+  return { keys: [...keys].sort(compareStrings), types: [...types].sort(compareStrings) };
+}
+
+/** A schema and every node under its `properties` and `items`. */
+function nodes(schema: JsonSchema): JsonSchema[] {
+  const children = [...Object.values(nodeOf(schema['properties']) ?? {}), schema['items']].flatMap(
+    (child) => {
+      const node = nodeOf(child);
+
+      return node === undefined ? [] : nodes(node);
+    },
+  );
+
+  return [schema, ...children];
+}
+
 describe('checkSchemaModule', () => {
   const committed = readFileSync(resolve(ROOT, SCHEMA_MODULE), 'utf8');
 
@@ -353,22 +353,6 @@ describe('the fake hooks fail a test on a schema violation', () => {
   });
 });
 
-/**
- * What `fn` threw.
- *
- * @param fn - The call.
- * @returns The thrown value; `undefined` when it returned.
- */
-function thrownBy(fn: () => unknown): unknown {
-  try {
-    fn();
-
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-}
-
 describe('the fake hooks outside a running test', () => {
   let byDefault: unknown;
   let offSchema: unknown;
@@ -388,3 +372,19 @@ describe('the fake hooks outside a running test', () => {
     expect(offSchema).toBeUndefined();
   });
 });
+
+/**
+ * What `fn` threw.
+ *
+ * @param fn - The call.
+ * @returns The thrown value; `undefined` when it returned.
+ */
+function thrownBy(fn: () => unknown): unknown {
+  try {
+    fn();
+
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}

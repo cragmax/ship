@@ -119,47 +119,217 @@ export async function drive(input: DriveInput): Promise<EpicReport[]> {
   return input.entries.map((_entry, i) => entryReport(d, i));
 }
 
-/** A fresh loop state, with one context (and commit queue) per entry. */
-function newDrive(input: DriveInput): Drive {
-  const d: Drive = {
-    input,
-    contexts: [],
-    scheduler: null,
-    flights: new Map(),
-    attempts: new Map(),
-    previousPatches: new Map(),
-    timing: new Map(),
-    halts: new Map(),
-    outcomes: new Map(),
-    landed: new Map(),
-    residue: new Map(),
-    ends: new Map(),
-    released: [],
-    repoLock: createCommitQueue(),
-    epicEndEntered: false,
+/**
+ * The schedule line of an issue that never started.
+ *
+ * @returns Its blockers ascending, each with its source per
+ *   {@link scheduleBlocker}, `attempts: 0`, both instants and the size `null`.
+ */
+export function neverStarted(
+  issue: number,
+  graph: RunGraph,
+  overlap: OverlapRecord,
+): ScheduleEntry {
+  const blockers = graph.edges
+    .filter((e) => e.dependent === issue)
+    .map((e) => e.blocker)
+    .sort((a, b) => a - b)
+    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
+
+  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+}
+
+/**
+ * An entry's final report: its end's, or a `halted` one for an entry that never got an end
+ * action, which the scheduler's one-end-per-entry rule rules out.
+ */
+function entryReport(d: Drive, i: number): EpicReport {
+  const end = d.ends.get(i);
+  if (end !== undefined) return end;
+  const entry = d.input.entries[i];
+
+  return {
+    epic: entry?.epic ?? null,
+    branch: entry?.branch ?? '',
+    outcome: 'halted',
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
   };
+}
 
-  input.entries.forEach((entry, i) => {
-    d.contexts.push({
-      ...entry,
-      hooks: input.hooks,
-      queue: createCommitQueue(),
-      isHalting: () => haltOf(d, i) !== 'running',
-      markHalting: () => {
-        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
-      },
+/**
+ * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
+ * overlap edge's with its trigger, and its final attempt's timing; `attempts: 0` and `null`
+ * instants for an issue that never started.
+ */
+function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+
+  return issues.map((issue) => {
+    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
+    const blockers = entry.blockers.map((b): ScheduleBlocker => {
+      const released = d.released.find(
+        (r) => r.blocker === b.issue && r.dependent === issue,
+      )?.trigger;
+
+      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
     });
+
+    return { ...entry, blockers, ...d.timing.get(issue) };
   });
-
-  return d;
 }
 
-function haltOf(d: Drive, i: number): HaltState {
-  return d.halts.get(i) ?? 'running';
+/**
+ * An entry's issue lines, in the entry's order: each issue's recorded outcome, `halted` for one
+ * the halt settled before it started.
+ */
+function issueReports(d: Drive, i: number): IssueReport[] {
+  const issues = d.input.graph.runSet[i]?.issues ?? [];
+
+  return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
 }
 
-function flightKey(note: Note): string {
-  return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
+function apply(d: Drive, t: Transition): void {
+  d.scheduler = t.state;
+  for (const action of t.actions) act(d, action);
+}
+
+function act(d: Drive, action: SchedulerAction): void {
+  switch (action.kind) {
+    case 'start':
+      startAttempt(d, action.issue);
+      break;
+    case 'requeue':
+    case 'retry':
+      d.attempts.set(action.issue, (d.attempts.get(action.issue) ?? 1) + 1);
+      break;
+    case 'skip':
+      d.outcomes.set(action.issue, {
+        issue: action.issue,
+        outcome: 'skipped',
+        cite: 'see',
+        reason: `blocker #${String(action.cause.root)} ${action.cause.trigger}`,
+      });
+      break;
+    case 'release':
+      d.released.push({
+        blocker: action.blocker,
+        dependent: action.dependent,
+        trigger: action.trigger,
+      });
+      break;
+    case 'block':
+      d.outcomes.set(action.issue, {
+        issue: action.issue,
+        outcome: 'blocked',
+        cite: 'see',
+        reason: 'its agent died on the retry too',
+      });
+      break;
+    case 'epic-done':
+      endEpic(d, entryOfEpic(d, action.epic));
+      break;
+    case 'epic-halted':
+      endUnshipped(d, entryOfEpic(d, action.epic), 'halted');
+      break;
+  }
+}
+
+/**
+ * Start the unshipped end of an entry that halted or landed nothing; one that rejects reports
+ * the entry without retro findings.
+ */
+function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed'): void {
+  const entry = d.input.entries[i];
+  if (entry === undefined) return;
+  const input = {
+    hooks: d.input.hooks,
+    entry,
+    issues: issueReports(d, i),
+    schedule: scheduleOf(d, i),
+    residue: d.residue.get(i) ?? [],
+  };
+  const report = unshippedEpicEnd(input, outcome).catch(
+    (): EpicReport => ({
+      epic: entry.epic,
+      branch: entry.branch,
+      outcome,
+      issues: input.issues,
+      schedule: input.schedule,
+      residue: input.residue,
+      retro: null,
+    }),
+  );
+
+  startEnd(d, i, report);
+}
+
+/**
+ * Put an entry's end in flight, entering the `Epic end` phase with the first; `report` must never
+ * reject.
+ */
+function startEnd(d: Drive, i: number, report: Promise<EpicReport>): void {
+  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
+  d.epicEndEntered = true;
+  d.flights.set(
+    `epic:${String(i)}`,
+    report.then((r): Note => ({ kind: 'epic-end', entry: i, report: r })),
+  );
+}
+
+/**
+ * Start an entry's epic end as a flight, or its unshipped end ({@link unshippedEpicEnd}) when
+ * nothing landed. An epic end that rejects reports its entry `stopped` with the throw's message —
+ * it never rejects the drive, so the other entries still report.
+ */
+function endEpic(d: Drive, i: number): void {
+  const landed = d.landed.get(i) ?? [];
+  const entry = d.input.entries[i];
+
+  if (landed.length === 0 || entry === undefined) {
+    endUnshipped(d, i, 'nothing-landed');
+
+    return;
+  }
+
+  const issues = issueReports(d, i);
+  const residue = d.residue.get(i) ?? [];
+  const schedule = scheduleOf(d, i);
+  const report = epicEnd({
+    hooks: d.input.hooks,
+    entry,
+    landed,
+    issues,
+    schedule,
+    residue,
+    launch: d.input.launch,
+    repoLock: d.repoLock,
+    overlap: entryOverlap(d, i),
+  }).catch(
+    (err: unknown): EpicReport => ({
+      epic: entry.epic,
+      branch: entry.branch,
+      outcome: 'stopped',
+      message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+      issues,
+      schedule,
+      residue,
+    }),
+  );
+
+  startEnd(d, i, report);
+}
+
+function startAttempt(d: Drive, issue: number): void {
+  const ctx = d.contexts[entryOfIssue(d, issue)];
+  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
+  const attempt = d.attempts.get(issue) ?? 1;
+  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
+  d.flights.set(
+    `issue:${String(issue)}`,
+    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
+  );
 }
 
 function onNote(d: Drive, note: Note): void {
@@ -196,31 +366,12 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   feed(d, events);
 }
 
-/**
- * Hold the ending's kept patch for the issue's next attempt when a harvest conflict ended it, so
- * the requeued tdd starts from it; any other ending drops the issue's held patch.
- */
-function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void {
-  const patch =
-    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
-      ? (ending.kept?.patch ?? null)
-      : null;
-
-  if (patch === null) d.previousPatches.delete(issue);
-  else d.previousPatches.set(issue, patch);
-}
-
-/** What settling reads of an ending; a `landed` one's primary is `committed`. */
-function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
-  switch (ending.kind) {
-    case 'landed':
-      return {
-        primary: { kind: 'committed', issue },
-        committedAt: ending.committedAt,
-        size: ending.size,
-      };
-    case 'unlanded':
-      return { primary: ending.primary, committedAt: null, size: null };
+/** Feed events to the scheduler in order, running each transition's actions. */
+function feed(d: Drive, events: readonly SchedulerEvent[]): void {
+  for (const event of events) {
+    d.input.hooks.log(`fed ${event.kind} ${eventSubject(event)}`);
+    if (d.scheduler === null) throw new Error('ship: fed an event before the scheduler started');
+    apply(d, advance(d.scheduler, event));
   }
 }
 
@@ -292,226 +443,75 @@ function unlandedOutcome(
   return null;
 }
 
-/** Feed events to the scheduler in order, running each transition's actions. */
-function feed(d: Drive, events: readonly SchedulerEvent[]): void {
-  for (const event of events) {
-    d.input.hooks.log(`fed ${event.kind} ${eventSubject(event)}`);
-    if (d.scheduler === null) throw new Error('ship: fed an event before the scheduler started');
-    apply(d, advance(d.scheduler, event));
+/** What settling reads of an ending; a `landed` one's primary is `committed`. */
+function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
+  switch (ending.kind) {
+    case 'landed':
+      return {
+        primary: { kind: 'committed', issue },
+        committedAt: ending.committedAt,
+        size: ending.size,
+      };
+    case 'unlanded':
+      return { primary: ending.primary, committedAt: null, size: null };
   }
-}
-
-function apply(d: Drive, t: Transition): void {
-  d.scheduler = t.state;
-  for (const action of t.actions) act(d, action);
-}
-
-function act(d: Drive, action: SchedulerAction): void {
-  switch (action.kind) {
-    case 'start':
-      startAttempt(d, action.issue);
-      break;
-    case 'requeue':
-    case 'retry':
-      d.attempts.set(action.issue, (d.attempts.get(action.issue) ?? 1) + 1);
-      break;
-    case 'skip':
-      d.outcomes.set(action.issue, {
-        issue: action.issue,
-        outcome: 'skipped',
-        cite: 'see',
-        reason: `blocker #${String(action.cause.root)} ${action.cause.trigger}`,
-      });
-      break;
-    case 'release':
-      d.released.push({
-        blocker: action.blocker,
-        dependent: action.dependent,
-        trigger: action.trigger,
-      });
-      break;
-    case 'block':
-      d.outcomes.set(action.issue, {
-        issue: action.issue,
-        outcome: 'blocked',
-        cite: 'see',
-        reason: 'its agent died on the retry too',
-      });
-      break;
-    case 'epic-done':
-      endEpic(d, entryOfEpic(d, action.epic));
-      break;
-    case 'epic-halted':
-      endUnshipped(d, entryOfEpic(d, action.epic), 'halted');
-      break;
-  }
-}
-
-function startAttempt(d: Drive, issue: number): void {
-  const ctx = d.contexts[entryOfIssue(d, issue)];
-  if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
-  const attempt = d.attempts.get(issue) ?? 1;
-  d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  d.flights.set(
-    `issue:${String(issue)}`,
-    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
-  );
 }
 
 /**
- * Start an entry's epic end as a flight, or its unshipped end ({@link unshippedEpicEnd}) when
- * nothing landed. An epic end that rejects reports its entry `stopped` with the throw's message —
- * it never rejects the drive, so the other entries still report.
+ * Hold the ending's kept patch for the issue's next attempt when a harvest conflict ended it, so
+ * the requeued tdd starts from it; any other ending drops the issue's held patch.
  */
-function endEpic(d: Drive, i: number): void {
-  const landed = d.landed.get(i) ?? [];
-  const entry = d.input.entries[i];
+function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void {
+  const patch =
+    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
+      ? (ending.kept?.patch ?? null)
+      : null;
 
-  if (landed.length === 0 || entry === undefined) {
-    endUnshipped(d, i, 'nothing-landed');
-
-    return;
-  }
-
-  const issues = issueReports(d, i);
-  const residue = d.residue.get(i) ?? [];
-  const schedule = scheduleOf(d, i);
-  const report = epicEnd({
-    hooks: d.input.hooks,
-    entry,
-    landed,
-    issues,
-    schedule,
-    residue,
-    launch: d.input.launch,
-    repoLock: d.repoLock,
-    overlap: entryOverlap(d, i),
-  }).catch(
-    (err: unknown): EpicReport => ({
-      epic: entry.epic,
-      branch: entry.branch,
-      outcome: 'stopped',
-      message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
-      issues,
-      schedule,
-      residue,
-    }),
-  );
-
-  startEnd(d, i, report);
+  if (patch === null) d.previousPatches.delete(issue);
+  else d.previousPatches.set(issue, patch);
 }
 
-/**
- * Start the unshipped end of an entry that halted or landed nothing; one that rejects reports
- * the entry without retro findings.
- */
-function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed'): void {
-  const entry = d.input.entries[i];
-  if (entry === undefined) return;
-  const input = {
-    hooks: d.input.hooks,
-    entry,
-    issues: issueReports(d, i),
-    schedule: scheduleOf(d, i),
-    residue: d.residue.get(i) ?? [],
+function flightKey(note: Note): string {
+  return note.kind === 'epic-end' ? `epic:${String(note.entry)}` : `issue:${String(note.issue)}`;
+}
+
+function haltOf(d: Drive, i: number): HaltState {
+  return d.halts.get(i) ?? 'running';
+}
+
+/** A fresh loop state, with one context (and commit queue) per entry. */
+function newDrive(input: DriveInput): Drive {
+  const d: Drive = {
+    input,
+    contexts: [],
+    scheduler: null,
+    flights: new Map(),
+    attempts: new Map(),
+    previousPatches: new Map(),
+    timing: new Map(),
+    halts: new Map(),
+    outcomes: new Map(),
+    landed: new Map(),
+    residue: new Map(),
+    ends: new Map(),
+    released: [],
+    repoLock: createCommitQueue(),
+    epicEndEntered: false,
   };
-  const report = unshippedEpicEnd(input, outcome).catch(
-    (): EpicReport => ({
-      epic: entry.epic,
-      branch: entry.branch,
-      outcome,
-      issues: input.issues,
-      schedule: input.schedule,
-      residue: input.residue,
-      retro: null,
-    }),
-  );
 
-  startEnd(d, i, report);
-}
-
-/**
- * Put an entry's end in flight, entering the `Epic end` phase with the first; `report` must never
- * reject.
- */
-function startEnd(d: Drive, i: number, report: Promise<EpicReport>): void {
-  if (!d.epicEndEntered) d.input.hooks.phase(PHASE_TITLES.epicEnd);
-  d.epicEndEntered = true;
-  d.flights.set(
-    `epic:${String(i)}`,
-    report.then((r): Note => ({ kind: 'epic-end', entry: i, report: r })),
-  );
-}
-
-/**
- * An entry's final report: its end's, or a `halted` one for an entry that never got an end
- * action, which the scheduler's one-end-per-entry rule rules out.
- */
-function entryReport(d: Drive, i: number): EpicReport {
-  const end = d.ends.get(i);
-  if (end !== undefined) return end;
-  const entry = d.input.entries[i];
-
-  return {
-    epic: entry?.epic ?? null,
-    branch: entry?.branch ?? '',
-    outcome: 'halted',
-    issues: issueReports(d, i),
-    schedule: scheduleOf(d, i),
-    residue: d.residue.get(i) ?? [],
-  };
-}
-
-/**
- * An entry's issue lines, in the entry's order: each issue's recorded outcome, `halted` for one
- * the halt settled before it started.
- */
-function issueReports(d: Drive, i: number): IssueReport[] {
-  const issues = d.input.graph.runSet[i]?.issues ?? [];
-
-  return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
-}
-
-/**
- * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
- * overlap edge's with its trigger, and its final attempt's timing; `attempts: 0` and `null`
- * instants for an issue that never started.
- */
-function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
-  const issues = d.input.graph.runSet[i]?.issues ?? [];
-
-  return issues.map((issue) => {
-    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
-    const blockers = entry.blockers.map((b): ScheduleBlocker => {
-      const released = d.released.find(
-        (r) => r.blocker === b.issue && r.dependent === issue,
-      )?.trigger;
-
-      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
+  input.entries.forEach((entry, i) => {
+    d.contexts.push({
+      ...entry,
+      hooks: input.hooks,
+      queue: createCommitQueue(),
+      isHalting: () => haltOf(d, i) !== 'running',
+      markHalting: () => {
+        if (haltOf(d, i) === 'running') d.halts.set(i, 'halting');
+      },
     });
-
-    return { ...entry, blockers, ...d.timing.get(issue) };
   });
-}
 
-/**
- * The schedule line of an issue that never started.
- *
- * @returns Its blockers ascending, each with its source per
- *   {@link scheduleBlocker}, `attempts: 0`, both instants and the size `null`.
- */
-export function neverStarted(
-  issue: number,
-  graph: RunGraph,
-  overlap: OverlapRecord,
-): ScheduleEntry {
-  const blockers = graph.edges
-    .filter((e) => e.dependent === issue)
-    .map((e) => e.blocker)
-    .sort((a, b) => a - b)
-    .map((blocker) => scheduleBlocker(blocker, issue, overlap));
-
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+  return d;
 }
 
 /**

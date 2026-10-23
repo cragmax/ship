@@ -21,16 +21,18 @@ import {
 import { describeError } from '../core/describe-error.js';
 import { StepFailure } from './envelope/types.js';
 
-function writeFailures(report: CommentOnlyReport): boolean {
-  if (report.difference !== null) {
-    process.stderr.write(`comment-only: ${formatDifference(report.difference)}\n`);
+function main(): void {
+  const args = process.argv.slice(2);
+  const json = args[0] === '--json';
 
-    return true;
+  try {
+    const report = proveCommentOnly(process.cwd(), parseRevisions(json ? args.slice(1) : args));
+    if (writeReport(report, json)) process.exitCode = 1;
+  } catch (error) {
+    const detail = error instanceof StepFailure && error.detail ? `\n${error.detail}` : '';
+    process.stderr.write(`comment-only: ${describeError(error)}${detail}\n`);
+    process.exitCode = 2;
   }
-
-  for (const m of report.mojibake) process.stderr.write(`comment-only: ${formatMojibake(m)}\n`);
-
-  return report.mojibake.length > 0;
 }
 
 function writeReport(report: CommentOnlyReport, json: boolean): boolean {
@@ -46,18 +48,16 @@ function writeReport(report: CommentOnlyReport, json: boolean): boolean {
   return failed;
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
-  const json = args[0] === '--json';
+function writeFailures(report: CommentOnlyReport): boolean {
+  if (report.difference !== null) {
+    process.stderr.write(`comment-only: ${formatDifference(report.difference)}\n`);
 
-  try {
-    const report = proveCommentOnly(process.cwd(), parseRevisions(json ? args.slice(1) : args));
-    if (writeReport(report, json)) process.exitCode = 1;
-  } catch (error) {
-    const detail = error instanceof StepFailure && error.detail ? `\n${error.detail}` : '';
-    process.stderr.write(`comment-only: ${describeError(error)}${detail}\n`);
-    process.exitCode = 2;
+    return true;
   }
+
+  for (const m of report.mojibake) process.stderr.write(`comment-only: ${formatMojibake(m)}\n`);
+
+  return report.mojibake.length > 0;
 }
 
 main();

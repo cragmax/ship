@@ -53,34 +53,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/**
- * Run `preflight` on the fixture main in-process, with a fake `gh` first on
- * `PATH` and the warm-set probe replaced (every member reachable by default).
- */
-async function preflightWith(options: {
-  readonly authExit?: number;
-  readonly probe?: WarmProbe;
-  readonly attach?: string;
-  readonly slugs?: readonly string[];
-  readonly responses?: Record<string, FakeGhResponse>;
-}): Promise<PreflightResult> {
-  const overlay = prependPath(writeFakeGh(root, options.responses ?? {}, options.authExit ?? 0));
-  const [key = 'PATH', value = ''] = Object.entries(overlay)[0] ?? [];
-  const saved = process.env[key];
-  process.env[key] = value;
-
-  try {
-    return await preflight({
-      main,
-      ...(options.attach === undefined ? {} : { attach: options.attach }),
-      ...(options.slugs === undefined ? {} : { slugs: options.slugs }),
-      probe: options.probe ?? (() => Promise.resolve({ ok: true })),
-    });
-  } finally {
-    process.env[key] = saved;
-  }
-}
-
 describe('preflight (in-process)', () => {
   beforeEach(() => {
     main = makeGitRepo(
@@ -383,6 +355,34 @@ describe('preflight (in-process)', () => {
     });
   });
 });
+
+/**
+ * Run `preflight` on the fixture main in-process, with a fake `gh` first on
+ * `PATH` and the warm-set probe replaced (every member reachable by default).
+ */
+async function preflightWith(options: {
+  readonly authExit?: number;
+  readonly probe?: WarmProbe;
+  readonly attach?: string;
+  readonly slugs?: readonly string[];
+  readonly responses?: Record<string, FakeGhResponse>;
+}): Promise<PreflightResult> {
+  const overlay = prependPath(writeFakeGh(root, options.responses ?? {}, options.authExit ?? 0));
+  const [key = 'PATH', value = ''] = Object.entries(overlay)[0] ?? [];
+  const saved = process.env[key];
+  process.env[key] = value;
+
+  try {
+    return await preflight({
+      main,
+      ...(options.attach === undefined ? {} : { attach: options.attach }),
+      ...(options.slugs === undefined ? {} : { slugs: options.slugs }),
+      probe: options.probe ?? (() => Promise.resolve({ ok: true })),
+    });
+  } finally {
+    process.env[key] = saved;
+  }
+}
 
 describe('preflight', () => {
   it('refuses a linked worktree before checking anything', TIMEOUT, () => {

@@ -58,18 +58,6 @@ interface SliceLayout {
 }
 
 /**
- * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
- * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
- * branch. Not `ship-<slug>`: Windows' 260-character path limit (Ship ADR-0001 decision 3).
- */
-function runHead(slug: string): string {
-  if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
-  const dash = slug.indexOf('-');
-
-  return dash === -1 ? slug : slug.slice(0, dash);
-}
-
-/**
  * The layout of the run with `slug` of the repository whose main checkout
  * is `main`. Two runs with one head share it: `cut-batch` refuses the
  * second (`path-exists`).
@@ -181,4 +169,16 @@ export function runSlugOf(ref: string): string | null {
   const slug = ref.slice(RUN_BRANCH_PREFIX.length);
 
   return slug === '' ? null : slug;
+}
+
+/**
+ * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
+ * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
+ * branch. Not `ship-<slug>`: Windows' 260-character path limit (Ship ADR-0001 decision 3).
+ */
+function runHead(slug: string): string {
+  if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
+  const dash = slug.indexOf('-');
+
+  return dash === -1 ? slug : slug.slice(0, dash);
 }

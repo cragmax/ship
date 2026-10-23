@@ -67,6 +67,26 @@ function killQuietly(pid: number): void {
   }
 }
 
+describe.skipIf(!WIN32)('restartSessionTsserver against real processes', () => {
+  it('kills only the semantic tsserver under the nearest session ancestor', TIMEOUT, async () => {
+    const outside = spawn(process.execPath, [join(dir, 'tsserver.js')], { stdio: 'ignore' });
+    spawned.push(outside);
+    const { session, pids } = await startSession();
+
+    const record = restartSessionTsserver({
+      disabled: false,
+      selfPid: pids.teardown,
+      sessionImage: 'node.exe',
+    });
+
+    expect(record).toEqual({ outcome: 'restarted', session, killed: [pids.semantic] });
+    await expect.poll(() => isPidAlive(pids.semantic)).toBe(false);
+    expect(isPidAlive(pids.syntax)).toBe(true);
+    expect(isPidAlive(pidOf(outside))).toBe(true);
+    expect(isPidAlive(session)).toBe(true);
+  });
+});
+
 function pidOf(child: ChildProcess): number {
   if (child.pid === undefined) throw new Error('the process did not start');
 
@@ -92,23 +112,3 @@ async function startSession(): Promise<{ session: number; pids: SessionPids }> {
 
   throw new Error('the session printed no pids');
 }
-
-describe.skipIf(!WIN32)('restartSessionTsserver against real processes', () => {
-  it('kills only the semantic tsserver under the nearest session ancestor', TIMEOUT, async () => {
-    const outside = spawn(process.execPath, [join(dir, 'tsserver.js')], { stdio: 'ignore' });
-    spawned.push(outside);
-    const { session, pids } = await startSession();
-
-    const record = restartSessionTsserver({
-      disabled: false,
-      selfPid: pids.teardown,
-      sessionImage: 'node.exe',
-    });
-
-    expect(record).toEqual({ outcome: 'restarted', session, killed: [pids.semantic] });
-    await expect.poll(() => isPidAlive(pids.semantic)).toBe(false);
-    expect(isPidAlive(pids.syntax)).toBe(true);
-    expect(isPidAlive(pidOf(outside))).toBe(true);
-    expect(isPidAlive(session)).toBe(true);
-  });
-});

@@ -37,16 +37,6 @@ afterEach(() => {
   removeTempDirs([root]);
 });
 
-/** A repo with a bare origin and a batch worktree on `ship/r` cut from `master`. */
-function makeRun(base: Record<string, string>): FixtureRun {
-  return withOriginAndBatch(root, makeGitRepo(root, base));
-}
-
-/** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
-function show(dir: string, path: string): string {
-  return readFileSync(join(dir, path), 'utf8');
-}
-
 describe('sync-master', () => {
   it('merges a clean divergence as a two-parent merge commit', TIMEOUT, () => {
     const run = makeRun({ 'notes.md': 'one\n', 'docs/guide.md': 'guide\n' });
@@ -198,6 +188,16 @@ describe('sync-master', () => {
     },
   );
 });
+
+/** A checkout's file (the tests pin `porcelain` empty, so it is `HEAD`'s). */
+function show(dir: string, path: string): string {
+  return readFileSync(join(dir, path), 'utf8');
+}
+
+/** A repo with a bare origin and a batch worktree on `ship/r` cut from `master`. */
+function makeRun(base: Record<string, string>): FixtureRun {
+  return withOriginAndBatch(root, makeGitRepo(root, base));
+}
 
 describe('sync-master doc indexes', () => {
   it('refuses a glossary conflict as code, merging nothing', TIMEOUT, () => {

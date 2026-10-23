@@ -106,41 +106,6 @@ export function publishableBranch(batch: string, selfPath: string): string {
 }
 
 /**
- * Refuse a branch with an open PR.
- *
- * @throws StepFailure `pr-state` when `gh` fails or answers unreadably (never read as "no PR");
- *   Refusal `pr-exists` naming the open PR.
- */
-function assertNoOpenPr(batch: string, branch: string): void {
-  const { info, error } = lookupPr(batch, branch);
-  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
-
-  if (info.state === 'open') {
-    throw new Refusal(
-      'pr-exists',
-      'pr-state',
-      `${branch} already has open PR #${String(info.number)}`,
-    );
-  }
-}
-
-/**
- * Refuse, before the push, a PR body `gh pr create` would fail on after it.
- *
- * @throws StepFailure `body-too-long` naming the file and its length.
- */
-function assertBodyWithinLimit(bodyFile: string): void {
-  const length = readFileSync(bodyFile, 'utf8').length;
-
-  if (length > GH_BODY_LIMIT) {
-    throw new StepFailure(
-      'body-too-long',
-      `body file ${bodyFile} is ${String(length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit`,
-    );
-  }
-}
-
-/**
  * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002).
  * Never forced: a push `origin` would have to lose commits for fails, and is reported — never
  * retried with force. `publish` and `publish --push-only` both push through here.
@@ -165,6 +130,41 @@ export function pushBranch(batch: string, branch: string, logFile: string): void
       'push',
       `git push -u origin ${ref}:${ref} exited ${String(r.exitCode)}; output in ${logFile}`,
       r.tail,
+    );
+  }
+}
+
+/**
+ * Refuse, before the push, a PR body `gh pr create` would fail on after it.
+ *
+ * @throws StepFailure `body-too-long` naming the file and its length.
+ */
+function assertBodyWithinLimit(bodyFile: string): void {
+  const length = readFileSync(bodyFile, 'utf8').length;
+
+  if (length > GH_BODY_LIMIT) {
+    throw new StepFailure(
+      'body-too-long',
+      `body file ${bodyFile} is ${String(length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit`,
+    );
+  }
+}
+
+/**
+ * Refuse a branch with an open PR.
+ *
+ * @throws StepFailure `pr-state` when `gh` fails or answers unreadably (never read as "no PR");
+ *   Refusal `pr-exists` naming the open PR.
+ */
+function assertNoOpenPr(batch: string, branch: string): void {
+  const { info, error } = lookupPr(batch, branch);
+  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
+
+  if (info.state === 'open') {
+    throw new Refusal(
+      'pr-exists',
+      'pr-state',
+      `${branch} already has open PR #${String(info.number)}`,
     );
   }
 }

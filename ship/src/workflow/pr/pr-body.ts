@@ -188,22 +188,6 @@ export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
   readonly reportComment: string | null;
 }
 
-/**
- * A text with every closing keyword defused: each `<keyword> <ref>` becomes
- * `<keyword> (see <ref>)`, but for the bare `#N` form of the `closing` issues (none by default).
- */
-function neutralText(text: string, closing: ReadonlySet<number> = new Set()): string {
-  return CLOSING_REFS.reduce(
-    (out, pattern) =>
-      out.replace(pattern, (match: string, word: string, gap: string, ref: string) =>
-        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
-          ? match
-          : `${word}${gap}(see ${ref})`,
-      ),
-    text,
-  );
-}
-
 /** What a blocked issue's comment says about its run. */
 interface BlockedCommentInput {
   /** The issue. */
@@ -248,27 +232,6 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
   ].join('\n');
 }
 
-/** The blocked comment's pointer: the kept paths, or the report dir when nothing was kept. */
-function whereKept(input: BlockedCommentInput): string {
-  const { patch = null, report = null } = input.kept ?? {};
-  const parts = [
-    ...(patch === null ? [] : [`patch \`${patch}\``]),
-    ...(report === null ? [] : [`tdd report \`${report}\``]),
-  ];
-
-  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
-}
-
-/**
- * A commit's first line.
- *
- * @param commit - The tdd's proposal.
- * @returns `<type>(<scope>): <subject>`, neutralised whole.
- */
-function subjectLine(commit: CommitSpec): string {
-  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
-}
-
 /**
  * A landed issue's commit message, newline-terminated: the subject line, a blank line, `fixes #N`
  * or `see #N` per its tdd, a blank line, then {@link CO_AUTHOR_TRAILER}.
@@ -283,10 +246,6 @@ export function commitMessage(issue: number, tdd: Pick<TddOutput, 'commit' | 'cl
  */
 export function commitMessageTemplate(issue: number): string {
   return issueMessage('<type>(<scope>): <subject>', `<fixes|see> #${String(issue)}`);
-}
-
-function issueMessage(subject: string, cite: string): string {
-  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
 }
 
 /**
@@ -384,21 +343,6 @@ export function fitPrBody(input: PrBodyInput): FittedPrBody {
   };
 }
 
-function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string {
-  const body = [
-    ...section('Epic review', epicReviewLines(input.epicReview)),
-    ...section('Summary', summaryLines(input.writer)),
-    ...section('Evidence', evidenceList(input.landed)),
-    ...section('Merge Danger', mergeDangerLines(input.writer)),
-    ...section('Tests at push', testsAtPushLines(input.pushed)),
-    ...section('Issues', issueListLines(input)),
-    ...recordedSection(input.landed, 2),
-    ...reportBlock(input, moved),
-  ].join('\n');
-
-  return neutralText(body, closingIssues(input.landed));
-}
-
 /**
  * An attached run's section of the open PR's body, appended after the body already there:
  * markdown, neutralised whole but for this run's landed `fixes` issues. `## Attached run <R>`, a
@@ -449,6 +393,62 @@ export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportCo
   return neutralText(text);
 }
 
+function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string {
+  const body = [
+    ...section('Epic review', epicReviewLines(input.epicReview)),
+    ...section('Summary', summaryLines(input.writer)),
+    ...section('Evidence', evidenceList(input.landed)),
+    ...section('Merge Danger', mergeDangerLines(input.writer)),
+    ...section('Tests at push', testsAtPushLines(input.pushed)),
+    ...section('Issues', issueListLines(input)),
+    ...recordedSection(input.landed, 2),
+    ...reportBlock(input, moved),
+  ].join('\n');
+
+  return neutralText(body, closingIssues(input.landed));
+}
+
+function issueMessage(subject: string, cite: string): string {
+  return [subject, '', cite, '', CO_AUTHOR_TRAILER, ''].join('\n');
+}
+
+/**
+ * A commit's first line.
+ *
+ * @param commit - The tdd's proposal.
+ * @returns `<type>(<scope>): <subject>`, neutralised whole.
+ */
+function subjectLine(commit: CommitSpec): string {
+  return neutralText(`${commit.type}(${commit.scope}): ${commit.subject}`);
+}
+
+/** The blocked comment's pointer: the kept paths, or the report dir when nothing was kept. */
+function whereKept(input: BlockedCommentInput): string {
+  const { patch = null, report = null } = input.kept ?? {};
+  const parts = [
+    ...(patch === null ? [] : [`patch \`${patch}\``]),
+    ...(report === null ? [] : [`tdd report \`${report}\``]),
+  ];
+
+  return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
+}
+
+/**
+ * A text with every closing keyword defused: each `<keyword> <ref>` becomes
+ * `<keyword> (see <ref>)`, but for the bare `#N` form of the `closing` issues (none by default).
+ */
+function neutralText(text: string, closing: ReadonlySet<number> = new Set()): string {
+  return CLOSING_REFS.reduce(
+    (out, pattern) =>
+      out.replace(pattern, (match: string, word: string, gap: string, ref: string) =>
+        ref.startsWith('#') && closing.has(Number(ref.slice(1)))
+          ? match
+          : `${word}${gap}(see ${ref})`,
+      ),
+    text,
+  );
+}
+
 /** The Evidence section's lines: one bullet per landed issue, in landing order. */
 function evidenceList(landed: readonly LandedIssue[]): string[] {
   return landed.flatMap((l) => evidenceBullet(l.issue, l.tdd.evidence));
@@ -488,18 +488,6 @@ function testsAtPushLines(pushed: PushedChanges): string[] {
 }
 
 /**
- * A landed issue's recorded values in the tdd's order, each per {@link oneLine}, blanks dropped,
- * as a {@link codeSpan} so its markdown and mentions render inert; its closing keywords are left
- * to the body's {@link neutralText}.
- */
-function recordedItems(landed: LandedIssue): string[] {
-  return landed.tdd.recorded
-    .map(oneLine)
-    .filter((entry) => entry !== '')
-    .map(codeSpan);
-}
-
-/**
  * Each landed issue's {@link recordedItems}, nested under its `- #N` line, in a `Recorded`
  * section at `depth`; an issue with none is left out, and no lines at all when no issue has any.
  */
@@ -513,6 +501,18 @@ function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[]
   });
 
   return lines.length === 0 ? [] : section('Recorded', lines, depth);
+}
+
+/**
+ * A landed issue's recorded values in the tdd's order, each per {@link oneLine}, blanks dropped,
+ * as a {@link codeSpan} so its markdown and mentions render inert; its closing keywords are left
+ * to the body's {@link neutralText}.
+ */
+function recordedItems(landed: LandedIssue): string[] {
+  return landed.tdd.recorded
+    .map(oneLine)
+    .filter((entry) => entry !== '')
+    .map(codeSpan);
 }
 
 /** The issues a text may close: each landed issue whose tdd says `fixes`. */

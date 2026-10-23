@@ -34,6 +34,40 @@ export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
 }
 
 /**
+ * A text as an inline code span no backtick in it can close.
+ *
+ * @param text - The text, verbatim.
+ * @returns The text between single backticks when it holds none. Else
+ *   between runs one longer than its longest backtick run, padded one space
+ *   each side (CommonMark strips one; a backtick-edged text needs the pad).
+ */
+export function codeSpan(text: string): string {
+  const longest = longestBacktickRun(text);
+  if (longest === 0) return `\`${text}\``;
+  const delimiter = '`'.repeat(longest + 1);
+
+  return `${delimiter} ${text} ${delimiter}`;
+}
+
+/**
+ * A text on one line.
+ *
+ * @returns Its LF- or CRLF-separated lines, each trimmed, the empty ones
+ *   dropped, joined with one space.
+ */
+export function oneLine(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(' ');
+}
+
+function longestBacktickRun(text: string): number {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+}
+
+/**
  * A tracer's bullet; the one line `- **#N** evidence incomplete` instead when the test is blank,
  * or the red or the green is empty per {@link oneLine}.
  */
@@ -71,38 +105,4 @@ function codeBlock(pseudocode: string): string[] {
 /** The fence no backtick run in the pseudocode can close: one longer, at least three. */
 function codeFence(pseudocode: string): string {
   return '`'.repeat(Math.max(3, longestBacktickRun(pseudocode) + 1));
-}
-
-/**
- * A text as an inline code span no backtick in it can close.
- *
- * @param text - The text, verbatim.
- * @returns The text between single backticks when it holds none. Else
- *   between runs one longer than its longest backtick run, padded one space
- *   each side (CommonMark strips one; a backtick-edged text needs the pad).
- */
-export function codeSpan(text: string): string {
-  const longest = longestBacktickRun(text);
-  if (longest === 0) return `\`${text}\``;
-  const delimiter = '`'.repeat(longest + 1);
-
-  return `${delimiter} ${text} ${delimiter}`;
-}
-
-function longestBacktickRun(text: string): number {
-  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
-}
-
-/**
- * A text on one line.
- *
- * @returns Its LF- or CRLF-separated lines, each trimmed, the empty ones
- *   dropped, joined with one space.
- */
-export function oneLine(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .join(' ');
 }

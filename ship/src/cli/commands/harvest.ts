@@ -150,54 +150,84 @@ export function assertBatchClean(batch: string): void {
 }
 
 /**
- * The in-progress refs present in the batch.
+ * Reset the batch to `HEAD` after a failed pick and verify it clean (the
+ * header's rationale for `--hard`). Sets `rolledBack` only once verified.
  *
- * @returns The present subset of {@link IN_PROGRESS_REFS}.
+ * @param batch - The batch worktree, verified by {@link assertLinkedWorktree}
+ *   and {@link assertBatchClean} before anything was staged in it — the
+ *   precondition of the approved `--hard`; never call it otherwise. The
+ *   linked-root half is re-checked before the reset ({@link assertResettable}).
+ * @param result - Envelope; on a failed or unclean rollback its status
+ *   becomes `failed` and `errors` gains a `rollback` entry.
  */
-function inProgressRefs(batch: string): string[] {
-  return IN_PROGRESS_REFS.filter((ref) => refExists(batch, ref));
+export function rollback(batch: string, result: ResultBase & { rolledBack: boolean }): void {
+  try {
+    assertResettable(batch);
+    git(batch, ['reset', '-q', '--hard', 'HEAD'], 'rollback');
+    assertRolledBackClean(batch);
+    result.rolledBack = true;
+  } catch (err) {
+    recordFailure(result, err);
+  }
 }
 
 /**
- * Resolve the slice commit to a full sha, requiring one parent.
+ * What keeps the batch from being clean: its status entries, then the
+ * in-progress refs present.
  *
- * @throws StepFailure `preconditions` unless it resolves to a commit with exactly one parent.
+ * @returns The residue; empty when the batch is clean.
+ * @throws StepFailure for `step` when git cannot report the status.
  */
-function resolveSlice(batch: string, sha: string): string {
-  const full = resolveCommit(batch, sha, 'preconditions');
-  const parents =
-    git(batch, ['rev-list', '--parents', '-n', '1', full], 'preconditions').split(' ').length - 1;
+export function batchResidue(batch: string, step: string): string[] {
+  return [...statusEntries(batch, step), ...inProgressRefs(batch)];
+}
 
-  if (parents !== 1) {
+/**
+ * Re-check at the reset that its target is a linked worktree root: the `--hard` approval never
+ * covers the main worktree.
+ *
+ * @throws StepFailure `rollback` when it is not a worktree root, or is the main worktree.
+ */
+function assertResettable(batch: string): void {
+  if (samePath(requireWorktreeRoot(batch, 'rollback').main, batch)) {
+    throw new StepFailure('rollback', `refusing git reset --hard in the main worktree ${batch}`);
+  }
+}
+
+/**
+ * Require the staged set to equal `files`: catches an empty pick and a silently dropped path.
+ *
+ * @throws StepFailure `staged-check` naming the differences — not a conflict: a requeue repeats it.
+ */
+function assertStagedEquals(batch: string, files: readonly string[]): void {
+  const diff = compareSets(files, stagedPaths(batch, 'staged-check'));
+
+  if (diff.missing.length > 0 || diff.unexpected.length > 0) {
     throw new StepFailure(
-      'preconditions',
-      `slice commit ${full} has ${String(parents)} parents; harvest takes a single-parent commit`,
+      'staged-check',
+      `staged set differs from the slice — ${formatDifference(diff)}`,
     );
   }
-
-  return full;
 }
 
 /**
- * The paths the slice commit changes against its parent, a rename as both endpoints, sorted by
- * code unit.
+ * Require the tree to match the index.
  *
- * @throws StepFailure `preconditions` when the commit changes nothing.
+ * @throws Conflict `applied-check` naming every unstaged or untracked path.
  */
-function sliceFiles(batch: string, sha: string): string[] {
-  const files = sortedSet(
-    gitPaths(
-      batch,
-      ['diff-tree', '-r', '--no-commit-id', '--name-only', '--no-renames', sha],
-      'preconditions',
-    ),
-  );
+function assertAppliedCleanly(batch: string): void {
+  const stray = sortedSet([
+    ...gitPaths(batch, ['diff', '--name-only'], 'applied-check'),
+    ...gitPaths(batch, ['ls-files', '--others', '--exclude-standard'], 'applied-check'),
+  ]);
 
-  if (files.length === 0) {
-    throw new StepFailure('preconditions', `slice commit ${sha} changes nothing`);
+  if (stray.length > 0) {
+    throw new Conflict(
+      'applied-check',
+      `the pick left the worktree differing from the index: ${stray.join(', ')}`,
+      stray,
+    );
   }
-
-  return files;
 }
 
 /**
@@ -228,84 +258,54 @@ function cherryPick(batch: string, sha: string): void {
 }
 
 /**
- * Require the tree to match the index.
+ * The paths the slice commit changes against its parent, a rename as both endpoints, sorted by
+ * code unit.
  *
- * @throws Conflict `applied-check` naming every unstaged or untracked path.
+ * @throws StepFailure `preconditions` when the commit changes nothing.
  */
-function assertAppliedCleanly(batch: string): void {
-  const stray = sortedSet([
-    ...gitPaths(batch, ['diff', '--name-only'], 'applied-check'),
-    ...gitPaths(batch, ['ls-files', '--others', '--exclude-standard'], 'applied-check'),
-  ]);
+function sliceFiles(batch: string, sha: string): string[] {
+  const files = sortedSet(
+    gitPaths(
+      batch,
+      ['diff-tree', '-r', '--no-commit-id', '--name-only', '--no-renames', sha],
+      'preconditions',
+    ),
+  );
 
-  if (stray.length > 0) {
-    throw new Conflict(
-      'applied-check',
-      `the pick left the worktree differing from the index: ${stray.join(', ')}`,
-      stray,
-    );
+  if (files.length === 0) {
+    throw new StepFailure('preconditions', `slice commit ${sha} changes nothing`);
   }
+
+  return files;
 }
 
 /**
- * Require the staged set to equal `files`: catches an empty pick and a silently dropped path.
+ * Resolve the slice commit to a full sha, requiring one parent.
  *
- * @throws StepFailure `staged-check` naming the differences — not a conflict: a requeue repeats it.
+ * @throws StepFailure `preconditions` unless it resolves to a commit with exactly one parent.
  */
-function assertStagedEquals(batch: string, files: readonly string[]): void {
-  const diff = compareSets(files, stagedPaths(batch, 'staged-check'));
+function resolveSlice(batch: string, sha: string): string {
+  const full = resolveCommit(batch, sha, 'preconditions');
+  const parents =
+    git(batch, ['rev-list', '--parents', '-n', '1', full], 'preconditions').split(' ').length - 1;
 
-  if (diff.missing.length > 0 || diff.unexpected.length > 0) {
+  if (parents !== 1) {
     throw new StepFailure(
-      'staged-check',
-      `staged set differs from the slice — ${formatDifference(diff)}`,
+      'preconditions',
+      `slice commit ${full} has ${String(parents)} parents; harvest takes a single-parent commit`,
     );
   }
+
+  return full;
 }
 
 /**
- * Reset the batch to `HEAD` after a failed pick and verify it clean (the
- * header's rationale for `--hard`). Sets `rolledBack` only once verified.
+ * The in-progress refs present in the batch.
  *
- * @param batch - The batch worktree, verified by {@link assertLinkedWorktree}
- *   and {@link assertBatchClean} before anything was staged in it — the
- *   precondition of the approved `--hard`; never call it otherwise. The
- *   linked-root half is re-checked before the reset ({@link assertResettable}).
- * @param result - Envelope; on a failed or unclean rollback its status
- *   becomes `failed` and `errors` gains a `rollback` entry.
+ * @returns The present subset of {@link IN_PROGRESS_REFS}.
  */
-export function rollback(batch: string, result: ResultBase & { rolledBack: boolean }): void {
-  try {
-    assertResettable(batch);
-    git(batch, ['reset', '-q', '--hard', 'HEAD'], 'rollback');
-    assertRolledBackClean(batch);
-    result.rolledBack = true;
-  } catch (err) {
-    recordFailure(result, err);
-  }
-}
-
-/**
- * Re-check at the reset that its target is a linked worktree root: the `--hard` approval never
- * covers the main worktree.
- *
- * @throws StepFailure `rollback` when it is not a worktree root, or is the main worktree.
- */
-function assertResettable(batch: string): void {
-  if (samePath(requireWorktreeRoot(batch, 'rollback').main, batch)) {
-    throw new StepFailure('rollback', `refusing git reset --hard in the main worktree ${batch}`);
-  }
-}
-
-/**
- * What keeps the batch from being clean: its status entries, then the
- * in-progress refs present.
- *
- * @returns The residue; empty when the batch is clean.
- * @throws StepFailure for `step` when git cannot report the status.
- */
-export function batchResidue(batch: string, step: string): string[] {
-  return [...statusEntries(batch, step), ...inProgressRefs(batch)];
+function inProgressRefs(batch: string): string[] {
+  return IN_PROGRESS_REFS.filter((ref) => refExists(batch, ref));
 }
 
 /**

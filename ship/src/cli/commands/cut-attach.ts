@@ -110,28 +110,61 @@ export function attachBatch(input: AttachInput): CutBatchResult {
 }
 
 /**
- * The newest {@link BATCH_REGISTRY_FILE} by modification time among the run's report dir and its
- * attached runs' folders; `null` when no provisioning left one.
+ * The slug of the branch named.
  *
- * @throws A filesystem error when the report dir cannot be read.
+ * @param branch - Short branch name.
+ * @throws Refusal `not-run-batch` unless it is a `ship/` run branch.
  */
-function lastRegistry(layout: RunLayout): string | null {
-  const dirs = [
-    layout.reports,
-    ...readdirSync(layout.reports)
-      .filter(isAttachedRunReports)
-      .map((name) => `${layout.reports}/${name}`),
-  ];
-  let newest: { readonly path: string; readonly mtimeMs: number } | null = null;
+export function attachSlug(branch: string): string {
+  const slug = runSlugOf(`refs/heads/${branch}`);
 
-  for (const dir of dirs) {
-    const path = `${dir}/${BATCH_REGISTRY_FILE}`;
-    if (!existsSync(path)) continue;
-    const { mtimeMs } = statSync(path);
-    if (newest === null || mtimeMs > newest.mtimeMs) newest = { path, mtimeMs };
+  if (slug === null) {
+    throw new Refusal('not-run-batch', 'preconditions', `${branch} is not a ship/ run branch`);
   }
 
-  return newest?.path ?? null;
+  return slug;
+}
+
+/**
+ * Refuse a branch holding commits of its own `origin` lacks — a stopped
+ * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
+ * unpushed merge alone passes.
+ *
+ * @param branch - Short branch name.
+ * @throws Refusal `unpublished-commits` naming the count; StepFailure
+ *   `unpublished` when git fails.
+ */
+export function assertPublished(main: string, branch: string): void {
+  const n = unpublishedCommits(main, branch);
+  if (n === 0) return;
+
+  throw new Refusal(
+    'unpublished-commits',
+    'preconditions',
+    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)`,
+  );
+}
+
+/**
+ * How many first-parent, non-merge commits of the branch no `origin` remote-tracking ref holds (a
+ * merge and its second parent's `master` commits never count); `0` without a local branch.
+ *
+ * @throws StepFailure `unpublished` when git fails.
+ */
+function unpublishedCommits(main: string, branch: string): number {
+  const ref = `refs/heads/${branch}`;
+  if (!refExists(main, ref)) return 0;
+  const args = [
+    'rev-list',
+    '--count',
+    '--first-parent',
+    '--no-merges',
+    ref,
+    '--not',
+    '--remotes=origin',
+  ];
+
+  return Number(git(main, args, 'unpublished'));
 }
 
 /**
@@ -161,61 +194,28 @@ function allocateRun(
 }
 
 /**
- * The slug of the branch named.
+ * The newest {@link BATCH_REGISTRY_FILE} by modification time among the run's report dir and its
+ * attached runs' folders; `null` when no provisioning left one.
  *
- * @param branch - Short branch name.
- * @throws Refusal `not-run-batch` unless it is a `ship/` run branch.
+ * @throws A filesystem error when the report dir cannot be read.
  */
-export function attachSlug(branch: string): string {
-  const slug = runSlugOf(`refs/heads/${branch}`);
+function lastRegistry(layout: RunLayout): string | null {
+  const dirs = [
+    layout.reports,
+    ...readdirSync(layout.reports)
+      .filter(isAttachedRunReports)
+      .map((name) => `${layout.reports}/${name}`),
+  ];
+  let newest: { readonly path: string; readonly mtimeMs: number } | null = null;
 
-  if (slug === null) {
-    throw new Refusal('not-run-batch', 'preconditions', `${branch} is not a ship/ run branch`);
+  for (const dir of dirs) {
+    const path = `${dir}/${BATCH_REGISTRY_FILE}`;
+    if (!existsSync(path)) continue;
+    const { mtimeMs } = statSync(path);
+    if (newest === null || mtimeMs > newest.mtimeMs) newest = { path, mtimeMs };
   }
 
-  return slug;
-}
-
-/**
- * How many first-parent, non-merge commits of the branch no `origin` remote-tracking ref holds (a
- * merge and its second parent's `master` commits never count); `0` without a local branch.
- *
- * @throws StepFailure `unpublished` when git fails.
- */
-function unpublishedCommits(main: string, branch: string): number {
-  const ref = `refs/heads/${branch}`;
-  if (!refExists(main, ref)) return 0;
-  const args = [
-    'rev-list',
-    '--count',
-    '--first-parent',
-    '--no-merges',
-    ref,
-    '--not',
-    '--remotes=origin',
-  ];
-
-  return Number(git(main, args, 'unpublished'));
-}
-
-/**
- * Refuse a branch holding commits of its own `origin` lacks — a stopped
- * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
- * unpushed merge alone passes.
- *
- * @param branch - Short branch name.
- * @throws Refusal `unpublished-commits` naming the count; StepFailure
- *   `unpublished` when git fails.
- */
-export function assertPublished(main: string, branch: string): void {
-  const n = unpublishedCommits(main, branch);
-  if (n === 0) return;
-
-  throw new Refusal(
-    'unpublished-commits',
-    'preconditions',
-    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)`,
-  );
+  return newest?.path ?? null;
 }
 
 /**

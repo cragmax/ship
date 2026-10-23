@@ -47,20 +47,6 @@ export function isRealDir(path: string): boolean {
   return stat !== undefined && stat.isDirectory() && !stat.isSymbolicLink();
 }
 
-/** Collect the links under `dir` into `out`, descending into real directories only. */
-function collectLinks(dir: string, out: LinkRecord[]): void {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    const stat = lstatSync(path);
-
-    if (stat.isSymbolicLink()) {
-      out.push({ path: toPosix(path), target: linkTarget(path) ?? '' });
-    } else if (stat.isDirectory()) {
-      collectLinks(path, out);
-    }
-  }
-}
-
 /**
  * Find every link under `root` without following any of them.
  *
@@ -71,23 +57,6 @@ export function findLinks(root: string): LinkRecord[] {
   collectLinks(root, out);
 
   return out;
-}
-
-/**
- * Count the entries at every depth beneath real directory `dir`, a link as one entry, never
- * descended. `skipDir` excludes a real direct subdirectory of `dir`, subtree included.
- */
-function countEntries(dir: string, skipDir: (name: string) => boolean = () => false): number {
-  let count = 0;
-
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    const real = isRealDir(path);
-    if (real && skipDir(name)) continue;
-    count += 1 + (real ? countEntries(path) : 0);
-  }
-
-  return count;
 }
 
 /**
@@ -108,4 +77,35 @@ export function countSource(dir: string): number | null {
 /** Remove a link itself; its target is never touched. */
 export function unlinkLink(path: string): void {
   unlinkSync(path);
+}
+
+/**
+ * Count the entries at every depth beneath real directory `dir`, a link as one entry, never
+ * descended. `skipDir` excludes a real direct subdirectory of `dir`, subtree included.
+ */
+function countEntries(dir: string, skipDir: (name: string) => boolean = () => false): number {
+  let count = 0;
+
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const real = isRealDir(path);
+    if (real && skipDir(name)) continue;
+    count += 1 + (real ? countEntries(path) : 0);
+  }
+
+  return count;
+}
+
+/** Collect the links under `dir` into `out`, descending into real directories only. */
+function collectLinks(dir: string, out: LinkRecord[]): void {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const stat = lstatSync(path);
+
+    if (stat.isSymbolicLink()) {
+      out.push({ path: toPosix(path), target: linkTarget(path) ?? '' });
+    } else if (stat.isDirectory()) {
+      collectLinks(path, out);
+    }
+  }
 }

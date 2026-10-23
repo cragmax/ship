@@ -22,61 +22,6 @@ const TABLE_FOR_FIELDS: Readonly<Record<string, keyof GhFixtures>> = {
   'number,state': 'states',
 };
 
-/** Routes each call by the `--json` field set it asks for, then by issue number. */
-function fakeGh(fixtures: GhFixtures): { gh: GhJson; calls: string[][] } {
-  const calls: string[][] = [];
-
-  const gh: GhJson = (args) => {
-    calls.push([...args]);
-    const table = TABLE_FOR_FIELDS[args[4] ?? ''];
-    const answer = table === undefined ? undefined : fixtures[table]?.[Number(args[2])];
-
-    if (answer === undefined) {
-      return Promise.reject(new Error(`fakeGh: no fixture for ${args.join(' ')}`));
-    }
-
-    return Promise.resolve(answer);
-  };
-
-  return { gh, calls };
-}
-
-function node(number: number, state: 'OPEN' | 'CLOSED'): unknown {
-  return {
-    id: `I_${String(number)}`,
-    number,
-    state,
-    title: `issue ${String(number)}`,
-    url: `https://github.com/o/r/issues/${String(number)}`,
-  };
-}
-
-function facts(
-  number: number,
-  opts: {
-    state?: 'OPEN' | 'CLOSED';
-    labels?: readonly string[];
-    body?: string;
-    native?: readonly unknown[];
-    nativeTotal?: number;
-  } = {},
-): unknown {
-  const native = opts.native ?? [];
-
-  return {
-    number,
-    state: opts.state ?? 'OPEN',
-    labels: (opts.labels ?? ['ready-for-agent']).map((name) => ({
-      id: `L_${name}`,
-      name,
-      description: '',
-      color: 'ededed',
-    })),
-    body: opts.body ?? '',
-    blockedBy: { nodes: native, totalCount: opts.nativeTotal ?? native.length },
-  };
-}
-
 describe('gatherAndEvaluate', () => {
   it('gates an explicit list end-to-end: body blocker in the set becomes an edge', async () => {
     const { gh } = fakeGh({
@@ -224,6 +169,61 @@ describe('gatherAndEvaluate', () => {
     });
   });
 });
+
+function facts(
+  number: number,
+  opts: {
+    state?: 'OPEN' | 'CLOSED';
+    labels?: readonly string[];
+    body?: string;
+    native?: readonly unknown[];
+    nativeTotal?: number;
+  } = {},
+): unknown {
+  const native = opts.native ?? [];
+
+  return {
+    number,
+    state: opts.state ?? 'OPEN',
+    labels: (opts.labels ?? ['ready-for-agent']).map((name) => ({
+      id: `L_${name}`,
+      name,
+      description: '',
+      color: 'ededed',
+    })),
+    body: opts.body ?? '',
+    blockedBy: { nodes: native, totalCount: opts.nativeTotal ?? native.length },
+  };
+}
+
+function node(number: number, state: 'OPEN' | 'CLOSED'): unknown {
+  return {
+    id: `I_${String(number)}`,
+    number,
+    state,
+    title: `issue ${String(number)}`,
+    url: `https://github.com/o/r/issues/${String(number)}`,
+  };
+}
+
+/** Routes each call by the `--json` field set it asks for, then by issue number. */
+function fakeGh(fixtures: GhFixtures): { gh: GhJson; calls: string[][] } {
+  const calls: string[][] = [];
+
+  const gh: GhJson = (args) => {
+    calls.push([...args]);
+    const table = TABLE_FOR_FIELDS[args[4] ?? ''];
+    const answer = table === undefined ? undefined : fixtures[table]?.[Number(args[2])];
+
+    if (answer === undefined) {
+      return Promise.reject(new Error(`fakeGh: no fixture for ${args.join(' ')}`));
+    }
+
+    return Promise.resolve(answer);
+  };
+
+  return { gh, calls };
+}
 
 describe('toIssueFacts', () => {
   it('unions body and native blockers, deduped, ascending', () => {
