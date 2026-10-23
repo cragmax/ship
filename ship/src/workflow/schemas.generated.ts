@@ -1119,6 +1119,7 @@ export const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['GREEN', 'PARTIAL', 'BLOCKED'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
+      greenTests: { type: 'array', items: { type: 'string' } },
       leaseLines: { type: 'array', items: { type: 'string' } },
       probes: {
         type: 'array',
@@ -1165,6 +1166,7 @@ export const AGENT_OUTPUT_SCHEMAS = {
       'verdict',
       'sha',
       'files',
+      'greenTests',
       'leaseLines',
       'probes',
       'evidence',

@@ -241,13 +241,14 @@ export const BATCH = `${RUN_ROOT}/batch`;
 const TDD_FILES = ['tooling/x.ts', 'tooling/test/unit/x.test.ts'];
 
 /**
- * A GREEN tdd over {@link TDD_FILES} for issue 7, with one lease line, no probe, its tracer's
- * red-green, and the commit line and cite it chose.
+ * A GREEN tdd over {@link TDD_FILES} for issue 7, with two test files run green, one lease line,
+ * no probe, its tracer's red-green, and the commit line and cite it chose.
  */
 export const TDD_GREEN = {
   verdict: 'GREEN',
   sha: 'slice1',
   files: TDD_FILES,
+  greenTests: ['tooling/test/unit/x.test.ts', 'tooling/test/unit/y.test.ts'],
   leaseLines: ['with-lease: waited 1.5s for paper@localhost:25575, held 42.0s'],
   probes: [],
   evidence: {

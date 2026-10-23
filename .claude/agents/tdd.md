@@ -66,6 +66,7 @@ Write the full report to the report file: tests added, the proof each bites, the
 - `verdict` — `GREEN`; `PARTIAL` when tests were authored but some could not run (say which in `reason`); `BLOCKED` when you could not proceed (`reason`);
 - `sha` — `HEAD` (empty when `BLOCKED` before the commit);
 - `files` — `git diff --name-only <slice base> HEAD`;
+- `greenTests` — every test file you ran green on the tree you committed, repository-relative; `[]` when you ran none. The slice reviews take them as passed at `sha` and rerun one only after amending a file it covers, so a file you last saw red, or ran before a later edit it covers, stays off the list;
 - `leaseLines` — every `with-lease:` release line, verbatim;
 - `probes` — each probe you ran: its `claim`, `verdict` (`confirmed`, `falsified`, `inconclusive` or `cap-hit`), `followUp` (empty unless inconclusive or capped) and `seconds` (its summed duration, in whole seconds);
 - `evidence` — your tracer test's red-green: the slice's tracer only, never another test. `kind` `tracer` with `test` (`<path> › <test name>`), `pseudocode` (at most 3 lines: what the test drives and asserts), `red` (the failure line as printed when you saw it red) and `green` (the line showing it passing), `reason` empty; or `kind` `none` when you saw no tracer red-green (docs or config only, `PARTIAL`, `BLOCKED`), with `reason` saying why and the other four strings empty;

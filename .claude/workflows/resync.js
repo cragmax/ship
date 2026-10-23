@@ -259,6 +259,7 @@ const PROMPTS = {
       ...sliceHeadLines(values),
       `Issue file: ${issueFile(values.issue, values.reportDir)}`,
       `Report file: ${values.reportPath}`,
+      ...passedLines(values.passed, values.sha),
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
@@ -310,8 +311,21 @@ function sliceReviewPrompt(values) {
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
+    ...passedLines(values.passed, values.sha),
     ...serverTierLines(values.lease),
   ].join('\n');
+}
+function passedLines(passed, current) {
+  return [
+    `Passed at ${passed.sha}: ${passed.tests.length === 0 ? 'none' : passed.tests.join(', ')}`,
+    `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
+    ...(current === passed.sha
+      ? []
+      : [
+          `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
+            `the amends changed ${passed.amended.join(', ')}`,
+        ]),
+  ];
 }
 
 const TOOL_ENVELOPE_SCHEMAS = {
@@ -1423,6 +1437,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['GREEN', 'PARTIAL', 'BLOCKED'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
+      greenTests: { type: 'array', items: { type: 'string' } },
       leaseLines: { type: 'array', items: { type: 'string' } },
       probes: {
         type: 'array',
@@ -1469,6 +1484,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       'verdict',
       'sha',
       'files',
+      'greenTests',
       'leaseLines',
       'probes',
       'evidence',

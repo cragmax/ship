@@ -709,6 +709,7 @@ const PROMPTS = {
       ...sliceHeadLines(values),
       `Issue file: ${issueFile(values.issue, values.reportDir)}`,
       `Report file: ${values.reportPath}`,
+      ...passedLines(values.passed, values.sha),
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
@@ -760,8 +761,21 @@ function sliceReviewPrompt(values) {
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
+    ...passedLines(values.passed, values.sha),
     ...serverTierLines(values.lease),
   ].join('\n');
+}
+function passedLines(passed, current) {
+  return [
+    `Passed at ${passed.sha}: ${passed.tests.length === 0 ? 'none' : passed.tests.join(', ')}`,
+    `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
+    ...(current === passed.sha
+      ? []
+      : [
+          `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
+            `the amends changed ${passed.amended.join(', ')}`,
+        ]),
+  ];
 }
 
 const TOOL_ENVELOPE_SCHEMAS = {
@@ -1873,6 +1887,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['GREEN', 'PARTIAL', 'BLOCKED'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
+      greenTests: { type: 'array', items: { type: 'string' } },
       leaseLines: { type: 'array', items: { type: 'string' } },
       probes: {
         type: 'array',
@@ -1919,6 +1934,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       'verdict',
       'sha',
       'files',
+      'greenTests',
       'leaseLines',
       'probes',
       'evidence',
@@ -3477,7 +3493,7 @@ async function tddStage(s) {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files } };
+  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files, amended: [] } };
 }
 async function specReviewStage(s) {
   const { at } = s;
@@ -3544,16 +3560,27 @@ function afterReview(at, label, out, next) {
   return { next: { ...next(out), sha: out.sha } };
 }
 async function afterAmend(s, label, out, next) {
-  const { at } = s;
-  const step = afterReview(at, label, out, next);
+  const step = afterReview(s.at, label, out, next);
   if ('stop' in step || out?.verdict !== 'fixed') return step;
-  const argv = [s.slice, step.next.sha, '--base', s.base];
-  const read = await runTool(at.ctx.hooks, 'changed-files', argv, at.place);
+  const files = await reread(s, label, step.next.sha, s.base);
+  if ('stop' in files) return files;
+  const amended = await reread(s, label, step.next.sha, s.tdd.sha);
+  if ('stop' in amended) return amended;
+  return { next: { ...step.next, files: files.next, amended: amended.next } };
+}
+async function reread(s, label, sha, base) {
+  const { at } = s;
+  const read = await runTool(
+    at.ctx.hooks,
+    'changed-files',
+    [s.slice, sha, '--base', base],
+    at.place,
+  );
   if (read === null) return { stop: died(at) };
   if (read.status !== 'ok' || read.files === undefined) {
     return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
   }
-  return { next: { ...step.next, files: read.files } };
+  return { next: read.files };
 }
 async function landSlice(s) {
   const { at } = s;
@@ -3636,6 +3663,12 @@ function sliceReviewValues(s, report) {
   return {
     ...sliceCommitValues(s),
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
+    passed: {
+      sha: s.tdd.sha,
+      tests: s.tdd.greenTests,
+      evidence: s.tdd.evidence,
+      amended: s.amended,
+    },
     lease: leaseValues(s),
   };
 }

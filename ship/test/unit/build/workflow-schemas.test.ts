@@ -81,6 +81,19 @@ const SLICE_REVIEW_VALUES = {
   sha: 'slice1',
   files: ['a.ts'],
   reportPath: 'C:/r/reports/spec-review-7-1.md',
+  passed: {
+    sha: 'slice1',
+    tests: ['a.test.ts'],
+    evidence: {
+      kind: 'none' as const,
+      test: '',
+      pseudocode: '',
+      red: '',
+      green: '',
+      reason: 'config only',
+    },
+    amended: [],
+  },
   lease: { main: 'C:/r/main', projectDir: 'C:/r/slice-7-1', registry: 'C:/r/reports/pool.json' },
 };
 

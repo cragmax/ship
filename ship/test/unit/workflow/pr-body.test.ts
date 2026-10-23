@@ -57,6 +57,7 @@ const work = (fields: {
     verdict: 'GREEN',
     sha: 's',
     files: ['src/a.ts'],
+    greenTests: [],
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
     evidence: fields.evidence ?? TRACER,
