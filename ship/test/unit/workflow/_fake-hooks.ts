@@ -7,7 +7,7 @@
  * answer is a dead agent's, and no schema applies to it.
  */
 
-import { onTestFinished } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 
 import type {
   AgentOptions,
@@ -174,6 +174,25 @@ export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
   },
 });
 
+/**
+ * Each spent run the cleanup leaves standing: its {@link liveRuns} overrides and the reason the
+ * cleanup reports.
+ */
+export const STANDING_SPENT_RUNS = [
+  { name: 'dirty', run: { dirty: true }, why: 'uncommitted changes' },
+  { name: 'of unknown dirtiness', run: { dirty: null }, why: 'dirtiness unknown' },
+  {
+    name: 'with a nested worktree',
+    run: { nested: ['C:/x/agent'] },
+    why: 'nested worktrees: C:/x/agent',
+  },
+  {
+    name: 'unverified',
+    run: { spent: false, spentUnverified: true },
+    why: 'its PR is over, but the PR head could not be checked',
+  },
+];
+
 /** One ref's scripted move for {@link masterMoved}. */
 interface ScriptedMove {
   /** The move. */
@@ -258,6 +277,26 @@ export const LAND_OK = {
   rolledBack: false,
   batchClean: true,
   at: '2026-09-29T10:20:00.000Z',
+};
+
+/** A land whose cherry-pick conflicted on `tooling/x.ts`, rolled back. */
+export const LAND_CONFLICT = {
+  ...LAND_OK,
+  status: 'conflict',
+  commit: null,
+  conflicts: ['tooling/x.ts'],
+  rolledBack: true,
+  errors: [{ step: 'cherry-pick', message: 'tooling/x.ts would not apply' }],
+};
+
+/** A land refused before the cherry-pick: the batch had uncommitted changes. */
+export const LAND_BATCH_DIRTY = {
+  ...LAND_OK,
+  status: 'refused',
+  reason: 'batch-dirty',
+  commit: null,
+  batchClean: false,
+  errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
 /** A bump that found the version already at its target: `ok`, no commit. */
@@ -586,6 +625,27 @@ function commandWords(prompt: string): string[] {
     line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
   return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
 }
+
+/**
+ * The recorded labels, in call order.
+ *
+ * @param run - The fake run.
+ * @returns Each call's label.
+ */
+export const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
+
+/**
+ * Where an entry sits on the timeline.
+ *
+ * @param run - The fake run.
+ * @param entry - `call <label>` or `log <message>`.
+ * @returns Its first index; fails the test when absent.
+ */
+export const when = (run: FakeRun, entry: string): number => {
+  const at = run.timeline.indexOf(entry);
+  expect(at, `${entry} on the timeline`).toBeGreaterThan(-1);
+  return at;
+};
 
 /** The main checkout a checkout test binds: distinct from every other path the fakes answer. */
 export const MAIN = 'D:/checkouts/main';

@@ -6,13 +6,10 @@
  * @integrationTier standalone
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import type { LiveRun, LiveRunsResult } from '../../src/cli/envelope/types.js';
 import {
   commitChanges,
@@ -22,7 +19,12 @@ import {
   writeFakeGh,
   type FakeGhResponse,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  expectUsageFailure,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -31,17 +33,12 @@ let root: string;
 let main: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-runs-')));
+  root = makeTempRoot('ph-wt-runs-');
   main = makeGitRepo(root, { 'base.txt': 'base\n', 'r.txt': 'a file the run renames\n' });
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /** Run `live-runs` against the fixture main with a fake `gh` answering `responses`. */
@@ -235,12 +232,6 @@ describe('usage errors', () => {
     { name: 'live-runs without a path', args: ['live-runs'] },
     { name: 'live-runs with an extra argument', args: ['live-runs', 'main', 'extra'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.status).toBe('failed');
-    expect(run.json.errors[0]?.step).toBe('usage');
-    const message = run.json.errors[0]?.message ?? '';
-    expect(message).not.toBe('');
-    expect(run.stderr).toContain(`worktree: ${message}`);
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });

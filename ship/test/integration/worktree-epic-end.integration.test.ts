@@ -6,13 +6,11 @@
  * @integrationTier standalone
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { appendPrBody as appendPrBodyInProcess } from '../../src/cli/commands/append-pr-body.js';
 import { runCaptured } from '../../src/cli/git/exec.js';
@@ -32,7 +30,7 @@ import {
   writeFakeGh,
   type FakePrComment,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import { makeTempRoot, removeTempDirs, runCli } from '../helpers/worktree-cli-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
@@ -48,16 +46,11 @@ let root: string;
 const logDirs = new Set<string>();
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-')));
+  root = makeTempRoot('ph-wt-end-');
 });
 
 afterEach(() => {
-  try {
-    for (const dir of [root, ...logDirs]) rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root, ...logDirs]);
   logDirs.clear();
 });
 

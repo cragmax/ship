@@ -7,13 +7,10 @@
  * @integrationTier standalone
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import {
   advanceOrigin,
   commitChanges,
@@ -26,7 +23,9 @@ import {
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
+  makeTempRoot,
   prebuildNpmTemplate,
+  removeTempDirs,
   runSyncMaster,
 } from '../helpers/worktree-cli-fixture.js';
 import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
@@ -44,16 +43,11 @@ prebuildNpmTemplate();
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-sync-')));
+  root = makeTempRoot('ph-wt-sync-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /**
@@ -114,6 +108,32 @@ describe('sync-master batch refresh', () => {
     const sha = bumpIn(run.main, kind, message);
     mustRun('git', ['push', '-q', 'origin', 'master'], run.main);
     return sha;
+  }
+
+  /** An npm run whose batch and `origin/master` each bumped `patch` from the same base. */
+  function identicalBumps(): { run: FixtureRun; ours: string; theirs: string } {
+    const run = makeNpmRun();
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    return { run, ours, theirs };
+  }
+
+  /**
+   * Run `sync-master` on `batch`, assert it failed at `step` before committing and left the batch
+   * clean at `ours` with no merge in progress, and return the run.
+   */
+  function expectHeldMergeAborted(
+    batch: string,
+    ours: string,
+    step: string,
+  ): ReturnType<typeof runSyncMaster> {
+    const r = runSyncMaster(batch);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual([step]);
+    expect(snapshot(batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+    return r;
   }
 
   it.each([
@@ -186,9 +206,7 @@ describe('sync-master batch refresh', () => {
   });
 
   it('re-bumps an identical bump, committing the merge through the hooks', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours, theirs } = identicalBumps();
     const hookLog = recordCommits(run.main);
 
     const r = runSyncMaster(run.batch);
@@ -239,33 +257,19 @@ describe('sync-master batch refresh', () => {
   });
 
   it('aborts its held merge when the refresh before the commit fails', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours } = identicalBumps();
     advanceOrigin(root, run.bare, {
       write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
-    const r = runSyncMaster(run.batch);
-
-    expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
-    expect(r.json.errors.map((e) => e.step)).toEqual(['build']);
-    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+    expectHeldMergeAborted(run.batch, ours, 'build');
   });
 
   it('aborts its held merge when the commit hook fails', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours } = identicalBumps();
     installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
-    const r = runSyncMaster(run.batch);
-
-    expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
-    expect(r.json.errors.map((e) => e.step)).toEqual(['commit']);
+    const r = expectHeldMergeAborted(run.batch, ours, 'commit');
     expect(readFileSync(r.json.logs.at(-1) ?? '', 'utf8')).toContain(HOOK_SAYS);
-    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
   });
 });

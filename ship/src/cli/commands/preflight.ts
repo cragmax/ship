@@ -16,7 +16,7 @@
 import { loadPoolRegistry, type PoolEntry } from '../../../../server-pool/src/index.js';
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from './rcon-probe.js';
 
-import { assertPublished, attachSlug, openPr } from './cut-attach.js';
+import { assertPublished, attachSlug } from './cut-attach.js';
 import { GH_TIMEOUT_MS, runCaptured } from '../git/exec.js';
 import {
   assertMainWorktree,
@@ -27,6 +27,7 @@ import {
   resolveCommit,
   statusEntries,
 } from '../git/git.js';
+import { openPr } from './live-runs.js';
 import { isMember, memberLabel, WARM_SET } from './pool-registry-trim.js';
 import { RUN_BASE_BRANCH, runLayout, sliceBranchPrefix } from '../git/run-layout.js';
 import { assertNoLiveSlices } from './sync-master.js';

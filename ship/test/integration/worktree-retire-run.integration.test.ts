@@ -6,13 +6,9 @@
  * @integrationTier standalone
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import { createJunction } from '../../src/cli/git/links.js';
 import type { RetireRunResult, TeardownResult } from '../../src/cli/envelope/types.js';
 import type { CutBatchResult } from '../../src/cli/envelope/types-run.js';
@@ -21,7 +17,12 @@ import {
   makeBareOrigin,
   makeGitRepo,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { isRegistered, runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  isRegistered,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -32,7 +33,7 @@ let runRoot: string;
 let batch: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-retire-')));
+  root = makeTempRoot('ph-wt-retire-');
   main = makeGitRepo(root, { 'base.txt': 'base\n' });
   makeBareOrigin(root, main);
   runRoot = `${main}/reports/ship-7`;
@@ -40,12 +41,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 function cutRun(): void {
@@ -82,6 +78,23 @@ function branchResolves(branch = 'ship/7'): boolean {
 function sliceBranch(name: string): void {
   const sha = mustRun('git', ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', name], main).trim();
   mustRun('git', ['branch', name, sha], main);
+}
+
+/** Retire `ship/7`, unmerged, and assert the refusal deleted neither it nor `slice/7/1-1`. */
+function expectBranchUnmergedRefusal(): void {
+  const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+  expect(r.code, JSON.stringify(r.json)).toBe(1);
+  expect(r.json).toMatchObject({
+    status: 'refused',
+    reason: 'branch-unmerged',
+    branchDeleted: false,
+    rootRemoved: false,
+  });
+  expect(r.json.errors[0]?.step).toBe('branch-guard');
+  expect(r.json.sliceBranches).toEqual([]);
+  expect(branchResolves()).toBe(true);
+  expect(branchResolves('slice/7/1-1')).toBe(true);
 }
 
 describe('retire-run', () => {
@@ -194,20 +207,8 @@ describe('retire-run', () => {
     tearDown();
     sliceBranch('slice/7/1-1');
 
-    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
-
-    expect(r.code, JSON.stringify(r.json)).toBe(1);
-    expect(r.json).toMatchObject({
-      status: 'refused',
-      reason: 'branch-unmerged',
-      branchDeleted: false,
-      rootRemoved: false,
-    });
-    expect(r.json.errors[0]?.step).toBe('branch-guard');
-    expect(branchResolves()).toBe(true);
+    expectBranchUnmergedRefusal();
     expect(existsSync(runRoot)).toBe(true);
-    expect(r.json.sliceBranches).toEqual([]);
-    expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 
   it('refuses branch-unmerged with no run root, deleting nothing', TIMEOUT, () => {
@@ -217,19 +218,7 @@ describe('retire-run', () => {
     sliceBranch('slice/7/1-1');
     rmSync(runRoot, { recursive: true });
 
-    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
-
-    expect(r.code, JSON.stringify(r.json)).toBe(1);
-    expect(r.json).toMatchObject({
-      status: 'refused',
-      reason: 'branch-unmerged',
-      branchDeleted: false,
-      rootRemoved: false,
-    });
-    expect(r.json.errors[0]?.step).toBe('branch-guard');
-    expect(r.json.sliceBranches).toEqual([]);
-    expect(branchResolves()).toBe(true);
-    expect(branchResolves('slice/7/1-1')).toBe(true);
+    expectBranchUnmergedRefusal();
   });
 
   it.each([

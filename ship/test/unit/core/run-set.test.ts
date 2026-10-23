@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
 
 import { findCycles, runSetIssues, transitiveDependents } from '../../../src/core/run-set.js';
+
+import { describeRenderSafety } from '../../../../server-pool/test/helpers/render-safety.js';
 
 describe('runSetIssues', () => {
   it('flattens every entry, ascending', () => {
@@ -117,34 +118,4 @@ describe('transitiveDependents', () => {
   });
 });
 
-describe('run-set.ts render safety', () => {
-  // Read as text: the purity contract is about the file's source, which a
-  // render step copies verbatim. Comments are stripped first so the header
-  // TSDoc may name the forbidden tokens.
-  const source = readFileSync(resolve(import.meta.dirname, '../../../src/core/run-set.ts'), 'utf8');
-  const code = source.replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '').replace(/\/\/[^\n]*/g, '');
-
-  it('has no import statement or re-export', () => {
-    const lines = code.split('\n').map((line) => line.trim());
-    expect(lines.filter((line) => /^import\b/.test(line))).toEqual([]);
-    expect(code).not.toMatch(/\bimport\s*\(/);
-    expect(code).not.toMatch(/\bfrom\s*['"]/);
-  });
-
-  it.each([
-    'eval(',
-    'new Function',
-    'Date.now',
-    'new Date(',
-    'Math.random',
-    'process.',
-    'Buffer',
-    'require(',
-    'setTimeout',
-    'setImmediate',
-    'globalThis',
-    '__dirname',
-  ])('never uses %s', (token) => {
-    expect(code).not.toContain(token);
-  });
-});
+describeRenderSafety(resolve(import.meta.dirname, '../../../src/core/run-set.ts'));

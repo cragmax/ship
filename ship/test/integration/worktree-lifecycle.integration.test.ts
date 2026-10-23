@@ -11,14 +11,12 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,14 +35,17 @@ import type {
   TsserverRestart,
 } from '../../src/cli/envelope/types.js';
 import {
+  expectUsageFailure,
+  type FixtureRepoOptions,
   isJunction,
   isRegistered,
   listTree,
   makeFixtureRepo,
+  makeTempRoot,
   prebuildNpmTemplate,
+  removeTempDirs,
   runCli,
   seedBatch,
-  type FixtureRepoOptions,
 } from '../helpers/worktree-cli-fixture.js';
 import {
   addWorktree,
@@ -63,16 +64,12 @@ prebuildNpmTemplate();
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'ph-wt-'));
+  root = makeTempRoot('ph-wt-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir. rmSync does not follow junctions.
-  }
+  // rmSync does not follow junctions, so a link's target outside root survives.
+  removeTempDirs([root]);
 });
 
 interface Layout {
@@ -221,24 +218,20 @@ describe('provision-batch', () => {
       expect(run.json.registry).toBe(registry);
       const loaded = loadPoolRegistry(registry);
       expect(loaded.ok).toBe(true);
+      const servers = [
+        { type: 'paper', host: 'localhost', rconPort: 25701 },
+        { type: 'paper', host: 'localhost', rconPort: 25703 },
+        { type: 'folia', host: 'localhost', rconPort: 25711 },
+        { type: 'folia', host: 'localhost', rconPort: 25713 },
+      ];
       expect(
         (loaded.ok ? loaded.value : []).map((e) => ({
           type: e.type,
           host: e.host,
           rconPort: e.rconPort,
         })),
-      ).toEqual([
-        { type: 'paper', host: 'localhost', rconPort: 25701 },
-        { type: 'paper', host: 'localhost', rconPort: 25703 },
-        { type: 'folia', host: 'localhost', rconPort: 25711 },
-        { type: 'folia', host: 'localhost', rconPort: 25713 },
-      ]);
-      expect(run.json.warm).toEqual([
-        { type: 'paper', host: 'localhost', rconPort: 25701 },
-        { type: 'paper', host: 'localhost', rconPort: 25703 },
-        { type: 'folia', host: 'localhost', rconPort: 25711 },
-        { type: 'folia', host: 'localhost', rconPort: 25713 },
-      ]);
+      ).toEqual(servers);
+      expect(run.json.warm).toEqual(servers);
       expect(run.json.nodeModules).toBe(toPosix(join(batch, 'node_modules')));
       expect(run.json.dist).toBe(toPosix(join(batch, 'dist')));
       expect(run.json.projectDirMarker).toBe(toPosix(join(batch, 'paper-harness')));
@@ -357,13 +350,7 @@ describe('usage errors', () => {
     { name: 'teardown --base without --keep-to', args: ['teardown', 'x', '--base', 'b'] },
     { name: 'teardown --report without --keep-to', args: ['teardown', 'x', '--report', 'r'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.status).toBe('failed');
-    expect(run.json.errors[0]?.step).toBe('usage');
-    const message = run.json.errors[0]?.message ?? '';
-    expect(message).not.toBe('');
-    expect(run.stderr).toContain(`worktree: ${message}`);
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });
 

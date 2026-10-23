@@ -1,38 +1,22 @@
 // Executes a fresh in-memory render of the current sources (renderWorkflow over WORKFLOWS):
 // resync.test.ts drives the TS sources, so a defect only the render carries passes it.
 // The committed file's freshness is gate:codegen's.
-import { resolve } from 'node:path';
 import vm from 'node:vm';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { renderWorkflow } from '../../../src/build/workflow-render.js';
-import { WORKFLOWS } from '../../../src/build/render-workflows.js';
 import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { runResync } from '../../../src/workflow/resync.js';
 
-import type { FakeRun } from './_fake-hooks.js';
 import { BRANCH, MERGED, resyncHooks } from './_fake-resync.js';
+import { renderFresh, runRendered } from './_render.js';
 
-const ROOT = resolve(import.meta.dirname, '../../../..');
 const META_HEAD = 'export const meta = ';
 
 let resyncJs = '';
 beforeAll(async () => {
-  const spec = WORKFLOWS.find((w) => w.name === 'resync');
-  if (spec === undefined) throw new Error('no resync row in WORKFLOWS');
-  resyncJs = await renderWorkflow(spec, ROOT);
+  resyncJs = await renderFresh('resync');
 });
-
-/**
- * Run a rendered `resync.js` over a fake run's hooks, as the runtime wraps it: `export` dropped,
- * an async function body, hooks and `args` as globals.
- */
-function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
-  const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
-  // eslint-disable-next-line sonarjs/code-eval -- runs a fresh render of the repo's own sources, never user input
-  return vm.runInContext(script, vm.createContext({ ...run.hooks, args })) as Promise<unknown>;
-}
 
 describe('resync.js — a fresh render of the current sources', () => {
   it('opens with a meta literal that evaluates to RESYNC_META', () => {

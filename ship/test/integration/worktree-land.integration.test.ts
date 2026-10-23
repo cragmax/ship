@@ -7,13 +7,12 @@
  * @integrationTier standalone
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { COMMIT_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { rollback } from '../../src/cli/commands/harvest.js';
@@ -28,7 +27,7 @@ import {
   stagedNames,
   type Changes,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import { makeTempRoot, removeTempDirs, runCli } from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
@@ -52,16 +51,11 @@ const BUMPED_PACKAGE = FIXTURE_PACKAGE.replace('"private"', '"version":"2.0.0","
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-land-')));
+  root = makeTempRoot('ph-wt-land-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 interface Run {
@@ -364,13 +358,24 @@ describe('land (in-process)', () => {
 });
 
 describe('runCaptured budget kill (in-process)', () => {
+  const PRINTS_THEN_HANGS = "console.log('child started'); setTimeout(() => {}, 60_000);";
+
+  /** Run `node -e script` from `root` under a 3s budget, logged to `<root>/<logName>`. */
+  function runChild(
+    script: string,
+    logName: string,
+  ): { r: ReturnType<typeof runCaptured>; log: string } {
+    const log = `${root}/${logName}`;
+    const r = runCaptured(process.execPath, ['-e', script], {
+      cwd: root,
+      timeoutMs: 3_000,
+      logFile: log,
+    });
+    return { r, log };
+  }
+
   it('names the timeout in the tail and the log after the child printed', TIMEOUT, () => {
-    const log = `${root}/killed.log`;
-    const r = runCaptured(
-      process.execPath,
-      ['-e', "console.log('child started'); setTimeout(() => {}, 60_000);"],
-      { cwd: root, timeoutMs: 3_000, logFile: log },
-    );
+    const { r, log } = runChild(PRINTS_THEN_HANGS, 'killed.log');
 
     expect(r.exitCode).toBe(-1);
     expect(r.tail).toContain('child started');
@@ -378,21 +383,19 @@ describe('runCaptured budget kill (in-process)', () => {
     expect(readFileSync(log, 'utf8')).toContain('timed out after 3000 milliseconds');
   });
 
+  /** Assert a budget kill whose tail and log both end with the {@link orphanLine} for `root`. */
+  function expectKilledWithOrphanWarning({ r, log }: ReturnType<typeof runChild>): void {
+    expect(r.exitCode).toBe(-1);
+    expect(r.tail).toContain('timed out after 3000 milliseconds');
+    expect(lastLine(r.tail)).toBe(orphanLine(root));
+    expect(lastLine(readFileSync(log, 'utf8'))).toBe(orphanLine(root));
+  }
+
   it.skipIf(!WIN32)(
     'ends the tail and the log with the orphan warning naming the cwd on win32',
     TIMEOUT,
     () => {
-      const log = `${root}/killed.log`;
-      const r = runCaptured(
-        process.execPath,
-        ['-e', "console.log('child started'); setTimeout(() => {}, 60_000);"],
-        { cwd: root, timeoutMs: 3_000, logFile: log },
-      );
-
-      expect(r.exitCode).toBe(-1);
-      expect(r.tail).toContain('timed out after 3000 milliseconds');
-      expect(lastLine(r.tail)).toBe(orphanLine(root));
-      expect(lastLine(readFileSync(log, 'utf8'))).toBe(orphanLine(root));
+      expectKilledWithOrphanWarning(runChild(PRINTS_THEN_HANGS, 'killed.log'));
     },
   );
 
@@ -400,28 +403,13 @@ describe('runCaptured budget kill (in-process)', () => {
     'ends the tail and the log with the orphan warning on win32 when the child printed nothing',
     TIMEOUT,
     () => {
-      const log = `${root}/silent.log`;
-      const r = runCaptured(process.execPath, ['-e', 'setTimeout(() => {}, 60_000);'], {
-        cwd: root,
-        timeoutMs: 3_000,
-        logFile: log,
-      });
-
-      expect(r.exitCode).toBe(-1);
-      expect(r.tail).toContain('timed out after 3000 milliseconds');
-      expect(lastLine(r.tail)).toBe(orphanLine(root));
-      expect(lastLine(readFileSync(log, 'utf8'))).toBe(orphanLine(root));
+      expectKilledWithOrphanWarning(runChild('setTimeout(() => {}, 60_000);', 'silent.log'));
     },
   );
 
   it('carries no orphan warning when the child fails fast within its budget', TIMEOUT, () => {
-    const log = `${root}/failed.log`;
     // `exitCode`, not `process.exit(3)`: the child exits only after stdout flushed.
-    const r = runCaptured(
-      process.execPath,
-      ['-e', "console.log('child failed'); process.exitCode = 3;"],
-      { cwd: root, timeoutMs: 3_000, logFile: log },
-    );
+    const { r, log } = runChild("console.log('child failed'); process.exitCode = 3;", 'failed.log');
 
     expect(r.exitCode).toBe(3);
     expect(lastLine(r.tail)).toBe('child failed');
@@ -429,12 +417,7 @@ describe('runCaptured budget kill (in-process)', () => {
   });
 
   it.skipIf(WIN32)('carries no orphan warning after a budget kill off win32', TIMEOUT, () => {
-    const log = `${root}/killed.log`;
-    const r = runCaptured(
-      process.execPath,
-      ['-e', "console.log('child started'); setTimeout(() => {}, 60_000);"],
-      { cwd: root, timeoutMs: 3_000, logFile: log },
-    );
+    const { r, log } = runChild(PRINTS_THEN_HANGS, 'killed.log');
 
     expect(r.exitCode).toBe(-1);
     expect(r.tail).toContain('timed out after 3000 milliseconds');

@@ -6,13 +6,12 @@
  * @integrationTier standalone
  */
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../../tooling/lib/strings.js';
 import type { BumpResult } from '../../src/cli/envelope/types-run.js';
 import {
   advanceOrigin,
@@ -23,7 +22,13 @@ import {
   type Changes,
   type FixtureRun,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { makeFixtureRepo, prebuildNpmTemplate, runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  makeFixtureRepo,
+  makeTempRoot,
+  prebuildNpmTemplate,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -36,16 +41,11 @@ let root: string;
 const logDirs = new Set<string>();
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-')));
+  root = makeTempRoot('ph-wt-end-');
 });
 
 afterEach(() => {
-  try {
-    for (const dir of [root, ...logDirs]) rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root, ...logDirs]);
   logDirs.clear();
 });
 

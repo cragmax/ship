@@ -4,10 +4,8 @@ import { RESYNC_PHASES, STAGES } from '../../../src/workflow/stages.js';
 import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { runResync } from '../../../src/workflow/resync.js';
 
-import { BATCH, liveRuns, REPORT_DIR, type FakeRun } from './_fake-hooks.js';
+import { BATCH, labels, liveRuns, REPORT_DIR, STANDING_SPENT_RUNS } from './_fake-hooks.js';
 import { attachOk, BRANCH, MERGED, OK, publishOk, resyncHooks } from './_fake-resync.js';
-
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 describe('runResync — arguments', () => {
   it.each([BRANCH, { branch: BRANCH }, JSON.stringify({ branch: BRANCH })])(
@@ -206,20 +204,7 @@ describe('runResync — spent cleanup', () => {
     expect(report.cleanup.tornDown).toEqual(['C:/src/ph-runs/old-0/batch']);
   });
 
-  it.each([
-    { name: 'dirty', run: { dirty: true }, why: 'uncommitted changes' },
-    { name: 'of unknown dirtiness', run: { dirty: null }, why: 'dirtiness unknown' },
-    {
-      name: 'with a nested worktree',
-      run: { nested: ['C:/x/agent'] },
-      why: 'nested worktrees: C:/x/agent',
-    },
-    {
-      name: 'unverified',
-      run: { spent: false, spentUnverified: true },
-      why: 'its PR is over, but the PR head could not be checked',
-    },
-  ])('leaves a spent run $name standing, reporting why', async (c) => {
+  it.each(STANDING_SPENT_RUNS)('leaves a spent run $name standing, reporting why', async (c) => {
     const run = resyncHooks(liveRuns(c.run));
 
     const report = await runResync(run.hooks, BRANCH);

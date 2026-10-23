@@ -8,21 +8,10 @@
  * @integrationTier standalone
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import { harvest } from '../../src/cli/commands/harvest.js';
 import type { HarvestResult, StagedGuardResult } from '../../src/cli/envelope/types.js';
 import {
@@ -34,7 +23,12 @@ import {
   type Changes,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { linkNodeModules } from '../../../tooling/test/helpers/hooked-run.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  expectUsageFailure,
+  makeTempRoot,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import {
   addWorktree,
   mustRun,
@@ -48,16 +42,11 @@ const TIMEOUT = { timeout: 60_000 };
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-harvest-')));
+  root = makeTempRoot('ph-wt-harvest-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 interface Pair {
@@ -700,12 +689,6 @@ describe('usage errors', () => {
     { name: 'harvest with two shas', args: ['harvest', 'batch', 'a', 'b'] },
     { name: 'staged-guard without files', args: ['staged-guard', 'wt'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.status).toBe('failed');
-    expect(run.json.errors[0]?.step).toBe('usage');
-    const message = run.json.errors[0]?.message ?? '';
-    expect(message).not.toBe('');
-    expect(run.stderr).toContain(`worktree: ${message}`);
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });

@@ -6,13 +6,10 @@
  * @integrationTier standalone
  */
 
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { PUSH_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { MERGEABLE_READS } from '../../src/cli/commands/publish-push.js';
@@ -34,7 +31,13 @@ import {
   type FakePrCreate,
   type FixtureRun,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { makeFixtureRepo, prebuildNpmTemplate, runCli } from '../helpers/worktree-cli-fixture.js';
+import {
+  makeFixtureRepo,
+  makeTempRoot,
+  prebuildNpmTemplate,
+  removeTempDirs,
+  runCli,
+} from '../helpers/worktree-cli-fixture.js';
 import { mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
@@ -59,21 +62,32 @@ prebuildNpmTemplate();
 let root: string;
 
 beforeEach(() => {
-  root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-end-')));
+  root = makeTempRoot('ph-wt-end-');
 });
 
 afterEach(() => {
-  try {
-    rmSync(root, { recursive: true, force: true });
-  } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
-  }
+  removeTempDirs([root]);
 });
 
 /** An npm fixture repo (version 1.0.0, lockfile) with a bare origin and a batch on `branch`. */
 function makeRun(branch = 'ship/r'): FixtureRun {
   return withOriginAndBatch(root, makeFixtureRepo(root), branch);
+}
+
+/** A run whose batch pushed `ship/r` once, then committed one more change locally. */
+function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly head: string } {
+  const run = makeRun();
+  const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+  mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
+  const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+  return { ...run, pushed, head };
+}
+
+/** A {@link pushedThenAhead} run whose origin `ship/r` then gained a commit the batch lacks. */
+function divergedFromOrigin(): FixtureRun & { readonly originSha: string } {
+  const run = pushedThenAhead();
+  const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
+  return { ...run, originSha };
 }
 
 /** Whether the bare origin has the branch. */
@@ -129,9 +143,12 @@ describe('publish', () => {
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
+      command: 'publish',
       status: 'ok',
+      worktree: run.batch,
       pushed: true,
       pr: { number: 42, url: 'https://github.com/fixture/repo/pull/42' },
+      mergeable: null,
     });
     expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(head);
     expect(readFakePrCreated(bin)).toEqual({
@@ -254,15 +271,6 @@ describe('publish --push-only', () => {
     return { r, bin };
   }
 
-  /** A run whose batch pushed `ship/r` once, then committed one more change locally. */
-  function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly head: string } {
-    const run = makeRun();
-    const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
-    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
-    const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
-    return { ...run, pushed, head };
-  }
-
   it('pushes a branch ahead of origin through pre-push and reads the open PR', TIMEOUT, () => {
     const run = pushedThenAhead();
     installHook(root, run.main, 'pre-push', PRE_PUSH_NEEDS_BUILD);
@@ -271,7 +279,9 @@ describe('publish --push-only', () => {
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
+      command: 'publish',
       status: 'ok',
+      worktree: run.batch,
       pushed: true,
       pr: { number: 5, url: 'https://github.com/fixture/repo/pull/5' },
       mergeable: 'MERGEABLE',
@@ -304,12 +314,37 @@ describe('publish --push-only', () => {
     expect(r.json.errors.map((e) => e.step)).toEqual(['pr-state']);
   });
 
-  it('stops at the ancestry pre-check when origin has commits the batch lacks', TIMEOUT, () => {
-    const run = makeRun();
+  it.each([
+    {
+      name: 'a branch outside ship/',
+      target: (run: FixtureRun) => run.batch,
+      reason: 'not-run-batch',
+    },
+    { name: 'the main checkout', target: (run: FixtureRun) => run.main, reason: 'main-worktree' },
+  ])('refuses $name as $reason, pushing nothing', TIMEOUT, (c) => {
+    const run = makeRun('feature/x');
     commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
-    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
-    const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
-    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+
+    const { r } = pushOnly(c.target(run), { 'feature/x': { prs: [{ number: 5, state: 'OPEN' }] } });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'refused', reason: c.reason, pushed: false, pr: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['preconditions']);
+    expect(onOrigin(run.bare, 'feature/x')).toBe(false);
+  });
+
+  it("pushes and reads the PR of the batch's own branch, whatever its name", TIMEOUT, () => {
+    const run = makeRun('ship/s');
+    const head = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+
+    const { r } = pushOnly(run.batch, { 'ship/s': { prs: [{ number: 5, state: 'OPEN' }] } });
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, pr: { number: 5 } });
+    expect(headSha(run.bare, 'refs/heads/ship/s')).toBe(head);
+  });
+
+  it('stops at the ancestry pre-check when origin has commits the batch lacks', TIMEOUT, () => {
+    const run = divergedFromOrigin();
 
     const { r } = pushOnly(run.batch, OPEN_5);
 
@@ -318,7 +353,7 @@ describe('publish --push-only', () => {
     expect(r.json.errors[0]?.message).toContain('has commits the batch lacks');
     // runCaptured writes the log on every git push: no log, no push.
     expect(existsSync(`${root}/push.log`)).toBe(false);
-    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.originSha);
   });
 
   it.each([
@@ -395,11 +430,7 @@ describe('publish (in-process)', () => {
   });
 
   it('never forces: a push origin would lose commits for fails, origin unchanged', TIMEOUT, () => {
-    const run = makeRun();
-    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
-    mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
-    const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
-    commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+    const run = divergedFromOrigin();
 
     let thrown: unknown = null;
     try {
@@ -410,6 +441,6 @@ describe('publish (in-process)', () => {
 
     expect(thrown).toBeInstanceOf(StepFailure);
     expect((thrown as StepFailure).step).toBe('push');
-    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(originSha);
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.originSha);
   });
 });

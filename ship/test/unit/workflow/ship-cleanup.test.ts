@@ -3,15 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../src/workflow/ship.js';
 
-import { fakeHooks, GATE_OK, liveRuns, readyVerdict, type FakeRun } from './_fake-hooks.js';
-
-/**
- * Every call's label, in call order.
- *
- * @param run - The fake run.
- * @returns The labels.
- */
-const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
+import {
+  fakeHooks,
+  GATE_OK,
+  labels,
+  liveRuns,
+  readyVerdict,
+  STANDING_SPENT_RUNS,
+} from './_fake-hooks.js';
 
 const SPENT_BATCH = 'C:/src/ph-runs/old-0/batch';
 
@@ -131,29 +130,19 @@ describe('runShip — spent-run cleanup at launch', () => {
     expect(report.status).toBe('done');
   });
 
-  it.each([
-    { name: 'dirty', run: { dirty: true }, why: 'uncommitted changes' },
-    { name: 'of unknown dirtiness', run: { dirty: null }, why: 'dirtiness unknown' },
-    {
-      name: 'with a nested worktree',
-      run: { nested: ['C:/x/agent'] },
-      why: 'nested worktrees: C:/x/agent',
-    },
-    {
-      name: 'unverified',
-      run: { spent: false, spentUnverified: true },
-      why: 'its PR is over, but the PR head could not be checked',
-    },
-  ])('leaves a spent run $name standing, reporting why, and still cuts', async (c) => {
-    const run = fakeHooks(liveRuns(c.run));
+  it.each(STANDING_SPENT_RUNS)(
+    'leaves a spent run $name standing, reporting why, and still cuts',
+    async (c) => {
+      const run = fakeHooks(liveRuns(c.run));
 
-    const report = await runShip(run.hooks, 'issues 7');
+      const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => l.startsWith('runner:teardown:spent'))).toEqual([]);
-    expect(report.cleanup?.skipped).toEqual([{ path: SPENT_BATCH, why: c.why }]);
-    expect(labels(run)).toContain('runner:cut-batch:list');
-    expect(report.status).toBe('done');
-  });
+      expect(labels(run).filter((l) => l.startsWith('runner:teardown:spent'))).toEqual([]);
+      expect(report.cleanup?.skipped).toEqual([{ path: SPENT_BATCH, why: c.why }]);
+      expect(labels(run)).toContain('runner:cut-batch:list');
+      expect(report.status).toBe('done');
+    },
+  );
 
   it.each([
     {

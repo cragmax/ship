@@ -12,6 +12,7 @@ import {
   cpSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readlinkSync,
   rmSync,
@@ -24,7 +25,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { execaSync } from 'execa';
-import { beforeAll, onTestFinished } from 'vitest';
+import { beforeAll, expect, onTestFinished } from 'vitest';
 
 import {
   copyTemplateRepo,
@@ -34,6 +35,7 @@ import {
   runIn,
   templatesRoot,
 } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { makeGitRepo } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
@@ -263,20 +265,67 @@ export function runCli<T extends ResultBase = ResultBase>(
 }
 
 /**
+ * Assert `run` is the CLI's usage failure: exit 2, a `failed` envelope whose first error is a
+ * `usage` step with a message, and that message on stderr after `worktree: `.
+ */
+export function expectUsageFailure(run: CliRun<ResultBase>): void {
+  expect(run.code).toBe(2);
+  expect(run.json.status).toBe('failed');
+  expect(run.json.errors[0]?.step).toBe('usage');
+  const message = run.json.errors[0]?.message ?? '';
+  expect(message).not.toBe('');
+  expect(run.stderr).toContain(`worktree: ${message}`);
+}
+
+/**
  * Run `sync-master` on `batch`; the log dirs it leaves in the OS temp dir for its caller are
  * removed when the calling test finishes.
  */
 export function runSyncMaster(batch: string, ...flags: string[]): CliRun<SyncMasterResult> {
   const r = runCli<SyncMasterResult>(['sync-master', batch, ...flags]);
   onTestFinished(() => {
+    removeTempDirs(r.json.logs.map((log) => dirname(log)));
+  });
+  return r;
+}
+
+/**
+ * A fresh `mkdtemp` dir in the OS temp dir named from `prefix`, in forward slashes.
+ *
+ * @throws When the dir cannot be created.
+ */
+export function makeTempRoot(prefix: string): string {
+  return toPosix(mkdtempSync(join(tmpdir(), prefix)));
+}
+
+/**
+ * Remove each dir and its contents.
+ *
+ * @silences A failed removal: that dir is left behind and the rest are still removed.
+ */
+export function removeTempDirs(dirs: Iterable<string>): void {
+  for (const dir of dirs) {
     try {
-      for (const log of r.json.logs) rmSync(dirname(log), { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     } catch {
       // Windows occasionally holds a lock on a just-used directory; the leak
       // is a bounded temp dir.
     }
+  }
+}
+
+/**
+ * A plain fixture main at `<root>/main` holding `base.txt`, ignoring the run paths as this repo
+ * does, so a run cut or attached from it, landing in its `.claude/worktrees/` and `reports/`,
+ * leaves its status clean.
+ *
+ * @throws When a git command fails, carrying its output, or the repo cannot be made or copied.
+ */
+export function makePlainMain(root: string): string {
+  return makeGitRepo(root, {
+    'base.txt': 'base\n',
+    '.gitignore': '/.claude/worktrees/\n/reports/\n',
   });
-  return r;
 }
 
 /**

@@ -25,7 +25,7 @@ import {
   resolveCommit,
   samePath,
 } from '../git/git.js';
-import { lookupPr } from './live-runs.js';
+import { openPr } from './live-runs.js';
 import {
   attachedRunReports,
   BATCH_REGISTRY_FILE,
@@ -167,25 +167,6 @@ export function attachSlug(branch: string): string {
     throw new Refusal('not-run-batch', 'preconditions', `${branch} is not a ship/ run branch`);
   }
   return slug;
-}
-
-/**
- * The branch's open PR.
- *
- * @param main - The main checkout (`gh`'s working directory).
- * @param branch - Short branch name.
- * @returns Its number.
- * @throws StepFailure `pr-state` when `gh` fails or answers unreadably;
- *   Refusal `no-open-pr` naming the state and number otherwise.
- */
-export function openPr(main: string, branch: string): number {
-  const { info, error } = lookupPr(main, branch);
-  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
-  if (info.state !== 'open' || info.number === null) {
-    const pr = info.number === null ? '' : ` (#${String(info.number)})`;
-    throw new Refusal('no-open-pr', 'pr-state', `${branch} has no open PR: ${info.state}${pr}`);
-  }
-  return info.number;
 }
 
 /**
