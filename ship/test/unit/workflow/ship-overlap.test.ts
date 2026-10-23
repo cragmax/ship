@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { runShip } from '../../../src/workflow/ship.js';
 
-import { fakeHooks, GATE_OK, liveRuns, readyVerdict, type FakeRun } from './_fake-hooks.js';
+import {
+  fakeHooks,
+  GATE_OK,
+  liveRuns,
+  readyVerdict,
+  TDD_BLOCKED,
+  type FakeRun,
+} from './_fake-hooks.js';
 import { epicRun } from './_fake-parallel.js';
 
 /** The gate and issue-readiness answers of an explicit list of 7 and 8, no declared edge. */
@@ -385,6 +392,112 @@ describe('runShip — the overlap estimate', () => {
     expect(items('pairs')['a']).toEqual({ type: 'integer', enum: [7, 8, 9] });
     expect(items('pairs')['b']).toEqual({ type: 'integer', enum: [7, 8, 9] });
     expect(items('liveOverlaps')['issue']).toEqual({ type: 'integer', enum: [7, 8, 9] });
+  });
+});
+
+describe('runShip — an overlap edge whose head lands nothing', () => {
+  it('starts and lands the tail of an overlap edge whose head blocked with no commit', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'likely' }),
+      'tdd:7-1': TDD_BLOCKED,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(labels(run)).toContain('tdd:8-1');
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      issues: [
+        { issue: 7, outcome: 'blocked', cite: 'see' },
+        { issue: 8, outcome: 'landed', commit: 'landed1' },
+      ],
+    });
+  });
+
+  it.each([
+    [
+      'retry-exhausted',
+      { 'tdd:7-1': null, 'tdd:7-2': null },
+      { outcome: 'blocked', reason: 'its agent died on the retry too' },
+    ],
+    [
+      'label-removed',
+      {
+        'runner:check:7-1': {
+          exitCode: 1,
+          envelopePath: 'e.json',
+          issue: 7,
+          ready: false,
+          failures: [],
+        },
+      },
+      { outcome: 'removed', reason: 'no longer open and ready-for-agent' },
+    ],
+  ])('starts and lands the tail when the head ends %s', async (_trigger, head, headReport) => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'likely' }),
+      ...head,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report.epics[0]).toMatchObject({
+      outcome: 'pr',
+      issues: [
+        { issue: 7, cite: 'see', ...headReport },
+        { issue: 8, outcome: 'landed', commit: 'landed1' },
+      ],
+    });
+  });
+
+  it('lists the released edge with its head, tail and trigger in the run report’s schedule', async () => {
+    const run = fakeHooks({
+      ...SEVEN_EIGHT,
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'unsure' }),
+      'tdd:7-1': TDD_BLOCKED,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8');
+
+    expect(report.epics[0]?.schedule.map((s) => s.blockers)).toEqual([
+      [],
+      [{ issue: 7, source: 'overlap', confidence: 'unsure', released: 'blocked' }],
+    ]);
+    const scheduleLines = (run.calls.find((c) => c.label === 'runner:publish:list')?.prompt ?? '')
+      .split('\n')
+      .filter((l) => /^- #\d+: blockers /.test(l));
+    expect(scheduleLines).toEqual([
+      '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed never; attempts 1; size none',
+      '- #8: blockers #7 (overlap, unsure, released: blocked); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
+    ]);
+  });
+
+  it('still skips a declared dependent of the blocked head, and its own declared dependent', async () => {
+    // 7 → 8 overlap; 7 → 9 and 9 → 10 declared.
+    const run = fakeHooks({
+      'runner:run-gate': {
+        ...GATE_OK,
+        runSet: [{ epic: null, issues: [7, 8, 9, 10] }],
+        edges: [
+          { blocker: 7, dependent: 9 },
+          { blocker: 9, dependent: 10 },
+        ],
+      },
+      issueReadiness: { issues: [7, 8, 9, 10].map((issue) => readyVerdict(issue)) },
+      issueOverlap: estimate({ a: 7, b: 8, confidence: 'likely' }),
+      'tdd:7-1': TDD_BLOCKED,
+    });
+
+    const report = await runShip(run.hooks, 'issues 7 8 9 10');
+
+    expect(report.epics[0]?.issues).toEqual([
+      expect.objectContaining({ issue: 7, outcome: 'blocked' }),
+      expect.objectContaining({ issue: 8, outcome: 'landed' }),
+      { issue: 9, outcome: 'skipped', cite: 'see', reason: 'blocker #7 blocked' },
+      { issue: 10, outcome: 'skipped', cite: 'see', reason: 'blocker #7 blocked' },
+    ]);
   });
 });
 

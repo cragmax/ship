@@ -16,6 +16,7 @@
 
 import { advance, createScheduler } from '../core/scheduler/run-scheduler.js';
 import type {
+  ReleasedEdge,
   SchedulerAction,
   SchedulerEvent,
   SchedulerState,
@@ -91,6 +92,7 @@ interface Drive {
   readonly landed: Map<number, LandedIssue[]>;
   readonly residue: Map<number, string[]>;
   readonly ends: Map<number, EpicReport>;
+  readonly released: ReleasedEdge[];
   /** The run's repo lock, shared by every epic end. */
   readonly repoLock: CommitQueue;
   epicEndEntered: boolean;
@@ -99,7 +101,11 @@ interface Drive {
 /** Drive every entry until each has ended; the reports come in run-set order. */
 export async function drive(input: DriveInput): Promise<EpicReport[]> {
   const d = newDrive(input);
-  apply(d, createScheduler({ ...input.graph, maxSlices: input.maxSlices }));
+  const edges = input.graph.edges.map((e) => ({
+    ...e,
+    source: scheduleBlocker(e.blocker, e.dependent, input.overlap).source,
+  }));
+  apply(d, createScheduler({ runSet: input.graph.runSet, edges, maxSlices: input.maxSlices }));
   while (d.flights.size > 0) {
     const note = await Promise.race(d.flights.values());
     d.flights.delete(flightKey(note));
@@ -122,6 +128,7 @@ function newDrive(input: DriveInput): Drive {
     landed: new Map(),
     residue: new Map(),
     ends: new Map(),
+    released: [],
     repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
@@ -286,6 +293,13 @@ function act(d: Drive, action: SchedulerAction): void {
         reason: `blocker #${String(action.cause.root)} ${action.cause.trigger}`,
       });
       break;
+    case 'release':
+      d.released.push({
+        blocker: action.blocker,
+        dependent: action.dependent,
+        trigger: action.trigger,
+      });
+      break;
     case 'block':
       d.outcomes.set(action.issue, {
         issue: action.issue,
@@ -419,15 +433,22 @@ function issueReports(d: Drive, i: number): IssueReport[] {
 }
 
 /**
- * An entry's schedule, in the entry's order: each issue's blockers in the drive graph and its
- * final attempt's timing; `attempts: 0` and `null` instants for an issue that never started.
+ * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
+ * overlap edge's with its trigger, and its final attempt's timing; `attempts: 0` and `null`
+ * instants for an issue that never started.
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({
-    ...neverStarted(issue, d.input.graph, d.input.overlap),
-    ...d.timing.get(issue),
-  }));
+  return issues.map((issue) => {
+    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
+    const blockers = entry.blockers.map((b): ScheduleBlocker => {
+      const released = d.released.find(
+        (r) => r.blocker === b.issue && r.dependent === issue,
+      )?.trigger;
+      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
+    });
+    return { ...entry, blockers, ...d.timing.get(issue) };
+  });
 }
 
 /**

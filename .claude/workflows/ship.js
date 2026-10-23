@@ -321,6 +321,7 @@ const ACCEPTED_PHASES = {
   'slot-free': ['authoring'],
   'label-removed': ['waiting', 'ready', 'authoring', 'landing'],
 };
+const UNLANDED_PHASES = ['blocked', 'removed', 'skipped'];
 const SETTLED_PHASES = ['committed', 'blocked', 'removed', 'skipped', 'halted'];
 function createScheduler(input) {
   assertInput(input);
@@ -439,17 +440,15 @@ function initialState(input) {
   const runSet = input.runSet.map((entry) => ({ epic: entry.epic, issues: [...entry.issues] }));
   const order = runSet.flatMap((entry) => entry.issues);
   const edges = dedupeEdges(input.edges);
-  const blockers = {};
   const phase = {};
-  for (const issue of order) blockers[issue] = [];
-  for (const e of edges) blockers[e.dependent]?.push(e.blocker);
-  for (const issue of order) phase[issue] = blockers[issue]?.length ? 'waiting' : 'ready';
+  for (const issue of order) {
+    phase[issue] = edges.some((e) => e.dependent === issue) ? 'waiting' : 'ready';
+  }
   return {
     maxSlices: input.maxSlices,
     runSet,
     edges,
     order,
-    blockers,
     phase,
     retried: {},
     ready: order.filter((issue) => phase[issue] === 'ready'),
@@ -458,15 +457,14 @@ function initialState(input) {
   };
 }
 function dedupeEdges(edges) {
-  const seen = new Set();
-  const out = [];
+  const seen = new Map();
   for (const e of edges) {
     const key = `${String(e.blocker)}>${String(e.dependent)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ blocker: e.blocker, dependent: e.dependent });
+    const source = e.source ?? 'declared';
+    if (seen.get(key)?.source === 'declared') continue;
+    seen.set(key, { blocker: e.blocker, dependent: e.dependent, source });
   }
-  return out;
+  return [...seen.values()];
 }
 function assertPhase(state, event) {
   const phase = state.phase[event.issue];
@@ -484,6 +482,7 @@ function openDraft(state) {
     halted: [...state.halted],
     response: [],
     skips: [],
+    releases: [],
     starts: [],
     ends: [],
   };
@@ -500,19 +499,27 @@ function finish(state, draft) {
       epicDone: draft.epicDone,
       halted: draft.halted,
     },
-    actions: [...draft.response, ...draft.skips, ...draft.starts, ...draft.ends],
+    actions: [...draft.response, ...draft.skips, ...draft.releases, ...draft.starts, ...draft.ends],
   };
 }
 function onCommitted(draft, state, issue) {
   draft.phase[issue] = 'committed';
+  promote(draft, state);
+}
+function promote(draft, state) {
   for (const candidate of state.order) {
     if (draft.phase[candidate] !== 'waiting') continue;
-    const blockers = state.blockers[candidate] ?? [];
-    if (blockers.every((b) => draft.phase[b] === 'committed')) {
+    const edgesIn = state.edges.filter((e) => e.dependent === candidate);
+    if (edgesIn.every((e) => cleared(draft, e))) {
       draft.phase[candidate] = 'ready';
       draft.ready.push(candidate);
     }
   }
+}
+function cleared(draft, e) {
+  const head = draft.phase[e.blocker];
+  if (head === 'committed') return true;
+  return e.source === 'overlap' && head !== undefined && UNLANDED_PHASES.includes(head);
 }
 function onAgentDied(draft, state, issue) {
   if (draft.retried[issue]) {
@@ -538,11 +545,25 @@ function restart(draft, response) {
 }
 function settleAndSkip(draft, state, root, trigger) {
   draft.phase[root] = trigger === 'label-removed' ? 'removed' : 'blocked';
-  for (const issue of transitiveDependents([root], state.edges)) {
+  const declared = state.edges.filter((e) => e.source === 'declared');
+  const heads = new Map([[root, trigger]]);
+  for (const issue of transitiveDependents([root], declared)) {
     if (draft.phase[issue] !== 'waiting') continue;
     draft.phase[issue] = 'skipped';
     draft.skips.push({ kind: 'skip', issue, cause: { root, trigger } });
+    heads.set(issue, 'skipped');
   }
+  const released = state.edges
+    .filter((e) => e.source === 'overlap' && draft.phase[e.dependent] === 'waiting')
+    .flatMap((e) => {
+      const head = heads.get(e.blocker);
+      return head === undefined
+        ? []
+        : [{ blocker: e.blocker, dependent: e.dependent, trigger: head }];
+    })
+    .sort((a, b) => a.blocker - b.blocker || a.dependent - b.dependent);
+  for (const edge of released) draft.releases.push({ kind: 'release', ...edge });
+  promote(draft, state);
 }
 function fill(draft, state) {
   let authoring = state.order.filter((issue) => draft.phase[issue] === 'authoring').length;
@@ -2850,8 +2871,9 @@ function scheduleLine(entry) {
   );
 }
 function blockerText(blocker) {
-  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
-  return `#${String(blocker.issue)} (${source})`;
+  if (blocker.source === 'declared') return `#${String(blocker.issue)} (declared)`;
+  const released = blocker.released === undefined ? '' : `, released: ${blocker.released}`;
+  return `#${String(blocker.issue)} (overlap, ${blocker.confidence}${released})`;
 }
 function leaseLines(leases) {
   return [
@@ -3639,7 +3661,11 @@ function errorText(err) {
 
 async function drive(input) {
   const d = newDrive(input);
-  apply(d, createScheduler({ ...input.graph, maxSlices: input.maxSlices }));
+  const edges = input.graph.edges.map((e) => ({
+    ...e,
+    source: scheduleBlocker(e.blocker, e.dependent, input.overlap).source,
+  }));
+  apply(d, createScheduler({ runSet: input.graph.runSet, edges, maxSlices: input.maxSlices }));
   while (d.flights.size > 0) {
     const note = await Promise.race(d.flights.values());
     d.flights.delete(flightKey(note));
@@ -3660,6 +3686,7 @@ function newDrive(input) {
     landed: new Map(),
     residue: new Map(),
     ends: new Map(),
+    released: [],
     repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
@@ -3782,6 +3809,13 @@ function act(d, action) {
         reason: `blocker #${String(action.cause.root)} ${action.cause.trigger}`,
       });
       break;
+    case 'release':
+      d.released.push({
+        blocker: action.blocker,
+        dependent: action.dependent,
+        trigger: action.trigger,
+      });
+      break;
     case 'block':
       d.outcomes.set(action.issue, {
         issue: action.issue,
@@ -3884,10 +3918,16 @@ function issueReports(d, i) {
 }
 function scheduleOf(d, i) {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({
-    ...neverStarted(issue, d.input.graph, d.input.overlap),
-    ...d.timing.get(issue),
-  }));
+  return issues.map((issue) => {
+    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
+    const blockers = entry.blockers.map((b) => {
+      const released = d.released.find(
+        (r) => r.blocker === b.issue && r.dependent === issue,
+      )?.trigger;
+      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
+    });
+    return { ...entry, blockers, ...d.timing.get(issue) };
+  });
 }
 function neverStarted(issue, graph, overlap) {
   const blockers = graph.edges

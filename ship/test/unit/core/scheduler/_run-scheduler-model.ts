@@ -436,6 +436,8 @@ function applyAction(view: View, action: SchedulerAction): void {
     view.ends.set(action.epic, [...(view.ends.get(action.epic) ?? []), action.kind]);
     return;
   }
+  // The model's graphs carry declared edges only, which never release.
+  if (action.kind === 'release') throw new Error(`model: unexpected ${JSON.stringify(action)}`);
   const i = action.issue;
   switch (action.kind) {
     case 'start':

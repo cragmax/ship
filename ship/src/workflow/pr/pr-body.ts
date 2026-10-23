@@ -35,6 +35,7 @@ import type {
   SliceWork,
   TddOutput,
 } from '../calls/agent-calls.js';
+import type { ReleasedEdge } from '../../core/scheduler/run-scheduler.types.js';
 import type { ForwardMove, PassedMasterCheck } from '../epic-end/master-check.js';
 import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord } from '../preflight.js';
@@ -95,6 +96,8 @@ export type ScheduleBlocker =
       readonly source: 'overlap';
       /** issue-overlap's word for the edge. */
       readonly confidence: OverlapConfidence;
+      /** How the blocking issue settled without landing, releasing the edge; absent when not. */
+      readonly released?: ReleasedEdge['trigger'];
     };
 
 /** A landed slice's size, as the `land` envelope measured its commit. */
@@ -696,9 +699,14 @@ function scheduleLine(entry: ScheduleEntry): string {
   );
 }
 
+/**
+ * `#B (declared)` or `#B (overlap, <confidence>)`, a released edge's parentheses ending
+ * `, released: <trigger>`.
+ */
 function blockerText(blocker: ScheduleBlocker): string {
-  const source = blocker.source === 'declared' ? 'declared' : `overlap, ${blocker.confidence}`;
-  return `#${String(blocker.issue)} (${source})`;
+  if (blocker.source === 'declared') return `#${String(blocker.issue)} (declared)`;
+  const released = blocker.released === undefined ? '' : `, released: ${blocker.released}`;
+  return `#${String(blocker.issue)} (overlap, ${blocker.confidence}${released})`;
 }
 
 /** The lease totals' lines: per engine, per issue, then each unparsed line. */
