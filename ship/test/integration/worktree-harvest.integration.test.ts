@@ -34,7 +34,7 @@ import {
   type Changes,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
 import { linkNodeModules } from '../../../tooling/test/helpers/hooked-run.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import { expectUsageFailure, runCli } from '../helpers/worktree-cli-fixture.js';
 import {
   addWorktree,
   mustRun,
@@ -700,12 +700,6 @@ describe('usage errors', () => {
     { name: 'harvest with two shas', args: ['harvest', 'batch', 'a', 'b'] },
     { name: 'staged-guard without files', args: ['staged-guard', 'wt'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.status).toBe('failed');
-    expect(run.json.errors[0]?.step).toBe('usage');
-    const message = run.json.errors[0]?.message ?? '';
-    expect(message).not.toBe('');
-    expect(run.stderr).toContain(`worktree: ${message}`);
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });

@@ -22,7 +22,7 @@ import {
   writeFakeGh,
   type FakeGhResponse,
 } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { runCli } from '../helpers/worktree-cli-fixture.js';
+import { expectUsageFailure, runCli } from '../helpers/worktree-cli-fixture.js';
 import { addWorktree, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -235,12 +235,6 @@ describe('usage errors', () => {
     { name: 'live-runs without a path', args: ['live-runs'] },
     { name: 'live-runs with an extra argument', args: ['live-runs', 'main', 'extra'] },
   ])('exits 2 with a usage envelope for $name', TIMEOUT, ({ args }) => {
-    const run = runCli(args, { cwd: root });
-    expect(run.code).toBe(2);
-    expect(run.json.status).toBe('failed');
-    expect(run.json.errors[0]?.step).toBe('usage');
-    const message = run.json.errors[0]?.message ?? '';
-    expect(message).not.toBe('');
-    expect(run.stderr).toContain(`worktree: ${message}`);
+    expectUsageFailure(runCli(args, { cwd: root }));
   });
 });

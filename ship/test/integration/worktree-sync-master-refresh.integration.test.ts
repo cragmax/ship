@@ -116,6 +116,32 @@ describe('sync-master batch refresh', () => {
     return sha;
   }
 
+  /** An npm run whose batch and `origin/master` each bumped `patch` from the same base. */
+  function identicalBumps(): { run: FixtureRun; ours: string; theirs: string } {
+    const run = makeNpmRun();
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    return { run, ours, theirs };
+  }
+
+  /**
+   * Run `sync-master` on `batch`, assert it failed at `step` before committing and left the batch
+   * clean at `ours` with no merge in progress, and return the run.
+   */
+  function expectHeldMergeAborted(
+    batch: string,
+    ours: string,
+    step: string,
+  ): ReturnType<typeof runSyncMaster> {
+    const r = runSyncMaster(batch);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual([step]);
+    expect(snapshot(batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+    return r;
+  }
+
   it.each([
     { changed: 'src/feature.ts', build: true },
     { changed: 'tsconfig.json', build: true },
@@ -186,9 +212,7 @@ describe('sync-master batch refresh', () => {
   });
 
   it('re-bumps an identical bump, committing the merge through the hooks', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours, theirs } = identicalBumps();
     const hookLog = recordCommits(run.main);
 
     const r = runSyncMaster(run.batch);
@@ -239,33 +263,19 @@ describe('sync-master batch refresh', () => {
   });
 
   it('aborts its held merge when the refresh before the commit fails', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours } = identicalBumps();
     advanceOrigin(root, run.bare, {
       write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
 
-    const r = runSyncMaster(run.batch);
-
-    expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
-    expect(r.json.errors.map((e) => e.step)).toEqual(['build']);
-    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+    expectHeldMergeAborted(run.batch, ours, 'build');
   });
 
   it('aborts its held merge when the commit hook fails', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    bumpOrigin(run, 'patch', 'chore: theirs');
+    const { run, ours } = identicalBumps();
     installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
-    const r = runSyncMaster(run.batch);
-
-    expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
-    expect(r.json.errors.map((e) => e.step)).toEqual(['commit']);
+    const r = expectHeldMergeAborted(run.batch, ours, 'commit');
     expect(readFileSync(r.json.logs.at(-1) ?? '', 'utf8')).toContain(HOOK_SAYS);
-    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
   });
 });

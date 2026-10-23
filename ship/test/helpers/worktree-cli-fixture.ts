@@ -25,7 +25,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { execaSync } from 'execa';
-import { beforeAll, onTestFinished } from 'vitest';
+import { beforeAll, expect, onTestFinished } from 'vitest';
 
 import {
   copyTemplateRepo,
@@ -262,6 +262,19 @@ export function runCli<T extends ResultBase = ResultBase>(
   });
   const json = parseEnvelope(r.stdout, r.stderr) as T;
   return { json, code: r.exitCode ?? -1, stderr: r.stderr };
+}
+
+/**
+ * Assert `run` is the CLI's usage failure: exit 2, a `failed` envelope whose first error is a
+ * `usage` step with a message, and that message on stderr after `worktree: `.
+ */
+export function expectUsageFailure(run: CliRun<ResultBase>): void {
+  expect(run.code).toBe(2);
+  expect(run.json.status).toBe('failed');
+  expect(run.json.errors[0]?.step).toBe('usage');
+  const message = run.json.errors[0]?.message ?? '';
+  expect(message).not.toBe('');
+  expect(run.stderr).toContain(`worktree: ${message}`);
 }
 
 /**

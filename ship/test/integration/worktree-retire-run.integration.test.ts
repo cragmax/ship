@@ -84,6 +84,23 @@ function sliceBranch(name: string): void {
   mustRun('git', ['branch', name, sha], main);
 }
 
+/** Retire `ship/7`, unmerged, and assert the refusal deleted neither it nor `slice/7/1-1`. */
+function expectBranchUnmergedRefusal(): void {
+  const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
+
+  expect(r.code, JSON.stringify(r.json)).toBe(1);
+  expect(r.json).toMatchObject({
+    status: 'refused',
+    reason: 'branch-unmerged',
+    branchDeleted: false,
+    rootRemoved: false,
+  });
+  expect(r.json.errors[0]?.step).toBe('branch-guard');
+  expect(r.json.sliceBranches).toEqual([]);
+  expect(branchResolves()).toBe(true);
+  expect(branchResolves('slice/7/1-1')).toBe(true);
+}
+
 describe('retire-run', () => {
   it('deletes a merged run branch and its run root, so the run can be cut again', TIMEOUT, () => {
     spentRun();
@@ -194,20 +211,8 @@ describe('retire-run', () => {
     tearDown();
     sliceBranch('slice/7/1-1');
 
-    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
-
-    expect(r.code, JSON.stringify(r.json)).toBe(1);
-    expect(r.json).toMatchObject({
-      status: 'refused',
-      reason: 'branch-unmerged',
-      branchDeleted: false,
-      rootRemoved: false,
-    });
-    expect(r.json.errors[0]?.step).toBe('branch-guard');
-    expect(branchResolves()).toBe(true);
+    expectBranchUnmergedRefusal();
     expect(existsSync(runRoot)).toBe(true);
-    expect(r.json.sliceBranches).toEqual([]);
-    expect(branchResolves('slice/7/1-1')).toBe(true);
   });
 
   it('refuses branch-unmerged with no run root, deleting nothing', TIMEOUT, () => {
@@ -217,19 +222,7 @@ describe('retire-run', () => {
     sliceBranch('slice/7/1-1');
     rmSync(runRoot, { recursive: true });
 
-    const r = runCli<RetireRunResult>(['retire-run', main, '--branch', 'ship/7']);
-
-    expect(r.code, JSON.stringify(r.json)).toBe(1);
-    expect(r.json).toMatchObject({
-      status: 'refused',
-      reason: 'branch-unmerged',
-      branchDeleted: false,
-      rootRemoved: false,
-    });
-    expect(r.json.errors[0]?.step).toBe('branch-guard');
-    expect(r.json.sliceBranches).toEqual([]);
-    expect(branchResolves()).toBe(true);
-    expect(branchResolves('slice/7/1-1')).toBe(true);
+    expectBranchUnmergedRefusal();
   });
 
   it.each([
