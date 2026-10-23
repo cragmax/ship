@@ -18,7 +18,6 @@ import { readFileSync } from 'node:fs';
 
 import { GH_BODY_LIMIT } from '../../core/gh-body-limit.js';
 
-import { assertRunBatch } from './cut.js';
 import {
   GH_TIMEOUT_MS,
   NPM_TIMEOUT_MS,
@@ -26,9 +25,8 @@ import {
   runCaptured,
   runStep,
 } from '../git/exec.js';
-import { git } from '../git/git.js';
-import { assertLinkedWorktree } from './harvest.js';
 import { lookupPr } from './live-runs.js';
+import { openPublish } from './publish-open.js';
 import { RUN_BASE_BRANCH } from '../git/run-layout.js';
 import type { OpenedPr, PublishResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
@@ -60,19 +58,9 @@ interface PublishInput {
  */
 export function publish(input: PublishInput): PublishResult {
   const { batch, selfPath = import.meta.filename } = input;
-  const result: PublishResult = {
-    command: 'publish',
-    status: 'ok',
-    worktree: batch,
-    errors: [],
-    pushed: false,
-    pr: null,
-    mergeable: null,
-  };
+  const { result, branch } = openPublish(batch, selfPath);
+  if (branch === null) return result;
   try {
-    assertLinkedWorktree(batch, selfPath);
-    assertRunBatch(batch);
-    const branch = git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
     assertNoOpenPr(batch, branch);
     assertBodyWithinLimit(input.bodyFile);
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });

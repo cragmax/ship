@@ -129,9 +129,12 @@ describe('publish', () => {
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
+      command: 'publish',
       status: 'ok',
+      worktree: run.batch,
       pushed: true,
       pr: { number: 42, url: 'https://github.com/fixture/repo/pull/42' },
+      mergeable: null,
     });
     expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(head);
     expect(readFakePrCreated(bin)).toEqual({
@@ -271,7 +274,9 @@ describe('publish --push-only', () => {
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({
+      command: 'publish',
       status: 'ok',
+      worktree: run.batch,
       pushed: true,
       pr: { number: 5, url: 'https://github.com/fixture/repo/pull/5' },
       mergeable: 'MERGEABLE',
@@ -302,6 +307,35 @@ describe('publish --push-only', () => {
 
     expect(r.json).toMatchObject({ status: 'failed', pushed: false });
     expect(r.json.errors.map((e) => e.step)).toEqual(['pr-state']);
+  });
+
+  it.each([
+    {
+      name: 'a branch outside ship/',
+      target: (run: FixtureRun) => run.batch,
+      reason: 'not-run-batch',
+    },
+    { name: 'the main checkout', target: (run: FixtureRun) => run.main, reason: 'main-worktree' },
+  ])('refuses $name as $reason, pushing nothing', TIMEOUT, (c) => {
+    const run = makeRun('feature/x');
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+
+    const { r } = pushOnly(c.target(run), { 'feature/x': { prs: [{ number: 5, state: 'OPEN' }] } });
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'refused', reason: c.reason, pushed: false, pr: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['preconditions']);
+    expect(onOrigin(run.bare, 'feature/x')).toBe(false);
+  });
+
+  it("pushes and reads the PR of the batch's own branch, whatever its name", TIMEOUT, () => {
+    const run = makeRun('ship/s');
+    const head = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+
+    const { r } = pushOnly(run.batch, { 'ship/s': { prs: [{ number: 5, state: 'OPEN' }] } });
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, pr: { number: 5 } });
+    expect(headSha(run.bare, 'refs/heads/ship/s')).toBe(head);
   });
 
   it('stops at the ancestry pre-check when origin has commits the batch lacks', TIMEOUT, () => {

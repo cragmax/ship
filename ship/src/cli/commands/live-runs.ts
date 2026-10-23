@@ -30,6 +30,7 @@ import {
 } from '../git/git.js';
 import { RUN_BASE_BRANCH, RUN_BRANCH_PREFIX } from '../git/run-layout.js';
 import {
+  Refusal,
   recordFailure,
   StepFailure,
   type LiveRun,
@@ -190,8 +191,7 @@ function isDirty(entry: WorktreeEntry): boolean | null {
 
 /**
  * Ask `gh` for a branch's pull requests, in every state, with each head
- * commit, under `GH_TIMEOUT_MS`. `publish` and `cut-batch --attach` read it
- * too, for their open-PR checks.
+ * commit, under `GH_TIMEOUT_MS`.
  *
  * @param dir - A checkout of the repository.
  * @param branch - Short branch name.
@@ -228,6 +228,25 @@ export function lookupPr(dir: string, branch: string): PrLookup {
     }
   }
   return unknownPr(`gh pr list reported unrecognised states: ${r.stdout}`);
+}
+
+/**
+ * The branch's open PR.
+ *
+ * @param dir - A checkout of the repository: `gh`'s working directory.
+ * @param branch - Short branch name.
+ * @returns Its number.
+ * @throws {@link StepFailure} `pr-state` when `gh` fails or answers unreadably.
+ * @throws {@link Refusal} `no-open-pr` when the branch has no open PR, naming its state and number.
+ */
+export function openPr(dir: string, branch: string): number {
+  const { info, error } = lookupPr(dir, branch);
+  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
+  if (info.state !== 'open' || info.number === null) {
+    const pr = info.number === null ? '' : ` (#${String(info.number)})`;
+    throw new Refusal('no-open-pr', 'pr-state', `${branch} has no open PR: ${info.state}${pr}`);
+  }
+  return info.number;
 }
 
 function unknownPr(error: string): PrLookup {

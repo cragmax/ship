@@ -16,14 +16,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import { z } from 'zod';
 
-import { assertRunBatch } from './cut.js';
 import { GH_TIMEOUT_MS, NPM_TIMEOUT_MS, runCaptured, runStep } from '../git/exec.js';
-import { fetchOrigin, git, refExists, resolveCommit } from '../git/git.js';
-import { assertLinkedWorktree } from './harvest.js';
-import { lookupPr } from './live-runs.js';
+import { fetchOrigin, refExists, resolveCommit } from '../git/git.js';
+import { openPr } from './live-runs.js';
 import { pushBranch } from './publish.js';
+import { openPublish } from './publish-open.js';
 import type { PublishResult } from '../envelope/types-run.js';
-import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
+import { recordFailure, StepFailure } from '../envelope/types.js';
 
 /** The most `gh pr view` reads while the mergeable state is `UNKNOWN`. */
 export const MERGEABLE_READS = 10;
@@ -61,20 +60,10 @@ interface PushOnlyInput {
  */
 export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResult> {
   const { batch, selfPath = import.meta.filename, pollMs = MERGEABLE_POLL_MS } = input;
-  const result: PublishResult = {
-    command: 'publish',
-    status: 'ok',
-    worktree: batch,
-    errors: [],
-    pushed: false,
-    pr: null,
-    mergeable: null,
-  };
+  const { result, branch } = openPublish(batch, selfPath);
+  if (branch === null) return result;
   try {
-    assertLinkedWorktree(batch, selfPath);
-    assertRunBatch(batch);
-    const branch = git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
-    const number = openPrNumber(batch, branch);
+    const number = openPr(batch, branch);
     fetchOrigin(batch);
     if (aheadOfOrigin(batch, branch)) {
       runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
@@ -88,22 +77,6 @@ export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResu
     recordFailure(result, err);
   }
   return result;
-}
-
-/**
- * The number of the branch's open PR.
- *
- * @throws StepFailure `pr-state` when `gh` fails or answers unreadably; Refusal `no-open-pr`
- *   naming the state and number otherwise.
- */
-function openPrNumber(batch: string, branch: string): number {
-  const { info, error } = lookupPr(batch, branch);
-  if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
-  if (info.state !== 'open' || info.number === null) {
-    const pr = info.number === null ? '' : ` (#${String(info.number)})`;
-    throw new Refusal('no-open-pr', 'pr-state', `${branch} has no open PR: ${info.state}${pr}`);
-  }
-  return info.number;
 }
 
 /**
