@@ -19,8 +19,7 @@ import { z } from 'zod';
 import { GH_TIMEOUT_MS, NPM_TIMEOUT_MS, runCaptured, runStep } from '../git/exec.js';
 import { fetchOrigin, refExists, resolveCommit } from '../git/git.js';
 import { openPr } from './live-runs.js';
-import { pushBranch } from './publish.js';
-import { openPublish } from './publish-open.js';
+import { newPublishResult, publishableBranch, pushBranch } from './publish.js';
 import type { PublishResult } from '../envelope/types-run.js';
 import { recordFailure, StepFailure } from '../envelope/types.js';
 
@@ -60,9 +59,9 @@ interface PushOnlyInput {
  */
 export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResult> {
   const { batch, selfPath = import.meta.filename, pollMs = MERGEABLE_POLL_MS } = input;
-  const { result, branch } = openPublish(batch, selfPath);
-  if (branch === null) return result;
+  const result = newPublishResult(batch);
   try {
+    const branch = publishableBranch(batch, selfPath);
     const number = openPr(batch, branch);
     fetchOrigin(batch);
     if (aheadOfOrigin(batch, branch)) {

@@ -25,8 +25,10 @@ import {
   runCaptured,
   runStep,
 } from '../git/exec.js';
+import { assertRunBatch } from './cut.js';
+import { git } from '../git/git.js';
+import { assertLinkedWorktree } from './harvest.js';
 import { lookupPr } from './live-runs.js';
-import { openPublish } from './publish-open.js';
 import { RUN_BASE_BRANCH } from '../git/run-layout.js';
 import type { OpenedPr, PublishResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
@@ -58,9 +60,9 @@ interface PublishInput {
  */
 export function publish(input: PublishInput): PublishResult {
   const { batch, selfPath = import.meta.filename } = input;
-  const { result, branch } = openPublish(batch, selfPath);
-  if (branch === null) return result;
+  const result = newPublishResult(batch);
   try {
+    const branch = publishableBranch(batch, selfPath);
     assertNoOpenPr(batch, branch);
     assertBodyWithinLimit(input.bodyFile);
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
@@ -71,6 +73,33 @@ export function publish(input: PublishInput): PublishResult {
     recordFailure(result, err);
   }
   return result;
+}
+
+/** A fresh `ok` envelope of either publish form. */
+export function newPublishResult(batch: string): PublishResult {
+  return {
+    command: 'publish',
+    status: 'ok',
+    worktree: batch,
+    errors: [],
+    pushed: false,
+    pr: null,
+    mergeable: null,
+  };
+}
+
+/**
+ * Run the guards both publish forms open with, a linked run batch, and read its branch.
+ *
+ * @param selfPath - The running CLI's file, for the self-hosted guard.
+ * @returns The batch's branch, short form.
+ * @throws Refusal with harvest's linked-worktree reasons, or `not-run-batch`; StepFailure
+ *   `preconditions` when git fails.
+ */
+export function publishableBranch(batch: string, selfPath: string): string {
+  assertLinkedWorktree(batch, selfPath);
+  assertRunBatch(batch);
+  return git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
 }
 
 /**
