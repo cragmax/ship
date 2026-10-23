@@ -28,10 +28,12 @@ async function main(): Promise<void> {
   ];
 
   const failures = results.filter((r) => !r.ok);
+
   if (failures.length > 0) {
     for (const f of failures) {
       console.error(`FAIL: ${f.target} — ${f.reason ?? 'unknown'}`);
     }
+
     console.error('\nRun `npm run codegen` to regenerate.');
     process.exit(1);
   }

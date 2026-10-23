@@ -34,6 +34,7 @@ interface SetDifference {
 export function normaliseRepoPath(path: string): string {
   let out = toPosix(path);
   while (out.startsWith('./')) out = out.slice(2);
+
   return out;
 }
 
@@ -71,6 +72,7 @@ export function stagedPaths(dir: string, step: string): string[] {
 export function compareSets(expected: readonly string[], actual: readonly string[]): SetDifference {
   const want = new Set(expected);
   const have = new Set(actual);
+
   return {
     missing: sortedSet(expected.filter((p) => !have.has(p))),
     unexpected: sortedSet(actual.filter((p) => !want.has(p))),
@@ -102,6 +104,7 @@ export function stagedGuard(input: {
     missing: [],
     unexpected: [],
   };
+
   try {
     requireWorktreeRoot(worktree, 'preconditions');
     result.staged = stagedPaths(worktree, 'staged-set');
@@ -110,6 +113,7 @@ export function stagedGuard(input: {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -121,6 +125,7 @@ export function stagedGuard(input: {
  */
 function assertEqualSets(result: StagedGuardResult): void {
   if (result.missing.length === 0 && result.unexpected.length === 0) return;
+
   throw new Refusal(
     'staged-mismatch',
     'staged-set',

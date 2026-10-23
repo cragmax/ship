@@ -48,6 +48,7 @@ export function commit(input: CommitInput): CommitResult {
     commit: null,
     log: null,
   };
+
   try {
     requireWorktreeRoot(worktree, 'preconditions');
     assertNoMerge(worktree);
@@ -60,6 +61,7 @@ export function commit(input: CommitInput): CommitResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -71,6 +73,7 @@ export function commit(input: CommitInput): CommitResult {
  */
 function assertNoMerge(worktree: string): void {
   if (!refExists(worktree, 'MERGE_HEAD')) return;
+
   throw new Refusal(
     'merge-in-progress',
     'preconditions',
@@ -86,6 +89,7 @@ function assertNoMerge(worktree: string): void {
 function assertStagedSet(worktree: string, files: readonly string[]): void {
   const diff = compareSets(files, stagedPaths(worktree, 'staged-set'));
   if (diff.missing.length === 0 && diff.unexpected.length === 0) return;
+
   throw new Refusal(
     'staged-mismatch',
     'staged-set',

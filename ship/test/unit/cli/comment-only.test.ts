@@ -286,6 +286,7 @@ describe('proveCommentOnly', () => {
       },
       'trim',
     );
+
     expect(
       proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } }),
     ).toMatchObject({
@@ -307,6 +308,7 @@ describe('proveCommentOnly', () => {
       { rename: [['b.ts', 'lib-b.ts']], write: { 'lib-b.ts': B_TRIMMED } },
       'trim',
     );
+
     expect(proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } })).toEqual(
       {
         compared: 1,
@@ -328,6 +330,7 @@ describe('proveCommentOnly', () => {
       },
       'garble',
     );
+
     expect(proveCommentOnly(dir, { base: first, head: { kind: 'revision', rev: second } })).toEqual(
       {
         compared: 1,

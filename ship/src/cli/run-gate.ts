@@ -46,13 +46,16 @@ interface Operand {
 export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
   const [command, ...tokens] = argv;
   if (command === undefined) throw usageError('missing subcommand (epics, issues or check)');
+
   if (command !== 'epics' && command !== 'issues' && command !== 'check') {
     throw usageError(`unknown subcommand '${command}'`);
   }
+
   const { operands, exclude } = parseOperands(tokens);
   if (operands.length === 0) throw usageError(`no issue numbers after '${command}'`);
   if (command === 'check') return checkArgs(operands, exclude);
   const numbers = operands.map((o) => o.value);
+
   return {
     kind: 'gate',
     spec:
@@ -69,6 +72,7 @@ export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
  */
 export function exitCodeFor(result: GateVerdict | IssueCheck): number {
   if ('verdict' in result) return result.verdict === 'ok' ? 0 : 1;
+
   return result.ready ? 0 : 1;
 }
 
@@ -83,10 +87,12 @@ function parseOperands(tokens: readonly string[]): {
 } {
   const operands: Operand[] = [];
   let exclude: string | undefined;
+
   for (const token of tokens) {
     if (token.startsWith('--')) exclude = parseFlag(token);
     else for (const value of parseNumberToken(token)) addOperand(operands, { value, token });
   }
+
   return { operands, exclude };
 }
 
@@ -97,6 +103,7 @@ function parseOperands(tokens: readonly string[]): {
  */
 function parseFlag(token: string): string {
   if (token !== '--exclude') throw usageError(`unknown flag '${token}'`);
+
   return token;
 }
 
@@ -122,6 +129,7 @@ function addOperand(operands: Operand[], operand: Operand): void {
   if (operands.some((o) => o.value === operand.value)) {
     throw usageError(`duplicate issue number ${String(operand.value)} in '${operand.token}'`);
   }
+
   operands.push(operand);
 }
 
@@ -133,9 +141,11 @@ function addOperand(operands: Operand[], operand: Operand): void {
 function parseIssueNumber(piece: string, token: string): number {
   const digits = /^#?(\d+)$/.exec(piece.trim())?.[1];
   const value = digits === undefined ? Number.NaN : Number(digits);
+
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw usageError(`not a positive issue number: '${token}'`);
   }
+
   return value;
 }
 
@@ -150,6 +160,7 @@ function checkArgs(operands: readonly Operand[], exclude: string | undefined): R
   if (extra !== undefined)
     throw usageError(`check takes exactly one issue; extra '${extra.token}'`);
   if (first === undefined) throw usageError('check takes exactly one issue');
+
   return { kind: 'check', issue: first.value };
 }
 
@@ -167,10 +178,13 @@ function usageError(reason: string): Error {
 async function ghJson(args: readonly string[]): Promise<unknown> {
   const result = await execa('gh', args, { timeout: 60_000, reject: false });
   const command = `gh ${args.join(' ')}`;
+
   if (result.failed) {
     const detail = result.stderr === '' ? (result.shortMessage ?? 'no output') : result.stderr;
+
     throw new Error(`run-gate: ${command} failed: ${detail}`);
   }
+
   try {
     return JSON.parse(result.stdout) as unknown;
   } catch {
@@ -192,6 +206,7 @@ export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
       args.kind === 'check'
         ? await gatherCheck(args.issue, gh)
         : await gatherAndEvaluate(args.spec, args.mode, gh);
+
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exitCode = exitCodeFor(result);
   } catch (error) {

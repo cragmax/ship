@@ -74,6 +74,7 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
     snapshot: null,
     problems: [],
   };
+
   try {
     assertMainWorktree(main, 'preconditions');
     fetchOrigin(main);
@@ -93,6 +94,7 @@ export async function preflight(input: PreflightInput): Promise<PreflightResult>
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -111,14 +113,17 @@ function checkMasterLevel(main: string, result: PreflightResult): void {
   )
     .split(/\s+/u)
     .map(Number);
+
   result.ahead = ahead;
   result.behind = behind;
+
   if (ahead > 0) {
     result.problems.push({
       check: 'master-ahead',
       message: `local ${RUN_BASE_BRANCH} is ${String(ahead)} commit(s) ahead of origin/${RUN_BASE_BRANCH}`,
     });
   }
+
   if (behind > 0) {
     result.problems.push({
       check: 'master-behind',
@@ -134,9 +139,11 @@ function checkMasterLevel(main: string, result: PreflightResult): void {
  */
 function remoteMaster(main: string): string {
   const sha = lsRemoteRef(main, `refs/heads/${RUN_BASE_BRANCH}`, 'snapshot');
+
   if (sha === null) {
     throw new StepFailure('snapshot', 'git ls-remote origin refs/heads/master names no ref');
   }
+
   return sha;
 }
 
@@ -147,6 +154,7 @@ function remoteMaster(main: string): string {
 function checkGhAuth(main: string): PreflightProblem[] {
   const r = runCaptured('gh', ['auth', 'status'], { cwd: main, timeoutMs: GH_TIMEOUT_MS });
   if (r.exitCode === 0) return [];
+
   return [{ check: 'gh-auth', message: `gh auth status exited ${String(r.exitCode)}: ${r.tail}` }];
 }
 
@@ -162,9 +170,11 @@ async function checkWarmSet(main: string, probe: WarmProbe): Promise<PreflightPr
   const outcomes = await Promise.all(
     WARM_SET.map((member) => probeMember(member, loaded.value, probe)),
   );
+
   return outcomes.flatMap((reason, i) => {
     const member = WARM_SET[i];
     if (reason === null || member === undefined) return [];
+
     return [{ check: 'warm-unreachable' as const, message: `${memberLabel(member)}: ${reason}` }];
   });
 }
@@ -179,6 +189,7 @@ async function probeMember(
   if (entry === undefined) return 'not in the registry';
   const r = await probe({ host: entry.host, port: entry.rconPort, password: entry.rconPassword });
   if (r.ok) return null;
+
   return `RCON ${r.stage} failed: ${r.error instanceof Error ? r.error.message : String(r.error)}`;
 }
 
@@ -191,6 +202,7 @@ async function probeMember(
 function checkSliceBranches(main: string, slugs: readonly string[]): PreflightProblem[] {
   return slugs.flatMap((slug) => {
     const { branch } = runLayout(main, slug);
+
     return branchesUnder(main, sliceBranchPrefix(slug), 'slice-branches').map((name) => ({
       check: 'stale-slice-branch' as const,
       message: `${name} is left over from a run of ${branch}`,
@@ -206,6 +218,7 @@ function checkSliceBranches(main: string, slugs: readonly string[]): PreflightPr
  */
 function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
   const { batch } = runLayout(main, attachSlug(branch));
+
   return [
     problemOf('no-open-pr', () => openPr(main, branch)),
     problemOf('slices-live', () => {
@@ -226,11 +239,13 @@ function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
 function problemOf(check: PreflightCheck, guard: () => unknown): PreflightProblem | null {
   try {
     guard();
+
     return null;
   } catch (err) {
     if (err instanceof Refusal || (err instanceof StepFailure && err.step === 'pr-state')) {
       return { check, message: err.message };
     }
+
     throw err;
   }
 }
@@ -242,6 +257,7 @@ function problemOf(check: PreflightCheck, guard: () => unknown): PreflightProble
  */
 function assertNoProblems(problems: readonly PreflightProblem[]): void {
   if (problems.length === 0) return;
+
   throw new Refusal(
     'preflight-failed',
     'preflight',

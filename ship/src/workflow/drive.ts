@@ -107,12 +107,15 @@ export async function drive(input: DriveInput): Promise<EpicReport[]> {
     ...e,
     source: scheduleBlocker(e.blocker, e.dependent, input.overlap).source,
   }));
+
   apply(d, createScheduler({ runSet: input.graph.runSet, edges, maxSlices: input.maxSlices }));
+
   while (d.flights.size > 0) {
     const note = await Promise.race(d.flights.values());
     d.flights.delete(flightKey(note));
     onNote(d, note);
   }
+
   return input.entries.map((_entry, i) => entryReport(d, i));
 }
 
@@ -135,6 +138,7 @@ function newDrive(input: DriveInput): Drive {
     repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
+
   input.entries.forEach((entry, i) => {
     d.contexts.push({
       ...entry,
@@ -146,6 +150,7 @@ function newDrive(input: DriveInput): Drive {
       },
     });
   });
+
   return d;
 }
 
@@ -177,6 +182,7 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     epic,
     entry: haltOf(d, i),
   });
+
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
   d.timing.set(issue, {
@@ -199,6 +205,7 @@ function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void
     ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
       ? (ending.kept?.patch ?? null)
       : null;
+
   if (patch === null) d.previousPatches.delete(issue);
   else d.previousPatches.set(issue, patch);
 }
@@ -229,9 +236,11 @@ function record(
   events: readonly SchedulerEvent[],
 ): void {
   const committed = events.some((e) => e.kind === 'committed');
+
   if (ending.kind === 'landed' && committed) {
     d.landed.set(i, [...(d.landed.get(i) ?? []), { ...ending.work, issue, commit: ending.commit }]);
   }
+
   const report = issueOutcome(issue, ending, committed, haltOf(d, i) === 'halted');
   if (report !== null) d.outcomes.set(issue, report);
 }
@@ -251,8 +260,10 @@ function issueOutcome(
       return committed
         ? { issue, outcome: 'landed', cite: ending.work.tdd.closes, commit: ending.commit }
         : { issue, outcome: 'landed-then-halted', cite: 'see', commit: ending.commit };
+
     case 'unlanded': {
       const outcome = unlandedOutcome(issue, ending.primary, halted);
+
       return outcome === null || ending.kept === null ? outcome : { ...outcome, kept: ending.kept };
     }
   }
@@ -273,9 +284,11 @@ function unlandedOutcome(
     return { issue, outcome: 'halted', cite: 'see', ...(reason === undefined ? {} : { reason }) };
   if (primary.kind === 'blocked')
     return { issue, outcome: 'blocked', cite: 'see', reason: primary.reason };
+
   if (primary.kind === 'label-removed') {
     return { issue, outcome: 'removed', cite: 'see', reason: 'no longer open and ready-for-agent' };
   }
+
   return null;
 }
 
@@ -353,10 +366,13 @@ function startAttempt(d: Drive, issue: number): void {
 function endEpic(d: Drive, i: number): void {
   const landed = d.landed.get(i) ?? [];
   const entry = d.input.entries[i];
+
   if (landed.length === 0 || entry === undefined) {
     endUnshipped(d, i, 'nothing-landed');
+
     return;
   }
+
   const issues = issueReports(d, i);
   const residue = d.residue.get(i) ?? [];
   const schedule = scheduleOf(d, i);
@@ -381,6 +397,7 @@ function endEpic(d: Drive, i: number): void {
       residue,
     }),
   );
+
   startEnd(d, i, report);
 }
 
@@ -409,6 +426,7 @@ function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed')
       retro: null,
     }),
   );
+
   startEnd(d, i, report);
 }
 
@@ -433,6 +451,7 @@ function entryReport(d: Drive, i: number): EpicReport {
   const end = d.ends.get(i);
   if (end !== undefined) return end;
   const entry = d.input.entries[i];
+
   return {
     epic: entry?.epic ?? null,
     branch: entry?.branch ?? '',
@@ -449,6 +468,7 @@ function entryReport(d: Drive, i: number): EpicReport {
  */
 function issueReports(d: Drive, i: number): IssueReport[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
+
   return issues.map((issue) => d.outcomes.get(issue) ?? { issue, outcome: 'halted', cite: 'see' });
 }
 
@@ -459,14 +479,17 @@ function issueReports(d: Drive, i: number): IssueReport[] {
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
+
   return issues.map((issue) => {
     const entry = neverStarted(issue, d.input.graph, d.input.overlap);
     const blockers = entry.blockers.map((b): ScheduleBlocker => {
       const released = d.released.find(
         (r) => r.blocker === b.issue && r.dependent === issue,
       )?.trigger;
+
       return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
     });
+
     return { ...entry, blockers, ...d.timing.get(issue) };
   });
 }
@@ -487,6 +510,7 @@ export function neverStarted(
     .map((e) => e.blocker)
     .sort((a, b) => a - b)
     .map((blocker) => scheduleBlocker(blocker, issue, overlap));
+
   return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
 }
 
@@ -501,6 +525,7 @@ function scheduleBlocker(
   overlap: OverlapRecord,
 ): ScheduleBlocker {
   const added = overlap.added.some((e) => e.blocker === blocker && e.dependent === dependent);
+
   return { issue: blocker, source: added ? 'overlap' : 'declared' };
 }
 
@@ -508,6 +533,7 @@ function scheduleBlocker(
 function entryOverlap(d: Drive, i: number): OverlapRecord {
   const issues = new Set(d.input.graph.runSet[i]?.issues ?? []);
   const { overlap } = d.input;
+
   return {
     added: overlap.added.filter((e) => issues.has(e.blocker)),
     sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
@@ -526,5 +552,6 @@ function entryOfEpic(d: Drive, epic: number | null): number {
 
 function eventSubject(event: SchedulerEvent): string {
   if (event.kind !== 'epic-halt') return `#${String(event.issue)}`;
+
   return event.epic === null ? 'the issue list' : `epic #${String(event.epic)}`;
 }

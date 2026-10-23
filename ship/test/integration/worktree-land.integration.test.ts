@@ -39,6 +39,7 @@ import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/w
 // the options each one got. The CLI-spawned tests run in their own process.
 vi.mock('../../src/cli/git/exec.js', async (importOriginal) => {
   const actual = await importOriginal<typeof ExecModule>();
+
   return { ...actual, runCaptured: vi.fn(actual.runCaptured) };
 });
 
@@ -77,12 +78,14 @@ function makeRun(base: Record<string, string>, batchBranch = 'ship/r'): Run {
   const batch = addWorktree(main, `${root}/batch`, batchBranch);
   const cut = headSha(batch);
   const slice = addWorktree(main, `${root}/slice`, 'slice/r/1-1', cut);
+
   return { main, batch, slice, cut };
 }
 
 /** Write the message file and run `land` for `sha` cut at `cut`. */
 function land(batch: string, sha: string, cut: string): ReturnType<typeof runCli<LandResult>> {
   writeFileSync(`${root}/msg.txt`, MESSAGE);
+
   return runCli<LandResult>([
     'land',
     batch,
@@ -116,6 +119,7 @@ function snapshot(dir: string): { head: string; porcelain: string; staged: strin
 /** The raw message of a commit, exactly as stored. */
 function rawMessage(dir: string, sha: string): string {
   const raw = mustRun('git', ['cat-file', 'commit', sha], dir);
+
   // execa strips the final newline git's stored message always ends with.
   return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
 }
@@ -182,6 +186,7 @@ describe('land', () => {
       { write: { 'mod.txt': 'one\nslice\nthree\n', 'fresh.txt': 'fresh\n' } },
       'slice',
     );
+
     commitChanges(run.batch, { write: { 'mod.txt': 'one\nbatch\nthree\n' } }, 'landed first');
     const head = headSha(run.batch);
 
@@ -313,6 +318,7 @@ describe('land (in-process)', () => {
     const commits = vi
       .mocked(runCaptured)
       .mock.calls.filter(([file, args]) => file === 'git' && args.includes('commit'));
+
     expect(commits).toHaveLength(1);
     expect(commits[0]?.[2]).toMatchObject({
       timeoutMs: COMMIT_TIMEOUT_MS,
@@ -376,6 +382,7 @@ describe('runCaptured budget kill (in-process)', () => {
       timeoutMs: 3_000,
       logFile: log,
     });
+
     return { r, log };
   }
 

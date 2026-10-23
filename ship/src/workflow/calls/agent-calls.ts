@@ -123,6 +123,7 @@ function overlapSchema(issues: readonly number[]): JsonSchema {
   const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
   const { pairs, liveOverlaps } = base.properties;
   const issue = { type: 'integer', enum: issues } as const;
+
   return {
     ...base,
     properties: {
@@ -146,6 +147,7 @@ async function askAgent<T>(
   options: AgentOptions,
 ): Promise<T | null> {
   const out = await hooks.agent(prompt, options);
+
   return typeof out === 'object' && out !== null ? (out as T) : null;
 }
 

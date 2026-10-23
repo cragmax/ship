@@ -22,6 +22,7 @@ const ROOT = resolve(import.meta.dirname, '../../../..');
 export function workflowSpec(name: string): WorkflowSpec {
   const spec = WORKFLOWS.find((w) => w.name === name);
   if (spec === undefined) throw new Error(`no ${name} row in WORKFLOWS`);
+
   return spec;
 }
 
@@ -49,6 +50,7 @@ export function runRendered(js: string, run: FakeRun, args: string): Promise<unk
   // The runtime's wrapper: the file as a function body (Ship PF-4), `export` dropped,
   // hooks + `args` as globals (unprobed).
   const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
+
   // eslint-disable-next-line sonarjs/code-eval -- runs a fresh render of the repo's own sources, never user input
   return vm.runInContext(script, vm.createContext({ ...run.hooks, args })) as Promise<unknown>;
 }

@@ -423,6 +423,7 @@ describe('runShip — one issue from launch to PR', () => {
 
     const argvOf = (label: string): readonly string[] =>
       run.calls.find((c) => c.label === label)?.argv ?? [];
+
     expect(argvOf('runner:cut-batch:list')).toEqual([
       'ship/src/cli/worktree.ts',
       'cut-batch',
@@ -679,6 +680,7 @@ describe('runShip — every tool failure is a refusal', () => {
 const promptOf = (run: FakeRun, label: string): string => {
   const call = run.calls.find((c) => c.label === label);
   expect(call, `a ${label} call`).toBeDefined();
+
   return call?.prompt ?? '';
 };
 
@@ -701,6 +703,7 @@ describe('runShip — the runner’s command line', () => {
       promptOf(run, label)
         .split('\n')
         .find((l) => l.startsWith('Command: '));
+
     expect(commandOf('runner:run-gate')).toBe(
       'Command: node --import tsx ship/src/cli/run-gate.ts issues 7',
     );
@@ -1569,6 +1572,7 @@ describe('runShip — what an attempt hands on', () => {
     const caps = run.calls.flatMap((c) =>
       c.prompt.split('\n').filter((l) => l.startsWith('Probe caps: ')),
     );
+
     expect(new Set(caps)).toEqual(new Set([PROBE_CAPS]));
   });
 
@@ -1649,6 +1653,7 @@ describe('runShip — what an attempt hands on', () => {
       const keys = promptOf(run, label)
         .split('\n')
         .map((l) => l.slice(0, l.indexOf(': ')));
+
       expect(keys).toEqual([
         'Checkout',
         'Issue',
@@ -1675,6 +1680,7 @@ describe('runShip — what an attempt hands on', () => {
     const keys = promptOf(run, 'testReview:7-1')
       .split('\n')
       .map((l) => l.slice(0, l.indexOf(': ')));
+
     expect(keys).toEqual([
       'Checkout',
       'Issue',
@@ -1703,6 +1709,7 @@ describe('runShip — what an attempt hands on', () => {
       0,
       lines.findIndex((l) => l.startsWith('Commit message template: ')),
     );
+
     expect(head.map((l) => l.slice(0, l.indexOf(': ')))).toEqual([
       'Checkout',
       'Issue',
@@ -1810,6 +1817,7 @@ describe('runShip — the slice test review', () => {
       ...(proofRuns ? ['runner:comment-only:7-1'] : []),
       ...(reviewRuns ? ['testReview:7-1'] : []),
     ]);
+
     if (proofRuns) {
       expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
         'ship/src/cli/comment-only.ts',
@@ -2050,6 +2058,7 @@ async function haltRace(teardownKey: string) {
     'log fed blocked #7',
     'log fed blocked #8',
   ]);
+
   return { run, report };
 }
 
@@ -2528,6 +2537,7 @@ describe('agent-call tiers', () => {
       await runShip(run.hooks, args);
 
       expect(run.calls.length).toBeGreaterThan(0);
+
       for (const call of run.calls) {
         const stage = call.label.split(':')[0] ?? '';
         expect(Object.keys(STAGES)).toContain(stage);
@@ -2548,6 +2558,7 @@ describe('runShip — the slice reviews’ Passed at block', () => {
     const lines = promptOf(run, label).split('\n');
     const start = lines.findIndex((l) => l.startsWith('Passed at '));
     const end = lines.findIndex((l) => l.startsWith('Lease command: '));
+
     return start === -1 ? [] : lines.slice(start, end);
   };
 

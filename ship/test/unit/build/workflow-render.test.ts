@@ -49,9 +49,11 @@ const FORBIDDEN = [
 /** A source reader over in-memory files, keyed by repo-relative path. */
 const fixture = (files: Readonly<Record<string, string>>) => {
   const byPath = new Map(Object.entries(files).map(([p, src]) => [resolve(ROOT, p), src]));
+
   return (path: string): string => {
     const src = byPath.get(path);
     if (src === undefined) throw new Error(`no fixture file ${path}`);
+
     return src;
   };
 };
@@ -112,6 +114,7 @@ describe('the ship render', () => {
     const at = (declaration: string): number => {
       const index = out.indexOf(declaration);
       expect(index, declaration).toBeGreaterThan(-1);
+
       return index;
     };
 

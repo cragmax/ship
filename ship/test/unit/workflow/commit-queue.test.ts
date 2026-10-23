@@ -255,12 +255,15 @@ describe('createCommitQueue', () => {
       log.push('first start');
       await gate;
       log.push('first end');
+
       throw new Error('first failed');
     });
     const second = queue.enqueue(() => {
       log.push('second start');
+
       return Promise.resolve('second');
     });
+
     await Promise.resolve();
     await Promise.resolve();
     expect(log).toEqual(['first start']);

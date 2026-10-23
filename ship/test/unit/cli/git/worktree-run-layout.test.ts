@@ -128,12 +128,14 @@ describe('attached runs', () => {
 
     expect(n).toBe(2);
     const taken = left.branches.map((b) => `slice/epic-1182/${b}`);
+
     for (const branch of [
       sliceLayout(batch, slug, 1190, 1, n).branch,
       sliceLayout(batch, slug, 1190, 2, n).branch,
     ]) {
       expect(taken).not.toContain(branch);
     }
+
     expect(left.reports).not.toContain(`attach-${String(n)}`);
   });
 });

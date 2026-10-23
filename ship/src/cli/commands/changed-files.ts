@@ -37,6 +37,7 @@ export function changedFiles(input: ChangedFilesInput): ChangedFilesResult {
     errors: [],
     files: [],
   };
+
   try {
     const base = resolveCommit(worktree, input.base, 'resolve');
     const sha = resolveCommit(worktree, input.sha, 'resolve');
@@ -46,5 +47,6 @@ export function changedFiles(input: ChangedFilesInput): ChangedFilesResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }

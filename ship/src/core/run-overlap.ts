@@ -75,14 +75,17 @@ export function mergeOverlapEdges(graph: RunGraph, pairs: readonly OverlapPair[]
   const issues = runSetIssues(graph.runSet);
   overlapAssertPairs(issues, pairs);
   const cycles = findCycles(issues, graph.edges);
+
   if (cycles.length > 0) {
     overlapFail(
       `the declared edges hold a cycle among ${cycles.map((c) => c.map(overlapRef).join(', ')).join('; ')}`,
     );
   }
+
   const unique = overlapDistinct(pairs);
   const entryOf = overlapEntryIndex(graph);
   const crossing = unique.filter((p) => entryOf.get(p.a) !== entryOf.get(p.b));
+
   if (crossing.length > 0) {
     return {
       kind: 'cross-entry',
@@ -93,6 +96,7 @@ export function mergeOverlapEdges(graph: RunGraph, pairs: readonly OverlapPair[]
       })),
     };
   }
+
   return overlapDirect(graph, unique);
 }
 
@@ -101,18 +105,23 @@ function overlapDirect(graph: RunGraph, pairs: readonly OverlapPair[]): OverlapM
   const rank = overlapTopoRank(graph);
   const added: RunEdge[] = [];
   const sequenced: OverlapPair[] = [];
+
   for (const p of pairs) {
     const ordered =
       transitiveDependents([p.a], graph.edges).includes(p.b) ||
       transitiveDependents([p.b], graph.edges).includes(p.a);
+
     if (ordered) {
       sequenced.push(p);
       continue;
     }
+
     const aFirst = (rank.get(p.a) ?? 0) < (rank.get(p.b) ?? 0);
     added.push(aFirst ? { blocker: p.a, dependent: p.b } : { blocker: p.b, dependent: p.a });
   }
+
   const edges = overlapSortEdges(overlapDistinctEdges([...graph.edges, ...added]));
+
   return {
     kind: 'ok',
     graph: { runSet: graph.runSet, edges },
@@ -134,6 +143,7 @@ function overlapTopoRank(graph: RunGraph): ReadonlyMap<number, number> {
   const rank = new Map<number, number>();
   const nextReady = (): number | undefined =>
     order.find((n) => !rank.has(n) && indegree.get(n) === 0);
+
   for (let next = nextReady(); next !== undefined; next = nextReady()) {
     rank.set(next, rank.size);
     const ranked = next;
@@ -143,6 +153,7 @@ function overlapTopoRank(graph: RunGraph): ReadonlyMap<number, number> {
       -1,
     );
   }
+
   return rank;
 }
 
@@ -162,12 +173,14 @@ function overlapShiftIndegree(
 function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPair[]): void {
   for (const p of pairs) {
     const outside = [p.a, p.b].find((n) => !issues.includes(n));
+
     if (outside !== undefined) {
       overlapFail(
         `pair ${overlapPairLabel(p)} names ${overlapRef(outside)}, which is outside the run set`,
       );
     }
   }
+
   for (const p of pairs) {
     if (p.a === p.b) overlapFail(`pair ${overlapPairLabel(p)} pairs an issue with itself`);
   }
@@ -176,10 +189,12 @@ function overlapAssertPairs(issues: readonly number[], pairs: readonly OverlapPa
 /** Each unordered pair once, `a` smaller than `b`, sorted. */
 function overlapDistinct(pairs: readonly OverlapPair[]): OverlapPair[] {
   const seen = new Map<string, OverlapPair>();
+
   for (const p of pairs) {
     const pair = { a: Math.min(p.a, p.b), b: Math.max(p.a, p.b) };
     seen.set(`${String(pair.a)}-${String(pair.b)}`, pair);
   }
+
   return [...seen.values()].sort((x, y) => x.a - y.a || x.b - y.b);
 }
 
@@ -189,16 +204,19 @@ export function overlapEntryIndex(graph: RunGraph): ReadonlyMap<number, number> 
   graph.runSet.forEach((entry, i) => {
     for (const n of entry.issues) entryOf.set(n, i);
   });
+
   return entryOf;
 }
 
 /** Each edge once, first occurrences kept. */
 function overlapDistinctEdges(edges: readonly RunEdge[]): RunEdge[] {
   const seen = new Map<string, RunEdge>();
+
   for (const e of edges) {
     const key = `${String(e.blocker)}>${String(e.dependent)}`;
     if (!seen.has(key)) seen.set(key, { blocker: e.blocker, dependent: e.dependent });
   }
+
   return [...seen.values()];
 }
 

@@ -65,6 +65,7 @@ function slicePair(base: Record<string, string>, slice: Changes, batch?: Changes
   const sliceWt = addWorktree(main, `${root}/slice`, 'slice-1', 'ship/batch');
   const sha = commitChanges(sliceWt, slice, 'S');
   if (batch !== undefined) commitChanges(batchWt, batch, 'B');
+
   return { main, batch: batchWt, sha };
 }
 
@@ -138,6 +139,7 @@ describe('harvest', () => {
         },
         'S',
       );
+
       // Q edits P's file, so a transport that re-applies P (a range from
       // master rather than sha^..sha) conflicts instead of picking empty.
       commitChanges(batch, { write: { 'p.txt': 'landed slice P, amended by Q\n' } }, 'Q');
@@ -218,6 +220,7 @@ describe('harvest', () => {
           },
         },
       );
+
       linkNodeModules(batch);
 
       const run = runCli<HarvestResult>(['harvest', batch, sha]);
@@ -265,6 +268,7 @@ describe('harvest', () => {
           },
         },
       );
+
       linkNodeModules(batch);
       const head = headSha(batch);
 
@@ -403,6 +407,7 @@ describe('harvest', () => {
           ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'side'],
           batch,
         ).trim();
+
         commitChanges(batch, {}, 'batch side');
         mustRun('git', ['merge', '--no-ff', '--no-commit', side], batch);
         expect(porcelain(batch)).toBe('');
@@ -421,6 +426,7 @@ describe('harvest', () => {
           ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD~1', '-m', 'same again'],
           batch,
         ).trim();
+
         expect(runIn('git', ['cherry-pick', again], batch).exitCode).toBe(1);
         expect(porcelain(batch)).toBe('');
       },
@@ -434,6 +440,7 @@ describe('harvest', () => {
       { 'base.txt': 'base\n' },
       { write: { 'slice-added.txt': 'slice\n' } },
     );
+
     make(batch);
     const head = headSha(batch);
 
@@ -460,6 +467,7 @@ describe('harvest', () => {
           ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'other'],
           slice,
         ).trim();
+
         return mustRun(
           'git',
           ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-p', other, '-m', 'merge'],
@@ -493,6 +501,7 @@ describe('harvest', () => {
       target: 'a plain directory',
       path: () => {
         mkdirSync(`${root}/plain`);
+
         return `${root}/plain`;
       },
       reason: 'unregistered-worktree',
@@ -561,6 +570,7 @@ describe('harvest (in-process)', () => {
       const saved = process.env['GIT_DIR'];
       process.env['GIT_DIR'] = `${foreign}/.git`;
       let run: HarvestResult;
+
       try {
         run = harvest({ batch, sha });
       } finally {
@@ -596,6 +606,7 @@ describe('staged-guard', () => {
         'dir/m.txt': 'm v1\n',
         'd.txt': 'deleted\n',
       });
+
       mustRun('git', ['mv', 'a.txt', 'b.txt'], main);
       writeFileSync(join(main, 'dir', 'm.txt'), 'm v2\n');
       writeFileSync(join(main, 'n.txt'), 'new\n');

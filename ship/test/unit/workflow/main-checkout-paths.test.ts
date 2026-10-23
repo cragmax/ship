@@ -48,6 +48,7 @@ describe('the main-checkout paths the Saved workflow invokes', () => {
           .split(' ')
           .filter((word) => word.startsWith(`${MAIN}/`))
           .map((word) => word.slice(MAIN.length + 1));
+
         return { label, paths };
       });
 
@@ -59,6 +60,7 @@ describe('the main-checkout paths the Saved workflow invokes', () => {
     const untracked = toolPaths.flatMap(({ label, paths }) =>
       paths.filter((path) => !TRACKED.has(path)).map((path) => `${label}: ${path}`),
     );
+
     expect(untracked).toEqual([]);
   });
 });

@@ -195,6 +195,7 @@ export async function runPreflight(
     ...(args.attach === null ? {} : { prHead: `origin/${args.attach}` }),
   });
   const found = { refusals, dropped: gateDrops(gate), graph, ...at };
+
   return settleOverlap(bound, settleReadiness(found, readiness, args.exclude), args.attach);
 }
 
@@ -205,6 +206,7 @@ function unanchored(checks: PreflightOutput | null): PreflightOutcome {
     found.length > 0
       ? found
       : [{ kind: 'preflight-error', message: 'preflight named no main checkout' }];
+
   return {
     refusals,
     dropped: [],
@@ -226,6 +228,7 @@ function preflightArgv(args: ShipArgs): string[] {
     args.selection === 'epics'
       ? args.numbers.map((epic) => runSlug({ epic }))
       : [runSlug({ issues: args.numbers })];
+
   return ['.', '--slug', slugs.join(',')];
 }
 
@@ -244,10 +247,12 @@ function exemptSpentSlices(
   const problems = all.filter(
     (p) => p.check !== 'stale-slice-branch' || !tails.some((t) => p.message.endsWith(t)),
   );
+
   if (problems.length === all.length) return checks;
   if (problems.length > 0) return { ...checks, problems };
   const ok: PreflightOutput = { ...checks, status: 'ok', problems };
   delete ok.reason;
+
   return ok;
 }
 
@@ -263,6 +268,7 @@ function overlapValues(found: PreflightOutcome, attach: string | null): IssueOve
     .map((r) => ({ branch: r.branch, landed: r.landed }));
   const count = runSetIssues(graph.runSet).length;
   if (count === 0 || (count < 2 && liveRuns.length === 0)) return null;
+
   return { ...graph, liveRuns, ...(attach === null ? {} : { prHead: `origin/${attach}` }) };
 }
 
@@ -277,15 +283,19 @@ async function settleOverlap(
   attach: string | null,
 ): Promise<PreflightOutcome> {
   const values = overlapValues(found, attach);
+
   if (values === null) {
     return { ...found, overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' } };
   }
+
   const estimate = await AGENT_CALLS.issueOverlap(hooks, values);
+
   if (estimate === null) {
     return withRefusals(found, [
       { kind: 'overlap-estimate-failed', message: 'issue-overlap returned nothing' },
     ]);
   }
+
   const live = estimate.liveOverlaps.map(
     (o): ShipRefusal => ({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.reason}` }),
   );
@@ -294,15 +304,19 @@ async function settleOverlap(
   const unsureWithin = unsureWithinEntry(graph, estimated);
   const pairs = estimated.filter((p) => !unsureWithin.includes(p));
   let merged: OverlapMerge;
+
   try {
     merged = mergeOverlapEdges(graph, pairs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
     return withRefusals(found, [...live, { kind: 'overlap-estimate-failed', message }]);
   }
+
   if (merged.kind === 'cross-entry') {
     return withRefusals(found, [...live, ...merged.pairs.map((p) => crossEpicRefusal(p, pairs))]);
   }
+
   if (live.length > 0) return withRefusals(found, live);
   const overlap: OverlapRecord = {
     added: merged.added.map((e) => ({ ...e, reason: pairReason(e.blocker, e.dependent, pairs) })),
@@ -310,6 +324,7 @@ async function settleOverlap(
     unsure: unsureWithin.map(({ a, b, shared, reason }) => ({ a, b, shared, reason })),
     areaMap: estimate.areaMap,
   };
+
   return { ...found, graph: merged.graph, overlap };
 }
 
@@ -323,8 +338,10 @@ function unsureWithinEntry(graph: RunGraph, pairs: readonly EstimatedPair[]): Es
   const ordered = (p: EstimatedPair): boolean =>
     transitiveDependents([p.a], graph.edges).includes(p.b) ||
     transitiveDependents([p.b], graph.edges).includes(p.a);
+
   return pairs.filter((p) => {
     const entry = entryOf.get(p.a);
+
     return (
       p.confidence === 'unsure' &&
       p.a !== p.b &&
@@ -354,6 +371,7 @@ function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[
   const epic = (e: number | null): string =>
     e === null ? 'the explicit list' : `epic #${String(e)}`;
   const shared = word === undefined ? '' : `; shared ${word.shared.join(', ')}`;
+
   return {
     kind: 'overlap-cross-epic',
     issue: pair.a,
@@ -377,6 +395,7 @@ function samePair(p: OverlapPair, a: number, b: number): boolean {
 /** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
 function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
+
   return snapshot === undefined || snapshot === null ? null : { snapshot };
 }
 
@@ -390,6 +409,7 @@ export function dropWithDependents(graph: RunGraph, issues: readonly number[]): 
   const roots = issues.filter((n) => inGraph.has(n));
   const dependents = transitiveDependents(roots, graph.edges);
   const gone = new Set([...roots, ...dependents]);
+
   return {
     graph: {
       runSet: graph.runSet
@@ -411,7 +431,9 @@ function checkRefusals(checks: PreflightOutput | null): ShipRefusal[] {
     checks?.status === 'refused' && checks.reason === 'preflight-failed'
       ? (checks.problems ?? [])
       : [];
+
   if (problems.length > 0) return problems.map((p) => ({ kind: p.check, message: p.message }));
+
   return [{ kind: 'preflight-error', message: toolError(checks, 'preflight') }];
 }
 
@@ -422,6 +444,7 @@ function checkRefusals(checks: PreflightOutput | null): ShipRefusal[] {
 function gateRefusals(gate: GateOutput | null): ShipRefusal[] {
   if (gate?.verdict === 'ok' && gate.runSet !== undefined && gate.edges !== undefined) return [];
   const failures = gate?.verdict === 'refused' ? (gate.failures ?? []) : [];
+
   if (failures.length > 0) {
     return failures.map((f) => ({
       kind: f.kind,
@@ -429,6 +452,7 @@ function gateRefusals(gate: GateOutput | null): ShipRefusal[] {
       message: f.message,
     }));
   }
+
   return [{ kind: 'gate-error', message: toolError(gate, 'run gate') }];
 }
 
@@ -442,9 +466,12 @@ function gateDrops(gate: GateOutput): DroppedIssue[] {
   return (gate.excluded ?? []).map((x) => {
     if (x.cause === 'dependent') {
       const blockers = x.blockers.map((b) => `#${String(b)}`).join(', ');
+
       return { issue: x.issue, cause: 'dependent', message: `blocked by dropped ${blockers}` };
     }
+
     const failure = (gate.failures ?? []).find((f) => 'issue' in f && f.issue === x.issue);
+
     return { issue: x.issue, cause: 'gate', message: failure?.message ?? 'failed the run gate' };
   });
 }
@@ -457,9 +484,11 @@ function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
   if (live?.status !== 'ok' || live.runs === undefined) {
     return [{ kind: 'live-runs-failed', message: toolError(live, 'live-runs') }];
   }
+
   const unknown = live.runs.filter((r) => r.pr.state === 'unknown');
   if (unknown.length === 0) return [];
   const branches = unknown.map((r) => r.branch).join(', ');
+
   return [{ kind: 'live-runs-failed', message: `pull request state unknown for ${branches}` }];
 }
 
@@ -477,6 +506,7 @@ function readinessFailures(
   v: ReadinessVerdict,
 ): { readonly cause: 'stale' | 'not-ready'; readonly message: string }[] {
   const failed = RUBRIC_POINTS.filter(([key]) => !v[key].pass);
+
   return [
     ...(v.current.pass ? [] : [{ cause: 'stale' as const, message: v.current.evidence }]),
     ...(failed.length === 0
@@ -504,29 +534,36 @@ function settleReadiness(
   const judged = new Set(verdicts.map((v) => v.issue));
   const unjudged = issues.filter((n) => !judged.has(n));
   const refusals = [...found.refusals];
+
   if (unjudged.length > 0) {
     refusals.push({
       kind: 'readiness-unavailable',
       message: `no issue-readiness verdict for ${unjudged.map((n) => `#${String(n)}`).join(', ')}`,
     });
   }
+
   const failing = verdicts
     .map((v) => ({ issue: v.issue, failures: readinessFailures(v) }))
     .filter((f) => f.failures.length > 0);
+
   if (!exclude) {
     for (const f of failing) {
       for (const x of f.failures)
         refusals.push({ kind: x.cause, issue: f.issue, message: x.message });
     }
+
     return { ...found, refusals };
   }
+
   const { graph, dependents } = dropWithDependents(
     found.graph,
     failing.map((f) => f.issue),
   );
+
   if (graph.runSet.length === 0) {
     refusals.push({ kind: 'empty-run-set', message: 'no issue is left after the readiness drops' });
   }
+
   const dropped: DroppedIssue[] = [
     ...found.dropped,
     ...failing.flatMap(({ issue, failures: [first] }): DroppedIssue[] =>
@@ -540,6 +577,7 @@ function settleReadiness(
       }),
     ),
   ];
+
   return { ...found, refusals, dropped, graph };
 }
 
@@ -554,6 +592,7 @@ function toolError(
   what: string,
 ): string {
   if (out === null) return `the runner returned nothing for ${what}`;
+
   return (
     out.stderrTail ??
     out.errors?.[0]?.message ??

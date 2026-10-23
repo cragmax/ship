@@ -59,15 +59,18 @@ export async function probeRcon(
     socketError = error;
   });
   let stage: 'connect' | 'send' = 'connect';
+
   try {
     await client.connect();
     stage = 'send';
     await client.send(command);
     await client.end();
+
     return { ok: true };
   } catch (error) {
     client.socket?.destroy();
     const rejected = stage === 'connect' && isAuthFailure(error);
+
     return { ok: false, stage: rejected ? 'auth' : stage, error: socketError ?? error };
   }
 }

@@ -36,8 +36,10 @@ const SEPARATOR = /\s*(?:,\s*and\b|,|&|and\b)\s*/y;
 export function parseBlockedBySection(body: string): number[] {
   const blockers = new Set<number>();
   let inSection = false;
+
   for (const line of body.replace(/\r\n?/g, '\n').split('\n')) {
     const heading = HEADING_PREFIX.exec(line);
+
     if (heading !== null) {
       inSection = line.slice(heading[0].length).trim().toLowerCase() === 'blocked by';
     } else if (DETAILS.test(line)) {
@@ -46,6 +48,7 @@ export function parseBlockedBySection(body: string): number[] {
       for (const ref of leadingRefRun(line)) blockers.add(ref);
     }
   }
+
   return [...blockers].sort((a, b) => a - b);
 }
 
@@ -58,6 +61,7 @@ function leadingRefRun(line: string): number[] {
   const text = trimmed.slice(LIST_MARKER.exec(trimmed)?.[0].length ?? 0);
   const refs: number[] = [];
   let at = 0;
+
   for (;;) {
     REF.lastIndex = at;
     const ref = REF.exec(text);

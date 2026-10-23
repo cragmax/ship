@@ -48,6 +48,7 @@ const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 const promptLines = (run: FakeRun, label: string): string[] => {
   const call = run.calls.find((c) => c.label === label);
   expect(call, `a ${label} call`).toBeDefined();
+
   return call?.prompt.split('\n') ?? [];
 };
 
@@ -148,6 +149,7 @@ describe('runShip — the overlap estimate', () => {
     const scheduleLines = promptLines(run, 'runner:publish:list').filter((l) =>
       /^- #\d+: blockers /.test(l),
     );
+
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #8: blockers #7 (overlap); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
@@ -426,6 +428,7 @@ describe('runShip — the overlap estimate', () => {
 
     const edgeLines = (label: string): string[] =>
       promptLines(run, label).filter((l) => /^- #\d+ → #\d+/.test(l));
+
     expect(edgeLines('runner:publish:epic-1')).toEqual([`- #1 → #2: ${REASON}`]);
     expect(edgeLines('runner:publish:epic-2')).toEqual([`- #3 → #4: ${REASON}`]);
   });
@@ -511,6 +514,7 @@ describe('runShip — the overlap estimate', () => {
           properties: Record<string, unknown>;
         }
       ).properties;
+
     expect(items('pairs')['a']).toEqual({ type: 'integer', enum: [7, 8, 9] });
     expect(items('pairs')['b']).toEqual({ type: 'integer', enum: [7, 8, 9] });
     expect(items('liveOverlaps')['issue']).toEqual({ type: 'integer', enum: [7, 8, 9] });
@@ -590,6 +594,7 @@ describe('runShip — an overlap edge whose head lands nothing', () => {
     const scheduleLines = promptLines(run, 'runner:publish:list').filter((l) =>
       /^- #\d+: blockers /.test(l),
     );
+
     expect(scheduleLines).toEqual([
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed never; attempts 1; size none',
       '- #8: blockers #7 (overlap, released: blocked); started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',

@@ -32,6 +32,7 @@ export function createJunction(link: string, target: string): void {
 export function linkTarget(path: string): string | null {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (stat?.isSymbolicLink() !== true) return null;
+
   return toPosix(resolve(dirname(path), readlinkSync(path)));
 }
 
@@ -42,6 +43,7 @@ export function linkTarget(path: string): string | null {
  */
 export function isRealDir(path: string): boolean {
   const stat = lstatSync(path, { throwIfNoEntry: false });
+
   return stat !== undefined && stat.isDirectory() && !stat.isSymbolicLink();
 }
 
@@ -50,6 +52,7 @@ function collectLinks(dir: string, out: LinkRecord[]): void {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     const stat = lstatSync(path);
+
     if (stat.isSymbolicLink()) {
       out.push({ path: toPosix(path), target: linkTarget(path) ?? '' });
     } else if (stat.isDirectory()) {
@@ -66,6 +69,7 @@ function collectLinks(dir: string, out: LinkRecord[]): void {
 export function findLinks(root: string): LinkRecord[] {
   const out: LinkRecord[] = [];
   collectLinks(root, out);
+
   return out;
 }
 
@@ -75,12 +79,14 @@ export function findLinks(root: string): LinkRecord[] {
  */
 function countEntries(dir: string, skipDir: (name: string) => boolean = () => false): number {
   let count = 0;
+
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     const real = isRealDir(path);
     if (real && skipDir(name)) continue;
     count += 1 + (real ? countEntries(path) : 0);
   }
+
   return count;
 }
 
@@ -95,6 +101,7 @@ function countEntries(dir: string, skipDir: (name: string) => boolean = () => fa
  */
 export function countSource(dir: string): number | null {
   if (!isRealDir(dir)) return null;
+
   return countEntries(dir, (name) => name.startsWith('.') && name !== '.bin');
 }
 

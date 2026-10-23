@@ -237,6 +237,7 @@ export function renderBlockedComment(input: BlockedCommentInput): string {
     input.pr === undefined
       ? `branch \`${input.branch}\`, no pull request`
       : `PR #${String(input.pr)}`;
+
   return [
     '> *Posted by an unattended `/ship` run. It changed nothing on this issue; the labels stand.*',
     '',
@@ -254,6 +255,7 @@ function whereKept(input: BlockedCommentInput): string {
     ...(patch === null ? [] : [`patch \`${patch}\``]),
     ...(report === null ? [] : [`tdd report \`${report}\``]),
   ];
+
   return parts.length === 0 ? `Report dir: \`${input.reportDir}\`.` : `Kept: ${parts.join(', ')}.`;
 }
 
@@ -296,6 +298,7 @@ function issueMessage(subject: string, cite: string): string {
 export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
   const [only] = input.landed;
   if (input.landed.length === 1 && only !== undefined) return subjectLine(only.tdd.commit);
+
   return `${input.branch}: ${String(input.landed.length)} issues`;
 }
 
@@ -311,6 +314,7 @@ type SliceLeaseWork = Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'sta
  */
 export function sliceLeaseLines(work: SliceLeaseWork): RoleLeaseLines[] {
   const test = work.testReview;
+
   return [
     { role: 'tdd', lines: work.tdd.leaseLines },
     { role: 'spec-review', lines: work.specReview.leaseLines },
@@ -370,6 +374,7 @@ export function fitPrBody(input: PrBodyInput): FittedPrBody {
   if (whole.length <= GH_BODY_LIMIT) return { body: whole, comments: [] };
   const moving = MOVABLE_SECTIONS.filter((m) => m.lines(input).length > 0);
   const closing = closingIssues(input.landed);
+
   return {
     body: prBody(input, new Set(moving)),
     comments: moving.map((m) => ({
@@ -390,6 +395,7 @@ function prBody(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string 
     ...recordedSection(input.landed, 2),
     ...reportBlock(input, moved),
   ].join('\n');
+
   return neutralText(body, closingIssues(input.landed));
 }
 
@@ -421,6 +427,7 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
     report,
     '',
   ].join('\n');
+
   return neutralText(body, closingIssues(input.landed));
 }
 
@@ -438,6 +445,7 @@ export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportCo
     `Run report — attached run ${String(input.run)}`,
     runReportLines(input),
   ).join('\n');
+
   return neutralText(text);
 }
 
@@ -455,20 +463,27 @@ function testsAtPushLines(pushed: PushedChanges): string[] {
   if (pushed.kind === 'unresolved') {
     return [`Not known: the pushed range could not be read (${pushed.why}).`];
   }
+
   const wide = pushed.paths.filter((path) => isPlatformWide(path));
+
   if (wide.length > 0) {
     const paths = wide.map((path) => codeSpan(path)).join(', ');
+
     return [
       `The full standalone and server tiers ran at push: the Platform-wide paths ${paths} changed.`,
     ];
   }
+
   const nightly = 'the full server tier runs in the next nightly after merge';
+
   if (pushed.paths.length > MAX_RELATED_FILES) {
     const count = String(pushed.paths.length);
+
     return [
       `The full standalone tier ran at push: ${count} files changed, past the ${String(MAX_RELATED_FILES)} \`vitest related\` takes; ${nightly}.`,
     ];
   }
+
   return [`Targeted tests only at push: no Platform-wide path changed; ${nightly}.`];
 }
 
@@ -491,10 +506,12 @@ function recordedItems(landed: LandedIssue): string[] {
 function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[] {
   const lines = landed.flatMap((l) => {
     const items = recordedItems(l);
+
     return items.length === 0
       ? []
       : [`- #${String(l.issue)}`, ...items.map((item) => `  - ${item}`)];
   });
+
   return lines.length === 0 ? [] : section('Recorded', lines, depth);
 }
 
@@ -510,6 +527,7 @@ function closingIssues(landed: readonly LandedIssue[]): ReadonlySet<number> {
 function reportBlock(input: PrBodyInput, moved: ReadonlySet<MovableSection>): string[] {
   const report = runReportLines(input, moved);
   if (input.writer === null) return report;
+
   return foldedReport('Run report', report);
 }
 
@@ -597,6 +615,7 @@ function movableSection(
   if (!moved.has(movable)) return section(movable.heading, movable.lines(input));
   const limit = String(GH_BODY_LIMIT);
   const path = codeSpan(`${input.reportDir}/${movable.file}`);
+
   return section(movable.heading, [
     `Moved to a PR comment: the body was over GitHub's ${limit}-character limit. Also in ${path}.`,
   ]);
@@ -634,6 +653,7 @@ function epicLine(epic: number | null): string {
 function landedLine(landed: LandedIssue): string {
   const ref = `#${String(landed.issue)}`;
   const subject = landed.tdd.commit.subject;
+
   return landed.tdd.closes === 'fixes'
     ? `- fixes ${ref} — ${subject}`
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
@@ -652,6 +672,7 @@ function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): s
 function epicReviewLines(review: EpicReviewReport): string[] {
   const profiled = review.profiled ? ' (profiled)' : '';
   const { answer } = review;
+
   return [
     `**Verdict:** ${review.verdict ?? 'not run'}${profiled}`,
     '',
@@ -663,6 +684,7 @@ function epicReviewLines(review: EpicReviewReport): string[] {
 
 function epicAnswerLines(answer: EpicReviewOutput): string[] {
   const met = answer.criteria.filter((c) => c.state === 'met').length;
+
   return [
     `- ${answer.summary}`,
     `- Criteria: ${String(met)} of ${String(answer.criteria.length)} met`,
@@ -680,6 +702,7 @@ function epicAnswerLines(answer: EpicReviewOutput): string[] {
  */
 function overlapLines(edges: readonly OverlapEdge[]): string[] {
   const groups = new Map<string, { readonly edge: OverlapEdge; readonly dependents: string[] }>();
+
   for (const edge of edges) {
     const key = JSON.stringify([edge.blocker, edge.reason]);
     const dependent = `#${String(edge.dependent)}`;
@@ -687,6 +710,7 @@ function overlapLines(edges: readonly OverlapEdge[]): string[] {
     if (group === undefined) groups.set(key, { edge, dependents: [dependent] });
     else group.dependents.push(dependent);
   }
+
   return [...groups.values()].map(
     ({ edge, dependents }) =>
       `- #${String(edge.blocker)} → ${dependents.join(', ')}: ${edge.reason}`,
@@ -699,6 +723,7 @@ function overlapLines(edges: readonly OverlapEdge[]): string[] {
  */
 function unsurePairLine(pair: UnsurePair): string {
   const shared = pair.shared.length === 0 ? '' : `; shared ${pair.shared.map(codeSpan).join(', ')}`;
+
   return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${oneLine(pair.reason)}`;
 }
 
@@ -710,6 +735,7 @@ function scheduleLine(entry: ScheduleEntry): string {
     entry.size === null
       ? 'none'
       : `${String(entry.size.files)} files, ${String(entry.size.lines)} lines`;
+
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
     `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}`
@@ -722,6 +748,7 @@ function scheduleLine(entry: ScheduleEntry): string {
 function blockerText(blocker: ScheduleBlocker): string {
   if (blocker.source === 'declared') return `#${String(blocker.issue)} (declared)`;
   const released = blocker.released === undefined ? '' : `, released: ${blocker.released}`;
+
   return `#${String(blocker.issue)} (overlap${released})`;
 }
 
@@ -744,6 +771,7 @@ function leaseLines(leases: LeaseAggregate): string[] {
 /** One line per retro finding; a note line when the retro returned nothing. */
 function retroLines(retro: readonly RetroFinding[] | null): string[] {
   if (retro === null) return ['- The retro returned nothing.'];
+
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 
@@ -773,11 +801,13 @@ function reviewLine(label: string, out: { verdict: string; summary: string } | s
 /** A slice's probe lines: one nested line per tdd probe record. */
 function probeLines(probes: readonly ProbeRecord[]): string[] {
   if (probes.length === 0) return ['- Probes: no probe needed'];
+
   return ['- Probes:', ...probes.map(probeLine)];
 }
 
 function probeLine(probe: ProbeRecord): string {
   const followUp = probe.followUp === '' ? '' : `; follow-up: ${probe.followUp}`;
+
   return `  - ${probe.claim}: ${probe.verdict} in ${durationText(probe.seconds)}${followUp}`;
 }
 
@@ -785,6 +815,7 @@ function probeLine(probe: ProbeRecord): string {
 function durationText(seconds: number): string {
   if (seconds < 60) return `${String(seconds)}s`;
   const rest = String(seconds % 60).padStart(2, '0');
+
   return `${String(Math.floor(seconds / 60))}m ${rest}s`;
 }
 
@@ -795,8 +826,10 @@ function durationText(seconds: number): string {
 function sliceLeaseText(work: SliceLeaseWork): string {
   const parts = sliceLeaseLines(work).flatMap(({ role, lines }) => {
     const timings = parseLeaseLines(lines.join('\n'));
+
     return timings.length === 0 ? [] : [`${role}: ${leaseText(timings)}`];
   });
+
   return parts.length === 0 ? 'none' : parts.join('; ');
 }
 
@@ -805,6 +838,7 @@ function leaseText(timings: readonly LeaseTiming[]): string {
   return timings
     .map((t) => {
       const on = t.waitedOn === undefined ? '' : ` on ${t.waitedOn}`;
+
       return `${t.type}@${t.endpoint} waited ${String(t.waitedSeconds)}s${on}, held ${String(t.heldSeconds)}s`;
     })
     .join('; ');
@@ -812,6 +846,7 @@ function leaseText(timings: readonly LeaseTiming[]): string {
 
 function unlandedLine(issue: UnlandedIssue): string {
   const reason = issue.reason === undefined ? '' : `: ${issue.reason}`;
+
   return `- see #${String(issue.issue)} — not landed: ${issue.outcome}${reason}`;
 }
 
@@ -825,12 +860,14 @@ function forwardText(move: ForwardMove): string {
     move.move === 'equal'
       ? `equal at ${move.current}`
       : `forward, ${move.launch} → ${move.current}`;
+
   return move.synced === null ? text : `${text}, checked against synced ${move.synced}`;
 }
 
 /** The main-checkout comparison as a phrase; `null` means a snapshot read failed. */
 function mainCheckoutText(untouched: boolean | null): string {
   if (untouched === null) return 'not compared (a snapshot could not be read)';
+
   return untouched
     ? 'untouched since pre-flight'
     : 'touched since pre-flight (HEAD or dirtiness changed)';
@@ -840,5 +877,6 @@ function mainCheckoutText(untouched: boolean | null): string {
 function bumpText(bump: BumpOutput | null): string {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
   if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;
+
   return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }

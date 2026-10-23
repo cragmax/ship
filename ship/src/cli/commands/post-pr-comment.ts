@@ -41,10 +41,12 @@ export function postPrComment(input: PostPrCommentInput): PostPrCommentResult {
     pr,
     url: null,
   };
+
   try {
     result.url = postCommentFile(batch, 'pr', pr, commentFile);
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }

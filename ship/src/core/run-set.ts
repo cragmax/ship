@@ -44,9 +44,11 @@ export interface RunGraph {
 /** Every issue of a run set, flattened across entries: each issue number once, ascending. */
 export function runSetIssues(runSet: RunSet): number[] {
   const all = new Set<number>();
+
   for (const entry of runSet) {
     for (const issue of entry.issues) all.add(issue);
   }
+
   return [...all].sort((a, b) => a - b);
 }
 
@@ -64,8 +66,10 @@ export function findCycles(issues: readonly number[], edges: readonly RunEdge[])
   const cycles = stronglyConnected(adj).filter(
     (c) => c.length > 1 || c.some((n) => adj.get(n)?.includes(n) === true),
   );
+
   for (const cycle of cycles) cycle.sort((a, b) => a - b);
   cycles.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0));
+
   return cycles;
 }
 
@@ -80,13 +84,16 @@ export function transitiveDependents(
   edges: readonly RunEdge[],
 ): number[] {
   const next = new Map<number, number[]>();
+
   for (const e of edges) {
     const out = next.get(e.blocker) ?? [];
     out.push(e.dependent);
     next.set(e.blocker, out);
   }
+
   const seen = new Set<number>(roots);
   const reached: number[] = [];
+
   const walk = (v: number): void => {
     for (const w of next.get(v) ?? []) {
       if (seen.has(w)) continue;
@@ -95,7 +102,9 @@ export function transitiveDependents(
       walk(w);
     }
   };
+
   for (const r of roots) walk(r);
+
   return reached.sort((a, b) => a - b);
 }
 
@@ -106,9 +115,11 @@ function adjacency(
 ): ReadonlyMap<number, readonly number[]> {
   const adj = new Map<number, number[]>();
   for (const n of issues) adj.set(n, []);
+
   for (const e of edges) {
     if (adj.has(e.dependent)) adj.get(e.blocker)?.push(e.dependent);
   }
+
   return adj;
 }
 
@@ -132,10 +143,12 @@ function stronglyConnected(adj: ReadonlyMap<number, readonly number[]>): number[
 
   const popComponent = (root: number): number[] => {
     const component: number[] = [];
+
     for (let w = stack.pop(); w !== undefined; w = w === root ? undefined : stack.pop()) {
       onStack.delete(w);
       component.push(w);
     }
+
     return component;
   };
 
@@ -144,15 +157,19 @@ function stronglyConnected(adj: ReadonlyMap<number, readonly number[]>): number[
     visited.set(v, node);
     stack.push(v);
     onStack.add(v);
+
     for (const w of adj.get(v) ?? []) {
       const seen = visited.get(w);
       if (seen === undefined) node.low = Math.min(node.low, visit(w).low);
       else if (onStack.has(w)) node.low = Math.min(node.low, seen.index);
     }
+
     if (node.low === node.index) components.push(popComponent(v));
+
     return node;
   };
 
   for (const v of adj.keys()) if (!visited.has(v)) visit(v);
+
   return components;
 }

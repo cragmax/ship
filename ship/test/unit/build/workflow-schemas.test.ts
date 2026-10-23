@@ -29,10 +29,12 @@ function optionalPaths(schema: JsonSchema, prefix = ''): string[] {
   if (items !== undefined) return optionalPaths(items, `${prefix}[]`);
   const properties = nodeOf(schema['properties']) ?? {};
   const required = (schema['required'] ?? []) as readonly string[];
+
   return Object.entries(properties).flatMap(([key, sub]) => {
     const path = prefix === '' ? key : `${prefix}.${key}`;
     const own = required.includes(key) ? [] : [path];
     const node = nodeOf(sub);
+
     return node === undefined ? own : [...own, ...optionalPaths(node, path)];
   });
 }
@@ -42,9 +44,11 @@ function nodes(schema: JsonSchema): JsonSchema[] {
   const children = [...Object.values(nodeOf(schema['properties']) ?? {}), schema['items']].flatMap(
     (child) => {
       const node = nodeOf(child);
+
       return node === undefined ? [] : nodes(node);
     },
   );
+
   return [schema, ...children];
 }
 
@@ -53,6 +57,7 @@ function constructs(schemas: readonly JsonSchema[]): { keys: string[]; types: st
   const all = schemas.flatMap(nodes);
   const keys = new Set(all.flatMap((n) => Object.keys(n)));
   const types = new Set(all.flatMap((n) => [n['type'] ?? []].flat() as string[]));
+
   return { keys: [...keys].sort(compareStrings), types: [...types].sort(compareStrings) };
 }
 
@@ -357,6 +362,7 @@ describe('the fake hooks fail a test on a schema violation', () => {
 function thrownBy(fn: () => unknown): unknown {
   try {
     fn();
+
     return undefined;
   } catch (error) {
     return error;

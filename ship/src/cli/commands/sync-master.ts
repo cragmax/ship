@@ -95,6 +95,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
       logs: [],
     },
   };
+
   try {
     assertLinkedWorktree(batch, selfPath);
     start(run);
@@ -102,6 +103,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
     recordFailure(run.result, err);
     if (run.result.status === 'failed' && run.owned) abortMerge(run);
   }
+
   return run.result;
 }
 
@@ -117,11 +119,14 @@ function start(run: Run): void {
   assertNoLiveSlices(batch, batch);
   fetchOrigin(batch);
   const upstream = git(batch, ['rev-parse', '--verify', `${RUN_UPSTREAM}^{commit}`], 'upstream');
+
   if (isMerged(batch)) {
     result.outcome = 'up-to-date';
     result.upstream = upstream;
+
     return;
   }
+
   const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'probe');
   const { version, rule } = planVersionRule(batch, mergeBase);
   result.version = version;
@@ -132,11 +137,14 @@ function start(run: Run): void {
   }));
   assertNoCodeConflict(result.conflicts);
   run.owned = true;
+
   if (merge(run, rule !== null)) {
     recordMerged(run, upstream);
     refresh(run, mergeBase);
+
     return;
   }
+
   settleStoppedMerge(batch, rule);
   refresh(run, mergeBase);
   commitMerge(run);
@@ -152,9 +160,11 @@ function settleStoppedMerge(batch: string, rule: VersionRule | null): void {
   const unmerged = unmergedPaths(batch, 'merge');
   const settled = rule === null ? [LOCKFILE] : [LOCKFILE, PACKAGE_JSON];
   const other = unmerged.filter((path) => !settled.includes(path));
+
   if (other.length > 0) {
     throw new StepFailure('merge', `merge conflicted beyond the probe: ${other.join(', ')}`);
   }
+
   if (rule !== null) {
     applyVersionRule(batch, rule.merged, rule.target, unmerged.includes(LOCKFILE));
   } else if (unmerged.includes(LOCKFILE)) {
@@ -179,9 +189,11 @@ export function assertNoLiveSlices(dir: string, batch: string): void {
     .filter((w) => !samePath(w.path, batch))
     .filter((w) => {
       const target = linkTarget(`${w.path}/node_modules`);
+
       return target !== null && isInside(target, modules);
     })
     .map((w) => w.path);
+
   if (live.length > 0) {
     throw new Refusal(
       'slices-live',
@@ -200,8 +212,10 @@ function isMerged(batch: string): boolean {
   const r = runCaptured('git', ['-C', batch, 'merge-base', '--is-ancestor', RUN_UPSTREAM, 'HEAD'], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return true;
   if (r.exitCode === 1) return false;
+
   throw new StepFailure('up-to-date', `git merge-base --is-ancestor failed in ${batch}`, r.tail);
 }
 
@@ -217,7 +231,9 @@ function probeConflicts(batch: string): string[] {
     ['-C', batch, 'merge-tree', '--write-tree', '--name-only', '-z', 'HEAD', RUN_UPSTREAM],
     { cwd: process.cwd() },
   );
+
   if (r.exitCode === 0) return [];
+
   if (r.exitCode !== 1) {
     throw new StepFailure(
       'probe',
@@ -225,7 +241,9 @@ function probeConflicts(batch: string): string[] {
       r.tail,
     );
   }
+
   const [listing = ''] = r.stdout.split('\0\0');
+
   return sortedSet(
     listing
       .split('\0')
@@ -237,6 +255,7 @@ function probeConflicts(batch: string): string[] {
 /** A conflicted path's kind; a `package.json` conflict the version rule can't resolve is `code`. */
 function conflictKind(path: string, packageResolved: boolean): ConflictKind {
   if (path === LOCKFILE) return 'lockfile';
+
   return path === PACKAGE_JSON && packageResolved ? 'package' : 'code';
 }
 
@@ -273,6 +292,7 @@ function landedBy(batch: string, mergeBase: string, path: string): string[] {
 function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
   const code = conflicts.filter((c) => c.kind === 'code').map((c) => c.path);
   if (code.length === 0) return;
+
   throw new Refusal(
     'code-conflict',
     'probe',
@@ -285,6 +305,7 @@ function logFile(run: Run, name: string): string {
   run.logDir ??= freshLogDir('sync-master');
   const path = `${run.logDir}/${name}`;
   run.result.logs.push(path);
+
   return path;
 }
 
@@ -300,8 +321,10 @@ function merge(run: Run, stop: boolean): boolean {
     timeoutMs: COMMIT_TIMEOUT_MS,
     logFile: logFile(run, 'merge.log'),
   });
+
   if (r.exitCode === 0 && !stop) return true;
   if (refExists(run.batch, 'MERGE_HEAD')) return false;
+
   throw new StepFailure('merge', `git merge ${RUN_UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
 }
 
@@ -317,6 +340,7 @@ function refresh(run: Run, mergeBase: string): void {
     ['diff', '--name-only', '--no-renames', mergeBase, RUN_UPSTREAM],
     'refresh',
   );
+
   if (changed.includes(LOCKFILE)) {
     runStep('install', 'npm', ['ci', '--no-audit', '--no-fund'], {
       cwd: batch,
@@ -324,6 +348,7 @@ function refresh(run: Run, mergeBase: string): void {
     });
     result.refreshed.ci = true;
   }
+
   if (result.refreshed.ci || needsBuild(changed)) {
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
     result.refreshed.build = true;

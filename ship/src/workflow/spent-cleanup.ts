@@ -67,14 +67,18 @@ export async function cleanupSpent(
     blocked: null,
     stop: null,
   };
+
   if (live?.status !== 'ok' || live.runs === undefined) {
     report.blocked = envelopeProblem('live-runs', live);
+
     return report;
   }
+
   for (const run of live.runs) {
     await cleanupRun(hooks, run, report);
     if (report.stop !== null) break;
   }
+
   return report;
 }
 
@@ -108,6 +112,7 @@ async function tearDownSpent(
   const { path, branch } = spent;
   const place = preCutPlace(`spent-${String(report.tornDown.length + report.residue.length + 1)}`);
   const out = await runTool(hooks, 'teardown', [path], place);
+
   if (out?.status === 'ok') {
     report.tornDown.push(path);
     const retired = await runTool(hooks, 'retire-run', ['.', '--branch', branch], place);
@@ -129,15 +134,19 @@ function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun
   if (run.spentUnverified) {
     return { path: run.path, why: 'its PR is over, but the PR head could not be checked' };
   }
+
   if (!run.spent) return null;
+
   if (run.dirty !== false) {
     return {
       path: run.path,
       why: run.dirty === true ? 'uncommitted changes' : 'dirtiness unknown',
     };
   }
+
   if (run.nested.length > 0) {
     return { path: run.path, why: `nested worktrees: ${run.nested.join(', ')}` };
   }
+
   return { path: run.path };
 }

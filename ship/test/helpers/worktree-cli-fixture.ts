@@ -106,6 +106,7 @@ function npmTemplate(): string {
     template,
   );
   npmTemplateDir = template;
+
   return template;
 }
 
@@ -154,12 +155,14 @@ export function makeFixtureRepo(root: string, options: FixtureRepoOptions = {}):
   copyTemplateRepo(JSON.stringify(['fixture', gitignore]), main, (dir) => {
     writeRepoFiles(dir, npmTemplate(), gitignore);
   });
+
   return main;
 }
 
 /** Whether `path` is listed by `git worktree list` in the fixture repo `main`. */
 export function isRegistered(main: string, path: string): boolean {
   const wanted = toPosix(path).toLowerCase();
+
   return mustRun('git', ['worktree', 'list', '--porcelain'], main)
     .split('\n')
     .some((line) => line.trim().toLowerCase() === `worktree ${wanted}`);
@@ -190,6 +193,7 @@ export function seedBatch(batch: string): string {
   symlinkSync(linkedSrc, join(nodeModules, 'linked-pkg'), 'junction');
   mkdirSync(join(batch, 'paper-harness', 'helpers'), { recursive: true });
   mkdirSync(join(batch, 'paper-harness', 'tests'), { recursive: true });
+
   return linkedSrc;
 }
 
@@ -198,6 +202,7 @@ function collectTree(dir: string, base: string, out: string[]): void {
     const path = join(dir, name);
     const rel = toPosix(relative(base, path));
     const stat = lstatSync(path);
+
     if (stat.isSymbolicLink()) {
       out.push(`${rel} -> ${toPosix(readlinkSync(path))}`);
     } else if (stat.isDirectory()) {
@@ -216,6 +221,7 @@ function collectTree(dir: string, base: string, out: string[]): void {
 export function listTree(dir: string): string[] {
   const out: string[] = [];
   collectTree(dir, dir, out);
+
   return out.sort(compareStrings);
 }
 
@@ -227,11 +233,13 @@ export function listTree(dir: string): string[] {
 function parseEnvelope(stdout: string, stderr: string): ResultBase {
   const lines = stdout.split('\n');
   let json: Partial<ResultBase> | undefined;
+
   try {
     json = lines.length === 1 ? (JSON.parse(lines[0] ?? '') as Partial<ResultBase>) : undefined;
   } catch {
     json = undefined;
   }
+
   if (
     typeof json?.command !== 'string' ||
     typeof json.status !== 'string' ||
@@ -239,6 +247,7 @@ function parseEnvelope(stdout: string, stderr: string): ResultBase {
   ) {
     throw new Error(`stdout is not one result-envelope line:\n${stdout}\nstderr:\n${stderr}`);
   }
+
   return json as ResultBase;
 }
 
@@ -261,6 +270,7 @@ export function runCli<T extends ResultBase = ResultBase>(
     stdin: 'ignore',
   });
   const json = parseEnvelope(r.stdout, r.stderr) as T;
+
   return { json, code: r.exitCode ?? -1, stderr: r.stderr };
 }
 
@@ -288,6 +298,7 @@ export function runSyncMaster(batch: string, ...flags: string[]): CliRun<SyncMas
     const { logs = [] } = r.json as Partial<SyncMasterResult>;
     removeTempDirs(logs.map((log) => dirname(log)));
   });
+
   return r;
 }
 
@@ -345,5 +356,6 @@ export function isJunction(path: string): boolean {
     ],
     REPO_ROOT,
   );
+
   return r.exitCode === 0 && r.all.trim() === 'Junction';
 }

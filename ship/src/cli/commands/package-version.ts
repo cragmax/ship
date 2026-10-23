@@ -43,9 +43,11 @@ const PLAIN_VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
  */
 function components(version: string): [number, number, number] {
   const m = PLAIN_VERSION.exec(version);
+
   if (m === null) {
     throw new StepFailure('version', `'${version}' is not a plain x.y.z version`);
   }
+
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
@@ -60,6 +62,7 @@ export function versionDelta(from: string, to: string): VersionDelta {
   const b = components(to);
   if (a[0] !== b[0]) return 'major';
   if (a[1] !== b[1]) return 'minor';
+
   return a[2] === b[2] ? 'none' : 'patch';
 }
 
@@ -71,6 +74,7 @@ export function versionDelta(from: string, to: string): VersionDelta {
  */
 export function bumpVersion(version: string, delta: VersionDelta): string {
   const [major, minor, patch] = components(version);
+
   switch (delta) {
     case 'major':
       return `${String(major + 1)}.0.0`;
@@ -105,6 +109,7 @@ export function bothMoved(v: VersionTriple): boolean {
 export function targetVersion(v: VersionTriple): string {
   if (v.ours === v.base) return v.theirs;
   if (v.theirs === v.base) return v.ours;
+
   return bumpVersion(v.theirs, versionDelta(v.base, v.ours));
 }
 
@@ -115,6 +120,7 @@ export function targetVersion(v: VersionTriple): string {
  */
 export function readVersionLine(text: string): string | null {
   const m = new RegExp(VERSION_LINE.source, VERSION_LINE.flags).exec(text);
+
   return m === null ? null : (m[1] ?? null);
 }
 
@@ -127,12 +133,14 @@ export function readVersionLine(text: string): string | null {
  */
 export function setVersionLine(text: string, version: string): string {
   const count = text.match(VERSION_LINE)?.length ?? 0;
+
   if (count !== 1) {
     throw new StepFailure(
       'version',
       `package.json has ${String(count)} top-level version lines; expected exactly 1`,
     );
   }
+
   return text.replace(
     VERSION_LINE,
     (_line, _old: string, comma: string, cr: string) => `  "version": "${version}"${comma}${cr}`,

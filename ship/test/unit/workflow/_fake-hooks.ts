@@ -137,6 +137,7 @@ export const readyVerdict = (
   ...Object.fromEntries(
     READINESS_CHECKS.map((check) => {
       const evidence = fails[check];
+
       return [
         check,
         evidence === undefined ? { pass: true, evidence: 'holds' } : { pass: false, evidence },
@@ -218,6 +219,7 @@ export const masterMoved = (
   remote: ScriptedMove,
 ): Readonly<Record<string, unknown>> => {
   const passed = [local, remote].every((m) => m.move === 'equal' || m.move === 'forward');
+
   return {
     'runner:check-master': {
       exitCode: passed ? 0 : 1,
@@ -418,6 +420,7 @@ export function fakeHooks(
   const violations: string[] = [];
   if (options.offSchema !== true) failTestOnViolations(violations);
   const answered = new Map<string, number>();
+
   const agent = (prompt: string, options: AgentOptions): Promise<unknown> => {
     const call: RecordedCall = {
       label: options.label,
@@ -428,6 +431,7 @@ export function fakeHooks(
       prompt,
       schema: options.schema,
     };
+
     calls.push(call);
     timeline.push(`call ${options.label}`);
     const key = tableKey(table, options.label);
@@ -437,14 +441,17 @@ export function fakeHooks(
     const entry = table[key];
     const answer = typeof entry === 'function' ? (entry as Responder)(call, nth) : entry;
     if (answer === null) return gate(call, null);
+
     return gate(call, conform(answer, options.schema, { at: options.label, violations }));
   };
+
   const hooks: WorkflowHooks = {
     agent,
     parallel: (thunks) => Promise.all(thunks.map((thunk) => thunk())),
     pipeline: async (items, step) => {
       const out = [];
       for (const item of items) out.push(await step(item));
+
       return out;
     },
     phase: (title) => {
@@ -454,6 +461,7 @@ export function fakeHooks(
       timeline.push(`log ${message}`);
     },
   };
+
   return { hooks, calls, phases, timeline, violations };
 }
 
@@ -465,6 +473,7 @@ export function fakeHooks(
  */
 function amendReread(tdd: unknown): Readonly<Record<string, unknown>> {
   const files = (tdd as { readonly files?: unknown } | null | undefined)?.files ?? TDD_FILES;
+
   return { ...OK, files };
 }
 
@@ -512,6 +521,7 @@ function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPl
   if (typeof value !== 'object' || properties === undefined) return value;
   const record = value as Readonly<Record<string, unknown>>;
   checkRequired(record, schema, place);
+
   return pickProperties(record, properties, place);
 }
 
@@ -536,6 +546,7 @@ function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void
   const type = schema['type'];
   if (type === undefined) return;
   const types = (Array.isArray(type) ? type : [type]) as readonly string[];
+
   if (!types.some((t) => TYPE_TESTS[t]?.(value) === true)) {
     place.violations.push(`${place.at}: ${JSON.stringify(value)} is not ${types.join(' or ')}`);
   }
@@ -550,6 +561,7 @@ function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void
  */
 function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
   const allowed = schema['enum'];
+
   if (Array.isArray(allowed) && !allowed.includes(value)) {
     place.violations.push(`${place.at}: ${JSON.stringify(value)} is off the enum`);
   }
@@ -558,6 +570,7 @@ function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void
 function conformItems(value: readonly unknown[], schema: JsonSchema, place: AnswerPlace): unknown {
   const items = schemaOf(schema['items']);
   if (items === undefined) return value;
+
   return value.map((v, i) => conform(v, items, { ...place, at: `${place.at}[${String(i)}]` }));
 }
 
@@ -575,6 +588,7 @@ function checkRequired(
 ): void {
   const required = schema['required'];
   if (!Array.isArray(required)) return;
+
   for (const key of required as unknown[]) {
     if (typeof key === 'string' && (!Object.hasOwn(record, key) || record[key] === undefined)) {
       place.violations.push(`${place.at}: lacks required ${key}`);
@@ -588,11 +602,13 @@ function pickProperties(
   place: AnswerPlace,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+
   for (const [key, sub] of Object.entries(properties)) {
     if (Object.hasOwn(record, key)) {
       out[key] = conform(record[key], schemaOf(sub), { ...place, at: `${place.at}.${key}` });
     }
   }
+
   return out;
 }
 
@@ -605,10 +621,12 @@ function pickProperties(
  */
 function tableKey(table: Readonly<Record<string, unknown>>, label: string): string | undefined {
   const parts = label.split(':');
+
   for (let n = parts.length; n > 0; n--) {
     const key = parts.slice(0, n).join(':');
     if (Object.hasOwn(table, key)) return key;
   }
+
   return undefined;
 }
 
@@ -624,6 +642,7 @@ function commandWords(prompt: string): string[] {
   if (line === undefined) return [];
   const words =
     line.slice('Command: node --import tsx '.length).match(/(?:'[^']*'|\\'|[^\s'\\])+/g) ?? [];
+
   return words.map((w) => w.replace(/'([^']*)'|\\'/g, (_m, inner?: string) => inner ?? "'"));
 }
 
@@ -645,6 +664,7 @@ export const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 export const when = (run: FakeRun, entry: string): number => {
   const at = run.timeline.indexOf(entry);
   expect(at, `${entry} on the timeline`).toBeGreaterThan(-1);
+
   return at;
 };
 

@@ -40,11 +40,13 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
     fc.assert(
       fc.property(arbPlantedCycle(), ({ input, ring }) => {
         let message = '';
+
         try {
           createScheduler(input);
         } catch (err) {
           message = (err as Error).message;
         }
+
         expect(message).toMatch(/^run scheduler: dependency cycle among /);
         for (const member of ring) expect(message).toMatch(new RegExp(`#${member}(?!\\d)`));
       }),
@@ -57,9 +59,11 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
       fc.property(arbInput(), arbChoices(), (input, choices) => {
         const trace = runModel(input, choices);
         const replayed = [createScheduler(input)];
+
         for (const event of trace.events) {
           replayed.push(advance(lastState(replayed), event));
         }
+
         expect(replayed).toEqual(trace.transitions);
       }),
       { numRuns: 100 },
@@ -75,11 +79,13 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
         if (at === undefined) throw new Error('unreachable');
         let state = JSON.parse(JSON.stringify(at.state)) as SchedulerState;
         const resumed: (readonly unknown[])[] = [];
+
         for (const event of trace.events.slice(k)) {
           const t = advance(state, event);
           resumed.push(t.actions);
           state = t.state;
         }
+
         expect(resumed).toEqual(trace.transitions.slice(k + 1).map((t) => t.actions));
       }),
       { numRuns: 100 },
@@ -89,15 +95,18 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
   it('runs with every clock and randomness source stubbed to throw', () => {
     // Sample first: fast-check itself may seed from the clock.
     const samples = fc.sample(fc.tuple(arbInput(), arbChoices()), 50);
+
     const banned = (): never => {
       throw new Error('clock or randomness used');
     };
+
     const BannedDate = Object.assign(
       function BannedDate(): never {
         return banned();
       },
       { now: banned },
     );
+
     vi.spyOn(Math, 'random').mockImplementation(banned);
     vi.spyOn(performance, 'now').mockImplementation(banned);
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(banned);
@@ -105,6 +114,7 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
     vi.stubGlobal('Date', BannedDate);
     let completed = 0;
     let failure: unknown;
+
     try {
       for (const [input, choices] of samples) {
         runModel(input, choices);
@@ -116,6 +126,7 @@ describe('run scheduler model — the real scheduler upholds every invariant', (
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
     }
+
     expect(failure).toBeUndefined();
     expect(completed).toBe(50);
   });
@@ -129,6 +140,7 @@ describe('run scheduler model — teeth: each mutant trips its paired invariant'
       }),
       { numRuns: 500 },
     );
+
     expect(details.failed).toBe(true);
     expect(details.errorInstance).toBeInstanceOf(InvariantViolation);
     expect((details.errorInstance as InvariantViolation).invariant).toBe(mutant.trips);
@@ -138,5 +150,6 @@ describe('run scheduler model — teeth: each mutant trips its paired invariant'
 function lastState(transitions: readonly Transition[]): SchedulerState {
   const last = transitions[transitions.length - 1];
   if (last === undefined) throw new Error('unreachable');
+
   return last.state;
 }

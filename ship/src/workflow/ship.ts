@@ -76,6 +76,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   if (parsed.refusal !== undefined) return refusedReport([parsed.refusal], []);
   hooks.phase(PHASE_TITLES.preflight);
   const pre = await runPreflight(hooks, parsed.args);
+
   if (
     pre.refusals.length > 0 ||
     pre.graph === null ||
@@ -84,18 +85,23 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
   ) {
     return refusedReport(pre.refusals, pre.dropped);
   }
+
   const { graph, overlap } = pre;
+
   if (parsed.args.preflightOnly) {
     return { status: 'preflight-ok', dropped: pre.dropped, graph, overlap, epics: [] };
   }
+
   const bound = withCheckout(hooks, pre.checkout);
   const cleanup = await cleanupSpent(bound, pre.live);
+
   if (cleanup.stop !== null) {
     return {
       ...refusedReport([{ kind: 'source-shrank', message: cleanup.stop }], pre.dropped),
       cleanup,
     };
   }
+
   hooks.phase(PHASE_TITLES.issues);
   const epics = await runEntries(
     bound,
@@ -104,6 +110,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
     parsed.args.attach,
     pre.checkout,
   );
+
   return { status: 'done', dropped: pre.dropped, overlap, epics, cleanup };
 }
 
@@ -125,10 +132,12 @@ async function runEntries(
   const kept = dropWithDependents(graph, lost).graph;
   const setups = kept.runSet.flatMap((entry) => {
     const cut = cuts.find((c) => 'setup' in c && c.setup.epic === entry.epic);
+
     return cut !== undefined && 'setup' in cut ? [cut.setup] : [];
   });
   const driven =
     setups.length === 0 ? [] : await drive({ hooks, graph: kept, entries: setups, ...opts });
+
   return cuts.map((c, k) => {
     if ('stopped' in c) {
       return {
@@ -136,6 +145,7 @@ async function runEntries(
         schedule: c.issues.map((n) => neverStarted(n, graph, opts.overlap)),
       };
     }
+
     return cutReport(c.setup, graph, k, driven, opts.overlap);
   });
 }
@@ -154,6 +164,7 @@ async function cutEntry(
   const argv = ['.', ...cutSelection(entry, attach)];
   const cut = await runTool(hooks, 'cut-batch', argv, preCutPlace(tag));
   const { branch, base, batch, reportDir } = cut ?? {};
+
   if (
     cut?.status !== 'ok' ||
     !isText(branch) ||
@@ -163,15 +174,19 @@ async function cutEntry(
   ) {
     return stoppedEntry(entry, branch ?? '', envelopeProblem('cut-batch', cut));
   }
+
   const attached =
     typeof cut.attach?.run === 'number' ? { run: cut.attach.run, pr: cut.attach.pr } : null;
+
   if (attach !== null && attached === null) {
     return stoppedEntry(entry, branch, 'cut-batch --attach named no attached run');
   }
+
   const at = { batch, reportDir, tag };
   const found = await batchRegistry(hooks, cut.attach ?? null, at);
   if ('stop' in found) return stoppedEntry(entry, branch, found.stop);
   const { registry } = found;
+
   return {
     setup: {
       epic: entry.epic,
@@ -189,6 +204,7 @@ async function cutEntry(
 
 function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
   if (attach !== null) return ['--attach', attach, '--attached-run'];
+
   return entry.epic === null
     ? ['--issues', entry.issues.join(',')]
     : ['--epic', String(entry.epic)];
@@ -209,11 +225,14 @@ async function batchRegistry(
       ? { stop: 'cut-batch --attach found no trimmed pool registry for the reused batch' }
       : { registry: attached.registry };
   }
+
   const argv = [at.batch, '--report-dir', at.reportDir];
   const prov = await runTool(hooks, 'provision-batch', argv, runPlace(at, at.tag));
+
   if (prov?.status !== 'ok' || !isText(prov.registry)) {
     return { stop: envelopeProblem('provision-batch', prov) };
   }
+
   return { registry: prov.registry };
 }
 
@@ -240,6 +259,7 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
     schedule: [],
     residue: [],
   };
+
   return { stopped, issues: entry.issues };
 }
 
@@ -277,6 +297,7 @@ function cutReport(
     (issue) =>
       report.schedule.find((s) => s.issue === issue) ?? neverStarted(issue, graph, overlap),
   );
+
   return { ...report, issues, schedule };
 }
 

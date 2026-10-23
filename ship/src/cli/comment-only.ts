@@ -24,9 +24,12 @@ import { StepFailure } from './envelope/types.js';
 function writeFailures(report: CommentOnlyReport): boolean {
   if (report.difference !== null) {
     process.stderr.write(`comment-only: ${formatDifference(report.difference)}\n`);
+
     return true;
   }
+
   for (const m of report.mojibake) process.stderr.write(`comment-only: ${formatMojibake(m)}\n`);
+
   return report.mojibake.length > 0;
 }
 
@@ -35,15 +38,18 @@ function writeReport(report: CommentOnlyReport, json: boolean): boolean {
   if (json) process.stdout.write(`${JSON.stringify({ compared, notCompared })}\n`);
   else for (const path of notCompared) process.stdout.write(`not compared: ${path}\n`);
   const failed = writeFailures(report);
+
   if (!failed && !json) {
     process.stdout.write(`comment-only: ${String(compared)} TypeScript files token-identical\n`);
   }
+
   return failed;
 }
 
 function main(): void {
   const args = process.argv.slice(2);
   const json = args[0] === '--json';
+
   try {
     const report = proveCommentOnly(process.cwd(), parseRevisions(json ? args.slice(1) : args));
     if (writeReport(report, json)) process.exitCode = 1;

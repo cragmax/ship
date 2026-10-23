@@ -402,6 +402,7 @@ describe('renderPrBody', () => {
 
     expect(sections.every((at) => at > -1)).toBe(true);
     expect([...sections].sort((a, b) => a - b)).toEqual(sections);
+
     for (const line of [
       '- #7 → #8: both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
@@ -480,6 +481,7 @@ describe('renderPrBody', () => {
     for (const heading of ['## Overlap edges', '## Schedule', '## Retro findings']) {
       expect(lines[lines.indexOf(heading) + 2]).toBe('None.');
     }
+
     expect(
       renderPrBody({ ...INPUT, retro: null })
         .split('\n')
@@ -769,6 +771,7 @@ const landedWith = (evidence: TddEvidence): PrBodyInput => ({
 // From the Evidence heading through the Merge Danger heading after it.
 const evidenceLines = (input: PrBodyInput): string[] => {
   const lines = renderPrBody(input).split('\n');
+
   return lines.slice(lines.indexOf('## Evidence'), lines.indexOf('## Merge Danger') + 1);
 };
 
@@ -1063,12 +1066,14 @@ describe('renderPrBody — the fold', () => {
 // From the first line through the Evidence heading.
 const summaryOf = (writer: PrWriterOutput | null): string[] => {
   const lines = renderPrBody({ ...INPUT, writer }).split('\n');
+
   return lines.slice(lines.indexOf('## Summary'), lines.indexOf('## Evidence') + 1);
 };
 
 // From the Merge Danger heading through the Tests at push heading after it.
 const dangerOf = (writer: PrWriterOutput | null): string[] => {
   const lines = renderPrBody({ ...INPUT, writer }).split('\n');
+
   return lines.slice(lines.indexOf('## Merge Danger'), lines.indexOf('## Tests at push') + 1);
 };
 
@@ -1264,6 +1269,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
 const sectionOf = (body: string, heading: string): string[] => {
   const lines = body.split('\n');
   const at = lines.indexOf(heading);
+
   return at === -1 ? [] : lines.slice(at, lines.indexOf('', at + 2));
 };
 
@@ -1415,6 +1421,7 @@ describe('fitPrBody', () => {
     const kept = new Set(
       [fitted.body, ...fitted.comments.map((c) => c.text)].join('\n').split('\n'),
     );
+
     expect(whole.split('\n').filter((line) => !kept.has(line))).toEqual([]);
   });
 
@@ -1503,6 +1510,7 @@ describe('renderPrBody — tests at push', () => {
   const testsAtPush = (input: PrBodyInput): string[] => {
     const lines = renderPrBody(input).split('\n');
     const at = lines.indexOf('## Tests at push');
+
     return lines.slice(at, at + 4);
   };
 
@@ -1565,6 +1573,7 @@ describe('renderPrBody — overlap edges', () => {
     const lines = renderPrBody(input).split('\n');
     const from = lines.indexOf('## Overlap edges') + 1;
     const to = lines.findIndex((line, i) => i > from && line.startsWith('## '));
+
     return lines.slice(from, to).filter((line) => line !== '');
   };
 

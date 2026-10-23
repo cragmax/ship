@@ -66,6 +66,7 @@ describe('cut-batch --attach', () => {
     mustRun('git', ['branch', 'ship/s'], main);
     const tip = commitOn(main, 'ship/s', { write: { 's.txt': 's\n' } }, 's1');
     mustRun('git', ['push', '-q', 'origin', 'ship/s'], main);
+
     return tip;
   }
 
@@ -75,6 +76,7 @@ describe('cut-batch --attach', () => {
     branch = 'ship/s',
   ): ReturnType<typeof runCli<CutBatchResult>> {
     const bin = writeFakeGh(root, responses);
+
     return runCli<CutBatchResult>(['cut-batch', main, '--attach', branch], {
       env: prependPath(bin),
     });
@@ -245,12 +247,14 @@ describe('cut-batch --attach', () => {
     TIMEOUT,
     ({ reuse }) => {
       localBranch();
+
       if (reuse) {
         addWorktreeAt(main, BATCH(), 'ship/s');
         commitChanges(BATCH(), { write: { 'l.txt': 'l\n' } }, 'l');
       } else {
         commitOn(main, 'ship/s', { write: { 'l.txt': 'l\n' } }, 'l');
       }
+
       const before = repoState(main);
 
       const r = attach(OPEN_9);
@@ -271,6 +275,7 @@ describe('cut-batch --attach', () => {
     responses: Record<string, FakeGhResponse>,
   ): ReturnType<typeof runCli<CutBatchResult>> {
     const bin = writeFakeGh(root, responses);
+
     return runCli<CutBatchResult>(['cut-batch', main, '--attach', 'ship/s', '--attached-run'], {
       env: prependPath(bin),
     });
@@ -361,6 +366,7 @@ describe('cut-batch --attach', () => {
       const registry = `${main}/reports/ship-s/pool-registry.batch.json`;
       mustRun('git', ['branch', 'ship/s'], main);
       addWorktreeAt(main, BATCH(), 'ship/s');
+
       if (written) {
         mkdirSync(`${main}/reports/ship-s`, { recursive: true });
         writeFileSync(registry, '[]\n');
@@ -394,6 +400,7 @@ describe('cut-batch --attach', () => {
     mkdirSync(`${reports}/attach-1`, { recursive: true });
     writeFileSync(attachedRegistry, '[]\n');
     utimesSync(attachedRegistry, attachedAt, attachedAt);
+
     if (rootAt !== null) {
       writeFileSync(rootRegistry, '[]\n');
       utimesSync(rootRegistry, rootAt, rootAt);

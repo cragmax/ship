@@ -385,6 +385,7 @@ export async function runTool<N extends ToolName>(
       TOOL_SCHEMAS[name],
     ),
   );
+
   return typeof out === 'object' && out !== null ? (out as ToolOutputs[N]) : null;
 }
 
@@ -430,5 +431,6 @@ export function envelopeProblem(
   if (out === null) return `the runner returned nothing for ${tool}`;
   const reason = out.reason === undefined ? '' : ` (${out.reason})`;
   const detail = out.errors?.[0]?.message ?? out.stderrTail ?? 'no error named';
+
   return `${tool} ${out.status ?? 'without a status'}${reason}: ${detail}`;
 }

@@ -61,17 +61,22 @@ interface ResyncBatch {
 export async function runResync(hooks: WorkflowHooks, rawArgs: unknown): Promise<ResyncReport> {
   const args = parseResyncArgs(rawArgs);
   const base = { pr: null, sync: null, pushed: false, mergeable: null, cleanup: noCleanup() };
+
   if (args.refusal !== undefined) {
     return { ...base, status: 'refused', branch: '', message: args.refusal };
   }
+
   const { branch } = args;
   hooks.phase(RESYNC_PHASE_TITLES.preflight);
   const live = await runTool(hooks, 'live-runs', ['.'], preCutPlace('resync'));
+
   if (typeof live?.worktree !== 'string') {
     const message =
       live === null ? envelopeProblem('live-runs', live) : 'live-runs named no main checkout';
+
     return { ...base, branch, status: 'stopped', message };
   }
+
   const bound = withCheckout(hooks, live.worktree);
   const cleanup = await cleanupSpent(bound, live);
   const report = { ...base, branch, cleanup };
@@ -81,6 +86,7 @@ export async function runResync(hooks: WorkflowHooks, rawArgs: unknown): Promise
   const withPr = { ...report, pr: attached.pr };
   hooks.phase(RESYNC_PHASE_TITLES.merge);
   const sync = await syncMasterStep(bound, { ...attached, tag: 'resync' });
+
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return {
       ...withPr,
@@ -89,7 +95,9 @@ export async function runResync(hooks: WorkflowHooks, rawArgs: unknown): Promise
       message: `master sync ${sync.verdict}: ${sync.message}`,
     };
   }
+
   hooks.phase(RESYNC_PHASE_TITLES.push);
+
   return pushStep(bound, attached, { ...withPr, sync });
 }
 
@@ -100,6 +108,7 @@ async function attachStep(
 ): Promise<ResyncBatch | { readonly stop: string }> {
   const cut = await runTool(hooks, 'cut-batch', ['.', '--attach', branch], preCutPlace('resync'));
   const { batch, reportDir, attach } = cut ?? {};
+
   if (
     cut?.status !== 'ok' ||
     typeof batch !== 'string' ||
@@ -109,11 +118,13 @@ async function attachStep(
   ) {
     return { stop: envelopeProblem('cut-batch', cut) };
   }
+
   if (attach.created) {
     const argv = [batch, '--report-dir', reportDir];
     const prov = await runTool(hooks, 'provision-batch', argv, runPlace({ reportDir }, 'resync'));
     if (prov?.status !== 'ok') return { stop: envelopeProblem('provision-batch', prov) };
   }
+
   return { batch, reportDir, pr: attach.pr };
 }
 
@@ -125,15 +136,18 @@ async function pushStep(
 ): Promise<ResyncReport> {
   const argv = [attached.batch, '--push-only', '--log', `${attached.reportDir}/resync-push.log`];
   const out = await runTool(hooks, 'publish', argv, runPlace(attached, 'resync'));
+
   if (out?.status !== 'ok') {
     return { ...report, status: 'stopped', message: envelopeProblem('publish', out) };
   }
+
   const pushed = out.pushed === true;
   const mergeable = out.mergeable ?? null;
   const pr = out.pr?.number ?? report.pr;
   const state =
     mergeable === RESYNC_MERGEABLE ? 'confirmed' : `unconfirmed (${mergeable ?? 'unread'})`;
   const message = `${pushed ? 'pushed' : 'nothing to push'}; PR #${String(pr)} mergeable ${state}`;
+
   return { ...report, status: 'done', message, pr, pushed, mergeable };
 }
 

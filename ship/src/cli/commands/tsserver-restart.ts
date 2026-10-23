@@ -68,18 +68,22 @@ export function restartSessionTsserver(deps: Partial<RestartDeps> = {}): Tsserve
     ...defaultDeps(),
     ...deps,
   };
+
   if (disabled) return skipped('disabled');
   if (platform !== 'win32') return skipped('not-windows');
   let table: readonly ProcessEntry[];
+
   try {
     table = listProcesses();
   } catch (err) {
     return skipped('lookup-failed', describeError(err));
   }
+
   const session = nearestAncestor(table, selfPid, sessionImage.toLowerCase());
   if (session === null) return skipped('no-session');
   const targets = descendants(table, session).filter(isSemanticTsserver);
   if (targets.length === 0) return skipped('no-tsserver');
+
   return killAll(session, targets, kill);
 }
 
@@ -91,6 +95,7 @@ function killAll(
 ): TsserverRestart {
   const killed: number[] = [];
   const failures: string[] = [];
+
   for (const { pid } of targets) {
     try {
       kill(pid);
@@ -99,7 +104,9 @@ function killAll(
       failures.push(`${String(pid)}: ${describeError(err)}`);
     }
   }
+
   if (killed.length === 0) return skipped('kill-failed', failures.join('; '));
+
   return { outcome: 'restarted', session, killed };
 }
 
@@ -117,6 +124,7 @@ function nearestAncestor(
   const byPid = new Map(table.map((p) => [p.pid, p]));
   const seen = new Set<number>([pid]);
   let parent = byPid.get(pid)?.ppid;
+
   while (parent !== undefined && !seen.has(parent)) {
     const entry = byPid.get(parent);
     if (entry === undefined) return null;
@@ -124,6 +132,7 @@ function nearestAncestor(
     seen.add(parent);
     parent = entry.ppid;
   }
+
   return null;
 }
 
@@ -132,6 +141,7 @@ function descendants(table: readonly ProcessEntry[], root: number): ProcessEntry
   const found: ProcessEntry[] = [];
   const seen = new Set<number>([root]);
   const queue = [root];
+
   for (let pid = queue.shift(); pid !== undefined; pid = queue.shift()) {
     for (const child of table) {
       if (child.ppid !== pid || seen.has(child.pid)) continue;
@@ -140,11 +150,13 @@ function descendants(table: readonly ProcessEntry[], root: number): ProcessEntry
       queue.push(child.pid);
     }
   }
+
   return found;
 }
 
 function isSemanticTsserver({ name, commandLine }: ProcessEntry): boolean {
   if (name.toLowerCase() !== 'node.exe' || commandLine === null) return false;
+
   return (
     commandLine.includes('tsserver.js') && !/--serverMode\s+partialSemantic/u.test(commandLine)
   );
@@ -173,7 +185,9 @@ function listWindowsProcesses(): ProcessEntry[] {
       cwd: tmpdir(),
     },
   );
+
   if (r.exitCode !== 0) throw new Error(`process lookup exited ${String(r.exitCode)}: ${r.tail}`);
+
   return z
     .array(CimRowSchema)
     .parse(JSON.parse(r.stdout))

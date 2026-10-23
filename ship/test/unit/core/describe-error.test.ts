@@ -7,6 +7,7 @@ describe('describeError', () => {
     const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:25575'), {
       code: 'ECONNREFUSED',
     });
+
     expect(describeError(refused)).toBe('connect ECONNREFUSED 127.0.0.1:25575 [ECONNREFUSED]');
   });
 

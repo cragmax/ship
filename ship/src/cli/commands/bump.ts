@@ -72,6 +72,7 @@ export function bump(input: BumpInput): BumpResult {
     log: null,
   };
   let versioned = false;
+
   try {
     assertLinkedWorktree(batch, selfPath);
     const slug = assertRunBatch(batch);
@@ -99,6 +100,7 @@ export function bump(input: BumpInput): BumpResult {
     recordFailure(result, err);
     if (versioned && result.commit === null) restore(batch, result);
   }
+
   return result;
 }
 
@@ -133,6 +135,7 @@ function restore(batch: string, result: BumpResult): void {
  */
 function ownSubjects(batch: string): string[] {
   const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'subjects');
+
   return git(batch, ['log', '--no-merges', '--format=%s', `${mergeBase}..HEAD`], 'subjects')
     .split(/\r?\n/u)
     .filter((s) => s !== '');
@@ -146,11 +149,13 @@ function ownSubjects(batch: string): string[] {
 function packageVersion(batch: string): string {
   const path = `${batch}/package.json`;
   let text: string;
+
   try {
     text = readFileSync(path, 'utf8');
   } catch (err) {
     throw new StepFailure('version', `cannot read ${path}: ${describeError(err)}`);
   }
+
   return versionOf(text, path);
 }
 
@@ -162,6 +167,7 @@ function packageVersion(batch: string): string {
  */
 function upstreamVersion(batch: string): string {
   const source = `${RUN_UPSTREAM}:package.json`;
+
   return versionOf(git(batch, ['show', source], 'version'), source);
 }
 
@@ -172,12 +178,15 @@ function upstreamVersion(batch: string): string {
  */
 function versionOf(text: string, source: string): string {
   let version: unknown;
+
   try {
     version = (JSON.parse(text) as { version?: unknown }).version;
   } catch (err) {
     throw new StepFailure('version', `cannot read ${source}: ${describeError(err)}`);
   }
+
   if (typeof version !== 'string') throw new StepFailure('version', `${source} has no version`);
+
   return version;
 }
 
@@ -191,6 +200,7 @@ function stageBump(batch: string): void {
   git(batch, ['reset', '-q'], 'stage');
   git(batch, ['add', '--', ...BUMP_FILES], 'stage');
   const diff = compareSets(BUMP_FILES, stagedPaths(batch, 'stage'));
+
   if (diff.missing.length > 0 || diff.unexpected.length > 0) {
     throw new Refusal(
       'staged-mismatch',

@@ -80,15 +80,18 @@ export async function checkMasterStep(
     [entry.main, '--local', master.local, '--remote', master.remote, '--synced', synced],
     runPlace(entry, entry.tag),
   );
+
   return checkOf(out);
 }
 
 function checkOf(out: CheckMasterOutput | null): MasterCheck {
   const local = out?.local ?? null;
   const remote = out?.remote ?? null;
+
   if (out?.status === 'ok' && isForward(local) && isForward(remote)) {
     return { passed: true, local, remote };
   }
+
   return { passed: false, local, remote, failure: failureOf(out, local, remote) };
 }
 
@@ -101,9 +104,11 @@ function failureOf(
     ...(local === null || isForward(local) ? [] : [moveLine('local', local)]),
     ...(remote === null || isForward(remote) ? [] : [moveLine('origin', remote)]),
   ];
+
   if (out?.status === 'refused' && out.reason === 'master-not-forward' && lines.length > 0) {
     return lines.join('; ');
   }
+
   return envelopeProblem('check-master', out);
 }
 
@@ -115,6 +120,7 @@ function isForward(move: MasterMove | null): move is ForwardMove {
 
 function moveLine(which: 'local' | 'origin', move: MasterMove): string {
   const synced = move.synced === null ? '' : `, synced ${move.synced}`;
+
   return (
     `${which} master ${move.move}: launch ${move.launch}${synced}, now ${move.current ?? 'deleted'}` +
     ` — restore it from ${move.synced ?? move.launch}`

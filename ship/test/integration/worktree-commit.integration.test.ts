@@ -50,11 +50,13 @@ function installExitHook(main: string, exit: number): void {
 function writeMessage(text: string): string {
   const file = `${root}/message.txt`;
   writeFileSync(file, text);
+
   return file;
 }
 
 function commitCli(main: string, files: readonly string[]) {
   const message = writeMessage('docs(docs): fixture commit\n');
+
   return runCli<CommitResult>(['commit', '--message-file', message, '--', ...files], {
     cwd: main,
   });

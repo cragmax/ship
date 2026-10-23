@@ -118,6 +118,7 @@ export function runCaptured(
   });
   let output = outputOf(r.all, r.timedOut, r.shortMessage ?? '', options.cwd);
   if (options.logFile !== undefined) output += writeLog(options.logFile, output);
+
   return { exitCode: r.exitCode ?? -1, stdout: r.stdout, tail: lastLines(output) };
 }
 
@@ -129,6 +130,7 @@ export function runCaptured(
 function outputOf(all: string, timedOut: boolean, failure: string, cwd: string): string {
   const warning = timedOut && process.platform === 'win32' ? `\n${orphanWarning(cwd)}` : '';
   if (all.trim() === '') return failure + warning;
+
   return (timedOut ? `${all}\n${failure}` : all) + warning;
 }
 
@@ -149,6 +151,7 @@ function orphanWarning(cwd: string): string {
 function writeLog(file: string, output: string): string {
   try {
     writeFileSync(file, output);
+
     return '';
   } catch (err) {
     return `\nlog not written to ${file}: ${err instanceof Error ? err.message : String(err)}`;
@@ -182,6 +185,7 @@ export function runStep(
   options: CaptureOptions,
 ): Captured {
   const r = runCaptured(file, args, options);
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       step,
@@ -189,5 +193,6 @@ export function runStep(
       r.tail,
     );
   }
+
   return r;
 }

@@ -331,6 +331,7 @@ describe('runShip — epics side by side', () => {
 
     const argvOf = (prefix: string): string[][] =>
       run.calls.filter((c) => c.label.startsWith(prefix)).map((c) => [...c.argv]);
+
     expect(argvOf('runner:cut-batch')).toEqual([
       ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '1'],
       ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '2'],
@@ -363,6 +364,7 @@ describe('runShip — epics side by side', () => {
     );
     const done = runShip(run.hooks, 'epics 1 2');
     await idle();
+
     return { hold, run, done };
   }
 

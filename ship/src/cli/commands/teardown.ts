@@ -102,6 +102,7 @@ export function teardownWorktree(
     tsserverRestart: skipped('not-removed'),
   };
   let main = '';
+
   try {
     if (existsSync(worktree)) {
       main = requireWorktreeRoot(worktree, 'preconditions').main;
@@ -112,8 +113,10 @@ export function teardownWorktree(
   } catch (err) {
     recordFailure(result, err);
   }
+
   result.registered = main !== '' && listWorktrees(main).some((w) => samePath(w.path, worktree));
   if (result.removed) result.tsserverRestart = restartTsserver();
+
   return result;
 }
 
@@ -175,6 +178,7 @@ function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResu
   // git writes the file itself: a text diff of a non-UTF-8 file never passes through a decode.
   if (patch !== null)
     git(worktree, ['diff', '--cached', ...PATCH_FORMAT, `--output=${patch}`, base], 'keep');
+
   return { patch, report: source === null ? null : copyInto(source, keep.dir) };
 }
 
@@ -182,6 +186,7 @@ function keepWork(worktree: string, keep: KeepRequest): NonNullable<TeardownResu
 function copyInto(source: string, dir: string): string {
   const to = `${dir}/${posix.basename(source)}`;
   keepWrite(() => copyFileSync(source, to));
+
   return to;
 }
 
@@ -190,8 +195,10 @@ function indexDiffers(worktree: string, base: string): boolean {
   const r = runCaptured('git', ['-C', worktree, 'diff', '--cached', '--quiet', base], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode !== 0 && r.exitCode !== 1)
     throw new StepFailure('keep', `git diff failed in ${worktree}`, r.tail);
+
   return r.exitCode === 1;
 }
 
@@ -213,6 +220,7 @@ function keepWrite(write: () => unknown): void {
 function pruneGoneWorktree(): string {
   const main = listWorktrees(process.cwd(), 'preconditions')[0]?.path ?? process.cwd();
   git(main, ['worktree', 'prune'], 'prune');
+
   return main;
 }
 
@@ -223,9 +231,11 @@ function pruneGoneWorktree(): string {
  */
 function assertGuards(worktree: string, main: string, selfPath: string): void {
   assertNotSelfHosted(worktree, selfPath);
+
   if (samePath(main, worktree)) {
     throw new Refusal('main-worktree', 'preconditions', `${worktree} is the main worktree`);
   }
+
   assertNoNestedWorktrees(worktree, main);
 }
 
@@ -236,6 +246,7 @@ function assertNoNestedWorktrees(worktree: string, main: string): void {
   const nested = listWorktrees(main, 'preconditions')
     .map((w) => w.path)
     .filter((path) => !samePath(path, worktree) && isInside(path, worktree));
+
   if (nested.length > 0) {
     throw new Refusal(
       'nested-worktree',
@@ -283,6 +294,7 @@ function baselineSources(
  */
 function assertNoLinksRemain(worktree: string): void {
   const remaining = findLinks(worktree);
+
   if (remaining.length > 0) {
     throw new Refusal(
       'links-remain',
@@ -302,9 +314,11 @@ function assertSourcesIntact(result: TeardownResult, stage: 'gate' | 'post-remov
   const shrunk = result.sources.filter(
     (s) => s.before !== null && (s.after === null || s.after < s.before),
   );
+
   if (shrunk.length === 0) return;
   const message = `link source lost entries: ${shrunk.map((s) => `${s.path} ${String(s.before)} -> ${String(s.after)}`).join(', ')}`;
   if (stage === 'gate') throw new Refusal('source-shrank', stage, message);
+
   throw new StepFailure(stage, message);
 }
 

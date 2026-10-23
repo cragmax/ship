@@ -73,17 +73,21 @@ export function liveRuns(input: { readonly main: string }): LiveRunsResult {
     errors: [],
     runs: [],
   };
+
   try {
     requireMainCheckout(main);
     const worktrees = listWorktrees(main, 'runs');
+
     for (const entry of worktrees.slice(1)) {
       if (entry.branch?.startsWith(RUN_BRANCH_PREFIX) !== true) continue;
       result.runs.push(describeRun(main, entry, worktrees, result));
     }
+
     result.runs.sort((x, y) => compareStrings(x.branch, y.branch));
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -94,6 +98,7 @@ export function liveRuns(input: { readonly main: string }): LiveRunsResult {
  */
 function requireMainCheckout(main: string): void {
   const identity = requireWorktreeRoot(main, 'preconditions');
+
   if (!samePath(identity.main, main)) {
     throw new StepFailure(
       'preconditions',
@@ -118,11 +123,14 @@ function describeRun(
   const branch = ref.slice('refs/heads/'.length);
   const mergeBase = git(main, ['merge-base', RUN_BASE_BRANCH, ref], 'runs');
   const { info, error } = lookupPr(main, branch);
+
   if (error !== undefined) {
     result.status = 'failed';
     result.errors.push({ step: 'pr-state', message: `${branch}: ${error}` });
   }
+
   const { spent, unverified } = spentOf(main, ref, info);
+
   return {
     path: entry.path,
     branch,
@@ -154,14 +162,18 @@ function spentOf(
 ): { readonly spent: boolean; readonly unverified: boolean } {
   if (info.state !== 'merged' && info.state !== 'closed')
     return { spent: false, unverified: false };
+
   if (info.headOid === null || !isCommit(main, info.headOid)) {
     return { spent: false, unverified: true };
   }
+
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', ref, info.headOid], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return { spent: true, unverified: false };
   if (r.exitCode === 1) return { spent: false, unverified: false };
+
   throw new StepFailure(
     'runs',
     `git merge-base --is-ancestor ${ref} ${info.headOid} failed`,
@@ -172,6 +184,7 @@ function spentOf(
 /** Whether `oid` names a commit here. */
 function isCommit(main: string, oid: string): boolean {
   if (!COMMIT_ID.test(oid)) return false;
+
   return (
     runCaptured('git', ['-C', main, 'cat-file', '-e', `${oid}^{commit}`], { cwd: process.cwd() })
       .exitCode === 0
@@ -186,6 +199,7 @@ function isCommit(main: string, oid: string): boolean {
  */
 function isDirty(entry: WorktreeEntry): boolean | null {
   if (entry.prunable || !existsSync(entry.path)) return null;
+
   return statusEntries(entry.path, 'runs').length > 0;
 }
 
@@ -217,16 +231,20 @@ export function lookupPr(dir: string, branch: string): PrLookup {
     ],
     { cwd: dir, timeoutMs: GH_TIMEOUT_MS },
   );
+
   if (r.exitCode !== 0) return unknownPr(`gh pr list exited ${String(r.exitCode)}: ${r.tail}`);
   const prs = parsePrList(r.stdout);
   if (prs === null) return unknownPr(`gh pr list printed unreadable JSON: ${r.stdout}`);
   if (prs.length === 0) return { info: { state: 'none', number: null, headOid: null } };
+
   for (const [ghState, state] of Object.entries(PR_STATES)) {
     const pr = prs.find((p) => p.state === ghState);
+
     if (pr !== undefined) {
       return { info: { state, number: pr.number, headOid: pr.headRefOid ?? null } };
     }
   }
+
   return unknownPr(`gh pr list reported unrecognised states: ${r.stdout}`);
 }
 
@@ -242,10 +260,13 @@ export function lookupPr(dir: string, branch: string): PrLookup {
 export function openPr(dir: string, branch: string): number {
   const { info, error } = lookupPr(dir, branch);
   if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
+
   if (info.state !== 'open' || info.number === null) {
     const pr = info.number === null ? '' : ` (#${String(info.number)})`;
+
     throw new Refusal('no-open-pr', 'pr-state', `${branch} has no open PR: ${info.state}${pr}`);
   }
+
   return info.number;
 }
 
@@ -261,6 +282,7 @@ function unknownPr(error: string): PrLookup {
 function parsePrList(stdout: string): z.infer<typeof PrListSchema> | null {
   try {
     const parsed = PrListSchema.safeParse(JSON.parse(stdout));
+
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

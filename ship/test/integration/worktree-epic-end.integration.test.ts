@@ -41,6 +41,7 @@ import {
 // the options each one got. The CLI-spawned tests run in their own process.
 vi.mock('../../src/cli/git/exec.js', async (importOriginal) => {
   const actual = await importOriginal<typeof ExecModule>();
+
   return { ...actual, runCaptured: vi.fn(actual.runCaptured) };
 });
 
@@ -81,7 +82,9 @@ describe('append-pr-body', () => {
       ['append-pr-body', root, '--pr', '9', '--section-file', `${root}/pr-section.md`],
       { env: prependPath(bin) },
     );
+
     if (typeof r.json.bodyFile === 'string') logDirs.add(dirname(r.json.bodyFile));
+
     return { r, bin };
   }
 
@@ -192,6 +195,7 @@ describe('post-pr-comment', () => {
       ['post-pr-comment', root, '--pr', '9', '--comment-file', file],
       { env: prependPath(bin) },
     );
+
     return { r, bin, file };
   }
 
@@ -301,6 +305,7 @@ describe('post-issue-comment', () => {
       ['post-issue-comment', root, '--issue', '7', '--comment-file', file],
       { env: prependPath(bin) },
     );
+
     return { r, bin, file };
   }
 
@@ -350,6 +355,7 @@ describe('usage errors', () => {
     const run = runCli(['server-tier', 'b', '--engine', 'paper', '--registry', 'r', '--log', 'l'], {
       cwd: root,
     });
+
     expect(run.code).toBe(2);
     expect(run.json.errors[0]).toEqual({
       step: 'usage',

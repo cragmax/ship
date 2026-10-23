@@ -25,15 +25,19 @@ const TABLE_FOR_FIELDS: Readonly<Record<string, keyof GhFixtures>> = {
 /** Routes each call by the `--json` field set it asks for, then by issue number. */
 function fakeGh(fixtures: GhFixtures): { gh: GhJson; calls: string[][] } {
   const calls: string[][] = [];
+
   const gh: GhJson = (args) => {
     calls.push([...args]);
     const table = TABLE_FOR_FIELDS[args[4] ?? ''];
     const answer = table === undefined ? undefined : fixtures[table]?.[Number(args[2])];
+
     if (answer === undefined) {
       return Promise.reject(new Error(`fakeGh: no fixture for ${args.join(' ')}`));
     }
+
     return Promise.resolve(answer);
   };
+
   return { gh, calls };
 }
 
@@ -58,6 +62,7 @@ function facts(
   } = {},
 ): unknown {
   const native = opts.native ?? [];
+
   return {
     number,
     state: opts.state ?? 'OPEN',
@@ -167,6 +172,7 @@ describe('gatherAndEvaluate', () => {
         epics: { 500: { number: 500, subIssues: { nodes: [node(501, 'OPEN')], totalCount: 101 } } },
         facts: { 501: facts(501) },
       });
+
       await expect(
         gatherAndEvaluate({ kind: 'epics', epics: [500] }, 'refuse', gh),
       ).rejects.toThrow(/#500.*subIssues/);
@@ -177,6 +183,7 @@ describe('gatherAndEvaluate', () => {
         facts: { 7: facts(7, { native: [node(8, 'CLOSED')], nativeTotal: 51 }) },
         states: { 8: { number: 8, state: 'CLOSED' } },
       });
+
       await expect(
         gatherAndEvaluate({ kind: 'issues', issues: [7] }, 'refuse', gh),
       ).rejects.toThrow(/#7.*blockedBy/);
@@ -248,6 +255,7 @@ describe('gatherCheck', () => {
     const { gh, calls } = fakeGh({
       facts: { 1032: facts(1032, { body: '## Blocked by\n- #1031\n' }) },
     });
+
     expect(await gatherCheck(1032, gh)).toEqual({ issue: 1032, ready: true, failures: [] });
     expect(calls).toEqual([
       ['issue', 'view', '1032', '--json', 'number,state,labels,body,blockedBy'],

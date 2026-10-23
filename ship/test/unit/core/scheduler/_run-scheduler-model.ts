@@ -127,6 +127,7 @@ interface InputParts {
 export function arbInput(): fc.Arbitrary<SchedulerInput> {
   return fc.array(fc.integer({ min: 1, max: 6 }), { minLength: 1, maxLength: 3 }).chain((sizes) => {
     const total = sizes.reduce((a, b) => a + b, 0);
+
     return fc
       .record({
         issues: fc.uniqueArray(fc.integer({ min: 1, max: 99 }), {
@@ -197,9 +198,11 @@ function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput
   const runSet = sizes.map((size, i) => {
     const issues = parts.issues.slice(offset, offset + size);
     offset += size;
+
     return { epic: i === parts.nullAt ? null : (parts.epics[i] ?? null), issues };
   });
   const edges: RunEdge[] = [];
+
   for (const [e, a, b] of parts.edgePicks) {
     const issues = runSet[e % runSet.length]?.issues ?? [];
     const lo = issues[Math.min(a % issues.length, b % issues.length)];
@@ -207,8 +210,10 @@ function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput
     if (lo !== undefined && hi !== undefined && lo !== hi)
       edges.push({ blocker: lo, dependent: hi });
   }
+
   const first = edges[0];
   if (parts.duplicate && first !== undefined) edges.push({ ...first });
+
   return { runSet, edges, maxSlices: parts.maxSlices };
 }
 
@@ -237,26 +242,34 @@ export function runModel(
   const machine = factory(view);
   const events: SchedulerEvent[] = [];
   const transitions: Transition[] = [];
+
   const record = (event: SchedulerEvent | null, t: Transition): Transition => {
     step(view, event, t.actions);
     if (event !== null) events.push(event);
     transitions.push(t);
+
     return t;
   };
+
   let t = record(null, machine.create(input));
+
   for (const choice of choices) {
     const event = pickEvent(view, choice);
     if (event !== undefined) t = record(event, machine.advance(deepFreeze(t.state), event));
   }
+
   for (let n = 0; n < view.order.length * 4; n += 1) {
     const live = view.order.find((i) => isLive(view.status.get(i)));
     if (live === undefined) break;
     const event: SchedulerEvent = inHaltedEntry(view, live)
       ? { kind: 'blocked', issue: live, reason: 'model' }
       : { kind: 'committed', issue: live };
+
     t = record(event, machine.advance(deepFreeze(t.state), event));
   }
+
   checkEnd(view);
+
   return { events, transitions };
 }
 
@@ -270,6 +283,7 @@ export function runModel(
 function closure(view: View, root: number): Set<number> {
   const reached = new Set<number>();
   const queue = [root];
+
   for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
     for (const w of view.dependents.get(v) ?? []) {
       if (w === root || reached.has(w)) continue;
@@ -277,6 +291,7 @@ function closure(view: View, root: number): Set<number> {
       queue.push(w);
     }
   }
+
   return reached;
 }
 
@@ -288,6 +303,7 @@ function closure(view: View, root: number): Set<number> {
  */
 function deepFreeze<T>(value: T): T {
   freezeAll(value);
+
   return value;
 }
 
@@ -301,10 +317,12 @@ function newView(input: SchedulerInput): View {
   const order = input.runSet.flatMap((entry) => [...entry.issues]);
   const blockers = new Map<number, number[]>(order.map((i) => [i, []]));
   const dependents = new Map<number, number[]>(order.map((i) => [i, []]));
+
   for (const e of input.edges) {
     blockers.get(e.dependent)?.push(e.blocker);
     dependents.get(e.blocker)?.push(e.dependent);
   }
+
   return {
     input,
     order,
@@ -329,6 +347,7 @@ function isLive(status: Observed | undefined): boolean {
 
 function inHaltedEntry(view: View, issue: number): boolean {
   const epic = view.entryOf.get(issue);
+
   return epic !== undefined && view.halted.has(epic);
 }
 
@@ -339,10 +358,12 @@ function endCount(view: View, epic: number | null): number {
 function candidates(view: View, kind: IssueEvent['kind']): number[] {
   if (kind === 'slot-free') return view.order.filter((i) => view.status.get(i) === 'authoring');
   if (kind === 'label-removed') return view.order.filter((i) => view.status.get(i) !== 'settled');
+
   // A halted entry lands nothing more: the consumer never feeds its issues `committed`.
   if (kind === 'committed') {
     return view.order.filter((i) => isLive(view.status.get(i)) && !inHaltedEntry(view, i));
   }
+
   return view.order.filter((i) => isLive(view.status.get(i)));
 }
 
@@ -352,13 +373,16 @@ function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
       ({ epic }) => !view.halted.has(epic) && endCount(view, epic) === 0,
     );
     const entry = open[choice.pick % Math.max(open.length, 1)];
+
     return entry === undefined
       ? undefined
       : { kind: 'epic-halt', epic: entry.epic, reason: 'model' };
   }
+
   const pool = candidates(view, choice.kind);
   const issue = pool[choice.pick % Math.max(pool.length, 1)];
   if (issue === undefined) return undefined;
+
   return choice.kind === 'blocked'
     ? { kind: 'blocked', issue, reason: 'model' }
     : { kind: choice.kind, issue };
@@ -374,6 +398,7 @@ function step(view: View, event: SchedulerEvent | null, actions: readonly Schedu
     settled: new Set(view.order.filter((i) => view.status.get(i) === 'settled')),
     ends: new Map(view.input.runSet.map(({ epic }) => [epic, endCount(view, epic)])),
   };
+
   if (event !== null) applyEvent(view, event);
   for (const action of actions) applyAction(view, action);
   checkStep(view, event, actions, pre);
@@ -388,6 +413,7 @@ function step(view: View, event: SchedulerEvent | null, actions: readonly Schedu
  */
 function haltEntry(view: View, epic: number | null): void {
   view.halted.add(epic);
+
   for (const i of view.input.runSet.find((entry) => entry.epic === epic)?.issues ?? []) {
     if (view.status.get(i) !== 'unstarted') continue;
     view.status.set(i, 'settled');
@@ -398,15 +424,20 @@ function haltEntry(view: View, epic: number | null): void {
 function applyEvent(view: View, event: SchedulerEvent): void {
   if (event.kind === 'epic-halt') {
     haltEntry(view, event.epic);
+
     return;
   }
+
   const i = event.issue;
+
   // In a halted entry every settling event settles the issue as halted: no
   // death counted, no bad root, no restart.
   if (inHaltedEntry(view, i) && event.kind !== 'slot-free') {
     view.status.set(i, 'settled');
+
     return;
   }
+
   switch (event.kind) {
     case 'committed':
       view.committed.add(i);
@@ -417,6 +448,7 @@ function applyEvent(view: View, event: SchedulerEvent): void {
       if (event.kind === 'label-removed' && view.pendingRestart.has(i)) {
         view.removedWhileParked.add(i);
       }
+
       view.badRoots.set(i, event.kind);
       view.status.set(i, 'settled');
       break;
@@ -434,11 +466,14 @@ function applyEvent(view: View, event: SchedulerEvent): void {
 function applyAction(view: View, action: SchedulerAction): void {
   if (action.kind === 'epic-done' || action.kind === 'epic-halted') {
     view.ends.set(action.epic, [...(view.ends.get(action.epic) ?? []), action.kind]);
+
     return;
   }
+
   // The model's graphs carry declared edges only, which never release.
   if (action.kind === 'release') throw new Error(`model: unexpected ${JSON.stringify(action)}`);
   const i = action.issue;
+
   switch (action.kind) {
     case 'start':
       view.status.set(i, 'authoring');
@@ -521,6 +556,7 @@ function checkWorkConserving(view: View): void {
       view.status.get(i) === 'unstarted' &&
       (view.blockers.get(i) ?? []).every((b) => view.committed.has(b)),
   );
+
   if (idle !== undefined) violate('work-conserving', `#${idle} ready while a slot is free`);
 }
 
@@ -530,12 +566,14 @@ function checkSkipOnlyDependents(
   pre: PreStep,
 ): void {
   const seen = new Set<number>();
+
   for (const { issue, cause } of ofKind(actions, 'skip')) {
     const ok =
       closure(view, cause.root).has(issue) &&
       view.badRoots.get(cause.root) === cause.trigger &&
       !pre.settled.has(issue) &&
       !seen.has(issue);
+
     if (!ok) violate('skip-only-dependents', `skip #${issue} for root #${cause.root}`);
     seen.add(issue);
   }
@@ -548,6 +586,7 @@ function checkSkipClosureComplete(
 ): void {
   const roots = ofKind(actions, 'block').map((a) => a.issue);
   if (event?.kind === 'blocked' || event?.kind === 'label-removed') roots.push(event.issue);
+
   for (const root of roots) {
     const open = [...closure(view, root)].filter((i) => view.status.get(i) !== 'settled');
     if (open.length > 0) violate('skip-closure-complete', `#${root} went bad; ${open} unsettled`);
@@ -562,6 +601,7 @@ function checkRequeueAnnounced(
   const got = ofKind(actions, 'requeue').map((a) => a.issue);
   const want =
     event?.kind === 'harvest-conflict' && !inHaltedEntry(view, event.issue) ? [event.issue] : [];
+
   if (got.join() !== want.join()) violate('requeue-announced', `requeued [${got}], want [${want}]`);
 }
 
@@ -576,6 +616,7 @@ function checkRetryOnce(
     event?.kind === 'agent-died' && !inHaltedEntry(view, event.issue) ? event.issue : undefined;
   const deaths = died === undefined ? 0 : (view.deaths.get(died) ?? 0);
   const want = { retry: deaths === 1 ? [died] : [], block: deaths === 2 ? [died] : [] };
+
   if (retried.join() !== want.retry.join() || blocked.join() !== want.block.join()) {
     violate('retry-once', `death ${deaths} of #${died}: retry [${retried}], block [${blocked}]`);
   }
@@ -594,6 +635,7 @@ function checkEpicDoneWhenSettled(
   const before = pre.ends.get(entry.epic) ?? 0;
   const settled = entry.issues.every((i) => view.status.get(i) === 'settled');
   const want = settled && before === 0 ? 1 : 0;
+
   if (now !== want) {
     violate('epic-done-when-settled', `epic ${entry.epic}: emitted ${now}, want ${want}`);
   }
@@ -614,6 +656,7 @@ function checkEnd(view: View): void {
   if (stranded.length > 0) violate('requeued-restarted', `never restarted: ${stranded}`);
   const open = view.order.filter((i) => view.status.get(i) !== 'settled');
   if (open.length > 0) violate('every-issue-settles', `unsettled: ${open}`);
+
   for (const { epic } of view.input.runSet) {
     const got = (view.ends.get(epic) ?? []).join();
     const want = view.halted.has(epic) ? 'epic-halted' : 'epic-done';
@@ -634,6 +677,7 @@ function mapCreate(extra: (view: View, t: Transition) => SchedulerAction[]): Mac
   return (view) => ({
     create: (input) => {
       const t = createScheduler(input);
+
       return { state: t.state, actions: [...t.actions, ...extra(view, t)] };
     },
     advance,
@@ -651,6 +695,7 @@ function mapActions(
     create: createScheduler,
     advance: (state, event) => {
       const t = advance(state, event);
+
       return { state: t.state, actions: edit(view, event, t.actions) };
     },
   });
@@ -661,6 +706,7 @@ function withoutFirst(
   match: (a: SchedulerAction) => boolean,
 ): SchedulerAction[] {
   const at = actions.findIndex(match);
+
   return at < 0 ? [...actions] : actions.filter((_, i) => i !== at);
 }
 
@@ -678,13 +724,16 @@ function skipNonDependent(
   const victim = view.order.find(
     (i) => i !== root && !reach.has(i) && !started.has(i) && view.status.get(i) === 'unstarted',
   );
+
   if (victim === undefined) return [...actions];
+
   return [...actions, { kind: 'skip', issue: victim, cause: { root, trigger: event.kind } }];
 }
 
 function dropRestartStart(actions: readonly SchedulerAction[]): SchedulerAction[] {
   const restarted = actions.find((a) => a.kind === 'requeue' || a.kind === 'retry');
   if (restarted === undefined) return [...actions];
+
   return withoutFirst(actions, (a) => a.kind === 'start' && a.issue === restarted.issue);
 }
 
@@ -702,10 +751,12 @@ function secondRetry(): MachineFactory {
       if (event.kind !== 'agent-died' || view.deaths.get(event.issue) !== 1) {
         return advance(state, event);
       }
+
       const t = advance(state, { kind: 'harvest-conflict', issue: event.issue });
       const actions = t.actions.map(
         (a): SchedulerAction => (a.kind === 'requeue' ? { kind: 'retry', issue: a.issue } : a),
       );
+
       return { state: t.state, actions };
     },
   });
@@ -725,6 +776,7 @@ function startAfterHalt(): MachineFactory {
       if (event.kind !== 'epic-halt') return t;
       const ready = readyIssueOf(view, event.epic);
       if (ready === undefined) return t;
+
       return { state: t.state, actions: [...t.actions, { kind: 'start', issue: ready }] };
     },
   });
@@ -734,6 +786,7 @@ function readyIssueOf(view: View, epic: number | null): number | undefined {
   const isReady = (i: number): boolean =>
     view.status.get(i) === 'unstarted' &&
     (view.blockers.get(i) ?? []).every((b) => view.committed.has(b));
+
   return view.order.find((i) => view.entryOf.get(i) === epic && isReady(i));
 }
 
@@ -744,6 +797,7 @@ export const MUTANTS: readonly Mutant[] = [
     trips: 'dependency-order',
     machine: mapCreate((view) => {
       const dependent = view.order.find((i) => (view.blockers.get(i) ?? []).length > 0);
+
       return dependent === undefined ? [] : [{ kind: 'start', issue: dependent }];
     }),
   },
@@ -752,6 +806,7 @@ export const MUTANTS: readonly Mutant[] = [
     trips: 'cap',
     machine: mapCreate((view, t) => {
       const started = new Set(ofKind(t.actions, 'start').map((a) => a.issue));
+
       return view.order
         .filter((i) => (view.blockers.get(i) ?? []).length === 0 && !started.has(i))
         .map((issue) => ({ kind: 'start', issue }));

@@ -84,6 +84,7 @@ function batchAndSlice(options: FixtureRepoOptions = {}): Layout {
   const batch = addWorktree(main, join(root, 'batch'), 'ship/batch');
   seedBatch(batch);
   const slice = addWorktree(main, join(root, 'slice'), 'slice-1');
+
   return { main, batch, slice };
 }
 
@@ -93,6 +94,7 @@ function gitignoreReplacing(pattern: string, replacement: string | null): string
     .split(/\r?\n/u)
     .flatMap((line) => {
       if (line.trim() !== pattern) return [line];
+
       return replacement === null ? [] : [replacement];
     })
     .join('\n');
@@ -207,6 +209,7 @@ describe('provision-batch', () => {
         '--report-dir',
         reportDir,
       ]);
+
       expect(run.json.status, JSON.stringify(run.json)).toBe('ok');
       expect(run.code).toBe(0);
       expect(lstatSync(join(batch, 'node_modules', 'fake-dep')).isDirectory()).toBe(true);
@@ -224,6 +227,7 @@ describe('provision-batch', () => {
         { type: 'folia', host: 'localhost', rconPort: 25711 },
         { type: 'folia', host: 'localhost', rconPort: 25713 },
       ];
+
       expect(
         (loaded.ok ? loaded.value : []).map((e) => ({
           type: e.type,
@@ -253,6 +257,7 @@ describe('provision-batch', () => {
         mkdirSync(join(main, 'node_modules'));
         const sentinel = join(main, 'node_modules', 'sentinel.txt');
         writeFileSync(sentinel, '');
+
         return { batch: main, reportDir: join(root, 'reports'), sentinel };
       },
       status: 'refused',
@@ -273,6 +278,7 @@ describe('provision-batch', () => {
         const path = join(batch, 'server-pool', 'src', 'registry', 'pool-registry.json');
         const entries = JSON.parse(readFileSync(path, 'utf8')) as { type: string }[];
         writeFileSync(path, JSON.stringify(entries.filter((e) => e.type !== 'folia')));
+
         return { batch, reportDir: join(root, 'reports') };
       },
       status: 'failed',
@@ -288,6 +294,7 @@ describe('provision-batch', () => {
       '--report-dir',
       c.reportDir,
     ]);
+
     expect(run.code).toBe(1);
     expect(run.json.status).toBe(status);
     if (reason !== undefined) expect(run.json.reason).toBe(reason);
@@ -306,6 +313,7 @@ describe('provision-batch', () => {
       '--report-dir',
       join(root, 'reports'),
     ]);
+
     expect(run.code).toBe(1);
     expect(run.json.status).toBe('failed');
     expect(run.json.errors[0]?.step).toBe('post-check');
@@ -331,6 +339,7 @@ describe('provision-batch', () => {
         '--report-dir',
         join(root, 'reports'),
       ]);
+
       expect(run.code).toBe(1);
       expect(run.json.status).toBe('failed');
       expect(run.json.errors[0]?.step).toBe('preconditions');
@@ -359,11 +368,13 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
   function provisioned(): Layout {
     const layout = batchAndSlice();
     expect(runCli(['provision', layout.slice, '--batch', layout.batch]).json.status).toBe('ok');
+
     return layout;
   }
 
   it('refuses when the link source shrank, leaving the worktree in place', TIMEOUT, () => {
     const { main, batch, slice } = provisioned();
+
     const unlink = (path: string): void => {
       unlinkLink(path);
       rmSync(join(batch, 'node_modules', 'fake-dep', 'lib', 'f0.js'));
@@ -395,6 +406,7 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
 
   it('ignores churn in a volatile top-level cache of the source', TIMEOUT, () => {
     const { main, batch, slice } = provisioned();
+
     const unlink = (path: string): void => {
       unlinkLink(path);
       rmSync(join(batch, 'node_modules', '.vite-temp', 'x.js'));
@@ -412,6 +424,7 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
     const down = teardownWorktree(toPosix(slice), {
       selfPath: toPosix(join(slice, 'ship', 'src', 'cli', 'worktree.ts')),
     });
+
     expect(down.status).toBe('refused');
     expect(down.reason).toBe('self-hosted');
     expect(down.registered).toBe(true);
@@ -462,6 +475,7 @@ describe("teardown's tsserver restart (in-process, restart seam)", () => {
     const restartTsserver = vi.fn(() => RESTARTED);
     const cwd = process.cwd();
     let down: TeardownResult;
+
     try {
       process.chdir(main);
       down = teardownWorktree(toPosix(join(root, 'gone')), { restartTsserver });
@@ -540,6 +554,7 @@ describe('self-hosted guard on the provision commands (in-process)', () => {
       server: false,
       selfPath: `${slice}/ship/src/cli/worktree.ts`,
     });
+
     expect(run.status).toBe('refused');
     expect(run.reason).toBe('self-hosted');
     expect(listTree(slice)).toEqual(before);
@@ -563,6 +578,7 @@ describe('inherited git environment', () => {
       const saved = process.env['GIT_DIR'];
       process.env['GIT_DIR'] = foreignGitDir;
       let down: TeardownResult;
+
       try {
         down = teardownWorktree(toPosix(slice));
       } finally {
@@ -649,12 +665,14 @@ describe('teardown keeping an unlanded attempt’s work', () => {
     const report = join(root, 'reports', 'ship-7', 'tdd-7-1.md');
     mkdirSync(dirname(report), { recursive: true });
     writeFileSync(report, '# tdd 7-1\nBLOCKED at the probe\n');
+
     return { main, slice, base, report };
   }
 
   /** Run `teardown` on `slice`, keeping its work in `kept` against `base`, with `report`. */
   function teardownKeeping(slice: string, kept: string, base: string, report: string) {
     const args = ['teardown', slice, '--keep-to', kept, '--base', base, '--report', report];
+
     return runCli<TeardownResult>(args);
   }
 
@@ -866,6 +884,7 @@ describe.skipIf(!WIN32)('provision', () => {
     const { batch, slice } = batchAndSlice({
       gitignore: gitignoreReplacing(SCAFFOLD_PATTERN, 'vitest.worktree.config.ts'),
     });
+
     expect(runCli(['provision', slice, '--batch', batch]).json.status).toBe('ok');
 
     const again = runCli<ProvisionResult>(['provision', slice, '--batch', batch, '--server']);
@@ -887,6 +906,7 @@ describe.skipIf(!WIN32)('provision', () => {
       name: 'the batch has no node_modules',
       arrange: (f: Layout) => {
         rmSync(join(f.batch, 'node_modules'), { recursive: true, force: true });
+
         return f;
       },
     },
@@ -894,6 +914,7 @@ describe.skipIf(!WIN32)('provision', () => {
       name: '--batch is the main checkout',
       arrange: (f: Layout) => {
         seedBatch(f.main);
+
         return { ...f, batch: f.main };
       },
     },
@@ -902,6 +923,7 @@ describe.skipIf(!WIN32)('provision', () => {
       arrange: (f: Layout) => {
         const plain = join(root, 'plain');
         mkdirSync(plain);
+
         return { ...f, slice: plain };
       },
     },

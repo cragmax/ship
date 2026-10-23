@@ -15,11 +15,13 @@ import { stripComments } from '../../../../../server-pool/test/helpers/render-sa
 /** Create, then feed each event in turn; returns every transition, the initial one first. */
 function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
   const transitions = [createScheduler(input)];
+
   for (const event of events) {
     const last = transitions[transitions.length - 1];
     if (last === undefined) throw new Error('unreachable');
     transitions.push(advance(last.state, event));
   }
+
   return transitions;
 }
 
@@ -31,6 +33,7 @@ function blockFirst(
   const blocked = play({ runSet: [{ epic: 900, issues }], edges, maxSlices: 1 }, [
     { kind: 'blocked', issue: 1, reason: 'x' },
   ]);
+
   return blocked[1]?.actions;
 }
 
@@ -52,6 +55,7 @@ describe('advance — action order', () => {
         { kind: 'agent-died', issue: 10 },
       ],
     );
+
     expect(init?.actions).toEqual([{ kind: 'start', issue: 10 }]);
     expect(first?.actions).toEqual([
       { kind: 'retry', issue: 10 },
@@ -94,6 +98,7 @@ describe('advance — action order', () => {
         { blocker: 1, dependent: 4, source: 'overlap' },
       ],
     );
+
     expect(actions).toEqual([
       { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },
       { kind: 'release', blocker: 1, dependent: 4, trigger: 'blocked' },
@@ -128,10 +133,12 @@ describe('advance — protocol violations', () => {
       },
       [],
     );
+
     if (init === undefined) throw new Error('unreachable');
     const event = (
       kind === 'blocked' ? { kind, issue, reason: 'x' } : { kind, issue }
     ) as SchedulerEvent;
+
     expect(() => advance(init.state, event)).toThrow(
       `run scheduler: ${kind} for #${String(issue)}, which is ${phase}`,
     );
@@ -196,6 +203,7 @@ describe('advance — epic halt', () => {
         { kind: 'committed', issue: 21 },
       ],
     );
+
     expect(halted?.actions).toEqual([{ kind: 'epic-halted', epic: 900 }]);
     expect(first?.actions).toEqual([{ kind: 'start', issue: 21 }]);
     expect(second?.actions).toEqual([{ kind: 'epic-done', epic: 800 }]);
@@ -219,6 +227,7 @@ describe('advance — epic halt', () => {
         },
         [{ kind: 'epic-halt', epic: 900, reason: 'x' }, settle],
       );
+
       expect(halted?.actions).toEqual([]);
       expect(settled?.actions).toEqual([
         { kind: 'start', issue: 20 },
@@ -236,6 +245,7 @@ describe('advance — epic halt', () => {
         { kind: 'blocked', issue: 1, reason: 'x' },
       ],
     );
+
     expect(landed?.actions).toEqual([]);
     expect(settled?.actions).toEqual([{ kind: 'epic-halted', epic: 900 }]);
   });
@@ -244,6 +254,7 @@ describe('advance — epic halt', () => {
     const [, halted] = play({ runSet: [{ epic: 900, issues: [1] }], edges: [], maxSlices: 1 }, [
       { kind: 'epic-halt', epic: 900, reason: 'x' },
     ]);
+
     if (halted === undefined) throw new Error('unreachable');
     expect(() => advance(halted.state, { kind: 'committed', issue: 1 })).toThrow(
       'run scheduler: committed for #1, whose epic #900 is halted',
@@ -254,6 +265,7 @@ describe('advance — epic halt', () => {
     const [, halted] = play({ runSet: [{ epic: 900, issues: [1, 2] }], edges: [], maxSlices: 1 }, [
       { kind: 'epic-halt', epic: 900, reason: 'x' },
     ]);
+
     if (halted === undefined) throw new Error('unreachable');
     expect(() => advance(halted.state, { kind: 'label-removed', issue: 2 })).toThrow(
       'run scheduler: label-removed for #2, which is halted',
@@ -323,6 +335,7 @@ describe('advance — ready order', () => {
         { kind: 'committed', issue: 5 },
       ],
     );
+
     expect(first?.actions).toEqual([{ kind: 'start', issue: 2 }]);
     expect(second?.actions).toEqual([{ kind: 'start', issue: 5 }]);
     expect(third?.actions).toEqual([{ kind: 'start', issue: 4 }]);
@@ -336,6 +349,7 @@ describe('advance — ready order', () => {
         { kind: 'committed', issue: 1 },
       ],
     );
+
     expect(removed?.actions).toEqual([]);
     expect(committed?.actions).toEqual([{ kind: 'start', issue: 3 }]);
   });
@@ -381,6 +395,7 @@ describe('advance — overlap edges', () => {
         { kind: 'committed', issue: 5 },
       ],
     );
+
     expect(blocked?.actions).toEqual([
       { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },
       { kind: 'release', blocker: 1, dependent: 3, trigger: 'blocked' },
@@ -427,6 +442,7 @@ describe('advance — overlap edges', () => {
       },
       events,
     );
+
     expect(transitions.at(-1)?.actions).toEqual([
       ...response,
       { kind: 'release', blocker: 1, dependent: 2, trigger },
@@ -451,6 +467,7 @@ describe('advance — overlap edges', () => {
       },
       [{ kind: 'blocked', issue: 1, reason: 'x' }],
     );
+
     expect(blocked?.state.edges).toEqual([{ blocker: 1, dependent: 2, source: 'declared' }]);
     expect(blocked?.actions).toEqual([
       { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },

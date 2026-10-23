@@ -70,6 +70,7 @@ describe('parseBlockedBySection — section bounds', () => {
       '',
       '</details>',
     ].join('\n');
+
     expect(parseBlockedBySection(body)).toEqual([10]);
   });
 
@@ -89,6 +90,7 @@ describe('parseBlockedBySection — section bounds', () => {
     const body = ['## Blocked by', '- #20', '## Notes', '- #30', '## Blocked by', '- #10'].join(
       '\n',
     );
+
     expect(parseBlockedBySection(body)).toEqual([10, 20]);
   });
 });

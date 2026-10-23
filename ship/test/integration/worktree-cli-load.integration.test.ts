@@ -93,6 +93,7 @@ function loadedCommandModules(args: readonly string[]): { code: number; modules:
       .map((url) => /\/ship\/src\/cli\/(?:commands|git)\/([a-z-]+)\.ts$/u.exec(url)?.[1])
       .filter((name) => name !== undefined),
   );
+
   return { code, modules: COMMAND_MODULES.filter((m) => loaded.has(m)) };
 }
 

@@ -125,6 +125,7 @@ describe('mergeOverlapEdges', () => {
     const merged = mergeOverlapEdges({ runSet: [{ epic: null, issues: [1, 2] }], edges: [] }, [
       { a: 1, b: 2 },
     ]);
+
     if (merged.kind !== 'ok') throw new Error('expected ok');
 
     const first = createScheduler({ ...merged.graph, maxSlices: 4 });

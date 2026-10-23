@@ -65,6 +65,7 @@ interface SliceLayout {
 function runHead(slug: string): string {
   if (slug.startsWith(EPIC_SLUG_PREFIX)) return slug;
   const dash = slug.indexOf('-');
+
   return dash === -1 ? slug : slug.slice(0, dash);
 }
 
@@ -82,6 +83,7 @@ function runHead(slug: string): string {
 export function runLayout(main: string, slug: string): RunLayout {
   const posixMain = toPosix(main);
   const name = `ship-${runHead(slug)}`;
+
   return {
     batch: `${posixMain}/${WORKTREES_DIR}/${name}`,
     reports: `${posixMain}/${REPORTS_DIR}/${name}`,
@@ -120,6 +122,7 @@ export function sliceLayout(
 ): SliceLayout {
   const id = `${String(issue)}-${String(attempt)}`;
   const named = run === null ? id : `a${String(run)}-${id}`;
+
   return { path: `${batch}-${named}`, branch: `${sliceBranchPrefix(slug)}${named}` };
 }
 
@@ -160,7 +163,9 @@ export function nextAttachedRun(left: {
   const taken = (n: number): boolean =>
     left.reports.includes(`attach-${String(n)}`) ||
     left.branches.some((b) => b.startsWith(`a${String(n)}-`));
+
   while (taken(run)) run++;
+
   return run;
 }
 
@@ -174,5 +179,6 @@ export function nextAttachedRun(left: {
 export function runSlugOf(ref: string): string | null {
   if (!ref.startsWith(RUN_BRANCH_PREFIX)) return null;
   const slug = ref.slice(RUN_BRANCH_PREFIX.length);
+
   return slug === '' ? null : slug;
 }

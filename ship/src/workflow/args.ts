@@ -60,6 +60,7 @@ export function parseShipArgs(raw: unknown): ArgsOutcome {
     return { args: typeof raw === 'string' ? parseText(raw) : parseObject(raw) };
   } catch (err) {
     if (!(err instanceof ArgsError)) throw err;
+
     return {
       refusal: {
         kind: 'usage',
@@ -78,6 +79,7 @@ function parseText(text: string): ShipArgs {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return parseObject(parseJson(trimmed));
   const [first, ...rest] = trimmed.split(/\s+/);
+
   return validated({ selection: selectionWord(first), ...parseTokens(rest) });
 }
 
@@ -88,6 +90,7 @@ function parseText(text: string): ShipArgs {
  */
 function selectionWord(word: string | undefined): Selection {
   if (word === 'epics' || word === 'issues') return word;
+
   throw new ArgsError(
     word === undefined || word === ''
       ? 'no arguments'
@@ -109,8 +112,10 @@ function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
     maxSlices: MAX_SLICES,
     attach: null,
   };
+
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] ?? '';
+
     switch (token) {
       case '--exclude':
         args.exclude = true;
@@ -128,6 +133,7 @@ function parseTokens(tokens: readonly string[]): Omit<ShipArgs, 'selection'> {
         numbers.push(...numberList(token));
     }
   }
+
   return args;
 }
 
@@ -140,16 +146,20 @@ function parseObject(raw: unknown): ShipArgs {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new ArgsError(raw === undefined || raw === null ? 'no arguments' : 'not an object');
   }
+
   const record = raw as Readonly<Record<string, unknown>>;
   const unknownKey = Object.keys(record).find((key) => !ARG_KEYS.includes(key));
   if (unknownKey !== undefined) throw new ArgsError(`unknown key '${unknownKey}'`);
   const hasEpics = Object.hasOwn(record, 'epics');
+
   if (hasEpics === Object.hasOwn(record, 'issues')) {
     throw new ArgsError('give exactly one of epics and issues');
   }
+
   const selection: Selection = hasEpics ? 'epics' : 'issues';
   const list = record[selection];
   if (!Array.isArray(list)) throw new ArgsError(`${selection} is not a list`);
+
   return validated({
     selection,
     numbers: list.map((n: unknown) => positiveInteger(n, selection)),
@@ -168,6 +178,7 @@ function optionalKey<T>(
   absent: T,
 ): T {
   const value = record[key];
+
   return value === undefined ? absent : read(value, key);
 }
 
@@ -192,6 +203,7 @@ function parseJson(text: string): unknown {
  */
 function numberList(token: string): number[] {
   if (token.startsWith('--')) throw new ArgsError(`unknown flag '${token}'`);
+
   return token
     .split(',')
     .filter((piece) => piece !== '')
@@ -205,9 +217,11 @@ function numberList(token: string): number[] {
  */
 function positiveInteger(value: unknown, what: string): number {
   const n = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+
   if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
     throw new ArgsError(`${what}: '${String(value)}' is not a positive integer`);
   }
+
   return n;
 }
 
@@ -220,6 +234,7 @@ function attachTarget(value: unknown, what: string): string {
   if (typeof value !== 'string' || !RUN_BRANCH_SHAPE.test(value)) {
     throw new ArgsError(`${what}: '${String(value)}' is not a ship/ run branch`);
   }
+
   return value;
 }
 
@@ -232,6 +247,7 @@ function flag(record: Readonly<Record<string, unknown>>, key: string): boolean {
   const value = record[key];
   if (value === undefined) return false;
   if (typeof value !== 'boolean') throw new ArgsError(`${key} is not a boolean`);
+
   return value;
 }
 
@@ -244,8 +260,10 @@ function validated(args: ShipArgs): ShipArgs {
   if (args.numbers.length === 0) throw new ArgsError(`no ${args.selection} numbers`);
   const twice = args.numbers.find((n, i) => args.numbers.indexOf(n) !== i);
   if (twice !== undefined) throw new ArgsError(`#${String(twice)} is given twice`);
+
   if (args.attach !== null && args.selection === 'epics') {
     throw new ArgsError('--attach takes issues, not epics');
   }
+
   return args;
 }

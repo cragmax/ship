@@ -139,6 +139,7 @@ export async function renderWorkflow(
     `return await ${runName}({ agent, parallel, pipeline, phase, log }, args);`,
   ].join('\n');
   const config = await prettier.resolveConfig(resolve(root, spec.entry));
+
   return prettier.format(code, { ...config, parser: 'babel' });
 }
 
@@ -159,6 +160,7 @@ export async function checkRenderedWorkflows(
       const out = resolve(root, spec.out);
       if (!existsSync(out))
         return { target: spec.out, ok: false, reason: 'missing — never rendered' };
+
       return readFileSync(out, 'utf8').replaceAll('\r\n', '\n') === rendered
         ? { target: spec.out, ok: true }
         : { target: spec.out, ok: false, reason: 'differs from the rendered output' };
@@ -183,6 +185,7 @@ export async function writeRenderedWorkflows(
       const out = resolve(root, spec.out);
       mkdirSync(dirname(out), { recursive: true });
       writeFileSync(out, rendered, 'utf8');
+
       return spec.out;
     }),
   );
@@ -197,6 +200,7 @@ function readSource(path: string): string {
 function closureOf(root: string, entry: string, read: SourceReader): ClosureFile[] {
   const seen = new Set<string>();
   const order: ClosureFile[] = [];
+
   const visit = (path: string): void => {
     if (seen.has(path)) return;
     seen.add(path);
@@ -204,7 +208,9 @@ function closureOf(root: string, entry: string, read: SourceReader): ClosureFile
     for (const dep of valueImports(file)) visit(dep);
     order.push(file);
   };
+
   visit(entry);
+
   return order;
 }
 
@@ -215,12 +221,15 @@ function closureOf(root: string, entry: string, read: SourceReader): ClosureFile
  */
 function valueImports(file: ClosureFile): string[] {
   const sf = ts.createSourceFile(file.path, file.source, ts.ScriptTarget.ES2022, false);
+
   return sf.statements.filter(ts.isImportDeclaration).flatMap((decl) => {
     if (isTypeOnly(decl)) return [];
     const specifier = (decl.moduleSpecifier as ts.StringLiteral).text;
+
     if (!specifier.startsWith('.')) {
       throw new Error(`workflow render: non-relative value import '${specifier}' in ${file.file}`);
     }
+
     return [resolve(dirname(file.path), specifier.replace(/\.js$/, '.ts'))];
   });
 }
@@ -234,6 +243,7 @@ function isTypeOnly(decl: ts.ImportDeclaration): boolean {
   if (clause === undefined) return false;
   if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) return true;
   const bindings = clause.namedBindings;
+
   return (
     clause.name === undefined &&
     bindings !== undefined &&
@@ -265,6 +275,7 @@ function dropModuleSyntax(): ts.Transformer<ts.SourceFile> {
         if (!ts.canHaveModifiers(s)) return [s];
         const modifiers = ts.getModifiers(s) ?? [];
         const kept = modifiers.filter((m) => !isExportModifier(m));
+
         return [kept.length === modifiers.length ? s : ts.factory.replaceModifiers(s, kept)];
       }),
     );
@@ -294,6 +305,7 @@ function assertNoForbidden(chunk: { readonly file: string; readonly js: string }
   const found =
     FORBIDDEN_TOKENS.find((t) => chunk.js.includes(t)) ??
     FORBIDDEN_WORDS.find((w) => new RegExp(`\\b${w}\\b`).test(chunk.js));
+
   if (found !== undefined) {
     throw new Error(`workflow render: forbidden token '${found}' in ${chunk.file}`);
   }
@@ -306,15 +318,18 @@ function assertNoForbidden(chunk: { readonly file: string; readonly js: string }
  */
 function assertNames(chunks: readonly { readonly file: string; readonly js: string }[]): void {
   const owner = new Map<string, string>();
+
   for (const chunk of chunks) {
     for (const name of topLevelNames(chunk.js)) {
       assertNotHook(name, chunk.file);
       const first = owner.get(name);
+
       if (first !== undefined) {
         throw new Error(
           `workflow render: top-level name '${name}' is declared in both ${first} and ${chunk.file}`,
         );
       }
+
       owner.set(name, chunk.file);
     }
   }
@@ -337,11 +352,14 @@ function assertNotHook(name: string, file: string): void {
  */
 function topLevelNames(js: string): string[] {
   const sf = ts.createSourceFile('chunk.js', js, ts.ScriptTarget.ES2022, false, ts.ScriptKind.JS);
+
   return sf.statements.flatMap((s) => {
     if (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) return s.name ? [s.name.text] : [];
+
     if (ts.isVariableStatement(s)) {
       return s.declarationList.declarations.flatMap((d) => bindingNames(d.name));
     }
+
     return [];
   });
 }
@@ -349,5 +367,6 @@ function topLevelNames(js: string): string[] {
 /** Every identifier a binding introduces. */
 function bindingNames(name: ts.BindingName): string[] {
   if (ts.isIdentifier(name)) return [name.text];
+
   return name.elements.flatMap((e) => (ts.isOmittedExpression(e) ? [] : bindingNames(e.name)));
 }

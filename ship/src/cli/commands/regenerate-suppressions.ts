@@ -28,6 +28,7 @@ export function regenerateSuppressions(batch: string): void {
     existsSync(`${batch}/${key}`),
   );
   const merged: Suppressions = {};
+
   for (const key of keys) {
     const rules = sortedSet([...Object.keys(ours[key] ?? {}), ...Object.keys(theirs[key] ?? {})]);
     merged[key] = Object.fromEntries(
@@ -39,13 +40,16 @@ export function regenerateSuppressions(batch: string): void {
       ]),
     );
   }
+
   const changed = keys.filter((key) => JSON.stringify(ours[key]) !== JSON.stringify(theirs[key]));
   writeFileSync(`${batch}/${ESLINT_SUPPRESSIONS}`, JSON.stringify(merged, null, 2));
+
   if (changed.length > 0) {
     runStep('suppressions', 'npx', ['eslint', '--prune-suppressions', ...changed], {
       cwd: batch,
       timeoutMs: NPM_TIMEOUT_MS,
     });
   }
+
   git(batch, ['add', '--', ESLINT_SUPPRESSIONS], 'suppressions');
 }

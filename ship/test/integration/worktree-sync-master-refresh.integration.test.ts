@@ -64,6 +64,7 @@ function recordCommits(main: string): string {
     'pre-commit',
     `#!/bin/sh\ngit rev-parse -q --verify MERGE_HEAD >> "${log}"\nexit 0\n`,
   );
+
   return log;
 }
 
@@ -86,6 +87,7 @@ function lockOf(dir: string): Lockfile {
 function versionsOf(dir: string): { pkg: string; lock: string; lockRoot: string } {
   const pkg = JSON.parse(show(dir, 'package.json')) as { version: string };
   const lock = lockOf(dir);
+
   return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
 }
 
@@ -100,6 +102,7 @@ describe('sync-master batch refresh', () => {
     mustRun('npm', ['version', kind, '--no-git-tag-version'], dir);
     mustRun('git', ['add', '--', 'package.json', LOCKFILE], dir);
     mustRun('git', ['commit', '-q', '-m', message], dir);
+
     return headSha(dir);
   }
 
@@ -107,6 +110,7 @@ describe('sync-master batch refresh', () => {
   function bumpOrigin(run: FixtureRun, kind: string, message: string): string {
     const sha = bumpIn(run.main, kind, message);
     mustRun('git', ['push', '-q', 'origin', 'master'], run.main);
+
     return sha;
   }
 
@@ -115,6 +119,7 @@ describe('sync-master batch refresh', () => {
     const run = makeNpmRun();
     const ours = bumpIn(run.batch, 'patch', 'chore: ours');
     const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+
     return { run, ours, theirs };
   }
 
@@ -133,6 +138,7 @@ describe('sync-master batch refresh', () => {
     expect(r.json).toMatchObject({ status: 'failed', outcome: null, commit: null });
     expect(r.json.errors.map((e) => e.step)).toEqual([step]);
     expect(snapshot(batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
+
     return r;
   }
 

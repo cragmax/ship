@@ -59,12 +59,15 @@ export function trimRegistry(source: string, dest: string): WarmMember[] {
   if (!loaded.ok) throw new StepFailure('registry', loaded.error.message);
   const kept = loaded.value.filter((entry) => WARM_SET.some((member) => isMember(member, entry)));
   const missing = WARM_SET.filter((member) => !kept.some((entry) => isMember(member, entry)));
+
   if (missing.length > 0) {
     throw new StepFailure(
       'registry',
       `${source} lacks warm member(s): ${missing.map(memberLabel).join(', ')}`,
     );
   }
+
   writeFileSync(dest, `${JSON.stringify(kept, null, 2)}\n`);
+
   return [...WARM_SET];
 }

@@ -37,12 +37,14 @@ export function postCommentFile(
   file: string,
 ): string {
   const comment = readComment(file);
+
   if (comment.length > GH_BODY_LIMIT) {
     throw new StepFailure(
       'body-too-long',
       `comment file ${file} is ${String(comment.length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit`,
     );
   }
+
   return postComment(cwd, subject, number, file);
 }
 
@@ -53,12 +55,15 @@ export function postCommentFile(
  */
 function readComment(file: string): string {
   let text: string;
+
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
     throw new StepFailure('comment', `comment file ${file} unreadable: ${describeError(err)}`);
   }
+
   if (text.trim() === '') throw new StepFailure('comment', `comment file ${file} is empty`);
+
   return text;
 }
 
@@ -67,6 +72,7 @@ function postComment(cwd: string, subject: CommentSubject, number: number, file:
     cwd,
     timeoutMs: GH_TIMEOUT_MS,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       `${subject}-comment`,
@@ -74,16 +80,19 @@ function postComment(cwd: string, subject: CommentSubject, number: number, file:
       r.tail,
     );
   }
+
   const url = r.stdout
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line !== '')
     .at(-1);
+
   if (url?.startsWith('https://') !== true) {
     throw new StepFailure(
       'comment-url',
       `gh ${subject} comment ${String(number)} printed no comment URL; the comment may have been posted`,
     );
   }
+
   return url;
 }

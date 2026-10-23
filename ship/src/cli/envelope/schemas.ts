@@ -362,6 +362,7 @@ export function guardEnvelope(result: ResultBase, schema: z.ZodType): ResultBase
   if (parsed.success) return result;
   const issues = parsed.error.issues.map((i) => `${issuePath(i.path)}: ${i.message}`);
   const raw = result as Readonly<Record<string, unknown>>;
+
   return {
     command: typeof raw['command'] === 'string' ? raw['command'] : '',
     status: 'failed',
@@ -381,5 +382,6 @@ function issuePath(path: readonly PropertyKey[]): string {
   const steps = path.map((key) =>
     typeof key === 'number' ? `[${String(key)}]` : `.${String(key)}`,
   );
+
   return steps.join('').replace(/^\./, '');
 }

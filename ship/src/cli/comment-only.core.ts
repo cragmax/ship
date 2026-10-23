@@ -86,6 +86,7 @@ const MOJIBAKE = new RegExp(`\u00e2[${CONTINUATION}]|\u00c3|\u00c2[\\p{P}\\p{S}]
  */
 export function findMojibake(base: string, head: string): MojibakeLine[] {
   const hits: MojibakeLine[] = [];
+
   for (const [i, text] of head.split('\n').entries()) {
     for (const match of text.matchAll(MOJIBAKE)) {
       if (base.includes(match[0])) continue;
@@ -93,6 +94,7 @@ export function findMojibake(base: string, head: string): MojibakeLine[] {
       break;
     }
   }
+
   return hits;
 }
 
@@ -112,18 +114,24 @@ function codeTokens(fileName: string, source: string): PlacedToken[] {
   const lf = source.replaceAll('\r\n', '\n');
   const sf = ts.createSourceFile(fileName, lf, ts.ScriptTarget.Latest, false);
   const tokens: PlacedToken[] = [];
+
   const visit = (node: ts.Node, path: string): void => {
     if (node.kind >= ts.SyntaxKind.FirstToken && node.kind <= ts.SyntaxKind.LastToken) {
       const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
       tokens.push({ token: { kind: node.kind, text: node.getText(sf), line }, path });
+
       return;
     }
+
     const children = node.getChildren(sf).filter((child) => !isJSDoc(child));
+
     for (const [i, child] of children.entries()) {
       visit(child, `${path}/${String(node.kind)}:${String(i)}`);
     }
   };
+
   visit(sf, '');
+
   return tokens;
 }
 
@@ -144,14 +152,17 @@ export function firstDifference(
 ): TokenDifference | null {
   const b = codeTokens(fileName, base);
   const h = codeTokens(fileName, head);
+
   for (const [i, { token: bt, path }] of b.entries()) {
     const placed = h[i];
     if (placed === undefined) break;
     const ht = placed.token;
+
     if (bt.kind !== ht.kind || bt.text !== ht.text || path !== placed.path) {
       return { base: bt, head: ht };
     }
   }
+
   return null;
 }
 
@@ -165,12 +176,14 @@ export function firstDifference(
 export function parseNameStatus(fields: readonly string[]): FileChange[] {
   const changes: FileChange[] = [];
   let i = 0;
+
   while (i < fields.length) {
     const [status = '', first = '', second = ''] = fields.slice(i, i + 3);
     const paired = /^[RC]/u.test(status);
     changes.push(paired ? { basePath: first, headPath: second } : oneSided(status, first));
     i += paired ? 3 : 2;
   }
+
   return changes;
 }
 
@@ -198,6 +211,7 @@ export function parseRevisions(args: readonly string[]): Revisions {
   const parts = arg.split('..');
   const [base = '', head = ''] = parts;
   if (cached || parts.length !== 2 || base === '' || head === '') throw new Error(USAGE);
+
   return { base, head: { kind: 'revision', rev: head } };
 }
 
@@ -226,23 +240,28 @@ export function proveCommentOnly(cwd: string, revisions: Revisions): CommentOnly
   const notCompared = changes.filter((c) => !isCompared(c)).map(displayPath);
   let compared = 0;
   const mojibake: Mojibake[] = [];
+
   for (const change of changes.filter(isCompared)) {
     compared++;
     const base = readSide(top, { kind: 'revision', rev: revisions.base }, change.basePath);
     const head = readSide(top, revisions.head, change.headPath);
     const { headPath } = change;
+
     if (headPath !== null) {
       mojibake.push(...findMojibake(base, head).map((hit) => ({ path: headPath, ...hit })));
     }
+
     const d = firstDifference(displayPath(change), base, head);
     if (d !== null) return { compared, notCompared, difference: { change, ...d }, mojibake };
   }
+
   return { compared, notCompared, difference: null, mojibake };
 }
 
 // --end-of-options: a revision starting `-` is never read as an option.
 const diffRevs = (base: string, head: Head): string[] => {
   if (head.kind === 'revision') return ['--end-of-options', base, head.rev];
+
   return head.kind === 'index'
     ? ['--cached', '--end-of-options', base]
     : ['--end-of-options', base];
@@ -252,8 +271,10 @@ function changedFiles(top: string, { base, head }: Revisions): FileChange[] {
   const changes = parseNameStatus(
     gitPaths(top, ['diff', '--name-status', '-M', ...diffRevs(base, head), '--'], 'diff'),
   );
+
   if (head.kind !== 'worktree') return changes;
   const untracked = gitPaths(top, ['ls-files', '--others', '--exclude-standard'], 'untracked');
+
   return [...changes, ...untracked.map((path) => ({ basePath: null, headPath: path }))];
 }
 
@@ -261,11 +282,13 @@ function readSide(top: string, side: Head, path: string | null): string {
   if (path === null) return '';
   if (side.kind === 'worktree') return readFileSync(join(top, path), 'utf8');
   const spec = side.kind === 'index' ? `:${path}` : `${side.rev}:${path}`;
+
   return git(top, ['show', '--end-of-options', spec], 'show');
 }
 
 const renderToken = (t: CodeToken): string => {
   const text = t.kind === ts.SyntaxKind.EndOfFileToken ? '<end of file>' : `\`${t.text}\``;
+
   return `line ${String(t.line)} ${text}`;
 };
 
@@ -283,6 +306,7 @@ export function formatDifference(d: FileDifference): string {
       : displayPath(d.change);
   const same = d.base.kind === d.head.kind && d.base.text === d.head.text;
   const tokens = `base ${renderToken(d.base)}, head ${renderToken(d.head)}`;
+
   return `code differs in ${label}: ${tokens}${same ? ' (parsed differently)' : ''}`;
 }
 

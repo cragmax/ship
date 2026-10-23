@@ -155,6 +155,7 @@ export function resolveRunSet(
   if (spec.kind === 'issues') {
     return [{ epic: null, issues: [...spec.issues].sort((a, b) => a - b) }];
   }
+
   return spec.epics.map((epic) => ({
     epic,
     issues: childrenOf(epicChildren, epic)
@@ -175,6 +176,7 @@ function childrenOf(
 ): readonly EpicChild[] {
   const children = epicChildren.get(epic);
   if (children === undefined) throw new Error(`run-gate: no sub-issues for epic ${ref(epic)}`);
+
   return children;
 }
 
@@ -188,6 +190,7 @@ function childrenOf(
  */
 export function checkIssue(facts: IssueFacts): IssueCheck {
   const failures = ownFailures(facts);
+
   return { issue: facts.number, ready: failures.length === 0, failures };
 }
 
@@ -201,9 +204,11 @@ export function checkIssue(facts: IssueFacts): IssueCheck {
 export function outOfSetBlockers(runSet: RunSet, facts: readonly IssueFacts[]): number[] {
   const inSet = new Set(runSetIssues(runSet));
   const out = new Set<number>();
+
   for (const f of facts) {
     for (const b of f.blockedBy) if (!inSet.has(b)) out.add(b);
   }
+
   return [...out].sort((a, b) => a - b);
 }
 
@@ -234,9 +239,11 @@ export function evaluateRunGate(input: RunGateInput): GateVerdict {
   if (analysis.failures.length === 0) {
     return verdict('ok', { runSet: input.runSet, edges: resolvedEdges }, [], []);
   }
+
   if (input.mode === 'refuse' || analysis.failures.some((f) => !isExcludable(f))) {
     return refused(analysis.failures);
   }
+
   const excluded = exclusions(analysis);
   const kept = keptRunSet(input.runSet, excluded);
   if (kept.length === 0) return refused([...analysis.failures, emptyRunSetFailure()]);
@@ -244,6 +251,7 @@ export function evaluateRunGate(input: RunGateInput): GateVerdict {
   const keptEdges = resolvedEdges.filter(
     (e) => keptIssues.has(e.blocker) && keptIssues.has(e.dependent),
   );
+
   return verdict('ok', { runSet: kept, edges: keptEdges }, analysis.failures, excluded);
 }
 
@@ -269,6 +277,7 @@ function exclusions(analysis: Analysis): Exclusion[] {
   const dropped = new Set([...failed, ...dependents]);
   const droppedBlockersOf = (issue: number): number[] =>
     walkEdges.filter((e) => e.dependent === issue && dropped.has(e.blocker)).map((e) => e.blocker);
+
   return [
     ...[...failed].map((issue): Exclusion => ({ issue, cause: 'failed' })),
     ...dependents.map(
@@ -280,6 +289,7 @@ function exclusions(analysis: Analysis): Exclusion[] {
 /** The run set minus the dropped issues, emptied entries removed, entry order kept. */
 function keptRunSet(runSet: RunSet, excluded: readonly Exclusion[]): RunSet {
   const dropped = new Set(excluded.map((x) => x.issue));
+
   return runSet
     .map((entry) => ({ epic: entry.epic, issues: entry.issues.filter((n) => !dropped.has(n)) }))
     .filter((entry) => entry.issues.length > 0);
@@ -304,13 +314,16 @@ function analyse(input: RunGateInput): Analysis {
   const subjectFailures: GateFailure[] = emptyEpicFailures(input.runSet);
   const inSetEdges: RunEdge[] = [];
   const issues = runSetIssues(input.runSet);
+
   for (const issue of issues) {
     const assessed = assessIssue(factsFor(facts, issue), entries, input.blockerStates);
     subjectFailures.push(...assessed.failures);
     inSetEdges.push(...assessed.edges);
   }
+
   const cycles = findCycles(issues, inSetEdges).map(cycleFailure);
   subjectFailures.sort(compareFailures);
+
   return {
     entries,
     facts,
@@ -336,6 +349,7 @@ function indexEntries(runSet: RunSet): EntryIndex {
   runSet.forEach((entry, position) => {
     for (const issue of entry.issues) entries.set(issue, { position, epic: entry.epic });
   });
+
   return entries;
 }
 
@@ -370,6 +384,7 @@ function indexFacts(facts: readonly IssueFacts[]): ReadonlyMap<number, IssueFact
 function factsFor(facts: ReadonlyMap<number, IssueFacts>, issue: number): IssueFacts {
   const found = facts.get(issue);
   if (found === undefined) throw new Error(`run-gate: no facts for run-set issue ${ref(issue)}`);
+
   return found;
 }
 
@@ -388,12 +403,14 @@ function assessIssue(
   const edges: RunEdge[] = [];
   const blockers = [...new Set(facts.blockedBy)];
   blockers.sort((a, b) => a - b);
+
   for (const blocker of blockers) {
     const home = entries.get(blocker);
     if (home !== undefined) edges.push({ blocker, dependent: issue });
     const failure = blockerFailure(issue, blocker, { home, own }, blockerStates);
     if (failure !== undefined) failures.push(failure);
   }
+
   return { failures, edges };
 }
 
@@ -406,6 +423,7 @@ function ownFailures(facts: IssueFacts): IssueCheckFailure[] {
   const failures: IssueCheckFailure[] = [];
   if (facts.state === 'CLOSED') failures.push(closedFailure(facts.number));
   if (!facts.labels.includes(READY_LABEL)) failures.push(missingLabelFailure(facts.number));
+
   return failures;
 }
 
@@ -426,11 +444,15 @@ function blockerFailure(
   blockerStates: ReadonlyMap<number, IssueState>,
 ): GateFailure | undefined {
   const { home, own } = placement;
+
   if (home === undefined) {
     const open = blockerState(blockerStates, blocker) === 'OPEN';
+
     return open ? openBlockerFailure(issue, blocker) : undefined;
   }
+
   const crossEpic = home.epic !== null && home.position !== own?.position;
+
   return crossEpic ? crossEpicFailure(issue, blocker, home.epic) : undefined;
 }
 
@@ -462,6 +484,7 @@ function compareFailures(a: GateFailure, b: GateFailure): number {
 function subjectOf(f: GateFailure): number {
   if ('issue' in f) return f.issue;
   if ('epic' in f) return f.epic;
+
   return 0;
 }
 
@@ -482,12 +505,14 @@ function blockerOf(f: GateFailure): number {
 function blockerState(blockerStates: ReadonlyMap<number, IssueState>, blocker: number): IssueState {
   const state = blockerStates.get(blocker);
   if (state === undefined) throw new Error(`run-gate: no state for blocker ${ref(blocker)}`);
+
   return state;
 }
 
 /** Dedupe edges and sort them by (`blocker`, `dependent`), into a new list. */
 function sortEdges(edges: readonly RunEdge[]): RunEdge[] {
   const unique = new Map(edges.map((e) => [`${String(e.blocker)}>${String(e.dependent)}`, e]));
+
   return [...unique.values()].sort((a, b) => a.blocker - b.blocker || a.dependent - b.dependent);
 }
 

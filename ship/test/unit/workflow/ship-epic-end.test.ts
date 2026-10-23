@@ -95,6 +95,7 @@ const retroReports = (run: FakeRun): Record<string, unknown>[] =>
     .filter((c) => c.label.startsWith('retro:'))
     .map((c) => {
       const line = c.prompt.split('\n').find((l) => l.startsWith('Run report (JSON): ')) ?? '';
+
       return JSON.parse(line.slice('Run report (JSON): '.length)) as Record<string, unknown>;
     });
 
@@ -147,6 +148,7 @@ const EPIC_REJECTED = {
 const bodyHead = (run: FakeRun): string[] => {
   const lines = promptOf(run, 'runner:publish:list').split('\n');
   const start = lines.indexOf('----- BEGIN FILE -----') + 1;
+
   return lines.slice(start, lines.indexOf('## Summary') + 1);
 };
 
@@ -493,6 +495,7 @@ describe('runShip — the bump', () => {
  */
 const bodyOf = (run: FakeRun): string[] => {
   const lines = promptOf(run, 'runner:publish:list').split('\n');
+
   return lines.slice(
     lines.indexOf('----- BEGIN FILE -----') + 1,
     lines.indexOf('----- END FILE -----'),
@@ -503,6 +506,7 @@ const bodyOf = (run: FakeRun): string[] => {
 const testsAtPush = (run: FakeRun): string[] => {
   const body = bodyOf(run);
   const at = body.indexOf('## Tests at push');
+
   return at === -1 ? [] : body.slice(at, at + 4);
 };
 
@@ -613,6 +617,7 @@ describe('runShip — the PR writer', () => {
     const landed = JSON.parse(line?.slice('Landed (JSON): '.length) ?? '[]') as {
       issue: number;
     }[];
+
     expect(landed.map((l) => l.issue)).toEqual([7, 8]);
   });
 
@@ -944,11 +949,13 @@ describe('runShip — the PR body limit', () => {
     );
     const [schedule, retro] = posts.map((c) => {
       const lines = c.prompt.split('\n');
+
       return lines.slice(
         lines.indexOf('----- BEGIN FILE -----') + 1,
         lines.indexOf('----- END FILE -----'),
       );
     });
+
     expect(schedule?.slice(0, 2)).toEqual(['## Schedule', '']);
     expect(schedule?.[2]).toMatch(/^- #7: blockers none; /);
     expect(retro).toEqual(['## Retro findings', '', `- big (genuine): ${'e'.repeat(66_000)} — s`]);
@@ -1057,10 +1064,13 @@ describe('runShip — a failed publish’s recovery', () => {
     expect(writtenFiles(run)).toEqual(expect.arrayContaining(namedFiles(recovery)));
     expect(namedFiles(recovery)).toHaveLength(3);
     const lines = promptOf(run, 'runner:publish:list').split('\n');
+
     const head = (file: string): string[] => {
       const at = lines.indexOf(`Write first: ${REPORT_DIR}/${file}`);
+
       return lines.slice(at, at + 3);
     };
+
     expect(head('pr-comment-schedule.md')).toEqual([
       `Write first: ${REPORT_DIR}/pr-comment-schedule.md`,
       '----- BEGIN FILE -----',

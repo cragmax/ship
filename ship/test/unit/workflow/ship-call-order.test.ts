@@ -33,10 +33,13 @@ async function shipUnder(
 ): Promise<{ run: FakeRun; report: ShipReport }> {
   if (order === 'at once') {
     const run = fakeHooks(TWO_INDEPENDENT);
+
     return { run, report: await runShip(run.hooks, args) };
   }
+
   const pump = settleInOrder(order);
   const run = fakeHooks(TWO_INDEPENDENT, { gate: pump.gate });
+
   return { run, report: await pump.drain(runShip(run.hooks, args)) };
 }
 
@@ -88,6 +91,7 @@ describe('runShip — call order under different settle timings', () => {
         },
       ],
     };
+
     expect(oldest.report).toMatchObject(bothLanded);
     expect(newest.report).toMatchObject(bothLanded);
     expect(labels(newest.run)).not.toEqual(labels(oldest.run));

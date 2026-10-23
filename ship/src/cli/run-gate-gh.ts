@@ -78,6 +78,7 @@ export function toIssueFacts(raw: GhFacts): IssueFacts {
     ...parseBlockedBySection(raw.body),
     ...raw.blockedBy.nodes.map((n) => n.number),
   ]);
+
   return {
     number: raw.number,
     state: raw.state,
@@ -110,6 +111,7 @@ export async function gatherAndEvaluate(
       outOfSetBlockers(runSet, facts).map(async (b) => [b, await fetchState(b, gh)] as const),
     ),
   );
+
   return evaluateRunGate({ runSet, facts, blockerStates, mode });
 }
 
@@ -125,6 +127,7 @@ export async function gatherCheck(issue: number, gh: GhJson): Promise<IssueCheck
 /** Fetch every sub-issue of an epic, open and closed. */
 async function fetchEpicChildren(epic: number, gh: GhJson): Promise<readonly EpicChild[]> {
   const raw = parseAnswer(EpicSchema, await ghView(gh, epic, EPIC_FIELDS), epic);
+
   return complete(raw.subIssues, epic, 'subIssues').nodes;
 }
 
@@ -132,6 +135,7 @@ async function fetchEpicChildren(epic: number, gh: GhJson): Promise<readonly Epi
 async function fetchFacts(issue: number, gh: GhJson): Promise<IssueFacts> {
   const raw = parseAnswer(FactsSchema, await ghView(gh, issue, FACTS_FIELDS), issue);
   complete(raw.blockedBy, issue, 'blockedBy');
+
   return toIssueFacts(raw);
 }
 
@@ -153,11 +157,13 @@ function ghView(gh: GhJson, issue: number, fields: string): Promise<unknown> {
  */
 function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number): z.infer<S> {
   const result = schema.safeParse(raw);
+
   if (!result.success) {
     throw new Error(
       `run-gate: gh answer for #${String(issue)} has an unexpected shape: ${formatZodIssues(result.error)}`,
     );
   }
+
   return result.data;
 }
 
@@ -172,5 +178,6 @@ function complete(connection: GhConnection, issue: number, field: string): GhCon
       `run-gate: #${String(issue)} ${field} is truncated (${String(connection.nodes.length)} of ${String(connection.totalCount)}); refusing to gate on a partial list`,
     );
   }
+
   return connection;
 }

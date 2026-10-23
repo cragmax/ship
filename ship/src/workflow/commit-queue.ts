@@ -61,6 +61,7 @@ interface EventSubject {
 /** Create an empty commit queue. */
 export function createCommitQueue(): CommitQueue {
   let tail: Promise<unknown> = Promise.resolve();
+
   return {
     enqueue: <T>(task: () => Promise<T>): Promise<T> => {
       const run = tail.then(() => task());
@@ -68,6 +69,7 @@ export function createCommitQueue(): CommitQueue {
         () => undefined,
         () => undefined,
       );
+
       return run;
     },
   };
@@ -89,6 +91,7 @@ function classifyLanding(land: LandOutput | null): LandingClass {
   const step = land.errors?.[0]?.step;
   const rolledBackStep = step === 'commit' || step === 'build';
   if (land.status === 'failed' && land.rolledBack === true && rolledBackStep) return 'blocked';
+
   return 'halt';
 }
 
@@ -100,6 +103,7 @@ function classifyLanding(land: LandOutput | null): LandingClass {
  */
 export function landingEvent(land: LandOutput | null, at: EventSubject): SchedulerEvent {
   const reason = envelopeProblem('land', land);
+
   switch (classifyLanding(land)) {
     case 'committed':
       return { kind: 'committed', issue: at.issue };
@@ -123,6 +127,7 @@ export function teardownEvent(
   epic: number | null,
 ): EpicHaltEvent | null {
   if (teardown?.status !== 'refused' || teardown.reason !== 'source-shrank') return null;
+
   return { kind: 'epic-halt', epic, reason: envelopeProblem('teardown', teardown) };
 }
 
@@ -156,15 +161,19 @@ export function settleEvents(
 ): Settled {
   if (halt !== null) {
     const blocked: SchedulerEvent = { kind: 'blocked', issue: at.issue, reason: halt.reason };
+
     return { events: at.entry === 'halted' ? [blocked] : [halt, blocked], entry: 'halted' };
   }
+
   if (at.entry === 'halted' && primary.kind === 'committed') {
     const blocked: SchedulerEvent = {
       kind: 'blocked',
       issue: at.issue,
       reason: 'landed after its epic halted',
     };
+
     return { events: [blocked], entry: 'halted' };
   }
+
   return { events: [primary], entry: at.entry };
 }

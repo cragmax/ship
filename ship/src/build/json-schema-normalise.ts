@@ -40,6 +40,7 @@ const SAFE_BOUNDS: Readonly<Record<string, number>> = {
 export function emitJsonSchema(schema: z.ZodType): JsonSchema {
   const emitted = z.toJSONSchema(schema, { target: 'draft-07' }) as Node;
   const root = Object.fromEntries(Object.entries(emitted).filter(([key]) => key !== '$schema'));
+
   return normaliseNode(root, []);
 }
 
@@ -52,12 +53,14 @@ function normaliseNode(node: Node, path: readonly string[]): JsonSchema {
   const inner = nullableInner(node);
   if (inner !== undefined) return withNull(normaliseNode(inner, path));
   const out: Record<string, unknown> = {};
+
   for (const [key, value] of Object.entries(node)) {
     if (!isDropped(node, key, value)) {
       assertKept(key, path);
       out[key] = normaliseChild(key, value, path);
     }
   }
+
   return out;
 }
 
@@ -67,11 +70,14 @@ function normaliseNode(node: Node, path: readonly string[]): JsonSchema {
  */
 function nullableInner(node: Node): Node | undefined {
   const anyOf = node['anyOf'];
+
   if (!Array.isArray(anyOf) || anyOf.length !== 2 || Object.keys(node).length !== 1) {
     return undefined;
   }
+
   const [inner, second] = anyOf as readonly unknown[];
   const isNull = JSON.stringify(second) === JSON.stringify({ type: 'null' });
+
   return isNull && isNode(inner) && typeof inner['type'] === 'string' ? inner : undefined;
 }
 
@@ -81,6 +87,7 @@ function nullableInner(node: Node): Node | undefined {
  */
 function withNull(node: JsonSchema): JsonSchema {
   const values = node['enum'];
+
   return {
     ...node,
     type: [node['type'], 'null'],
@@ -95,6 +102,7 @@ function withNull(node: JsonSchema): JsonSchema {
 function isDropped(node: Node, key: string, value: unknown): boolean {
   if (key === 'additionalProperties') return value === false;
   if (key === 'readOnly') return value === true;
+
   return (
     node['type'] === 'integer' && Object.hasOwn(SAFE_BOUNDS, key) && SAFE_BOUNDS[key] === value
   );
@@ -108,6 +116,7 @@ function isDropped(node: Node, key: string, value: unknown): boolean {
 function assertKept(key: string, path: readonly string[]): void {
   if (KEPT_KEYS.includes(key)) return;
   const at = path.length === 0 ? '(root)' : path.join('.');
+
   throw new Error(`schema emit: unsupported construct '${key}' at ${at}`);
 }
 
@@ -118,6 +127,7 @@ function assertKept(key: string, path: readonly string[]): void {
 function normaliseChild(key: string, value: unknown, path: readonly string[]): unknown {
   if (key === 'items' && isNode(value)) return normaliseNode(value, [...path, 'items']);
   if (key !== 'properties' || !isNode(value)) return value;
+
   return Object.fromEntries(
     Object.entries(value).map(([name, sub]) => [
       name,

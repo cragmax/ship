@@ -61,11 +61,13 @@ export function checkMaster(input: CheckMasterInput): CheckMasterResult {
     remote: null,
   };
   let fetched = false;
+
   const fetchOnce = (): void => {
     if (fetched) return;
     fetched = true;
     fetchOrigin(main);
   };
+
   try {
     assertMainWorktree(main, 'preconditions');
     const local = localMaster(main);
@@ -80,6 +82,7 @@ export function checkMaster(input: CheckMasterInput): CheckMasterResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -92,8 +95,10 @@ function localMaster(main: string): string | null {
   const r = runCaptured('git', ['-C', main, 'rev-parse', '-q', '--verify', MASTER_REF], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return r.stdout.trim();
   if (r.exitCode === 1) return null;
+
   throw new StepFailure(
     'local-master',
     `git rev-parse ${MASTER_REF} exited ${String(r.exitCode)} in ${main}`,
@@ -120,7 +125,9 @@ function remoteMove(
     current,
     move: fromLaunch,
   };
+
   if (input.synced === null || (fromLaunch !== 'equal' && fromLaunch !== 'forward')) return move;
+
   return { ...move, move: moveFrom(main, input.synced, current, fetchOnce) };
 }
 
@@ -138,11 +145,14 @@ function moveFrom(
   if (current === null) return 'deleted';
   if (current === from) return 'equal';
   let pair = knownPair(main, from, current);
+
   if (pair === null) {
     fetchOnce();
     pair = knownPair(main, from, current);
   }
+
   if (pair === null) return 'undecidable';
+
   return ancestry(main, pair[0], pair[1]);
 }
 
@@ -150,6 +160,7 @@ function moveFrom(
 function knownPair(main: string, launch: string, current: string): [string, string] | null {
   const from = knownCommit(main, launch);
   const to = knownCommit(main, current);
+
   return from === null || to === null ? null : [from, to];
 }
 
@@ -163,6 +174,7 @@ function knownCommit(main: string, sha: string): string | null {
     ['-C', main, 'rev-parse', '-q', '--verify', '--end-of-options', `${sha}^{commit}`],
     { cwd: process.cwd() },
   );
+
   return r.exitCode === 0 ? r.stdout.trim() : null;
 }
 
@@ -173,7 +185,9 @@ function ancestry(main: string, launch: string, current: string): MasterMove['mo
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', launch, current], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return 'forward';
+
   return r.exitCode === 1 ? 'rewound' : 'undecidable';
 }
 
@@ -195,7 +209,9 @@ function assertForward(local: MasterMove, remote: MasterMove): void {
       ([which, m]) =>
         `${which} ${m.move} (launch ${m.launch}${m.synced === null ? '' : `, synced ${m.synced}`}, now ${m.current ?? 'deleted'})`,
     );
+
   if (parts.length === 0) return;
+
   throw new Refusal(
     'master-not-forward',
     'check',

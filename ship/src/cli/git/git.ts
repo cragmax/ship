@@ -43,9 +43,11 @@ export interface WorktreeIdentity {
  */
 export function git(dir: string, args: readonly string[], step = 'git'): string {
   const r = runCaptured('git', ['-C', dir, ...args], { cwd: process.cwd() });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(step, `git ${args.join(' ')} failed in ${dir}`, r.tail);
   }
+
   return r.stdout.trimEnd();
 }
 
@@ -58,6 +60,7 @@ export function git(dir: string, args: readonly string[], step = 'git'): string 
  */
 export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
   const entries: WorktreeEntry[] = [];
+
   for (const block of git(dir, ['worktree', 'list', '--porcelain'], step).split(/\r?\n\r?\n/u)) {
     const lines = block.split(/\r?\n/u);
     const path = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
@@ -66,6 +69,7 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
     const prunable = lines.some((l) => l === 'prunable' || l.startsWith('prunable '));
     entries.push({ path, branch, prunable });
   }
+
   return entries;
 }
 
@@ -79,6 +83,7 @@ export function listWorktrees(dir: string, step = 'git'): WorktreeEntry[] {
  */
 export function gitPaths(dir: string, args: readonly string[], step: string): string[] {
   const [subcommand = '', ...rest] = args;
+
   return git(dir, [subcommand, '-z', ...rest], step)
     .split('\0')
     .filter((path) => path !== '');
@@ -124,6 +129,7 @@ export function lsRemoteRef(dir: string, ref: string, step: string): string | nu
     cwd: process.cwd(),
     timeoutMs: FETCH_TIMEOUT_MS,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       step,
@@ -131,10 +137,12 @@ export function lsRemoteRef(dir: string, ref: string, step: string): string | nu
       r.tail,
     );
   }
+
   for (const line of r.stdout.split(/\r?\n/u)) {
     const [sha = '', name] = line.split('\t');
     if (name === ref) return sha;
   }
+
   return null;
 }
 
@@ -152,6 +160,7 @@ export function commitWithHooks(dir: string, args: readonly string[], logFile: s
     timeoutMs: COMMIT_TIMEOUT_MS,
     logFile,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       'commit',
@@ -209,6 +218,7 @@ export function statusEntries(dir: string, step: string): string[] {
  */
 export function assertStatusUnchanged(dir: string, before: readonly string[]): void {
   const added = statusEntries(dir, 'post-check').filter((line) => !before.includes(line));
+
   if (added.length > 0) {
     throw new StepFailure(
       'post-check',
@@ -230,6 +240,7 @@ function worktreeIdentity(path: string, step: string): WorktreeIdentity {
     step,
   ).split(/\r?\n/u);
   const main = listWorktrees(path, step)[0]?.path ?? '';
+
   return { toplevel, commonDir, main };
 }
 
@@ -241,9 +252,11 @@ function worktreeIdentity(path: string, step: string): WorktreeIdentity {
  */
 export function requireWorktreeRoot(path: string, step: string): WorktreeIdentity {
   const identity = worktreeIdentity(path, step);
+
   if (!samePath(identity.toplevel, path)) {
     throw new StepFailure(step, `${path} is not a worktree root (toplevel ${identity.toplevel})`);
   }
+
   return identity;
 }
 
@@ -255,6 +268,7 @@ export function requireWorktreeRoot(path: string, step: string): WorktreeIdentit
  */
 export function assertMainWorktree(path: string, step: string): void {
   const identity = requireWorktreeRoot(path, step);
+
   if (!samePath(identity.main, path)) {
     throw new Refusal(
       'not-main-worktree',
@@ -291,6 +305,7 @@ function canonical(path: string): string {
   const real = existsSync(abs) ? realpathSync.native(abs) : abs;
   const posix = toPosix(real);
   const trimmed = posix.endsWith('/') ? posix.slice(0, -1) : posix;
+
   return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
 }
 
@@ -311,5 +326,6 @@ export function samePath(a: string, b: string): boolean {
 export function isInside(child: string, parent: string): boolean {
   const c = canonical(child);
   const p = canonical(parent);
+
   return c === p || c.startsWith(`${p}/`);
 }

@@ -115,6 +115,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { provision } = await import('./commands/provision.js');
+
       return provision({
         slice: args.target,
         batch: pathFlag(args, '--batch'),
@@ -129,6 +130,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { provisionBatch } = await import('./commands/provision-batch.js');
+
       return provisionBatch({ batch: args.target, reportDir: pathFlag(args, '--report-dir') });
     },
   },
@@ -140,6 +142,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { teardownWorktree } = await import('./commands/teardown.js');
+
       return teardownWorktree(args.target, {}, keepFlags(args));
     },
   },
@@ -150,6 +153,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: { min: 1, max: 1 },
     run: async (args) => {
       const { harvest } = await import('./commands/harvest.js');
+
       return harvest({ batch: args.target, sha: args.rest[0] ?? '' });
     },
   },
@@ -160,6 +164,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: { min: 1, max: 1 },
     run: async (args) => {
       const { land } = await import('./commands/land.js');
+
       return land({
         batch: args.target,
         sha: args.rest[0] ?? '',
@@ -178,6 +183,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: { min: 1, max: Infinity },
     run: async (args) => {
       const { stagedGuard } = await import('./git/staged-set.js');
+
       return stagedGuard({ worktree: args.target, files: args.rest });
     },
   },
@@ -189,6 +195,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     cwdTarget: true,
     run: async (args) => {
       const { commit } = await import('./commands/commit.js');
+
       return commit({
         worktree: args.target,
         messageFile: pathFlag(args, '--message-file'),
@@ -203,6 +210,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { retireRun } = await import('./commands/retire-run.js');
+
       return retireRun({ main: args.target, branch: args.values.get('--branch') ?? '' });
     },
   },
@@ -213,6 +221,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { liveRuns } = await import('./commands/live-runs.js');
+
       return liveRuns({ main: args.target });
     },
   },
@@ -226,6 +235,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       const { preflight } = await import('./commands/preflight.js');
       const attach = args.values.get('--attach');
       const slug = args.values.get('--slug');
+
       return preflight({
         main: args.target,
         ...(attach === undefined ? {} : { attach }),
@@ -241,15 +251,19 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const selection = batchSelection(args);
+
       if ('attach' in selection) {
         const { attachBatch } = await import('./commands/cut-attach.js');
+
         return attachBatch({
           main: args.target,
           branch: selection.attach,
           attachedRun: selection.attachedRun,
         });
       }
+
       const { cutBatch } = await import('./commands/cut.js');
+
       return cutBatch({ main: args.target, selection });
     },
   },
@@ -262,6 +276,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     run: async (args) => {
       const { cutSlice } = await import('./commands/cut.js');
       const run = args.values.get('--attached-run');
+
       return cutSlice({
         batch: args.target,
         slice: sliceFlag(args),
@@ -276,6 +291,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { syncMaster } = await import('./commands/sync-master.js');
+
       return syncMaster({ batch: args.target });
     },
   },
@@ -286,6 +302,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { bump } = await import('./commands/bump.js');
+
       return bump({ batch: args.target });
     },
   },
@@ -297,6 +314,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { checkMaster } = await import('./commands/check-master.js');
+
       return checkMaster({
         main: args.target,
         local: args.values.get('--local') ?? '',
@@ -313,16 +331,20 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const logFile = pathFlag(args, '--log');
+
       if (publishMode(args) === 'push-only') {
         const pollMs = pollMsFromEnv();
         const { publishPushOnly } = await import('./commands/publish-push.js');
+
         return publishPushOnly({
           batch: args.target,
           logFile,
           ...(pollMs === undefined ? {} : { pollMs }),
         });
       }
+
       const { publish } = await import('./commands/publish.js');
+
       return publish({
         batch: args.target,
         title: args.values.get('--title') ?? '',
@@ -339,6 +361,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { appendPrBody } = await import('./commands/append-pr-body.js');
+
       return appendPrBody({
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
@@ -353,6 +376,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { postPrComment } = await import('./commands/post-pr-comment.js');
+
       return postPrComment({
         batch: args.target,
         pr: positiveInt(args.values.get('--pr') ?? '', '--pr'),
@@ -367,6 +391,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: { min: 1, max: 1 },
     run: async (args) => {
       const { changedFiles } = await import('./commands/changed-files.js');
+
       return changedFiles({
         worktree: args.target,
         sha: args.rest[0] ?? '',
@@ -381,6 +406,7 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
     rest: NO_REST,
     run: async (args) => {
       const { postIssueComment } = await import('./commands/post-issue-comment.js');
+
       return postIssueComment({
         cwd: args.target,
         issue: positiveInt(args.values.get('--issue') ?? '', '--issue'),
@@ -400,6 +426,7 @@ function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
   const values = new Map<string, string>();
   const switches = new Set<string>();
   const { flags, positionals, trailing } = splitAtDashes(argv, spec);
+
   for (let i = 0; i < flags.length; i++) {
     const arg = flags[i] ?? '';
     if (spec.switchFlags.includes(arg)) switches.add(arg);
@@ -408,11 +435,13 @@ function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
     } else if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
     else positionals.push(arg);
   }
+
   positionals.push(...trailing);
   assertArity(positionals.length, spec.rest);
   const missing = spec.valueFlags.find((flag) => !values.has(flag));
   if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
   const [target = '', ...rest] = positionals;
+
   return { target: toTarget(target), rest, values, switches };
 }
 
@@ -425,6 +454,7 @@ function splitAtDashes(
   spec: CommandSpec,
 ): { flags: readonly string[]; positionals: string[]; trailing: readonly string[] } {
   const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+
   return {
     flags: argv.slice(0, end),
     positionals: spec.cwdTarget === true ? ['.'] : [],
@@ -444,6 +474,7 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
   if (rest.max === Infinity) expected += ` plus at least ${String(rest.min)} more`;
   else if (rest.max === rest.min && rest.max > 0) expected += ` plus ${String(rest.max)} more`;
   else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
+
   throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
 }
 
@@ -458,9 +489,11 @@ function keepFlags(args: ParsedArgs): KeepRequest | null {
   const base = args.values.get('--base');
   const report = args.values.get('--report');
   if (dir === undefined && base === undefined && report === undefined) return null;
+
   if (dir === undefined || base === undefined) {
     throw new UsageError('teardown --keep-to and --base go together; --report needs both');
   }
+
   return {
     dir: toTarget(dir),
     base,
@@ -477,6 +510,7 @@ function positiveInt(text: string, flag: string): number {
   if (!/^[1-9]\d*$/u.test(text)) {
     throw new UsageError(`flag ${flag} needs a positive integer, got '${text}'`);
   }
+
   return Number(text);
 }
 
@@ -487,9 +521,11 @@ function positiveInt(text: string, flag: string): number {
  */
 function slugList(text: string): string[] {
   const slugs = text.split(',');
+
   if (slugs.some((slug) => !RUN_BRANCH_SHAPE.test(`ship/${slug}`))) {
     throw new UsageError(`flag --slug needs run slugs separated by commas, got '${text}'`);
   }
+
   return slugs;
 }
 
@@ -503,9 +539,11 @@ function batchSelection(
   args: ParsedArgs,
 ): RunSelection | { readonly attach: string; readonly attachedRun: boolean } {
   const given = ['--epic', '--issues', '--attach'].filter((flag) => args.values.has(flag));
+
   if (given.length !== 1) {
     throw new UsageError('cut-batch takes exactly one of --epic, --issues and --attach');
   }
+
   const epic = args.values.get('--epic');
   const issues = args.values.get('--issues');
   const attach = args.values.get('--attach');
@@ -513,6 +551,7 @@ function batchSelection(
   if (attach !== undefined) return { attach, attachedRun };
   if (attachedRun) throw new UsageError('cut-batch --attached-run goes with --attach');
   if (epic !== undefined) return { epic: positiveInt(epic, '--epic') };
+
   return { issues: (issues ?? '').split(',').map((n) => positiveInt(n, '--issues')) };
 }
 
@@ -524,9 +563,11 @@ function batchSelection(
 function sliceFlag(args: ParsedArgs): CutSliceInput['slice'] {
   const issue = args.values.get('--issue');
   const attempt = args.values.get('--attempt');
+
   if (issue === undefined || attempt === undefined) {
     throw new UsageError('cut-slice takes --issue N --attempt K');
   }
+
   return { issue: positiveInt(issue, '--issue'), attempt: positiveInt(attempt, '--attempt') };
 }
 
@@ -541,12 +582,16 @@ function publishMode(args: ParsedArgs): 'push-only' | 'create' {
     ...['--title', '--body-file'].filter((flag) => args.values.has(flag)),
     ...(args.switches.has('--draft') ? ['--draft'] : []),
   ];
+
   if (args.switches.has('--push-only')) {
     if (given.length > 0) throw new UsageError(`publish --push-only takes no ${given.join(', ')}`);
+
     return 'push-only';
   }
+
   const missing = ['--title', '--body-file'].find((flag) => !args.values.has(flag));
   if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
+
   return 'create';
 }
 
@@ -556,6 +601,7 @@ function publishMode(args: ParsedArgs): 'push-only' | 'create' {
  */
 function pollMsFromEnv(): number | undefined {
   const text = process.env['PH_WORKTREE_POLL_MS'] ?? '';
+
   return /^[1-9]\d*$/u.test(text) ? Number(text) : undefined;
 }
 
@@ -568,6 +614,7 @@ function requireValue(value: string | undefined, flag: string): string {
   if (value === undefined || value.startsWith('--')) {
     throw new UsageError(`flag ${flag} needs a value`);
   }
+
   return value;
 }
 
@@ -588,6 +635,7 @@ export async function runWorktreeCli(
   const { result, exitCode, schema } = await dispatch(argv);
   result.at = new Date().toISOString();
   const guarded = guardEnvelope(result, schema);
+
   return { result: guarded, exitCode: guarded === result ? exitCode : 1 };
 }
 
@@ -601,17 +649,22 @@ async function dispatch(
 ): Promise<{ result: ResultBase; exitCode: number; schema: z.ZodType }> {
   const [name = '', ...rest] = argv;
   const base: ResultBase = { command: name, status: 'failed', worktree: null, errors: [] };
+
   try {
     if (!Object.hasOwn(COMMANDS, name)) throw new UsageError(`unknown command '${name}'`);
     const spec = COMMANDS[name] as CommandSpec;
     const result = await spec.run(parseArgs(rest, spec));
+
     return { result, exitCode: result.status === 'ok' ? 0 : 1, schema: spec.schema };
   } catch (err) {
     if (err instanceof UsageError) {
       base.errors.push({ step: 'usage', message: err.message });
+
       return { result: base, exitCode: 2, schema: ResultBaseSchema };
     }
+
     recordFailure(base, err);
+
     return { result: base, exitCode: 1, schema: ResultBaseSchema };
   }
 }

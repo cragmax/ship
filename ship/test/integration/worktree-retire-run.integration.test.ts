@@ -141,6 +141,7 @@ describe('retire-run', () => {
     spentRun();
     sliceBranch('slice/7/1-1');
     sliceBranch('slice/7/2-1');
+
     for (const b of ['slice/7/1-1', 'slice/7/2-1']) {
       expect(
         runIn(
@@ -255,6 +256,7 @@ describe('retire-run', () => {
   function outside(): string {
     mkdirSync(`${root}/outside`);
     writeFileSync(`${root}/outside/keep.txt`, 'k');
+
     return `${root}/outside`;
   }
 

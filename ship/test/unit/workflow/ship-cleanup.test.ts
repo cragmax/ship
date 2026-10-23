@@ -104,6 +104,7 @@ describe('runShip — spent-run cleanup at launch', () => {
     const touching = run.calls.filter((c) =>
       c.argv.some((w) => w.startsWith('C:/src/ph-runs/old-0')),
     );
+
     expect(touching.map((c) => [c.label, c.argv.slice(2)])).toEqual([
       ['runner:teardown:spent-1', [SPENT_BATCH]],
     ]);

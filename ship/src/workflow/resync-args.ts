@@ -27,9 +27,11 @@ const RESYNC_USAGE = 'expected the open run branch ship/<slug>, or { branch }';
 export function parseResyncArgs(raw: unknown): ResyncArgsOutcome {
   const branch = resyncBranchOf(raw);
   if (typeof branch !== 'string') return { refusal: `${branch.problem}; ${RESYNC_USAGE}` };
+
   if (!RUN_BRANCH_SHAPE.test(branch)) {
     return { refusal: `'${branch}' is not a ship/ run branch; ${RESYNC_USAGE}` };
   }
+
   return { branch };
 }
 
@@ -52,10 +54,13 @@ function resyncBranchOf(raw: unknown): string | { readonly problem: string } {
 function resyncBranchOfText(text: string): string | { readonly problem: string } {
   if (text.startsWith('{')) {
     const parsed = resyncJson(text);
+
     return parsed === null ? { problem: 'not valid JSON' } : resyncBranchOfObject(parsed.value);
   }
+
   const words = text.split(/\s+/).filter((word) => word !== '');
   if (words.length === 1) return words[0] ?? '';
+
   return { problem: words.length === 0 ? 'no arguments' : 'more than one word' };
 }
 
@@ -69,10 +74,12 @@ function resyncBranchOfObject(raw: unknown): string | { readonly problem: string
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return { problem: raw === undefined || raw === null ? 'no arguments' : 'not an object' };
   }
+
   const record = raw as Readonly<Record<string, unknown>>;
   const extra = Object.keys(record).find((key) => key !== 'branch');
   if (extra !== undefined) return { problem: `unknown key '${extra}'` };
   const branch = record['branch'];
+
   return typeof branch === 'string' ? branch : { problem: 'branch is not a string' };
 }
 

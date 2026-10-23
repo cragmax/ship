@@ -16,6 +16,7 @@ function failedStep(fn: () => unknown): string | null {
   } catch (err) {
     return err instanceof StepFailure ? err.step : null;
   }
+
   return null;
 }
 

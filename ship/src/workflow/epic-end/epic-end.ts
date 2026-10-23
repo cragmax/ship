@@ -223,6 +223,7 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
     published.outcome === 'pr' && state.retro !== undefined
       ? state.retro
       : await retroStep(input, retroReport(input, published, issueComments));
+
   return {
     epic: input.entry.epic,
     branch: input.entry.branch,
@@ -265,6 +266,7 @@ export async function unshippedEpicEnd(
   };
   const retro = await retroStep(input, report);
   if (outcome === 'halted' || input.entry.attached !== null) return { ...report, retro };
+
   return { ...report, residue: [...input.residue, ...(await retireStep(input))], retro };
 }
 
@@ -278,6 +280,7 @@ async function retireStep(input: Pick<EpicEndInput, 'hooks' | 'entry'>): Promise
   const down = await runTool(hooks, 'teardown', [entry.batch], runPlace(entry, entry.tag)).catch(
     () => null,
   );
+
   if (down?.status !== 'ok') return [`${entry.batch}: ${envelopeProblem('teardown', down)}`];
   const out = await runTool(
     hooks,
@@ -285,6 +288,7 @@ async function retireStep(input: Pick<EpicEndInput, 'hooks' | 'entry'>): Promise
     ['.', '--branch', entry.branch],
     preCutPlace(entry.tag),
   ).catch(() => null);
+
   return out?.status === 'ok' ? [] : [`${entry.branch}: ${envelopeProblem('retire-run', out)}`];
 }
 
@@ -299,6 +303,7 @@ async function commentBlockedStep(
 ): Promise<IssueComment[]> {
   const { entry } = input;
   const comments: IssueComment[] = [];
+
   for (const issue of input.issues) {
     if (issue.outcome !== 'blocked') continue;
     const path = `${entry.reportDir}/issue-comment-${String(issue.issue)}.md`;
@@ -312,6 +317,7 @@ async function commentBlockedStep(
     const place = runPlace(entry, String(issue.issue), { path, content });
     comments.push(await postIssueComment(input.hooks, issue.issue, argv, place));
   }
+
   return comments;
 }
 
@@ -324,14 +330,17 @@ async function postIssueComment(
 ): Promise<IssueComment> {
   try {
     const out = await runTool(hooks, 'post-issue-comment', argv, place);
+
     if (out?.status !== 'ok') {
       return { issue, url: null, problem: envelopeProblem('post-issue-comment', out) };
     }
+
     return typeof out.url === 'string'
       ? { issue, url: out.url }
       : { issue, url: null, problem: 'post-issue-comment ok without a url' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
     return { issue, url: null, problem: `post-issue-comment threw: ${message}` };
   }
 }
@@ -346,9 +355,11 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
   state.leases = leaseTotals(input.landed);
   state.epicReview = await epicReviewStep(input);
   const sync = await input.repoLock.enqueue(() => syncMasterStep(hooks, entry));
+
   if (sync.verdict === 'code-conflict' || sync.verdict === 'failed') {
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
   }
+
   const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
   if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   // Never rejects, so it can run beside the `parallel` below.
@@ -364,6 +375,7 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
       if (entry.attached === null) state.writer = await prWriterStep(input, sync.upstream);
     },
   ]);
+
   return publishStep(input, { sync, bump, pushed: await read, state });
 }
 
@@ -379,14 +391,18 @@ async function pushedPathsStep(
   const { hooks, entry } = input;
   const base = entry.attached === null ? (upstream ?? entry.base) : entry.base;
   const argv = [entry.batch, 'HEAD', '--base', base];
+
   try {
     const read = await runTool(hooks, 'changed-files', argv, runPlace(entry, entry.tag));
+
     if (read?.status === 'ok' && read.files !== undefined) {
       return { kind: 'resolved', paths: read.files };
     }
+
     return { kind: 'unresolved', why: envelopeProblem('changed-files', read) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
     return { kind: 'unresolved', why: `changed-files threw: ${message}` };
   }
 }
@@ -414,13 +430,16 @@ async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Pub
       input.launch,
       found.sync.upstream,
     );
+
     found.state.masterCheck = check;
     if (!check.passed)
       return { outcome: 'stopped', message: `master check failed: ${check.failure}` };
     const checked = { masterCheck: check, mainUntouched: untouched };
+
     if (input.entry.attached !== null) {
       return pushOntoPr(input, found, checked, input.entry.attached);
     }
+
     return openPr(input, found, checked);
   });
 }
@@ -471,6 +490,7 @@ async function pushOntoPr(
   const reportComment = 'url' in posted ? posted.url : null;
   const section = renderAttachedSection({ ...base, reportComment });
   const failure = await appendSectionStep(input, published.pr, section);
+
   return {
     ...published,
     ...('failure' in posted ? { prReportComment: posted.failure } : {}),
@@ -490,6 +510,7 @@ async function postReportStep(
   const file = { ...REPORT_COMMENT, content: report };
   const posted = await prFileStep(input, 'post-pr-comment', pr, file);
   if ('failure' in posted) return posted;
+
   return typeof posted.ok.url === 'string'
     ? { url: posted.ok.url }
     : { failure: 'post-pr-comment ok without a url' };
@@ -506,6 +527,7 @@ async function appendSectionStep(
 ): Promise<string | null> {
   const file = { ...PR_SECTION, content: section };
   const edited = await prFileStep(input, 'append-pr-body', pr, file);
+
   return 'failure' in edited ? edited.failure : null;
 }
 
@@ -543,8 +565,10 @@ async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
   const { hooks, entry } = input;
   const argv = prFileArgv(entry, String(pr), file);
   const place = runPlace(entry, entry.tag, reportFile(entry, file));
+
   try {
     const out = await runTool(hooks, tool, argv, place);
+
     return out?.status === 'ok' ? { ok: out } : { failure: envelopeProblem(tool, out) };
   } catch (err) {
     return { failure: `${tool} threw: ${err instanceof Error ? err.message : String(err)}` };
@@ -554,9 +578,11 @@ async function prFileStep<N extends 'append-pr-body' | 'post-pr-comment'>(
 /** A publish call's outcome: `pr`, or `stopped` with the `recovery` that finishes by hand. */
 function publishedPr(out: PublishOutput | null, recovery: readonly string[]): Published {
   const pr = out?.status === 'ok' ? out.pr : null;
+
   if (pr === undefined || pr === null) {
     return { outcome: 'stopped', message: envelopeProblem('publish', out), recovery };
   }
+
   return { outcome: 'pr', pr: pr.number };
 }
 
@@ -606,10 +632,12 @@ async function openPr(
   const published = publishedPr(await runTool(hooks, 'publish', argv, place), recovery);
   if (published.outcome !== 'pr' || published.pr === undefined) return published;
   const failures: string[] = [];
+
   for (const file of moved) {
     const posted = await prFileStep(input, 'post-pr-comment', published.pr, file);
     if ('failure' in posted) failures.push(posted.failure);
   }
+
   return failures.length === 0 ? published : { ...published, prReportComment: failures.join('; ') };
 }
 
@@ -625,6 +653,7 @@ function bodyInput(
   checked: Checked,
 ): Omit<PrBodyInput, 'writer'> {
   const { entry } = input;
+
   return {
     epic: entry.epic,
     branch: entry.branch,
@@ -688,6 +717,7 @@ async function epicReviewStep(input: EpicEndInput): Promise<EpicReviewReport> {
     unlanded.length === 0
       ? {}
       : { forced: `did not land: ${unlanded.map((i) => `#${String(i.issue)}`).join(', ')}` };
+
   return {
     verdict: unlanded.length > 0 ? 'rejected' : (answer?.verdict ?? null),
     profiled: entry.epic === null,
@@ -708,6 +738,7 @@ function sliceReports(input: EpicEndInput, landed: LandedIssue): string[] {
   if (typeof landed.testReview !== 'string') stages.push('test-review');
   stages.push('standards-review');
   if (typeof landed.scriptApiTsdoc !== 'string') stages.push('script-api-tsdoc');
+
   return stages.map((stage) => `${input.entry.reportDir}/${stage}-${tag}.md`);
 }
 
@@ -719,6 +750,7 @@ async function retroStep(
   const { entry } = input;
   const values = { epic: entry.epic, reportDir: entry.reportDir, report };
   const out = await AGENT_CALLS.retro(input.hooks, values, entry.tag).catch(() => null);
+
   return out?.findings ?? null;
 }
 
@@ -743,6 +775,7 @@ async function prWriterStep(
     })),
     reportDir: entry.reportDir,
   };
+
   return AGENT_CALLS.prWriter(input.hooks, values, entry.tag).catch(() => null);
 }
 
@@ -772,6 +805,7 @@ function retroReport(
  */
 async function mainAtEnd(input: EpicEndInput, state: EndState): Promise<boolean | null> {
   if (state.mainUntouched !== undefined) return state.mainUntouched;
+
   return input.repoLock.enqueue(() => mainUntouched(input));
 }
 
@@ -784,5 +818,6 @@ async function mainUntouched(input: EpicEndInput): Promise<boolean | null> {
   const out = await runTool(input.hooks, 'preflight', [entry.main], runPlace(entry, entry.tag));
   const now = out?.snapshot;
   if (launch === null || now === undefined || now === null) return null;
+
   return now.head === launch.snapshot.head && now.dirty === launch.snapshot.dirty;
 }

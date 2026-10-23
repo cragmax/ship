@@ -278,6 +278,7 @@ export function shellWord(word: string): string {
  */
 function verbatimBlock(title: string, file: FileToWrite): string[] {
   const body = file.content.endsWith('\n') ? file.content.slice(0, -1) : file.content;
+
   return [`${title}: ${file.path}`, '----- BEGIN FILE -----', body, '----- END FILE -----'];
 }
 
@@ -358,6 +359,7 @@ function issueFile(issue: number, reportDir: string): string {
 function issueLines(issue: number, reportDir: string, key = 'Issue'): string[] {
   const dir = `${reportDir}/issues`;
   const file = issueFile(issue, reportDir);
+
   return [
     `${key} file: ${file}`,
     [
@@ -495,6 +497,7 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
 function passedLines(passed: PassedValues, current: string): string[] {
   const listed = (paths: readonly string[]): string =>
     paths.length === 0 ? 'none' : paths.join(', ');
+
   return [
     `Passed at ${passed.sha}: ${listed(passed.tests)}`,
     `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,

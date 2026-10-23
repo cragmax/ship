@@ -44,6 +44,7 @@ import { mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.j
 // the options each one got. The CLI-spawned tests run in their own process.
 vi.mock('../../src/cli/git/exec.js', async (importOriginal) => {
   const actual = await importOriginal<typeof ExecModule>();
+
   return { ...actual, runCaptured: vi.fn(actual.runCaptured) };
 });
 
@@ -80,6 +81,7 @@ function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly hea
   const pushed = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
   mustRun('git', ['push', '-q', 'origin', 'ship/r'], run.batch);
   const head = commitChanges(run.batch, { write: { 'b.txt': 'b\n' } }, 'feat(b): two');
+
   return { ...run, pushed, head };
 }
 
@@ -87,6 +89,7 @@ function pushedThenAhead(): FixtureRun & { readonly pushed: string; readonly hea
 function divergedFromOrigin(): FixtureRun & { readonly originSha: string } {
   const run = pushedThenAhead();
   const originSha = advanceOrigin(root, run.bare, { write: { 'o.txt': 'o\n' } }, 'o', 'ship/r');
+
   return { ...run, originSha };
 }
 
@@ -122,6 +125,7 @@ describe('publish', () => {
       ],
       { env: prependPath(bin) },
     );
+
     return { r, bin };
   }
 
@@ -268,6 +272,7 @@ describe('publish --push-only', () => {
       ['publish', batch, '--push-only', '--log', `${root}/push.log`],
       { env: { ...prependPath(bin), PH_WORKTREE_POLL_MS: '10' } },
     );
+
     return { r, bin };
   }
 
@@ -405,6 +410,7 @@ describe('publish (in-process)', () => {
     const saved = process.env[key];
     process.env[key] = value;
     vi.mocked(runCaptured).mockClear();
+
     try {
       const r = publishInProcess({
         batch: run.batch,
@@ -412,6 +418,7 @@ describe('publish (in-process)', () => {
         bodyFile: `${root}/body.md`,
         logFile: `${root}/push.log`,
       });
+
       expect(r).toMatchObject({ status: 'ok', pushed: true });
     } finally {
       process.env[key] = saved;
@@ -420,6 +427,7 @@ describe('publish (in-process)', () => {
     const pushes = vi
       .mocked(runCaptured)
       .mock.calls.filter(([file, args]) => file === 'git' && args.includes('push'));
+
     expect(pushes).toHaveLength(1);
     expect(pushes[0]?.[2]).toMatchObject({
       timeoutMs: PUSH_TIMEOUT_MS,
@@ -433,6 +441,7 @@ describe('publish (in-process)', () => {
     const run = divergedFromOrigin();
 
     let thrown: unknown = null;
+
     try {
       pushBranch(run.batch, 'ship/r', `${root}/push.log`);
     } catch (err) {

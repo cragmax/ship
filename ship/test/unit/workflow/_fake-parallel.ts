@@ -37,17 +37,20 @@ export function holdable(match: RegExp): Holdable {
   let holding = true;
   const released = new Set<string>();
   const pending: HeldCall[] = [];
+
   const settle = (keep: (h: HeldCall) => boolean): void => {
     for (const h of pending.filter((p) => !keep(p))) h.settle();
     const kept = pending.filter(keep);
     pending.length = 0;
     pending.push(...kept);
   };
+
   return {
     gate: (call, answer) => {
       if (!holding || released.has(call.label) || !match.test(call.label)) {
         return Promise.resolve(answer);
       }
+
       return new Promise((resolve) => {
         pending.push({ label: call.label, settle: () => resolve(answer) });
       });
@@ -100,6 +103,7 @@ interface SettlePump {
  */
 export function settleInOrder(order: SettleOrder): SettlePump {
   const pending: HeldCall[] = [];
+
   return {
     gate: (call, answer) =>
       new Promise((resolve) => {
@@ -107,11 +111,14 @@ export function settleInOrder(order: SettleOrder): SettlePump {
       }),
     drain: async (done) => {
       const run = { settled: false };
+
       const mark = (): void => {
         run.settled = true;
       };
+
       // Handles `done`'s rejection here; the `return done` below surfaces it.
       void done.then(mark, mark);
+
       for (;;) {
         await idle();
         if (run.settled) return done;
@@ -136,6 +143,7 @@ const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
 function entryResponses(epic: number): Record<string, unknown> {
   const tag = `epic-${String(epic)}`;
   const root = `C:/src/ph-runs/${tag}`;
+
   return {
     [`runner:cut-batch:${tag}`]: {
       ...OK,
@@ -175,6 +183,7 @@ export function epicRun(
   edges: readonly { readonly blocker: number; readonly dependent: number }[] = [],
 ): Record<string, unknown> {
   const issues = entries.flatMap((e) => e.issues);
+
   return {
     'runner:run-gate': {
       exitCode: 0,

@@ -55,6 +55,7 @@ export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
     pr,
     bodyFile: null,
   };
+
   try {
     const section = readSection(input.sectionFile);
     const body = readPrBody(batch, pr);
@@ -62,16 +63,19 @@ export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
     const newBody = appendSection(body, section);
     writeFileSync(file, newBody);
     result.bodyFile = file;
+
     if (newBody.length > GH_BODY_LIMIT) {
       throw new StepFailure(
         'body-too-long',
         `new body is ${String(newBody.length)} characters, over GitHub's ${String(GH_BODY_LIMIT)}-character limit; the body is in ${file}`,
       );
     }
+
     editPrBody(batch, pr, file);
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -86,6 +90,7 @@ export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
  */
 export function appendSection(body: string, section: string): string {
   if (body === '') return section;
+
   return `${body}${body.endsWith('\n') ? '\n' : '\n\n'}${section}`;
 }
 
@@ -96,12 +101,15 @@ export function appendSection(body: string, section: string): string {
  */
 function readSection(file: string): string {
   let text: string;
+
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
     throw new StepFailure('section', `section file ${file} unreadable: ${describeError(err)}`);
   }
+
   if (text.trim() === '') throw new StepFailure('section', `section file ${file} is empty`);
+
   return text;
 }
 
@@ -116,6 +124,7 @@ function readPrBody(batch: string, pr: number): string {
     cwd: batch,
     timeoutMs: GH_TIMEOUT_MS,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       'pr-body',
@@ -123,10 +132,13 @@ function readPrBody(batch: string, pr: number): string {
       r.tail,
     );
   }
+
   const body = parseBody(r.stdout);
+
   if (body === null) {
     throw new StepFailure('pr-body', `gh pr view ${String(pr)} printed no readable body JSON`);
   }
+
   return body;
 }
 
@@ -138,6 +150,7 @@ function readPrBody(batch: string, pr: number): string {
 function parseBody(stdout: string): string | null {
   try {
     const parsed = PrBodySchema.safeParse(JSON.parse(stdout));
+
     return parsed.success ? parsed.data.body : null;
   } catch {
     return null;
@@ -154,6 +167,7 @@ function editPrBody(batch: string, pr: number, file: string): void {
     cwd: batch,
     timeoutMs: GH_TIMEOUT_MS,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       'pr-edit',

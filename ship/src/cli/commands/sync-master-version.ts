@@ -72,6 +72,7 @@ export function planVersionRule(
   const version = { ...copies.versions, result: target };
   if (!bothMoved(copies.versions)) return { version, rule: null };
   const merged = mergedPackageJson(batch, copies);
+
   return { version, rule: merged === null ? null : { merged, target } };
 }
 
@@ -88,6 +89,7 @@ function readVersions(batch: string, mergeBase: string): PackageCopies | null {
   const o = readVersionLine(ours);
   const t = readVersionLine(theirs);
   if (b === null || o === null || t === null) return null;
+
   return { versions: { base: b, ours: o, theirs: t }, texts: { base, ours, theirs } };
 }
 
@@ -96,6 +98,7 @@ function showPackageJson(batch: string, rev: string): string | null {
   const r = runCaptured('git', ['-C', batch, 'show', `${rev}:${PACKAGE_JSON}`], {
     cwd: process.cwd(),
   });
+
   return r.exitCode === 0 ? `${r.stdout}\n` : null;
 }
 
@@ -108,18 +111,23 @@ function mergedPackageJson(batch: string, copies: PackageCopies): string | null 
   const { versions, texts } = copies;
   const target = targetVersion(versions);
   const dir = mkdtempSync(join(tmpdir(), 'ph-worktree-version-'));
+
   try {
     const path = (name: keyof VersionTriple): string => {
       const file = join(dir, `${name}.json`);
       writeFileSync(file, setVersionLine(texts[name], versions.base));
+
       return file;
     };
+
     const [ours, base, theirs] = [path('ours'), path('base'), path('theirs')];
     const r = runCaptured('git', ['-C', batch, 'merge-file', '-p', ours, base, theirs], {
       cwd: process.cwd(),
     });
+
     if (r.exitCode === 0) return setVersionLine(`${r.stdout}\n`, target);
     if (r.exitCode > 0 && r.exitCode <= MERGE_FILE_MAX_CONFLICTS) return null;
+
     throw new StepFailure('version', `git merge-file exited ${String(r.exitCode)}`, r.tail);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -190,6 +198,7 @@ function assertLockVersion(batch: string, target: string): void {
     readonly packages?: Readonly<Record<string, { readonly version?: unknown } | undefined>>;
   };
   const root = lock.packages?.['']?.version;
+
   if (lock.version !== target || root !== target) {
     throw new StepFailure(
       'lockfile',

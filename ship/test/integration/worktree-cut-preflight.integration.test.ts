@@ -68,6 +68,7 @@ async function preflightWith(options: {
   const [key = 'PATH', value = ''] = Object.entries(overlay)[0] ?? [];
   const saved = process.env[key];
   process.env[key] = value;
+
   try {
     return await preflight({
       main,
@@ -134,6 +135,7 @@ describe('preflight (in-process)', () => {
     const r = await preflightWith({
       probe: (target) => {
         probed.push(`${target.host}:${String(target.port)}:${target.password}`);
+
         return Promise.resolve(
           target.port === 25711
             ? { ok: false, stage: 'connect', error: new Error('ECONNREFUSED') }

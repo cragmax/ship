@@ -22,6 +22,7 @@ export const EPIC_SLUG_PREFIX = 'epic-';
  */
 export function runSlug(selection: RunSelection): string {
   if ('epic' in selection) return `${EPIC_SLUG_PREFIX}${String(selection.epic)}`;
+
   return [...selection.issues]
     .sort((a, b) => a - b)
     .map(String)

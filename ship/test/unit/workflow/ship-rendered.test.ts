@@ -30,6 +30,7 @@ async function runBoth(args: string, responses: Readonly<Record<string, unknown>
   const rendered = fakeHooks(responses);
   const expected = await runShip(source.hooks, args);
   const report = await runRendered(shipJs, rendered, args);
+
   return { source, rendered, expected, report };
 }
 
@@ -90,6 +91,7 @@ describe('ship.js — a fresh render of the current sources', () => {
     const sliceCalls = both.rendered.calls
       .map((c) => c.label)
       .filter((l) => /^(runner:comment-only|testReview):7-1/.test(l));
+
     expect(sliceCalls).toEqual(['testReview:7-1']);
     expectSameRun(both);
   });

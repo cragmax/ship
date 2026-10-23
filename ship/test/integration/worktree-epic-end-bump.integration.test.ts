@@ -61,6 +61,7 @@ function versions(dir: string): { pkg: string; lock: string; lockRoot: string } 
     version: string;
     packages: Record<string, { version: string }>;
   };
+
   return { pkg: pkg.version, lock: lock.version, lockRoot: lock.packages['']?.version ?? '' };
 }
 
@@ -68,6 +69,7 @@ function versions(dir: string): { pkg: string; lock: string; lockRoot: string } 
 function runBump(batch: string): ReturnType<typeof runCli<BumpResult>> {
   const r = runCli<BumpResult>(['bump', batch]);
   if (r.json.log !== null) logDirs.add(dirname(r.json.log));
+
   return r;
 }
 
@@ -155,6 +157,7 @@ describe('bump', () => {
 
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ status: 'ok', kind, from, to });
+
     if (bumps === 1) {
       expect(r.json.commit).toBeNull();
       expect(r.json.log).toBeNull();
@@ -168,11 +171,13 @@ describe('bump', () => {
       );
       expect(commitPaths(run.batch, bumped)).toEqual(['package-lock.json', 'package.json']);
     }
+
     expect(versions(run.batch)).toEqual({ pkg: to, lock: to, lockRoot: to });
     expect(porcelain(run.batch)).toBe('');
     const subjects = mustRun('git', ['log', '--format=%s', 'origin/master..HEAD'], run.batch)
       .split(/\r?\n/u)
       .filter((s) => s.startsWith('chore(build): bump version'));
+
     expect(subjects).toHaveLength(bumps);
   });
 

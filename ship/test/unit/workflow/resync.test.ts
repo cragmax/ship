@@ -358,6 +358,7 @@ describe('runResync — tiers and phases', () => {
         STAGES.runner,
       );
     }
+
     expect(run.phases).toEqual(['Pre-flight', 'Merge', 'Push']);
     expect(RESYNC_META.phases).toEqual(RESYNC_PHASES);
   });

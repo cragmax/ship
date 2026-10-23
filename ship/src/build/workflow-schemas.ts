@@ -59,6 +59,7 @@ async function renderSchemaModule(root: string): Promise<string> {
     '',
   ].join('\n');
   const config = await prettier.resolveConfig(resolve(root, SCHEMA_MODULE));
+
   return prettier.format(code, { ...config, parser: 'typescript', endOfLine: 'lf' });
 }
 
@@ -76,9 +77,11 @@ export async function checkSchemaModule(
 ): Promise<RenderCheck> {
   const emitted = await renderSchemaModule(root);
   const onDisk = read(resolve(root, SCHEMA_MODULE));
+
   if (onDisk === undefined) {
     return { target: SCHEMA_MODULE, ok: false, reason: 'missing — never emitted' };
   }
+
   return onDisk.replaceAll('\r\n', '\n') === emitted
     ? { target: SCHEMA_MODULE, ok: true }
     : { target: SCHEMA_MODULE, ok: false, reason: 'differs from the emitted output' };
@@ -95,6 +98,7 @@ export async function writeSchemaModule(root: string): Promise<string> {
   const out = resolve(root, SCHEMA_MODULE);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, emitted, 'utf8');
+
   return SCHEMA_MODULE;
 }
 

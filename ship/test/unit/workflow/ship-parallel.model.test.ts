@@ -44,6 +44,7 @@ const ATTEMPT_ENDS = ['committed', 'blocked', 'harvest-conflict', 'agent-died', 
  */
 function attemptOf(label: string): { issue: number; attempt: number } | null {
   const match = /:(\d+)-(\d+)$/.exec(label);
+
   return match === null ? null : { issue: Number(match[1]), attempt: Number(match[2]) };
 }
 
@@ -56,11 +57,14 @@ function attemptOf(label: string): { issue: number; attempt: number } | null {
  */
 function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[]) {
   const order = input.runSet.flatMap((e) => e.issues);
+
   const outcome = (label: string): Outcome => {
     const at = attemptOf(label);
     if (at === null || at.attempt > 2) return 'ok';
+
     return script[order.indexOf(at.issue)]?.[at.attempt - 1] ?? 'ok';
   };
+
   return {
     'runner:run-gate': { ...GATE_OK, runSet: input.runSet, edges: input.edges },
     issueReadiness: {
@@ -80,14 +84,17 @@ function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[])
  */
 function scheduledGate(s: fc.Scheduler, input: SchedulerInput, violations: string[]) {
   const outstanding = input.runSet.map(() => 0);
+
   return (call: RecordedCall, answer: unknown): Promise<unknown> => {
     const at = call.label.startsWith('runner:land:') ? attemptOf(call.label) : null;
     const entry = at === null ? -1 : input.runSet.findIndex((e) => e.issues.includes(at.issue));
     if (entry < 0) return s.schedule(Promise.resolve(answer), call.label);
     if ((outstanding[entry] ?? 0) > 0) violations.push(`(iii) ${call.label} while another lands`);
     outstanding[entry] = (outstanding[entry] ?? 0) + 1;
+
     return s.schedule(Promise.resolve(answer), call.label).then((v) => {
       outstanding[entry] = (outstanding[entry] ?? 1) - 1;
+
       return v;
     });
   };
@@ -101,6 +108,7 @@ function scheduledGate(s: fc.Scheduler, input: SchedulerInput, violations: strin
 function brokenInvariants(run: FakeRun, input: SchedulerInput, report: ShipReport): string[] {
   const broken: string[] = [];
   const inFlight = new Set<number>();
+
   for (const line of run.timeline.filter((l) => l.startsWith('log '))) {
     const start = /^log start #(\d+) attempt/.exec(line);
     const fed = /^log fed (\S+) #(\d+)$/.exec(line);
@@ -109,22 +117,27 @@ function brokenInvariants(run: FakeRun, input: SchedulerInput, report: ShipRepor
     if (inFlight.size > input.maxSlices)
       broken.push(`(i) ${String(inFlight.size)} in flight at ${line}`);
   }
+
   for (const e of input.edges) {
     const started = run.timeline.indexOf(`log start #${String(e.dependent)} attempt 1`);
     const committed = run.timeline.indexOf(`log fed committed #${String(e.blocker)}`);
+
     if (started > -1 && (committed < 0 || started < committed)) {
       broken.push(`(ii) #${String(e.dependent)} started before #${String(e.blocker)} committed`);
     }
   }
+
   input.runSet.forEach((entry, i) => {
     const tag = entry.epic === null ? 'list' : `epic-${String(entry.epic)}`;
     const retros = run.calls.filter((c) => c.label === `retro:${tag}`).length;
     if (retros !== 1) broken.push(`(iv) ${String(retros)} retro calls for ${tag}`);
     const issues = report.epics[i]?.issues.map((r) => r.issue) ?? [];
+
     if (JSON.stringify(issues) !== JSON.stringify(entry.issues)) {
       broken.push(`(v) entry ${tag} reports ${JSON.stringify(issues)}`);
     }
   });
+
   return broken;
 }
 
@@ -135,6 +148,7 @@ describe('runShip — concurrent model', () => {
       minLength: MAX_ISSUES,
       maxLength: MAX_ISSUES,
     });
+
     await fc.assert(
       fc.asyncProperty(arbInput(), script, fc.scheduler(), async (input, outcomes, s) => {
         const violations: string[] = [];

@@ -20,6 +20,7 @@ import type { PrWriterOutput } from '../calls/agent-calls.js';
  */
 export function summaryLines(writer: PrWriterOutput | null): string[] {
   if (writer === null) return ['Summary unavailable — the PR writer returned nothing'];
+
   return textLines(writer.summary);
 }
 
@@ -38,6 +39,7 @@ export function mergeDangerLines(writer: PrWriterOutput | null): string[] {
   if (writer === null) return ['Unavailable — the PR writer returned nothing'];
   const note = textLines(writer.doorNote);
   const ramifications = textLines(writer.ramifications);
+
   return [
     `**Door:** ${writer.door}`,
     '',
@@ -53,5 +55,6 @@ export function mergeDangerLines(writer: PrWriterOutput | null): string[] {
  */
 function textLines(text: string): string[] {
   const trimmed = text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();
+
   return trimmed === '' ? [] : trimmed.split(/\r?\n/);
 }

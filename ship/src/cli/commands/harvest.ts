@@ -72,6 +72,7 @@ export function harvest(input: HarvestInput): HarvestResult {
     rolledBack: false,
   };
   let picking = false;
+
   try {
     assertLinkedWorktree(batch, selfPath);
     assertBatchClean(batch);
@@ -86,6 +87,7 @@ export function harvest(input: HarvestInput): HarvestResult {
     if (err instanceof Conflict) result.conflicts = [...err.files];
     if (picking) rollback(batch, result);
   }
+
   return result;
 }
 
@@ -101,15 +103,19 @@ export function harvest(input: HarvestInput): HarvestResult {
  */
 export function assertLinkedWorktree(batch: string, selfPath: string): void {
   let main: string;
+
   try {
     main = requireWorktreeRoot(batch, 'preconditions').main;
   } catch (err) {
     if (!(err instanceof StepFailure)) throw err;
+
     throw new Refusal('unregistered-worktree', 'preconditions', err.message, err.detail);
   }
+
   if (samePath(main, batch)) {
     throw new Refusal('main-worktree', 'preconditions', `${batch} is the main worktree`);
   }
+
   assertNotSelfHosted(batch, selfPath);
 }
 
@@ -123,6 +129,7 @@ export function assertLinkedWorktree(batch: string, selfPath: string): void {
  */
 export function assertBatchClean(batch: string): void {
   const entries = statusEntries(batch, 'preconditions');
+
   if (entries.length > 0) {
     throw new Refusal(
       'batch-dirty',
@@ -130,7 +137,9 @@ export function assertBatchClean(batch: string): void {
       `batch has uncommitted changes: ${entries.join(', ')}`,
     );
   }
+
   const inProgress = inProgressRefs(batch);
+
   if (inProgress.length > 0) {
     throw new Refusal(
       'batch-dirty',
@@ -158,12 +167,14 @@ function resolveSlice(batch: string, sha: string): string {
   const full = resolveCommit(batch, sha, 'preconditions');
   const parents =
     git(batch, ['rev-list', '--parents', '-n', '1', full], 'preconditions').split(' ').length - 1;
+
   if (parents !== 1) {
     throw new StepFailure(
       'preconditions',
       `slice commit ${full} has ${String(parents)} parents; harvest takes a single-parent commit`,
     );
   }
+
   return full;
 }
 
@@ -181,9 +192,11 @@ function sliceFiles(batch: string, sha: string): string[] {
       'preconditions',
     ),
   );
+
   if (files.length === 0) {
     throw new StepFailure('preconditions', `slice commit ${sha} changes nothing`);
   }
+
   return files;
 }
 
@@ -196,16 +209,21 @@ function cherryPick(batch: string, sha: string): void {
   const r = runCaptured('git', ['-C', batch, 'cherry-pick', '--no-commit', sha], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return;
   const unmerged = gitPaths(batch, ['diff', '--name-only', '--diff-filter=U'], 'cherry-pick');
   const message = `git cherry-pick --no-commit ${sha} exited ${String(r.exitCode)} in ${batch}`;
+
   if (unmerged.length > 0 && unmerged.every((p) => p === ESLINT_SUPPRESSIONS)) {
     regenerateSuppressions(batch);
+
     return;
   }
+
   if (unmerged.length > 0) {
     throw new Conflict('cherry-pick', message, sortedSet(unmerged), r.tail);
   }
+
   throw new StepFailure('cherry-pick', message, r.tail);
 }
 
@@ -219,6 +237,7 @@ function assertAppliedCleanly(batch: string): void {
     ...gitPaths(batch, ['diff', '--name-only'], 'applied-check'),
     ...gitPaths(batch, ['ls-files', '--others', '--exclude-standard'], 'applied-check'),
   ]);
+
   if (stray.length > 0) {
     throw new Conflict(
       'applied-check',
@@ -235,6 +254,7 @@ function assertAppliedCleanly(batch: string): void {
  */
 function assertStagedEquals(batch: string, files: readonly string[]): void {
   const diff = compareSets(files, stagedPaths(batch, 'staged-check'));
+
   if (diff.missing.length > 0 || diff.unexpected.length > 0) {
     throw new StepFailure(
       'staged-check',
@@ -295,6 +315,7 @@ export function batchResidue(batch: string, step: string): string[] {
  */
 function assertRolledBackClean(batch: string): void {
   const residue = batchResidue(batch, 'rollback');
+
   if (residue.length > 0) {
     throw new StepFailure('rollback', `batch not clean after rollback: ${residue.join(', ')}`);
   }

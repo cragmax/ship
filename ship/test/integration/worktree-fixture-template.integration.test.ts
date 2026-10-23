@@ -38,6 +38,7 @@ const roots: string[] = [];
 function freshRoot(): string {
   const root = toPosix(mkdtempSync(join(tmpdir(), 'ph-wt-template-')));
   roots.push(root);
+
   return root;
 }
 

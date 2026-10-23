@@ -234,6 +234,7 @@ export async function runAttempt(
   const opened = await openSlice(at).catch(
     (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
   );
+
   if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
   const cut = opened.next;
   const authored = await authorSlice(cut).catch((err: unknown) => ({ stop: stageThrew(at, err) }));
@@ -242,6 +243,7 @@ export async function runAttempt(
   const landing = ctx.queue
     .enqueue(() => landSlice(slice).catch((err: unknown) => notLanded(landThrew(at, err))))
     .then((outcome) => endAttempt(at, cut, outcome));
+
   return { kind: 'authored', issue, landing };
 }
 
@@ -253,6 +255,7 @@ function attemptId(
   previousPatch: string | null,
 ): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
+
   return { ctx, issue, attempt, previousPatch, tag, place: runPlace(ctx, tag) };
 }
 
@@ -261,6 +264,7 @@ async function openSlice(at: AttemptId): Promise<Opened> {
   const ready = await atBoundary({ next: at }, at, recheckStage);
   if ('stop' in ready) return { stop: ready.stop, cut: NO_CUT };
   if (at.ctx.isHalting()) return { stop: haltedStop(at), cut: NO_CUT };
+
   return cutStage(at);
 }
 
@@ -272,6 +276,7 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
   const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
+
   return atBoundary(reviewed, at, scriptApiTsdocStage);
 }
 
@@ -283,6 +288,7 @@ async function atBoundary<I, O>(
 ): Promise<Step<O>> {
   if ('stop' in step) return step;
   if (at.ctx.isHalting()) return { stop: haltedStop(at) };
+
   return stage(step.next);
 }
 
@@ -292,6 +298,7 @@ async function recheckStage(at: AttemptId): Promise<Step<AttemptId>> {
   if (out === null) return { stop: died(at) };
   if (out.ready === true) return { next: at };
   if (out.ready === false) return { stop: { kind: 'label-removed', issue: at.issue } };
+
   return {
     stop: blocked(at, `check gave no verdict: ${out.stderrTail ?? `exit ${String(out.exitCode)}`}`),
   };
@@ -316,10 +323,13 @@ async function cutStage(at: AttemptId): Promise<Opened> {
     slice: typeof out.slice === 'string' ? out.slice : null,
     startedAt: typeof out.at === 'string' ? out.at : null,
   };
+
   if (out.status !== 'ok' || cut.slice === null || typeof out.base !== 'string') {
     return { stop: blocked(at, envelopeProblem('cut-slice', out)), cut };
   }
+
   const kept = keptDir(at.ctx.main, cut.slice, cut.startedAt);
+
   return {
     next: { at, slice: cut.slice, base: out.base, startedAt: cut.startedAt, keptDir: kept },
   };
@@ -332,6 +342,7 @@ async function cutStage(at: AttemptId): Promise<Opened> {
 function keptDir(main: string, slice: string, startedAt: string | null): string {
   const name = slice.slice(slice.lastIndexOf('/') + 1);
   const stamp = startedAt === null ? '' : `-${startedAt.replace(/[:.]/gu, '-')}`;
+
   return `${main}/reports/kept/${name}${stamp}`;
 }
 
@@ -347,9 +358,11 @@ async function provisionStage(cut: CutSlice): Promise<Step<ProvisionedSlice>> {
   const out = await runTool(at.ctx.hooks, 'provision', argv, at.place);
   if (out === null) return { stop: died(at) };
   const projectDir = out.env?.PH_PROJECT_DIR;
+
   if (out.status !== 'ok' || typeof projectDir !== 'string') {
     return { stop: blocked(at, envelopeProblem('provision', out)) };
   }
+
   return { next: { ...cut, projectDir } };
 }
 
@@ -371,9 +384,11 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   };
   const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
   if (tdd === null) return { stop: died(at) };
+
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
+
   return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files, amended: [] } };
 }
 
@@ -385,6 +400,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
+
   return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
 }
 
@@ -401,6 +417,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
+
   return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
 }
 
@@ -427,6 +444,7 @@ async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
     out.exitCode === 0 &&
     out.notCompared !== undefined &&
     isTrivialSurface(out.notCompared);
+
   return proven ? 'comment-only' : null;
 }
 
@@ -438,6 +456,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
+
   return afterAmend(s, 'standards review', out, (standardsReview) => ({
     ...s,
     standardsReview,
@@ -450,14 +469,17 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
  */
 async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
+
   if (!s.files.some((path) => path.startsWith('src/'))) {
     return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
   }
+
   const values = {
     ...sliceCommitValues(s),
     reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
+
   return afterReview(at, 'script api tsdoc', out, (scriptApiTsdoc) => ({ ...s, scriptApiTsdoc }));
 }
 
@@ -477,6 +499,7 @@ function afterReview<
   if (out === null) return { stop: died(at) };
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
+
   return { next: { ...next(out), sha: out.sha } };
 }
 
@@ -497,8 +520,10 @@ async function afterAmend<T extends BuiltSlice>(
     reread(s, label, step.next.sha, s.base),
     reread(s, label, step.next.sha, s.tdd.sha),
   ]);
+
   if ('stop' in files) return files;
   if ('stop' in amended) return amended;
+
   return { next: { ...step.next, files: files.next, amended: amended.next } };
 }
 
@@ -516,10 +541,13 @@ async function reread(
     [s.slice, sha, '--base', base],
     at.place,
   );
+
   if (read === null) return { stop: died(at) };
+
   if (read.status !== 'ok' || read.files === undefined) {
     return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
   }
+
   return { next: read.files };
 }
 
@@ -545,8 +573,10 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   const out = await runTool(at.ctx.hooks, 'land', argv, place);
   const event = landingEvent(out, { issue: at.issue, epic: at.ctx.epic });
   if (event.kind === 'epic-halt') at.ctx.markHalting();
+
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
     const { tdd, specReview, testReview, standardsReview, scriptApiTsdoc } = s;
+
     return {
       kind: 'landed',
       work: { tdd, specReview, testReview, standardsReview, scriptApiTsdoc },
@@ -558,6 +588,7 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
           : null,
     };
   }
+
   return notLanded(event);
 }
 
@@ -569,6 +600,7 @@ function notLanded(primary: SchedulerEvent): SliceOutcome {
 /** The `epic-halt` of a landing whose call threw: the batch state is unknown. */
 function landThrew(at: AttemptId, err: unknown): SchedulerEvent {
   at.ctx.markHalting();
+
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: `land threw: ${errorText(err)}` };
 }
 
@@ -603,6 +635,7 @@ async function endAttempt(
     kept: teardown?.kept ?? null,
     startedAt: cut.startedAt,
   };
+
   return { kind: 'ended', issue: at.issue, ending };
 }
 

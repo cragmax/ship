@@ -75,6 +75,7 @@ const SETTLED_PHASES: readonly IssuePhase[] = [
 export function createScheduler(input: SchedulerInput): Transition {
   assertInput(input);
   const state = initialState(input);
+
   return finish(state, openDraft(state));
 }
 
@@ -95,6 +96,7 @@ export function advance(state: SchedulerState, event: SchedulerEvent): Transitio
   const draft = openDraft(state);
   if (event.kind === 'epic-halt') onEpicHalt(draft, state, event.epic);
   else onIssueEvent(draft, state, event);
+
   return finish(state, draft);
 }
 
@@ -102,12 +104,14 @@ export function advance(state: SchedulerState, event: SchedulerEvent): Transitio
 function onIssueEvent(draft: Draft, state: SchedulerState, event: IssueEvent): void {
   assertPhase(state, event);
   const issue = event.issue;
+
   if (
     state.halted[entryIndexOf(state, issue)] === true &&
     settleInHaltedEntry(draft, state, event)
   ) {
     return;
   }
+
   switch (event.kind) {
     case 'committed':
       onCommitted(draft, state, issue);
@@ -139,8 +143,10 @@ function settleInHaltedEntry(draft: Draft, state: SchedulerState, event: IssueEv
     const { epic } = state.runSet[entryIndexOf(state, event.issue)] ?? { epic: null };
     fail(`committed for ${hash(event.issue)}, whose ${entryLabel(epic)} is halted`);
   }
+
   if (event.kind === 'slot-free' || event.kind === 'label-removed') return false;
   draft.phase[event.issue] = 'halted';
+
   return true;
 }
 
@@ -155,6 +161,7 @@ function onEpicHalt(draft: Draft, state: SchedulerState, epic: number | null): v
   if (state.halted[index] === true) fail(`${subject}, which is halted`);
   if (state.epicDone[index] === true) fail(`${subject}, which is done`);
   draft.halted[index] = true;
+
   for (const issue of state.runSet[index]?.issues ?? []) {
     if (draft.phase[issue] !== 'waiting' && draft.phase[issue] !== 'ready') continue;
     draft.phase[issue] = 'halted';
@@ -185,17 +192,21 @@ interface Draft {
 /** Run the input guards in {@link createScheduler}'s `@throws` order. */
 function assertInput(input: SchedulerInput): void {
   const { maxSlices, runSet, edges } = input;
+
   if (!Number.isInteger(maxSlices) || maxSlices < 1) {
     fail(`maxSlices must be an integer of 1 or more, got ${String(maxSlices)}`);
   }
+
   for (const entry of runSet) {
     if (entry.issues.length === 0) fail(`the entry for ${entryLabel(entry.epic)} has no issues`);
   }
+
   const entryOf = entryIndexByIssue(runSet);
   assertDistinctEpics(runSet);
   // Before findCycles, which ignores an edge with an endpoint outside its issue list.
   assertEdgesInEntries(edges, entryOf);
   const cycles = findCycles(runSetIssues(runSet), edges);
+
   if (cycles.length > 0) {
     fail(`dependency cycle among ${cycles.map((c) => c.map(hash).join(', ')).join('; ')}`);
   }
@@ -210,12 +221,14 @@ function entryIndexByIssue(runSet: RunSet): ReadonlyMap<number, number> {
       entryOf.set(issue, index);
     }
   });
+
   return entryOf;
 }
 
 /** Reject two entries with one `epic` key (two `null`s included). */
 function assertDistinctEpics(runSet: RunSet): void {
   const seen = new Set<number | null>();
+
   for (const { epic } of runSet) {
     if (seen.has(epic))
       fail(`two entries share the epic key ${epic === null ? 'null' : hash(epic)}`);
@@ -230,10 +243,12 @@ function assertEdgesInEntries(
 ): void {
   for (const e of edges) {
     const outside = [e.blocker, e.dependent].find((issue) => !entryOf.has(issue));
+
     if (outside !== undefined) {
       fail(`edge ${edgeLabel(e)} names ${hash(outside)}, which is outside the run set`);
     }
   }
+
   for (const e of edges) {
     if (entryOf.get(e.blocker) !== entryOf.get(e.dependent)) {
       fail(`edge ${edgeLabel(e)} crosses run-set entries`);
@@ -247,9 +262,11 @@ function initialState(input: SchedulerInput): SchedulerState {
   const order = runSet.flatMap((entry) => entry.issues);
   const edges = dedupeEdges(input.edges);
   const phase: Record<number, IssuePhase> = {};
+
   for (const issue of order) {
     phase[issue] = edges.some((e) => e.dependent === issue) ? 'waiting' : 'ready';
   }
+
   return {
     maxSlices: input.maxSlices,
     runSet,
@@ -269,12 +286,14 @@ function initialState(input: SchedulerInput): SchedulerState {
  */
 function dedupeEdges(edges: SchedulerInput['edges']): SchedulerEdge[] {
   const seen = new Map<string, SchedulerEdge>();
+
   for (const e of edges) {
     const key = `${String(e.blocker)}>${String(e.dependent)}`;
     const source = e.source ?? 'declared';
     if (seen.get(key)?.source === 'declared') continue;
     seen.set(key, { blocker: e.blocker, dependent: e.dependent, source });
   }
+
   return [...seen.values()];
 }
 
@@ -311,6 +330,7 @@ function openDraft(state: SchedulerState): Draft {
 function finish(state: SchedulerState, draft: Draft): Transition {
   fill(draft, state);
   emitEnds(draft, state);
+
   return {
     state: {
       ...state,
@@ -335,6 +355,7 @@ function promote(draft: Draft, state: SchedulerState): void {
   for (const candidate of state.order) {
     if (draft.phase[candidate] !== 'waiting') continue;
     const edgesIn = state.edges.filter((e) => e.dependent === candidate);
+
     if (edgesIn.every((e) => cleared(draft, e))) {
       draft.phase[candidate] = 'ready';
       draft.ready.push(candidate);
@@ -346,6 +367,7 @@ function promote(draft: Draft, state: SchedulerState): void {
 function cleared(draft: Draft, e: SchedulerEdge): boolean {
   const head = draft.phase[e.blocker];
   if (head === 'committed') return true;
+
   return e.source === 'overlap' && head !== undefined && UNLANDED_PHASES.includes(head);
 }
 
@@ -354,8 +376,10 @@ function onAgentDied(draft: Draft, state: SchedulerState, issue: number): void {
   if (draft.retried[issue]) {
     draft.response.push({ kind: 'block', issue, reason: 'retry-exhausted' });
     settleAndSkip(draft, state, issue, 'retry-exhausted');
+
     return;
   }
+
   draft.retried[issue] = true;
   restart(draft, { kind: 'retry', issue });
 }
@@ -392,21 +416,25 @@ function settleAndSkip(
   draft.phase[root] = trigger === 'label-removed' ? 'removed' : 'blocked';
   const declared = state.edges.filter((e) => e.source === 'declared');
   const heads = new Map<number, ReleasedEdge['trigger']>([[root, trigger]]);
+
   for (const issue of transitiveDependents([root], declared)) {
     if (draft.phase[issue] !== 'waiting') continue;
     draft.phase[issue] = 'skipped';
     draft.skips.push({ kind: 'skip', issue, cause: { root, trigger } });
     heads.set(issue, 'skipped');
   }
+
   const released = state.edges
     .filter((e) => e.source === 'overlap' && draft.phase[e.dependent] === 'waiting')
     .flatMap((e) => {
       const head = heads.get(e.blocker);
+
       return head === undefined
         ? []
         : [{ blocker: e.blocker, dependent: e.dependent, trigger: head }];
     })
     .sort((a, b) => a.blocker - b.blocker || a.dependent - b.dependent);
+
   for (const edge of released) draft.releases.push({ kind: 'release', ...edge });
   promote(draft, state);
 }
@@ -414,6 +442,7 @@ function settleAndSkip(
 /** Start ready issues from the queue head while a slot is free. */
 function fill(draft: Draft, state: SchedulerState): void {
   let authoring = state.order.filter((issue) => draft.phase[issue] === 'authoring').length;
+
   while (authoring < state.maxSlices) {
     const next = draft.ready.shift();
     if (next === undefined) return;

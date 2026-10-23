@@ -59,6 +59,7 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     rootAbsent: false,
     sliceBranches: [],
   };
+
   try {
     assertMainWorktree(main, 'preconditions');
     const slug = attachSlug(branch);
@@ -67,15 +68,18 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
     result.rootAbsent = !assertRunRoot(main, root);
     if (!result.rootAbsent) assertNothingLive(main, root);
     deleteSliceBranches(main, slug, result.sliceBranches);
+
     if (!result.rootAbsent) {
       rmSync(root, { recursive: true, force: true });
       result.rootRemoved = true;
     }
+
     git(main, ['branch', '-D', branch], 'delete-branch');
     result.branchDeleted = true;
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -87,6 +91,7 @@ export function retireRun(input: RetireRunInput): RetireRunResult {
  */
 function deleteSliceBranches(main: string, slug: string, deleted: string[]): void {
   const names = branchesUnder(main, sliceBranchPrefix(slug), 'slice-branches').sort(compareStrings);
+
   for (const name of names) {
     git(main, ['branch', '-D', name], 'delete-slice-branch');
     deleted.push(name);
@@ -112,10 +117,13 @@ function assertMerged(main: string, branch: string): void {
     ],
     { cwd: process.cwd() },
   );
+
   if (r.exitCode === 0) return;
+
   if (r.exitCode === 1) {
     throw new Refusal('branch-unmerged', 'branch-guard', `${branch} is not in ${RUN_UPSTREAM}`);
   }
+
   throw new StepFailure(
     'branch-guard',
     `git merge-base --is-ancestor failed for ${branch}`,
@@ -135,7 +143,9 @@ function assertRunRoot(main: string, root: string): boolean {
   const placed =
     samePath(posix.dirname(root), `${main}/${REPORTS_DIR}`) &&
     posix.basename(root).startsWith('ship-');
+
   if (placed && stat.isDirectory() && !stat.isSymbolicLink()) return true;
+
   throw new Refusal(
     'not-run-root',
     'folder-guard',
@@ -151,6 +161,7 @@ function assertNothingLive(main: string, root: string): void {
   const nested = listWorktrees(main, 'folder-guard')
     .map((w) => w.path)
     .filter((path) => isInside(path, root));
+
   if (nested.length > 0) {
     throw new Refusal(
       'nested-worktree',
@@ -158,7 +169,9 @@ function assertNothingLive(main: string, root: string): void {
       `registered worktrees lie inside ${root}: ${nested.join(', ')}`,
     );
   }
+
   const links = findLinks(root);
+
   if (links.length > 0) {
     throw new Refusal(
       'links-remain',

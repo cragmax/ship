@@ -81,6 +81,7 @@ describe('cut-batch', () => {
       name: 'the run branch exists',
       target: () => {
         mustRun('git', ['branch', 'ship/epic-900'], main);
+
         return main;
       },
     },
@@ -89,6 +90,7 @@ describe('cut-batch', () => {
       name: 'the batch path exists',
       target: () => {
         mkdirSync(`${main}/.claude/worktrees/ship-epic-900`, { recursive: true });
+
         return main;
       },
     },
@@ -97,6 +99,7 @@ describe('cut-batch', () => {
       name: 'the report dir exists',
       target: () => {
         mkdirSync(`${main}/reports/ship-epic-900`, { recursive: true });
+
         return main;
       },
     },
@@ -138,6 +141,7 @@ describe('cut-slice', () => {
     const runs = runCli<LiveRunsResult>(['live-runs', main], {
       env: prependPath(writeFakeGh(root, {})),
     });
+
     expect(runs.json.runs.map((run) => run.path)).toEqual([batch]);
   });
 

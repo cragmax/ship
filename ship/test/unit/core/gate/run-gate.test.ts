@@ -465,6 +465,7 @@ describe('evaluateRunGate — exclude mode', () => {
 describe('evaluateRunGate — failure messages', () => {
   function messageOf(runSet: RunSet, facts: readonly IssueFacts[], states = {}): string {
     const [failure] = gate(runSet, facts, { blockerStates: states }).failures;
+
     return failure?.message ?? '';
   }
 
@@ -484,6 +485,7 @@ describe('evaluateRunGate — failure messages', () => {
     const message = messageOf([{ epic: null, issues: [43] }], [issue(43, { blockedBy: [71] })], {
       71: 'OPEN',
     });
+
     expect(message).toContain('#43');
     expect(message).toContain('#71');
   });
@@ -496,6 +498,7 @@ describe('evaluateRunGate — failure messages', () => {
       ],
       [issue(301, { blockedBy: [401] }), issue(401)],
     );
+
     expect(message).toContain('#301');
     expect(message).toContain('#401');
     expect(message).toContain('#400');
@@ -506,6 +509,7 @@ describe('evaluateRunGate — failure messages', () => {
       [{ epic: null, issues: [44, 45] }],
       [issue(44, { blockedBy: [45] }), issue(45, { blockedBy: [44] })],
     );
+
     expect(message).toContain('#44');
     expect(message).toContain('#45');
   });

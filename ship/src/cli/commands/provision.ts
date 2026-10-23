@@ -104,6 +104,7 @@ export function provision(options: ProvisionOptions): ProvisionResult {
       rolledBack: [],
     },
   };
+
   try {
     checkPreconditions(options);
     const before = statusEntries(options.slice, 'preconditions');
@@ -116,6 +117,7 @@ export function provision(options: ProvisionOptions): ProvisionResult {
     recordFailure(run.result, err);
     rollback(run);
   }
+
   return run.result;
 }
 
@@ -128,16 +130,20 @@ function checkPreconditions(options: ProvisionOptions): void {
   assertNotSelfHosted(options.slice, options.selfPath ?? import.meta.filename);
   const slice = requireLinkedWorktree(options.slice, 'slice');
   const batch = requireLinkedWorktree(options.batch, 'batch');
+
   const fail = (message: string): never => {
     throw new StepFailure('preconditions', message);
   };
+
   if (samePath(options.slice, options.batch)) fail('slice and batch are the same worktree');
   if (!samePath(slice.commonDir, batch.commonDir))
     fail('slice and batch belong to different repositories');
   const modules = `${options.batch}/node_modules`;
+
   if (!isRealDir(modules) || readdirSync(modules).length === 0) {
     fail(`${modules} is not a real, non-empty directory`);
   }
+
   if (!existsSync(`${options.batch}/paper-harness`))
     fail(`${options.batch}/paper-harness is missing`);
   // The build deletes `dist`, which must never reach through a link.
@@ -152,9 +158,11 @@ function checkPreconditions(options: ProvisionOptions): void {
  */
 function requireLinkedWorktree(path: string, role: string): WorktreeIdentity {
   const identity = requireWorktreeRoot(path, 'preconditions');
+
   if (samePath(identity.main, path)) {
     throw new StepFailure('preconditions', `the ${role} ${path} is the main worktree`);
   }
+
   return identity;
 }
 
@@ -168,16 +176,20 @@ function ensureJunction(run: Run): void {
   const link = `${run.options.slice}/node_modules`;
   const target = `${run.options.batch}/node_modules`;
   const existing = linkTarget(link);
+
   if (existing === null && existsSync(link)) {
     throw new StepFailure('junction', `${link} exists and is not a link`);
   }
+
   if (existing !== null && !samePath(existing, target)) {
     throw new StepFailure('junction', `${link} links to ${existing}, not ${target}`);
   }
+
   if (existing === null) {
     createJunction(link, target);
     run.created.push({ path: link, kind: 'link' });
   }
+
   run.result.junctions.push({ path: link, target });
 }
 
@@ -202,6 +214,7 @@ function buildDist(run: Run): void {
  */
 function writeVitestConfigs(run: Run): void {
   const specs = run.options.server ? [UNIT_CONFIG, INTEGRATION_CONFIG] : [UNIT_CONFIG];
+
   for (const spec of specs) {
     const path = `${run.options.slice}/${spec.file}`;
     if (!existsSync(path)) run.created.push({ path, kind: 'tree' });
@@ -223,6 +236,7 @@ function rollback(run: Run): void {
     else continue;
     run.result.rolledBack.push(path);
   }
+
   const removed = new Set(run.result.rolledBack);
   run.result.junctions = run.result.junctions.filter((j) => !removed.has(j.path));
   run.result.vitestConfigs = run.result.vitestConfigs.filter((p) => !removed.has(p));

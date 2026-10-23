@@ -23,10 +23,13 @@ import type { TddEvidence } from '../calls/agent-calls.js';
  */
 export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
   const ref = `#${String(issue)}`;
+
   if (evidence.kind === 'none') {
     const reason = oneLine(evidence.reason);
+
     return [`- **${ref}** no red-green — ${reason === '' ? 'no reason given' : reason}`];
   }
+
   return tracerBullet(ref, evidence);
 }
 
@@ -37,9 +40,11 @@ export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
 function tracerBullet(ref: string, evidence: TddEvidence): string[] {
   const red = oneLine(evidence.red);
   const green = oneLine(evidence.green);
+
   if (evidence.test.trim() === '' || red === '' || green === '') {
     return [`- **${ref}** evidence incomplete`];
   }
+
   return [
     `- **${ref}** ${codeSpan(evidence.test)}`,
     ...codeBlock(evidence.pseudocode),
@@ -52,6 +57,7 @@ function tracerBullet(ref: string, evidence: TddEvidence): string[] {
 function codeBlock(pseudocode: string): string[] {
   if (pseudocode.trim() === '') return [];
   const fence = codeFence(pseudocode);
+
   return [
     `  ${fence}text`,
     ...pseudocode
@@ -79,6 +85,7 @@ export function codeSpan(text: string): string {
   const longest = longestBacktickRun(text);
   if (longest === 0) return `\`${text}\``;
   const delimiter = '`'.repeat(longest + 1);
+
   return `${delimiter} ${text} ${delimiter}`;
 }
 

@@ -61,6 +61,7 @@ interface PublishInput {
 export function publish(input: PublishInput): PublishResult {
   const { batch, selfPath = import.meta.filename } = input;
   const result = newPublishResult(batch);
+
   try {
     const branch = publishableBranch(batch, selfPath);
     assertNoOpenPr(batch, branch);
@@ -72,6 +73,7 @@ export function publish(input: PublishInput): PublishResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -99,6 +101,7 @@ export function newPublishResult(batch: string): PublishResult {
 export function publishableBranch(batch: string, selfPath: string): string {
   assertLinkedWorktree(batch, selfPath);
   assertRunBatch(batch);
+
   return git(batch, ['symbolic-ref', '--short', 'HEAD'], 'preconditions');
 }
 
@@ -111,6 +114,7 @@ export function publishableBranch(batch: string, selfPath: string): string {
 function assertNoOpenPr(batch: string, branch: string): void {
   const { info, error } = lookupPr(batch, branch);
   if (error !== undefined) throw new StepFailure('pr-state', `${branch}: ${error}`);
+
   if (info.state === 'open') {
     throw new Refusal(
       'pr-exists',
@@ -127,6 +131,7 @@ function assertNoOpenPr(batch: string, branch: string): void {
  */
 function assertBodyWithinLimit(bodyFile: string): void {
   const length = readFileSync(bodyFile, 'utf8').length;
+
   if (length > GH_BODY_LIMIT) {
     throw new StepFailure(
       'body-too-long',
@@ -154,6 +159,7 @@ export function pushBranch(batch: string, branch: string, logFile: string): void
     timeoutMs: PUSH_TIMEOUT_MS,
     logFile,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       'push',
@@ -188,8 +194,10 @@ function createPr(batch: string, branch: string, input: PublishInput): OpenedPr 
     { cwd: batch, timeoutMs: GH_TIMEOUT_MS },
   );
   const url = /https:\/\/\S+\/pull\/(\d+)/u.exec(r.stdout);
+
   if (r.exitCode !== 0 || url === null) {
     throw new StepFailure('pr', `gh pr create exited ${String(r.exitCode)} for ${branch}`, r.tail);
   }
+
   return { number: Number(url[1]), url: url[0] };
 }

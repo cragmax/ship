@@ -74,6 +74,7 @@ export function attachBatch(input: AttachInput): CutBatchResult {
     reportDir: null,
     attach: null,
   };
+
   try {
     assertMainWorktree(main, 'preconditions');
     const slug = attachSlug(branch);
@@ -104,6 +105,7 @@ export function attachBatch(input: AttachInput): CutBatchResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -121,12 +123,14 @@ function lastRegistry(layout: RunLayout): string | null {
       .map((name) => `${layout.reports}/${name}`),
   ];
   let newest: { readonly path: string; readonly mtimeMs: number } | null = null;
+
   for (const dir of dirs) {
     const path = `${dir}/${BATCH_REGISTRY_FILE}`;
     if (!existsSync(path)) continue;
     const { mtimeMs } = statSync(path);
     if (newest === null || mtimeMs > newest.mtimeMs) newest = { path, mtimeMs };
   }
+
   return newest?.path ?? null;
 }
 
@@ -152,6 +156,7 @@ function allocateRun(
   // Not recursive: a concurrent attach that took the same number first makes
   // this throw, so two runs never share a folder.
   mkdirSync(reportDir);
+
   return { run, reportDir };
 }
 
@@ -163,9 +168,11 @@ function allocateRun(
  */
 export function attachSlug(branch: string): string {
   const slug = runSlugOf(`refs/heads/${branch}`);
+
   if (slug === null) {
     throw new Refusal('not-run-batch', 'preconditions', `${branch} is not a ship/ run branch`);
   }
+
   return slug;
 }
 
@@ -187,6 +194,7 @@ function unpublishedCommits(main: string, branch: string): number {
     '--not',
     '--remotes=origin',
   ];
+
   return Number(git(main, args, 'unpublished'));
 }
 
@@ -202,6 +210,7 @@ function unpublishedCommits(main: string, branch: string): number {
 export function assertPublished(main: string, branch: string): void {
   const n = unpublishedCommits(main, branch);
   if (n === 0) return;
+
   throw new Refusal(
     'unpublished-commits',
     'preconditions',
@@ -220,6 +229,7 @@ function reusesBatch(main: string, layout: RunLayout): boolean {
   if (entry === undefined) return false;
   if (samePath(entry.path, layout.batch) && !entry.prunable) return true;
   const state = entry.prunable ? ' (prunable)' : '';
+
   throw new Refusal(
     'branch-checked-out',
     'preconditions',
@@ -235,13 +245,16 @@ function reusesBatch(main: string, layout: RunLayout): boolean {
  */
 function checkOut(main: string, layout: RunLayout): boolean {
   const { branch, batch } = layout;
+
   if (existsSync(batch)) {
     throw new Refusal('path-exists', 'preconditions', `${batch} exists already`);
   }
+
   fetchOrigin(main);
   const local = `refs/heads/${branch}`;
   const remote = `refs/remotes/origin/${branch}`;
   const hasLocal = refExists(main, local);
+
   if (!hasLocal && !refExists(main, remote)) {
     throw new Refusal(
       'branch-missing',
@@ -249,16 +262,20 @@ function checkOut(main: string, layout: RunLayout): boolean {
       `neither ${branch} nor origin/${branch} exists`,
     );
   }
+
   if (!hasLocal) {
     git(
       main,
       ['worktree', 'add', '-q', '--track', '-b', branch, batch, `origin/${branch}`],
       'worktree-add',
     );
+
     return false;
   }
+
   const fastForwarded = refExists(main, remote) && fastForward(main, local, remote);
   git(main, ['worktree', 'add', '-q', batch, branch], 'worktree-add');
+
   return fastForwarded;
 }
 
@@ -272,11 +289,15 @@ function fastForward(main: string, local: string, remote: string): boolean {
   const l = resolveCommit(main, local, 'attach');
   const o = resolveCommit(main, remote, 'attach');
   if (l === o) return false;
+
   if (isAncestor(main, l, o)) {
     git(main, ['update-ref', local, o, l], 'attach');
+
     return true;
   }
+
   if (isAncestor(main, o, l)) return false;
+
   throw new Refusal(
     'branch-diverged',
     'preconditions',
@@ -293,7 +314,9 @@ function isAncestor(main: string, a: string, b: string): boolean {
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', a, b], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return true;
   if (r.exitCode === 1) return false;
+
   throw new StepFailure('attach', `git merge-base --is-ancestor ${a} ${b} failed`, r.tail);
 }

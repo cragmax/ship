@@ -114,10 +114,12 @@ describe('main', () => {
     savedExitCode = process.exitCode;
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stdout.push(String(chunk));
+
       return true;
     });
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stderr.push(String(chunk));
+
       return true;
     });
   });

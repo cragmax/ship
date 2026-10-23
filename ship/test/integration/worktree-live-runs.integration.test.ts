@@ -49,6 +49,7 @@ function liveRuns(responses: Record<string, FakeGhResponse>): {
 } {
   const bin = writeFakeGh(root, responses);
   const { code, json } = runCli<LiveRunsResult>(['live-runs', main], { env: prependPath(bin) });
+
   return { code, json, run: (branch) => json.runs.find((r) => r.branch === branch) };
 }
 

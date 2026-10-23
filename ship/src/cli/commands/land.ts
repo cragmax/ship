@@ -73,6 +73,7 @@ export function land(input: LandInput): LandResult {
     batchClean: false,
   };
   let staged = false;
+
   try {
     assertLinkedWorktree(batch, selfPath);
     assertRunBatch(batch);
@@ -80,11 +81,14 @@ export function land(input: LandInput): LandResult {
     result.sha = assertSingleCommit(batch, input.sha, input.base);
     result.lines = changedLines(batch, result.sha);
     staged = pick(result, batch, result.sha, selfPath);
+
     if (staged) {
       assertStagedSet(batch, result.files);
+
       if (needsBuild(result.files)) {
         runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
       }
+
       commitWithHooks(batch, ['-F', input.messageFile], input.logFile);
       staged = false;
       result.commit = git(batch, ['rev-parse', 'HEAD'], 'commit');
@@ -93,7 +97,9 @@ export function land(input: LandInput): LandResult {
     recordFailure(result, err);
     if (staged) rollback(batch, result);
   }
+
   result.batchClean = isClean(batch);
+
   return result;
 }
 
@@ -110,10 +116,12 @@ function changedLines(batch: string, sha: string): number {
     'preconditions',
   );
   let lines = 0;
+
   for (const row of rows.split('\n')) {
     const [added = '-', removed = '-'] = row.split('\t');
     lines += (added === '-' ? 0 : Number(added)) + (removed === '-' ? 0 : Number(removed));
   }
+
   return lines;
 }
 
@@ -130,6 +138,7 @@ function assertSingleCommit(batch: string, sha: string, base: string): string {
   const parents = git(batch, ['rev-list', '--parents', '-n', '1', full], 'preconditions')
     .split(' ')
     .slice(1);
+
   if (count !== 1 || parents.length !== 1 || parents[0] !== cut) {
     throw new Refusal(
       'slice-not-single-commit',
@@ -138,6 +147,7 @@ function assertSingleCommit(batch: string, sha: string, base: string): string {
         `[${parents.join(', ')}]; land takes exactly one commit whose only parent is the cut`,
     );
   }
+
   return full;
 }
 
@@ -156,6 +166,7 @@ function pick(result: LandResult, batch: string, sha: string, selfPath: string):
   result.status = h.status;
   if (h.reason !== undefined) result.reason = h.reason;
   result.errors.push(...h.errors);
+
   return false;
 }
 
@@ -167,6 +178,7 @@ function pick(result: LandResult, batch: string, sha: string, selfPath: string):
  */
 function assertStagedSet(batch: string, files: readonly string[]): void {
   const diff = compareSets(files, stagedPaths(batch, 'staged-set'));
+
   if (diff.missing.length > 0 || diff.unexpected.length > 0) {
     throw new Refusal(
       'staged-mismatch',

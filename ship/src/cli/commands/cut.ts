@@ -68,6 +68,7 @@ export function cutBatch(input: {
     reportDir: null,
     attach: null,
   };
+
   try {
     assertMainWorktree(main, 'preconditions');
     const layout = runLayout(main, runSlug(input.selection));
@@ -82,6 +83,7 @@ export function cutBatch(input: {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -106,6 +108,7 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
     base: null,
     slice: null,
   };
+
   try {
     assertLinkedWorktree(batch, selfPath);
     const slug = assertRunBatch(batch);
@@ -119,6 +122,7 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -132,6 +136,7 @@ export function cutSlice(input: CutSliceInput): CutSliceResult {
 export function assertRunBatch(batch: string): string {
   const entry = listWorktrees(batch, 'preconditions').find((w) => samePath(w.path, batch));
   const slug = runSlugOf(entry?.branch ?? '');
+
   if (slug === null) {
     throw new Refusal(
       'not-run-batch',
@@ -139,6 +144,7 @@ export function assertRunBatch(batch: string): string {
       `${batch} is on ${entry?.branch ?? 'no branch'}, not a ship/ run branch`,
     );
   }
+
   return slug;
 }
 

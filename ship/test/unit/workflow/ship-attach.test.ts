@@ -497,6 +497,7 @@ describe('runShip --attach — issue-readiness and issue-overlap', () => {
 
     const heads = (label: string): string[] =>
       promptLines(run, label).filter((l) => l.startsWith('PR head:'));
+
     expect(heads('issueOverlap')).toEqual([]);
     expect(heads('issueReadiness')).toEqual([]);
     expect(labels(run)).toContain('issueOverlap');

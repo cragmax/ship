@@ -60,21 +60,25 @@ interface PushOnlyInput {
 export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResult> {
   const { batch, selfPath = import.meta.filename, pollMs = MERGEABLE_POLL_MS } = input;
   const result = newPublishResult(batch);
+
   try {
     const branch = publishableBranch(batch, selfPath);
     const number = openPr(batch, branch);
     fetchOrigin(batch);
+
     if (aheadOfOrigin(batch, branch)) {
       runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
       pushBranch(batch, branch, input.logFile);
       result.pushed = true;
     }
+
     const view = await readMergeable(batch, number, pollMs);
     result.pr = { number, url: view.url };
     result.mergeable = view.mergeable;
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }
 
@@ -92,10 +96,13 @@ function aheadOfOrigin(batch: string, branch: string): boolean {
   const r = runCaptured('git', ['-C', batch, 'merge-base', '--is-ancestor', origin, 'HEAD'], {
     cwd: process.cwd(),
   });
+
   if (r.exitCode === 0) return true;
+
   if (r.exitCode === 1) {
     throw new StepFailure('push', `origin/${branch} has commits the batch lacks; nothing pushed`);
   }
+
   throw new StepFailure('push', `git merge-base --is-ancestor failed in ${batch}`, r.tail);
 }
 
@@ -111,10 +118,12 @@ async function readMergeable(
   pollMs: number,
 ): Promise<z.infer<typeof PrViewSchema>> {
   let view = viewPr(batch, number);
+
   for (let read = 1; view.mergeable === UNCOMPUTED && read < MERGEABLE_READS; read++) {
     await sleep(pollMs);
     view = viewPr(batch, number);
   }
+
   return view;
 }
 
@@ -128,6 +137,7 @@ function viewPr(batch: string, number: number): z.infer<typeof PrViewSchema> {
     cwd: batch,
     timeoutMs: GH_TIMEOUT_MS,
   });
+
   if (r.exitCode !== 0) {
     throw new StepFailure(
       'mergeable',
@@ -135,13 +145,16 @@ function viewPr(batch: string, number: number): z.infer<typeof PrViewSchema> {
       r.tail,
     );
   }
+
   const parsed = parseView(r.stdout);
+
   if (parsed === null) {
     throw new StepFailure(
       'mergeable',
       `gh pr view ${String(number)} printed unreadable JSON: ${r.stdout}`,
     );
   }
+
   return parsed;
 }
 
@@ -153,6 +166,7 @@ function viewPr(batch: string, number: number): z.infer<typeof PrViewSchema> {
 function parseView(stdout: string): z.infer<typeof PrViewSchema> | null {
   try {
     const parsed = PrViewSchema.safeParse(JSON.parse(stdout));
+
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

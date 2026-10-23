@@ -83,6 +83,7 @@ function fakeDeps(
   const deps = Object.fromEntries(
     Object.entries(all).filter(([key]) => !omit.includes(key as keyof RestartDeps)),
   ) as Partial<RestartDeps>;
+
   return { kills, deps };
 }
 
@@ -116,6 +117,7 @@ describe('restartSessionTsserver', () => {
       table: TWO_SESSIONS.map((p) => {
         if (p.pid === 100) return { ...p, name: 'Claude.EXE' };
         if (p.pid === 112) return { ...p, name: 'NODE.EXE' };
+
         return p;
       }),
       over: { sessionImage: 'CLAUDE.exe' },

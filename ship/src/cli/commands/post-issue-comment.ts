@@ -42,10 +42,12 @@ export function postIssueComment(input: PostIssueCommentInput): PostIssueComment
     issue,
     url: null,
   };
+
   try {
     result.url = postCommentFile(cwd, 'issue', issue, commentFile);
   } catch (err) {
     recordFailure(result, err);
   }
+
   return result;
 }

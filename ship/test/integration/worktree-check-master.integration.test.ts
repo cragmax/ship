@@ -52,6 +52,7 @@ function pushFetchRewind(): string {
   const pushed = advanceOrigin(root, bare, { write: { 'remote.txt': 'r\n' } });
   mustRun('git', ['fetch', '-q', 'origin'], main);
   rewindOrigin();
+
   return pushed;
 }
 

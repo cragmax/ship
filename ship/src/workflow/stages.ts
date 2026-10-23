@@ -162,6 +162,7 @@ export function agentOptions(
   schema: JsonSchema,
 ): AgentOptions {
   const row: StageRow = STAGES[stage];
+
   return {
     label: detail === null ? stage : `${stage}:${detail}`,
     agentType: row.agentType,

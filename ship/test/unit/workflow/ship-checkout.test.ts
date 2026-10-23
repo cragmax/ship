@@ -36,6 +36,7 @@ function laterLabelsAtMain(run: FakeRun): string[] {
   expect(first).toEqual({ label: 'runner:preflight', checkout: [] });
   for (const call of later)
     expect(call).toEqual({ label: call.label, checkout: [`Checkout: ${MAIN}`] });
+
   return later.map((c) => c.label);
 }
 

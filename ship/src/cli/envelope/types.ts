@@ -162,6 +162,7 @@ export class Conflict extends StepFailure {
  */
 function statusOf(err: StepFailure): CommandStatus {
   if (err instanceof Conflict) return 'conflict';
+
   return err instanceof Refusal ? 'refused' : 'failed';
 }
 
@@ -181,8 +182,10 @@ export function recordFailure(result: ResultBase, err: unknown): void {
       message: err.message,
       ...(err.detail !== undefined && { detail: err.detail }),
     });
+
     return;
   }
+
   result.status = 'failed';
   result.errors.push({
     step: 'internal',

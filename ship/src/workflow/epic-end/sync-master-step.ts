@@ -66,6 +66,7 @@ export async function syncMasterStep(
   ctx: SyncStepContext,
 ): Promise<SyncStepResult> {
   const out = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
+
   return { ...syncVerdict(out), conflicts: out?.conflicts ?? [], version: out?.version ?? null };
 }
 
@@ -82,6 +83,7 @@ function syncVerdict(out: SyncMasterOutput | null): SyncOutcome {
       message: 'origin/master already merged',
     };
   }
+
   if (out?.status === 'ok' && out.outcome === 'merged' && typeof out.commit === 'string') {
     return {
       verdict: 'merged',
@@ -90,9 +92,12 @@ function syncVerdict(out: SyncMasterOutput | null): SyncOutcome {
       message: `merged origin/master as ${out.commit}`,
     };
   }
+
   const message = envelopeProblem('sync-master', out);
+
   if (out?.status === 'refused' && out.reason === 'code-conflict') {
     return { verdict: 'code-conflict', commit: null, upstream: null, message };
   }
+
   return { verdict: 'failed', commit: null, upstream: null, message };
 }

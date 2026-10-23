@@ -69,6 +69,7 @@ function killQuietly(pid: number): void {
 
 function pidOf(child: ChildProcess): number {
   if (child.pid === undefined) throw new Error('the process did not start');
+
   return child.pid;
 }
 
@@ -77,14 +78,18 @@ async function startSession(): Promise<{ session: number; pids: SessionPids }> {
   const child = spawn(process.execPath, [join(dir, 'session.mjs'), dir], {
     stdio: ['ignore', 'pipe', 'ignore'],
   });
+
   spawned.push(child);
   const lines = createInterface({ input: child.stdout });
+
   for await (const line of lines) {
     const pids = JSON.parse(line) as SessionPids;
     pidsToKill.push(pids.teardown, pids.semantic, pids.syntax);
     lines.close();
+
     return { session: pidOf(child), pids };
   }
+
   throw new Error('the session printed no pids');
 }
 
