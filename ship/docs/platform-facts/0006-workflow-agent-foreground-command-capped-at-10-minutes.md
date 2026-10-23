@@ -1,6 +1,6 @@
 ---
 status: current
-platform: [claude-code 2026-09-28]
+platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
 relied-on-by: [Ship ADR-0001, .claude/skills/unattended-agent/SKILL.md]
 ---
@@ -15,7 +15,7 @@ A stage whose command can outlast 10 minutes backgrounds it and polls in the for
 
 ## Scope
 
-The Claude Code release was not recorded. The `platform` stamp is the probe date.
+The Claude Code release was not recorded. Facts probed on 2026-09-23 and 2026-10-01 bracket it between 2.1.281 and 2.1.286, and the `platform` stamp is the lower bound.
 
 ## Established
 

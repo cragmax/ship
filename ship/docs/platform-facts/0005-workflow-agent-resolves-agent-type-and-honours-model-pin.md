@@ -1,6 +1,6 @@
 ---
 status: current
-platform: [claude-code 2026-09-28]
+platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
 relied-on-by: [Ship ADR-0001, ship/src/workflow/stages.ts, .claude/agents]
 ---
@@ -15,7 +15,7 @@ A stage is a project agent file plus an output schema. An agent file that pins a
 
 ## Scope
 
-Not tested: whether a per-call `model` overrides a frontmatter pin. The Claude Code release was not recorded. The `platform` stamp is the probe date.
+Not tested: whether a per-call `model` overrides a frontmatter pin. The Claude Code release was not recorded. Facts probed on 2026-09-23 and 2026-10-01 bracket it between 2.1.281 and 2.1.286, and the `platform` stamp is the lower bound.
 
 ## Established
 

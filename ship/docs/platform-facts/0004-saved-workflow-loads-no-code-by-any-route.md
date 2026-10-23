@@ -1,6 +1,6 @@
 ---
 status: current
-platform: [claude-code 2026-09-28]
+platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
 relied-on-by: [Ship ADR-0001, ship/src/build/workflow-render.ts, ship/src/build/check-codegen.ts]
 ---
@@ -15,7 +15,7 @@ Everything a saved workflow runs must be inside its own text. Repo TypeScript re
 
 ## Scope
 
-The Claude Code release was not recorded. The `platform` stamp is the probe date.
+The Claude Code release was not recorded. Facts probed on 2026-09-23 and 2026-10-01 bracket it between 2.1.281 and 2.1.286, and the `platform` stamp is the lower bound.
 
 ## Established
 
