@@ -336,7 +336,8 @@ describe('advance — duplicate edges', () => {
 describe('run-scheduler render safety', () => {
   // Read as text: the render step concatenates the type-stripped run-set.ts and
   // run-scheduler.ts into one scope. Comments are stripped first (the same two
-  // regexes as run-set.test.ts) so the header TSDoc may name forbidden tokens.
+  // regexes as server-pool/test/helpers/render-safety.ts) so the header TSDoc
+  // may name forbidden tokens.
   const code = (file: string): string =>
     readFileSync(resolve(import.meta.dirname, '../../../../src/core', file), 'utf8')
       .replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, '')
