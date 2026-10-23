@@ -148,7 +148,7 @@ describe('runShip — pre-flight only', () => {
     expect(report).toEqual({
       status: 'preflight-ok',
       graph: EPIC_GRAPH,
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       dropped: [],
       epics: [],
     });
@@ -2393,7 +2393,7 @@ describe('runShip — exclude mode', () => {
     expect(report).toEqual({
       status: 'preflight-ok',
       graph: { runSet: [{ epic: null, issues: [9] }], edges: [] },
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       dropped: [
         { issue: 7, cause: 'stale', message: 'already implemented at abc123' },
         { issue: 8, cause: 'dependent', message: 'blocked by a dropped issue' },

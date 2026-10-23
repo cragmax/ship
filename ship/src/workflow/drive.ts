@@ -492,6 +492,7 @@ function entryOverlap(d: Drive, i: number): OverlapRecord {
   return {
     added: overlap.added.filter((e) => issues.has(e.blocker)),
     sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
+    unsure: overlap.unsure.filter((p) => issues.has(p.a)),
     areaMap: overlap.areaMap,
   };
 }

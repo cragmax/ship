@@ -228,6 +228,7 @@ const INPUT: PrBodyInput = {
   overlap: {
     added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: 'both edit tooling/x.ts' }],
     sequenced: [],
+    unsure: [],
     areaMap: 'read',
   },
   schedule: [
@@ -470,7 +471,7 @@ describe('renderPrBody', () => {
   it('renders None. for an empty section', () => {
     const lines = renderPrBody({
       ...INPUT,
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       schedule: [],
       retro: [],
     }).split('\n');
@@ -1356,6 +1357,7 @@ const cliqueInput = (reason: (blocker: number, dependent: number) => string): Pr
       })),
     ),
     sequenced: [],
+    unsure: [],
     areaMap: 'read',
   },
   schedule: ISSUES.map((issue) => ({

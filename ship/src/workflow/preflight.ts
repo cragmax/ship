@@ -132,12 +132,20 @@ export type OverlapEdge = RunEdge & {
   readonly reason: string;
 };
 
+/** An `unsure` pair within one entry that pre-flight left out of the run graph. */
+export type UnsurePair = OverlapPair & Pick<EstimatedPair, 'shared' | 'reason'>;
+
 /** What `issue-overlap`'s pairs added to the run graph. */
 export interface OverlapRecord {
   /** The edges added, sorted by (`blocker`, `dependent`). */
   readonly added: readonly OverlapEdge[];
   /** The pairs the declared edges already order: nothing added. */
   readonly sequenced: readonly OverlapPair[];
+  /**
+   * The `unsure` pairs within one entry, in `issue-overlap`'s order: reported, never ordered (Ship
+   * ADR-0001 decision 6).
+   */
+  readonly unsure: readonly UnsurePair[];
   /** Whether `issue-overlap` could read the area map. */
   readonly areaMap: 'read' | 'unavailable';
 }
@@ -262,7 +270,8 @@ function overlapValues(found: PreflightOutcome, attach: string | null): IssueOve
 
 /**
  * Ask `issue-overlap` ({@link overlapValues}): each live overlap refuses; the pairs merge into the
- * graph, less generated-only ones (a harvest regenerates them), a cross-entry pair refusing.
+ * graph, less generated-only ones (a harvest regenerates them) and the `unsure` ones within an
+ * entry (recorded as `unsure`), a cross-entry pair refusing.
  */
 async function settleOverlap(
   hooks: WorkflowHooks,
@@ -271,7 +280,7 @@ async function settleOverlap(
 ): Promise<PreflightOutcome> {
   const values = overlapValues(found, attach);
   if (values === null) {
-    return { ...found, overlap: { added: [], sequenced: [], areaMap: 'read' } };
+    return { ...found, overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' } };
   }
   const estimate = await AGENT_CALLS.issueOverlap(hooks, values);
   if (estimate === null) {
@@ -282,7 +291,9 @@ async function settleOverlap(
   const live = estimate.liveOverlaps.map(
     (o): ShipRefusal => ({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.reason}` }),
   );
-  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
+  const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
+  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, values.runSet));
+  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
   let merged: OverlapMerge;
   try {
     merged = mergeOverlapEdges({ runSet: values.runSet, edges: values.edges }, pairs);
@@ -297,9 +308,24 @@ async function settleOverlap(
   const overlap: OverlapRecord = {
     added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
+    unsure: unsureWithin.map(({ a, b, shared, reason }) => ({ a, b, shared, reason })),
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+
+/**
+ * Whether a pair is `unsure` and joins two distinct issues of one entry: such a pair orders no
+ * slices (Ship ADR-0001 decision 6), while one across entries still refuses the launch.
+ */
+function isUnsureWithinEntry(pair: EstimatedPair, runSet: RunGraph['runSet']): boolean {
+  const entry = (n: number): number => runSet.findIndex((e) => e.issues.includes(n));
+  return (
+    pair.confidence === 'unsure' &&
+    pair.a !== pair.b &&
+    entry(pair.a) !== -1 &&
+    entry(pair.a) === entry(pair.b)
+  );
 }
 
 function generatedOnly(pair: EstimatedPair): boolean {

@@ -3948,6 +3948,7 @@ function entryOverlap(d, i) {
   return {
     added: overlap.added.filter((e) => issues.has(e.blocker)),
     sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
+    unsure: overlap.unsure.filter((p) => issues.has(p.a)),
     areaMap: overlap.areaMap,
   };
 }
@@ -4162,7 +4163,7 @@ function overlapValues(found, attach) {
 async function settleOverlap(hooks, found, attach) {
   const values = overlapValues(found, attach);
   if (values === null) {
-    return { ...found, overlap: { added: [], sequenced: [], areaMap: 'read' } };
+    return { ...found, overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' } };
   }
   const estimate = await AGENT_CALLS.issueOverlap(hooks, values);
   if (estimate === null) {
@@ -4175,7 +4176,9 @@ async function settleOverlap(hooks, found, attach) {
     issue: o.issue,
     message: `${o.branch}: ${o.reason}`,
   }));
-  const pairs = estimate.pairs.filter((p) => !generatedOnly(p));
+  const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
+  const unsureWithin = estimated.filter((p) => isUnsureWithinEntry(p, values.runSet));
+  const pairs = estimated.filter((p) => !unsureWithin.includes(p));
   let merged;
   try {
     merged = mergeOverlapEdges({ runSet: values.runSet, edges: values.edges }, pairs);
@@ -4190,9 +4193,19 @@ async function settleOverlap(hooks, found, attach) {
   const overlap = {
     added: merged.added.map((e) => ({ ...e, ...pairWord(e.blocker, e.dependent, pairs) })),
     sequenced: merged.sequenced,
+    unsure: unsureWithin.map(({ a, b, shared, reason }) => ({ a, b, shared, reason })),
     areaMap: estimate.areaMap,
   };
   return { ...found, graph: merged.graph, overlap };
+}
+function isUnsureWithinEntry(pair, runSet) {
+  const entry = (n) => runSet.findIndex((e) => e.issues.includes(n));
+  return (
+    pair.confidence === 'unsure' &&
+    pair.a !== pair.b &&
+    entry(pair.a) !== -1 &&
+    entry(pair.a) === entry(pair.b)
+  );
 }
 function generatedOnly(pair) {
   return pair.shared.length > 0 && pair.shared.every((s) => GENERATED_FILES.includes(s));
