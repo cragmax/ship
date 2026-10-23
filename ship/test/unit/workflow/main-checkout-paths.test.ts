@@ -34,6 +34,7 @@ describe('the main-checkout paths the Saved workflow invokes', () => {
       reportDir: 'C:/r/reports',
       reportPath: 'C:/r/reports/tdd-7-1.md',
       keptDir: 'C:/r/kept',
+      previousPatch: null,
       messagePath: 'C:/r/reports/commit-7-1.txt',
       messageTemplate: 'x\n',
       lease: { main: MAIN, projectDir: 'C:/r/batch', registry: 'C:/r/registry.json' },

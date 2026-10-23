@@ -142,6 +142,8 @@ interface AttemptId {
   readonly ctx: EntryContext;
   readonly issue: number;
   readonly attempt: number;
+  /** The previous attempt's kept patch, handed to the tdd; `null` for none. */
+  readonly previousPatch: string | null;
   /** `<issue>-<attempt>`: the attempt's label detail and file-name stem. */
   readonly tag: string;
   readonly place: ToolPlace;
@@ -190,6 +192,8 @@ interface BuiltSlice extends ProvisionedSlice {
    * them after it.
    */
   readonly files: readonly string[];
+  /** The paths the slice review amends changed since the tdd's commit, re-read like `files`. */
+  readonly amended: readonly string[];
 }
 
 /** A spec-reviewed slice: the spec review's answer; `sha` its amend. */
@@ -216,15 +220,17 @@ interface AuthoredSlice extends ReviewedSlice {
 }
 
 /**
- * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice. Resolves to the
- * attempt's first note — for an authored slice, one carrying the queued landing; never rejects.
+ * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice, its tdd handed
+ * `previousPatch` when not `null`. Resolves to the attempt's first note — for an authored slice,
+ * one carrying the queued landing; never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
   issue: number,
   attempt: number,
+  previousPatch: string | null,
 ): Promise<AttemptNote> {
-  const at = attemptId(ctx, issue, attempt);
+  const at = attemptId(ctx, issue, attempt, previousPatch);
   const opened = await openSlice(at).catch(
     (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
   );
@@ -240,9 +246,14 @@ export async function runAttempt(
 }
 
 /** Who the attempt is, its tag `<issue>-<attempt>`. */
-function attemptId(ctx: EntryContext, issue: number, attempt: number): AttemptId {
+function attemptId(
+  ctx: EntryContext,
+  issue: number,
+  attempt: number,
+  previousPatch: string | null,
+): AttemptId {
   const tag = `${String(issue)}-${String(attempt)}`;
-  return { ctx, issue, attempt, tag, place: runPlace(ctx, tag) };
+  return { ctx, issue, attempt, previousPatch, tag, place: runPlace(ctx, tag) };
 }
 
 /** Re-check the issue, then cut its slice, each at a boundary that sees a halt. */
@@ -353,6 +364,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
     reportDir: at.ctx.reportDir,
     reportPath: tddReportPath(at),
     keptDir: s.keptDir,
+    previousPatch: at.previousPatch,
     messagePath: messagePath(at),
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
@@ -362,7 +374,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
-  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files } };
+  return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files, amended: [] } };
 }
 
 /** Hold the slice to its issue, amending its commit with any fix; `sha` its amend. */
@@ -469,9 +481,9 @@ function afterReview<
 }
 
 /**
- * {@link afterReview}, then for a `fixed` answer the amended commit's changed paths, re-read from
- * git in place of the slice's `files`. A runner that returns nothing stops the slice as died; a
- * failed re-read stops it blocked, naming the read, never keeping the stale list.
+ * {@link afterReview}, then for a `fixed` answer its `files` and `amended`, re-read from git. A
+ * runner that returns nothing stops the slice as died; a failed re-read stops it blocked, naming
+ * the read, never keeping the stale list.
  */
 async function afterAmend<T extends BuiltSlice>(
   s: BuiltSlice,
@@ -479,16 +491,36 @@ async function afterAmend<T extends BuiltSlice>(
   out: ReviewOutput | null,
   next: (out: ReviewOutput) => T,
 ): Promise<Step<T>> {
-  const { at } = s;
-  const step = afterReview(at, label, out, next);
+  const step = afterReview(s.at, label, out, next);
   if ('stop' in step || out?.verdict !== 'fixed') return step;
-  const argv = [s.slice, step.next.sha, '--base', s.base];
-  const read = await runTool(at.ctx.hooks, 'changed-files', argv, at.place);
+  const [files, amended] = await Promise.all([
+    reread(s, label, step.next.sha, s.base),
+    reread(s, label, step.next.sha, s.tdd.sha),
+  ]);
+  if ('stop' in files) return files;
+  if ('stop' in amended) return amended;
+  return { next: { ...step.next, files: files.next, amended: amended.next } };
+}
+
+/** The paths `base..sha` changes in the slice, per {@link afterAmend}. */
+async function reread(
+  s: BuiltSlice,
+  label: string,
+  sha: string,
+  base: string,
+): Promise<Step<readonly string[]>> {
+  const { at } = s;
+  const read = await runTool(
+    at.ctx.hooks,
+    'changed-files',
+    [s.slice, sha, '--base', base],
+    at.place,
+  );
   if (read === null) return { stop: died(at) };
   if (read.status !== 'ok' || read.files === undefined) {
     return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
   }
-  return { next: { ...step.next, files: read.files } };
+  return { next: read.files };
 }
 
 /**
@@ -604,6 +636,12 @@ function sliceReviewValues(s: BuiltSlice, report: string): SliceReviewValues {
   return {
     ...sliceCommitValues(s),
     reportPath: `${s.at.ctx.reportDir}/${report}-${s.at.tag}.md`,
+    passed: {
+      sha: s.tdd.sha,
+      tests: s.tdd.greenTests,
+      evidence: s.tdd.evidence,
+      amended: s.amended,
+    },
     lease: leaseValues(s),
   };
 }

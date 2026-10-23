@@ -246,6 +246,7 @@ const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
       `Kept dir: ${values.keptDir}`,
+      ...(values.previousPatch === null ? [] : [`Previous patch: ${values.previousPatch}`]),
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
@@ -258,6 +259,7 @@ const PROMPTS = {
       ...sliceHeadLines(values),
       `Issue file: ${issueFile(values.issue, values.reportDir)}`,
       `Report file: ${values.reportPath}`,
+      ...passedLines(values.passed, values.sha),
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values) => sliceReviewPrompt(values),
@@ -309,8 +311,22 @@ function sliceReviewPrompt(values) {
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
+    ...passedLines(values.passed, values.sha),
     ...serverTierLines(values.lease),
   ].join('\n');
+}
+function passedLines(passed, current) {
+  const listed = (paths) => (paths.length === 0 ? 'none' : paths.join(', '));
+  return [
+    `Passed at ${passed.sha}: ${listed(passed.tests)}`,
+    `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
+    ...(current === passed.sha
+      ? []
+      : [
+          `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
+            `the amends changed ${listed(passed.amended)}`,
+        ]),
+  ];
 }
 
 const TOOL_ENVELOPE_SCHEMAS = {
@@ -1422,6 +1438,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       verdict: { type: 'string', enum: ['GREEN', 'PARTIAL', 'BLOCKED'] },
       sha: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
+      greenTests: { type: 'array', items: { type: 'string' } },
       leaseLines: { type: 'array', items: { type: 'string' } },
       probes: {
         type: 'array',
@@ -1468,6 +1485,7 @@ const AGENT_OUTPUT_SCHEMAS = {
       'verdict',
       'sha',
       'files',
+      'greenTests',
       'leaseLines',
       'probes',
       'evidence',

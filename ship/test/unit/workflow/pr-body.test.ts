@@ -57,6 +57,7 @@ const work = (fields: {
     verdict: 'GREEN',
     sha: 's',
     files: ['src/a.ts'],
+    greenTests: [],
     leaseLines: fields.leaseLines ?? [],
     probes: fields.probes ?? [],
     evidence: fields.evidence ?? TRACER,
@@ -226,8 +227,9 @@ const INPUT: PrBodyInput = {
     },
   },
   overlap: {
-    added: [{ blocker: 7, dependent: 8, confidence: 'likely', reason: 'both edit tooling/x.ts' }],
+    added: [{ blocker: 7, dependent: 8, reason: 'both edit tooling/x.ts' }],
     sequenced: [],
+    unsure: [],
     areaMap: 'read',
   },
   schedule: [
@@ -401,7 +403,7 @@ describe('renderPrBody', () => {
     expect(sections.every((at) => at > -1)).toBe(true);
     expect([...sections].sort((a, b) => a - b)).toEqual(sections);
     for (const line of [
-      '- #7 → #8 (likely): both edit tooling/x.ts',
+      '- #7 → #8: both edit tooling/x.ts',
       '- #7: blockers none; started 2026-09-29T10:00:00.000Z; committed 2026-09-29T10:20:00.000Z; attempts 1; size 2 files, 40 lines',
       '- #9: blockers #7 (declared), #8 (declared); started never; committed never; attempts 0; size none',
       '- paper: 2 leases, waited 2.0s total (max 1.5s), held 102.0s total',
@@ -422,17 +424,17 @@ describe('renderPrBody', () => {
       '- #9: blockers #7 (declared); started never; committed never; attempts 0; size none',
     ],
     [
-      'one overlap, likely',
-      [{ issue: 7, source: 'overlap', confidence: 'likely' }],
-      '- #9: blockers #7 (overlap, likely); started never; committed never; attempts 0; size none',
+      'one overlap',
+      [{ issue: 7, source: 'overlap' }],
+      '- #9: blockers #7 (overlap); started never; committed never; attempts 0; size none',
     ],
     [
-      'mixed',
+      'mixed, the overlap one released',
       [
         { issue: 7, source: 'declared' },
-        { issue: 8, source: 'overlap', confidence: 'unsure' },
+        { issue: 8, source: 'overlap', released: 'blocked' },
       ],
-      '- #9: blockers #7 (declared), #8 (overlap, unsure); started never; committed never; attempts 0; size none',
+      '- #9: blockers #7 (declared), #8 (overlap, released: blocked); started never; committed never; attempts 0; size none',
     ],
   ])('renders a schedule line whose blockers are %s', (_name, blockers, line) => {
     const lines = renderPrBody({
@@ -470,7 +472,7 @@ describe('renderPrBody', () => {
   it('renders None. for an empty section', () => {
     const lines = renderPrBody({
       ...INPUT,
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       schedule: [],
       retro: [],
     }).split('\n');
@@ -1351,11 +1353,11 @@ const cliqueInput = (reason: (blocker: number, dependent: number) => string): Pr
       ISSUES.filter((dependent) => dependent > blocker).map((dependent) => ({
         blocker,
         dependent,
-        confidence: 'likely' as const,
         reason: reason(blocker, dependent),
       })),
     ),
     sequenced: [],
+    unsure: [],
     areaMap: 'read',
   },
   schedule: ISSUES.map((issue) => ({
@@ -1363,7 +1365,6 @@ const cliqueInput = (reason: (blocker: number, dependent: number) => string): Pr
     blockers: ISSUES.filter((b) => b < issue).map((b) => ({
       issue: b,
       source: 'overlap' as const,
-      confidence: 'likely' as const,
     })),
     attempts: 1,
     startedAt: '2026-09-29T10:00:00.000Z',
@@ -1448,6 +1449,35 @@ describe('fitPrBody', () => {
       'pr-comment-overlap-edges.md',
       'pr-comment-schedule.md',
       'pr-comment-retro-findings.md',
+    ]);
+  });
+
+  it('moves the unsure overlap pairs section after the overlap edges', () => {
+    const input = { ...BIG, overlap: { ...BIG.overlap, unsure: UNSURE } };
+
+    const fitted = fitPrBody(input);
+
+    expect(fitted.comments.map((c) => c.file)).toEqual([
+      'pr-comment-overlap-edges.md',
+      'pr-comment-unsure-overlap-pairs.md',
+      'pr-comment-schedule.md',
+      'pr-comment-retro-findings.md',
+    ]);
+    expect(fitted.comments[1]?.text).toBe(
+      [
+        '## Unsure overlap pairs',
+        '',
+        '- #9 and #8, reported, not ordered; shared `src/a.ts`, `src/b.ts`: both in the engine area',
+        '- #8 and #7, reported, not ordered: both touch the run report',
+        '',
+      ].join('\n'),
+    );
+    const lines = fitted.body.split('\n');
+    const at = lines.indexOf('## Unsure overlap pairs');
+    expect(lines.slice(at, at + 3)).toEqual([
+      '## Unsure overlap pairs',
+      '',
+      pointer('pr-comment-unsure-overlap-pairs.md'),
     ]);
   });
 
@@ -1545,22 +1575,16 @@ describe('renderPrBody — overlap edges', () => {
 
     expect(lines).toHaveLength(28);
     expect(lines[0]).toBe(
-      '- #1 → #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29 (likely): both trim comments',
+      '- #1 → #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29: both trim comments',
     );
-    expect(lines[27]).toBe('- #28 → #29 (likely): both trim comments');
+    expect(lines[27]).toBe('- #28 → #29: both trim comments');
     expect(fitPrBody(clique).comments).toEqual([]);
   });
 
-  it('groups by blocker, confidence and reason, in edge order', () => {
-    const edge = (
-      blocker: number,
-      dependent: number,
-      confidence: 'likely' | 'unsure',
-      reason: string,
-    ) => ({
+  it('groups by blocker and reason, in edge order', () => {
+    const edge = (blocker: number, dependent: number, reason: string) => ({
       blocker,
       dependent,
-      confidence,
       reason,
     });
 
@@ -1568,21 +1592,54 @@ describe('renderPrBody — overlap edges', () => {
       ...INPUT,
       overlap: {
         ...INPUT.overlap,
-        added: [
-          edge(7, 8, 'likely', 'a'),
-          edge(7, 9, 'likely', 'a'),
-          edge(7, 10, 'unsure', 'a'),
-          edge(7, 11, 'likely', 'b'),
-          edge(8, 9, 'likely', 'a'),
-        ],
+        added: [edge(7, 8, 'a'), edge(7, 9, 'b'), edge(7, 10, 'a'), edge(8, 9, 'a')],
       },
     });
 
-    expect(lines).toEqual([
-      '- #7 → #8, #9 (likely): a',
-      '- #7 → #10 (unsure): a',
-      '- #7 → #11 (likely): b',
-      '- #8 → #9 (likely): a',
+    expect(lines).toEqual(['- #7 → #8, #10: a', '- #7 → #9: b', '- #8 → #9: a']);
+  });
+});
+
+const UNSURE: PrBodyInput['overlap']['unsure'] = [
+  { a: 9, b: 8, shared: ['src/a.ts', 'src/b.ts'], reason: 'both in the engine area' },
+  { a: 8, b: 7, shared: [], reason: 'both touch the run report' },
+];
+
+describe('renderPrBody — unsure overlap pairs', () => {
+  it('lists each unsure pair between the overlap edges and the schedule, in record order', () => {
+    const lines = renderPrBody({ ...INPUT, overlap: { ...INPUT.overlap, unsure: UNSURE } }).split(
+      '\n',
+    );
+    const at = lines.indexOf('## Unsure overlap pairs');
+
+    expect(lines.slice(at, at + 5)).toEqual([
+      '## Unsure overlap pairs',
+      '',
+      '- #9 and #8, reported, not ordered; shared `src/a.ts`, `src/b.ts`: both in the engine area',
+      '- #8 and #7, reported, not ordered: both touch the run report',
+      '',
+    ]);
+    expect(lines.indexOf('## Overlap edges')).toBeLessThan(at);
+    expect(lines.indexOf('## Schedule')).toBe(at + 5);
+  });
+
+  it('leaves the section out when no pair is unsure', () => {
+    expect(renderPrBody(INPUT).split('\n')).not.toContain('## Unsure overlap pairs');
+  });
+
+  it('keeps a multi-line reason on its pair’s one bullet', () => {
+    const unsure = [
+      { a: 8, b: 7, shared: [], reason: 'both touch the run report\n- and preflight' },
+    ];
+
+    const lines = renderPrBody({ ...INPUT, overlap: { ...INPUT.overlap, unsure } }).split('\n');
+
+    const at = lines.indexOf('## Unsure overlap pairs');
+    expect(lines.slice(at, at + 4)).toEqual([
+      '## Unsure overlap pairs',
+      '',
+      '- #8 and #7, reported, not ordered: both touch the run report - and preflight',
+      '',
     ]);
   });
 });
@@ -1716,6 +1773,17 @@ describe('renderAttachedReport', () => {
     );
     expect(text.endsWith('\n\n</details>\n')).toBe(true);
     expect(lines.filter((l) => l.includes('details'))).toHaveLength(2);
+  });
+
+  it('lists the unsure overlap pairs', () => {
+    const text = renderAttachedReport({
+      ...REPORT_INPUT,
+      overlap: { ...INPUT.overlap, unsure: UNSURE },
+    });
+
+    expect(text.split('\n')).toContain(
+      '- #8 and #7, reported, not ordered: both touch the run report',
+    );
   });
 
   it('defuses every closing keyword, this run’s landed fixes issue included', () => {

@@ -59,9 +59,6 @@ export type IssueReadiness = z.infer<typeof IssueReadinessSchema>;
 /** Two run-set issues `issue-overlap` judged likely to touch the same files. */
 export type EstimatedPair = z.infer<typeof EstimatedPairSchema>;
 
-/** How sure `issue-overlap` is that a pair overlaps. */
-export type OverlapConfidence = EstimatedPair['confidence'];
-
 /** `issue-overlap`'s answer. */
 type IssueOverlap = z.infer<typeof IssueOverlapSchema>;
 

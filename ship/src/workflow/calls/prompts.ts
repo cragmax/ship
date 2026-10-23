@@ -18,6 +18,7 @@
 import type { RunEdge, RunSet } from '../../core/run-set.js';
 
 import type { WorkflowHooks } from '../runtime.types.js';
+import type { TddEvidence } from './agent-calls.js';
 import { PROBE_CAP_MINUTES, PROBES_PER_STAGE } from '../stages.js';
 
 /** A live run's changed files, for `issue-overlap`'s judgment. */
@@ -111,6 +112,11 @@ export interface TddValues {
   readonly reportPath: string;
   /** Where the attempt's work and report are kept should it not land. */
   readonly keptDir: string;
+  /**
+   * The previous attempt's kept `slice.patch` when a harvest conflict requeued this one, the
+   * slice's one commit after every review amend; `null` otherwise.
+   */
+  readonly previousPatch: string | null;
   /** Where the commit message goes; the commit and the landing both read it. */
   readonly messagePath: string;
   /** The commit message, its first line and closing keyword left as placeholders. */
@@ -139,10 +145,27 @@ export interface SliceCommitValues extends SliceHeadValues {
   readonly files: readonly string[];
 }
 
-/** A slice review's values: the slice's, and where its server-tier runs lease from. */
+/** What the tdd ran green at its commit, as the slice reviews are handed it. */
+export interface PassedValues {
+  /** The tdd's commit. */
+  readonly sha: string;
+  /** The test files it ran green there. */
+  readonly tests: readonly string[];
+  /** Its tracer's red-green, or why it saw none. */
+  readonly evidence: TddEvidence;
+  /** The paths the slice review amends changed since `sha`. */
+  readonly amended: readonly string[];
+}
+
+/**
+ * A slice review's values: the slice's, what the tdd ran green, and where its server-tier runs
+ * lease from.
+ */
 export interface SliceReviewValues extends SliceCommitValues {
   /** The full report. */
   readonly reportPath: string;
+  /** What the tdd ran green. */
+  readonly passed: PassedValues;
   /** The lease command's values. */
   readonly lease: LeaseValues;
 }
@@ -390,6 +413,7 @@ export const PROMPTS = {
       ...issueLines(values.issue, values.reportDir),
       `Report file: ${values.reportPath}`,
       `Kept dir: ${values.keptDir}`,
+      ...(values.previousPatch === null ? [] : [`Previous patch: ${values.previousPatch}`]),
       ...serverTierLines(values.lease),
       ...verbatimBlock('Commit message template', {
         path: values.messagePath,
@@ -402,6 +426,7 @@ export const PROMPTS = {
       ...sliceHeadLines(values),
       `Issue file: ${issueFile(values.issue, values.reportDir)}`,
       `Report file: ${values.reportPath}`,
+      ...passedLines(values.passed, values.sha),
       ...serverTierLines(values.lease),
     ].join('\n'),
   standardsReview: (values: SliceReviewValues): string => sliceReviewPrompt(values),
@@ -457,6 +482,27 @@ function sliceReviewPrompt(values: SliceReviewValues): string {
     ...sliceCommitLines(values),
     `Issue file: ${issueFile(values.issue, values.reportDir)}`,
     `Report file: ${values.reportPath}`,
+    ...passedLines(values.passed, values.sha),
     ...serverTierLines(values.lease),
   ].join('\n');
+}
+
+/**
+ * The `Passed at <sha>:` block: the tdd's green test files at its commit and its evidence, then,
+ * once an amend has moved the slice commit off that sha, an `Amended since:` line naming the move
+ * and the paths the amends changed. An empty list reads `none`.
+ */
+function passedLines(passed: PassedValues, current: string): string[] {
+  const listed = (paths: readonly string[]): string =>
+    paths.length === 0 ? 'none' : paths.join(', ');
+  return [
+    `Passed at ${passed.sha}: ${listed(passed.tests)}`,
+    `Tracer evidence (JSON): ${JSON.stringify(passed.evidence)}`,
+    ...(current === passed.sha
+      ? []
+      : [
+          `Amended since: the slice commit ${current} differs from ${passed.sha}; ` +
+            `the amends changed ${listed(passed.amended)}`,
+        ]),
+  ];
 }

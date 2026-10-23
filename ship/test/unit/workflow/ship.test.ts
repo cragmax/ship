@@ -148,7 +148,7 @@ describe('runShip — pre-flight only', () => {
     expect(report).toEqual({
       status: 'preflight-ok',
       graph: EPIC_GRAPH,
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       dropped: [],
       epics: [],
     });
@@ -321,8 +321,10 @@ describe('runShip — one issue from launch to PR', () => {
       'tdd:7-1',
       'specReview:7-1',
       'runner:changed-files:7-1',
+      'runner:changed-files:7-1',
       'testReview:7-1',
       'standardsReview:7-1',
+      'runner:changed-files:7-1',
       'runner:changed-files:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
@@ -877,6 +879,66 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
+  describe('a requeued attempt is handed its previous attempt’s patch', () => {
+    const PATCH = 'C:/src/main/reports/kept/slice-7-1-2026-09-29T10-00-00-000Z/slice.patch';
+    const keeping = (patch: string | null): object => ({
+      ...OK,
+      removed: true,
+      registered: false,
+      kept: patch === null ? null : { patch, report: null },
+    });
+    // Attempt 1's teardown keeps its patch; every later one keeps nothing.
+    const KEEPS_FIRST = { 'runner:teardown': inTurn(keeping(PATCH), keeping(null)) };
+    const patchLines = (run: FakeRun, label: string): string[] =>
+      promptOf(run, label)
+        .split('\n')
+        .filter((l) => l.startsWith('Previous patch: '));
+
+    it('names the kept patch in the tdd prompt of the attempt a harvest conflict requeued', async () => {
+      const run = fakeHooks({ ...KEEPS_FIRST, 'runner:land': inTurn(LAND_CONFLICT, LAND_OK) });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-2')).toEqual([`Previous patch: ${PATCH}`]);
+      expect(patchLines(run, 'tdd:7-1')).toEqual([]);
+    });
+
+    it('names the latest attempt’s patch when a second harvest conflict requeues again', async () => {
+      const SECOND = 'C:/src/main/reports/kept/slice-7-2-2026-09-29T11-00-00-000Z/slice.patch';
+      const run = fakeHooks({
+        'runner:teardown': inTurn(keeping(PATCH), keeping(SECOND), keeping(null)),
+        'runner:land': inTurn(LAND_CONFLICT, LAND_CONFLICT, LAND_OK),
+      });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-3')).toEqual([`Previous patch: ${SECOND}`]);
+    });
+
+    it('hands no previous patch to the attempt an agent-death retry started', async () => {
+      const run = fakeHooks({ ...KEEPS_FIRST, tdd: inTurn(null, TDD_GREEN) });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(labels(run)).toContain('tdd:7-2');
+      expect(patchLines(run, 'tdd:7-2')).toEqual([]);
+    });
+
+    it('hands no previous patch to the retry of a requeued attempt whose agent died', async () => {
+      const run = fakeHooks({
+        ...KEEPS_FIRST,
+        'runner:land': inTurn(LAND_CONFLICT, LAND_OK),
+        tdd: inTurn(TDD_GREEN, null, TDD_GREEN),
+      });
+
+      await runShip(run.hooks, 'issues 7');
+
+      expect(patchLines(run, 'tdd:7-2')).toEqual([`Previous patch: ${PATCH}`]);
+      expect(labels(run)).toContain('tdd:7-3');
+      expect(patchLines(run, 'tdd:7-3')).toEqual([]);
+    });
+  });
+
   describe('a blocked issue hears why', () => {
     const COMMENT_FILE = `${REPORT_DIR}/issue-comment-7.md`;
 
@@ -1274,6 +1336,23 @@ const AFTER_BUILD_ENDINGS: [string, Readonly<Record<string, unknown>>, string[],
     'spec review: changed-files failed: git rev-parse spec1 failed',
   ],
   [
+    'blocked by a failed re-read of the spec review’s amend from the tdd’s commit',
+    {
+      'runner:changed-files': inTurn(
+        { ...OK, files: ['tooling/test/unit/x.test.ts', 'tooling/x.ts'] },
+        {
+          ...OK,
+          exitCode: 1,
+          status: 'failed',
+          files: [],
+          errors: [{ step: 'resolve', message: 'git rev-parse slice1 failed' }],
+        },
+      ),
+    },
+    ['tdd:7-1', 'specReview:7-1', 'runner:teardown:7-1'],
+    'spec review: changed-files failed: git rev-parse slice1 failed',
+  ],
+  [
     'blocked by a landing refused as more than one commit',
     {
       'runner:land': {
@@ -1557,9 +1636,12 @@ describe('runShip — what an attempt hands on', () => {
     },
   );
 
-  it.each(['specReview:7-1', 'standardsReview:7-1'])(
-    'orders %s’s prompt: the slice’s lines, the issue and report files, then the server-tier recipe',
-    async (label) => {
+  it.each([
+    ['specReview:7-1', ['Passed at slice1', 'Tracer evidence (JSON)']],
+    ['standardsReview:7-1', ['Passed at slice1', 'Tracer evidence (JSON)', 'Amended since']],
+  ])(
+    'orders %s’s prompt: the slice’s lines, the issue and report files, the Passed at block, then the server-tier recipe',
+    async (label, passed) => {
       const run = fakeHooks();
 
       await runShip(run.hooks, 'issues 7');
@@ -1576,6 +1658,7 @@ describe('runShip — what an attempt hands on', () => {
         'Changed files',
         'Issue file',
         'Report file',
+        ...passed,
         'Lease command',
         'Lease version',
         'Full server tier',
@@ -1600,6 +1683,9 @@ describe('runShip — what an attempt hands on', () => {
       'Slice commit',
       'Issue file',
       'Report file',
+      'Passed at slice1',
+      'Tracer evidence (JSON)',
+      'Amended since',
       'Lease command',
       'Lease version',
       'Full server tier',
@@ -1749,14 +1835,17 @@ describe('runShip — the slice test review', () => {
 
 describe('runShip — the slice’s changed files after an amend', () => {
   it('re-reads the amended commit’s changed files after each fixed review, every later stage reading them', async () => {
-    // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md.
+    // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md. Each amend
+    // is re-read from the slice base, then from the tdd's commit.
     const run = fakeHooks({
       'runner:changed-files': inTurn(
         { ...OK, files: ['src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'] },
+        { ...OK, files: ['src/y.ts'] },
         {
           ...OK,
           files: ['docs/y.md', 'src/y.ts', 'tooling/test/unit/x.test.ts', 'tooling/x.ts'],
         },
+        { ...OK, files: ['docs/y.md', 'src/y.ts'] },
       ),
     });
 
@@ -1766,7 +1855,9 @@ describe('runShip — the slice’s changed files after an amend', () => {
       run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv),
     ).toEqual([
       ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'cut1'],
+      ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'spec1', '--base', 'slice1'],
       ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'cut1'],
+      ['ship/src/cli/worktree.ts', 'changed-files', SLICE_7, 'slice2', '--base', 'slice1'],
     ]);
     expect(lineSeenBy(run, 'specReview:7-1', 'Changed files: ')).toBe(
       'Changed files: tooling/x.ts, tooling/test/unit/x.test.ts',
@@ -1799,8 +1890,13 @@ describe('runShip — the slice’s changed files after an amend', () => {
     await runShip(run.hooks, 'issues 7');
 
     expect(
-      run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv[3]),
-    ).toEqual(['test1', 'slice2']);
+      run.calls.filter((c) => c.label === 'runner:changed-files:7-1').map((c) => c.argv.slice(3)),
+    ).toEqual([
+      ['test1', '--base', 'cut1'],
+      ['test1', '--base', 'slice1'],
+      ['slice2', '--base', 'cut1'],
+      ['slice2', '--base', 'slice1'],
+    ]);
     expect(lineSeenBy(run, 'standardsReview:7-1', 'Changed files: ')).toBe(
       'Changed files: tooling/test/unit/x.test.ts, test/unit/y.test.ts, tooling/x.ts',
     );
@@ -1821,7 +1917,13 @@ describe('runShip — the slice’s changed files after an amend', () => {
 
     expect(
       labels(run).filter((l) => /^(runner:(comment-only|changed-files)|testReview):7-1/.test(l)),
-    ).toEqual(['runner:changed-files:7-1', 'testReview:7-1', 'runner:changed-files:7-1']);
+    ).toEqual([
+      'runner:changed-files:7-1',
+      'runner:changed-files:7-1',
+      'testReview:7-1',
+      'runner:changed-files:7-1',
+      'runner:changed-files:7-1',
+    ]);
   });
 
   it('re-reads nothing when every review answers clean', async () => {
@@ -1854,7 +1956,9 @@ describe('runShip — the slice’s changed files after an amend', () => {
       labels(run).filter((l) => /^(runner:(changed-files|teardown)|testReview):7-/.test(l)),
     ).toEqual([
       'runner:changed-files:7-1',
+      'runner:changed-files:7-1',
       'runner:teardown:7-1',
+      'runner:changed-files:7-2',
       'runner:changed-files:7-2',
       'runner:teardown:7-2',
     ]);
@@ -2213,7 +2317,7 @@ describe('runAttempt — how an attempt ends', () => {
     async (_name, responses, ending) => {
       const run = fakeHooks(responses);
 
-      const note = await runAttempt(entry(run, false), 7, 1);
+      const note = await runAttempt(entry(run, false), 7, 1, null);
       const end = note.kind === 'authored' ? await note.landing : note;
 
       expect(end).toEqual({ kind: 'ended', issue: 7, ending });
@@ -2223,7 +2327,7 @@ describe('runAttempt — how an attempt ends', () => {
   it('stops an attempt of a halting entry at its first stage boundary, before the re-check', async () => {
     const run = fakeHooks();
 
-    const note = await runAttempt(entry(run, true), 7, 1);
+    const note = await runAttempt(entry(run, true), 7, 1, null);
 
     expect(labels(run)).toEqual([]);
     expect(note).toMatchObject({
@@ -2235,7 +2339,7 @@ describe('runAttempt — how an attempt ends', () => {
   it('ends with the landing’s halt, not its teardown’s, when both call for one', async () => {
     const run = fakeHooks({ 'runner:land': LAND_BATCH_DIRTY, 'runner:teardown': TEARDOWN_SHRANK });
 
-    const note = await runAttempt(entry(run, false), 7, 1);
+    const note = await runAttempt(entry(run, false), 7, 1, null);
     const end = note.kind === 'authored' ? await note.landing : note;
 
     expect(end).toMatchObject({
@@ -2393,7 +2497,7 @@ describe('runShip — exclude mode', () => {
     expect(report).toEqual({
       status: 'preflight-ok',
       graph: { runSet: [{ epic: null, issues: [9] }], edges: [] },
-      overlap: { added: [], sequenced: [], areaMap: 'read' },
+      overlap: { added: [], sequenced: [], unsure: [], areaMap: 'read' },
       dropped: [
         { issue: 7, cause: 'stale', message: 'already implemented at abc123' },
         { issue: 8, cause: 'dependent', message: 'blocked by a dropped issue' },
@@ -2436,4 +2540,55 @@ describe('agent-call tiers', () => {
       }
     },
   );
+});
+
+describe('runShip — the slice reviews’ Passed at block', () => {
+  /** A review's lines from its `Passed at` line up to its server-tier recipe. */
+  const passedBlock = (run: FakeRun, label: string): string[] => {
+    const lines = promptOf(run, label).split('\n');
+    const start = lines.findIndex((l) => l.startsWith('Passed at '));
+    const end = lines.findIndex((l) => l.startsWith('Lease command: '));
+    return start === -1 ? [] : lines.slice(start, end);
+  };
+
+  /** The fake tdd's tracer evidence, as the block carries it. */
+  const TRACER_LINE =
+    'Tracer evidence (JSON): {"kind":"tracer","test":"tooling/test/unit/x.test.ts › adds x",' +
+    '"pseudocode":"x()\\n  returns 1","red":"AssertionError: expected undefined to be 1",' +
+    '"green":"✓ tooling/test/unit/x.test.ts › adds x","reason":""}';
+
+  it('hands the spec review tdd’s green test files and tracer evidence at tdd’s sha, the slice commit unmoved', async () => {
+    const run = fakeHooks();
+
+    await runShip(run.hooks, 'issues 7');
+
+    expect(passedBlock(run, 'specReview:7-1')).toEqual([
+      'Passed at slice1: tooling/test/unit/x.test.ts, tooling/test/unit/y.test.ts',
+      TRACER_LINE,
+    ]);
+  });
+
+  it('tells each review after an amend that the slice commit moved from tdd’s sha, naming the files the amends changed', async () => {
+    // The re-read from the slice base lists the whole commit; the one from tdd's sha, the amends.
+    const run = fakeHooks({
+      'runner:changed-files': (call: { readonly argv: readonly string[] }) => ({
+        ...OK,
+        files:
+          call.argv.at(-1) === 'cut1'
+            ? ['docs/y.md', 'tooling/test/unit/x.test.ts', 'tooling/x.ts']
+            : ['docs/y.md', 'tooling/x.ts'],
+      }),
+    });
+
+    await runShip(run.hooks, 'issues 7');
+
+    for (const label of ['testReview:7-1', 'standardsReview:7-1']) {
+      expect(passedBlock(run, label), label).toEqual([
+        'Passed at slice1: tooling/test/unit/x.test.ts, tooling/test/unit/y.test.ts',
+        TRACER_LINE,
+        'Amended since: the slice commit spec1 differs from slice1; ' +
+          'the amends changed docs/y.md, tooling/x.ts',
+      ]);
+    }
+  });
 });

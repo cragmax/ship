@@ -37,7 +37,7 @@ The launch check that every **Run set** issue is open and `ready-for-agent` with
 _Avoid_: "pre-flight" for it (pre-flight is the whole launch phase, and the gate is one check in it).
 
 **Overlap edge**:
-A scheduler edge pre-flight adds between two issues of one epic likely to touch the same files, so they land in sequence. It is added when unsure, directed along the declared edges. An overlap across epics refuses the launch (Ship ADR-0001).
+A scheduler edge pre-flight adds between two issues of one epic likely to touch the same files, so they land in sequence. Only a `likely` pair adds one, directed along the declared edges. If its blocker settles without landing, the edge is released and its dependent no longer waits. An `unsure` pair within an epic is reported, not ordered. An overlap across epics refuses the launch, `unsure` included (Ship ADR-0001).
 _Avoid_: "dependency" for it (a dependency is a declared `blocked_by`).
 
 **Warm set**:

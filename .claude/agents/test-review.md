@@ -24,6 +24,9 @@ You review ONE slice's tests against the claims its diff makes and amend your te
 - `Slice commit:` — the slice's one commit; `HEAD` of the slice.
 - `Issue file:` — the issue's text, written by an earlier stage: the skill's issue, its triage brief the plan.
 - `Report file:` — where your report goes.
+- `Passed at <sha>:` — the test files the tdd ran green at its commit `<sha>`, or `none`. They pass there: run tests only per REVIEW-STEPS.md § Apply.
+- `Tracer evidence (JSON):` — the tdd's tracer red-green, or why it saw none.
+- `Amended since:` — only when an earlier review amended the slice: the slice commit differs from `<sha>`, and the files the amends changed, whose covering tests the amending review ran (REVIEW-STEPS.md § Apply).
 - `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
 - `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.

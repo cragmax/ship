@@ -24,7 +24,9 @@ import {
 import type {
   IssueEvent,
   IssuePhase,
+  ReleasedEdge,
   SchedulerAction,
+  SchedulerEdge,
   SchedulerEvent,
   SchedulerInput,
   SchedulerState,
@@ -42,6 +44,9 @@ const ACCEPTED_PHASES: Readonly<Record<IssueEvent['kind'], readonly IssuePhase[]
   'label-removed': ['waiting', 'ready', 'authoring', 'landing'],
 };
 
+/** The phases of an issue that settled without landing: an overlap edge out of one is released. */
+const UNLANDED_PHASES: readonly IssuePhase[] = ['blocked', 'removed', 'skipped'];
+
 /** The terminal phases. */
 const SETTLED_PHASES: readonly IssuePhase[] = [
   'committed',
@@ -55,7 +60,8 @@ const SETTLED_PHASES: readonly IssuePhase[] = [
  * Validate the run graph and build the initial state and actions.
  *
  * @remarks The guards run in the order the `@throws` below list; the first
- * failure throws. Duplicate edges are tolerated and deduplicated.
+ * failure throws. Duplicate edges are tolerated and deduplicated, a pair given both
+ * `declared` and `overlap` kept `declared`.
  *
  * @returns The initial state and the initial `start`s.
  * @throws Error when `maxSlices` is not an integer of 1 or more.
@@ -170,6 +176,7 @@ interface Draft {
   readonly halted: boolean[];
   readonly response: SchedulerAction[];
   readonly skips: SchedulerAction[];
+  readonly releases: SchedulerAction[];
   readonly starts: SchedulerAction[];
   /** The end actions: `epic-done` and `epic-halted`. */
   readonly ends: SchedulerAction[];
@@ -239,17 +246,15 @@ function initialState(input: SchedulerInput): SchedulerState {
   const runSet = input.runSet.map((entry) => ({ epic: entry.epic, issues: [...entry.issues] }));
   const order = runSet.flatMap((entry) => entry.issues);
   const edges = dedupeEdges(input.edges);
-  const blockers: Record<number, number[]> = {};
   const phase: Record<number, IssuePhase> = {};
-  for (const issue of order) blockers[issue] = [];
-  for (const e of edges) blockers[e.dependent]?.push(e.blocker);
-  for (const issue of order) phase[issue] = blockers[issue]?.length ? 'waiting' : 'ready';
+  for (const issue of order) {
+    phase[issue] = edges.some((e) => e.dependent === issue) ? 'waiting' : 'ready';
+  }
   return {
     maxSlices: input.maxSlices,
     runSet,
     edges,
     order,
-    blockers,
     phase,
     retried: {},
     ready: order.filter((issue) => phase[issue] === 'ready'),
@@ -258,17 +263,19 @@ function initialState(input: SchedulerInput): SchedulerState {
   };
 }
 
-/** Drop repeated edges, keeping first occurrences in order. */
-function dedupeEdges(edges: readonly RunEdge[]): RunEdge[] {
-  const seen = new Set<string>();
-  const out: RunEdge[] = [];
+/**
+ * Drop repeated edges, keeping first occurrences in order, each with its source: `declared` when
+ * any copy is declared or names none.
+ */
+function dedupeEdges(edges: SchedulerInput['edges']): SchedulerEdge[] {
+  const seen = new Map<string, SchedulerEdge>();
   for (const e of edges) {
     const key = `${String(e.blocker)}>${String(e.dependent)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ blocker: e.blocker, dependent: e.dependent });
+    const source = e.source ?? 'declared';
+    if (seen.get(key)?.source === 'declared') continue;
+    seen.set(key, { blocker: e.blocker, dependent: e.dependent, source });
   }
-  return out;
+  return [...seen.values()];
 }
 
 /** Reject an unknown event kind, an unknown issue, or a phase that does not accept the event. */
@@ -291,6 +298,7 @@ function openDraft(state: SchedulerState): Draft {
     halted: [...state.halted],
     response: [],
     skips: [],
+    releases: [],
     starts: [],
     ends: [],
   };
@@ -312,21 +320,33 @@ function finish(state: SchedulerState, draft: Draft): Transition {
       epicDone: draft.epicDone,
       halted: draft.halted,
     },
-    actions: [...draft.response, ...draft.skips, ...draft.starts, ...draft.ends],
+    actions: [...draft.response, ...draft.skips, ...draft.releases, ...draft.starts, ...draft.ends],
   };
 }
 
 /** Settle an issue as committed and promote the waiting issues it unblocked. */
 function onCommitted(draft: Draft, state: SchedulerState, issue: number): void {
   draft.phase[issue] = 'committed';
+  promote(draft, state);
+}
+
+/** Make ready, in input order, each waiting issue whose every edge in is committed or released. */
+function promote(draft: Draft, state: SchedulerState): void {
   for (const candidate of state.order) {
     if (draft.phase[candidate] !== 'waiting') continue;
-    const blockers = state.blockers[candidate] ?? [];
-    if (blockers.every((b) => draft.phase[b] === 'committed')) {
+    const edgesIn = state.edges.filter((e) => e.dependent === candidate);
+    if (edgesIn.every((e) => cleared(draft, e))) {
       draft.phase[candidate] = 'ready';
       draft.ready.push(candidate);
     }
   }
+}
+
+/** Whether an edge no longer holds its tail: its head committed, or a released overlap edge. */
+function cleared(draft: Draft, e: SchedulerEdge): boolean {
+  const head = draft.phase[e.blocker];
+  if (head === 'committed') return true;
+  return e.source === 'overlap' && head !== undefined && UNLANDED_PHASES.includes(head);
 }
 
 /** Retry on the first death; block and skip the dependents on the second. */
@@ -359,7 +379,10 @@ function restart(draft: Draft, response: SchedulerAction & { kind: 'requeue' | '
   draft.ready.unshift(response.issue);
 }
 
-/** Settle a root that went bad and skip every still-waiting transitive dependent. */
+/**
+ * Settle a root that went bad: skip every still-waiting dependent along declared edges, release
+ * each overlap edge out of the root or an issue skipped here whose tail still waits, then promote.
+ */
 function settleAndSkip(
   draft: Draft,
   state: SchedulerState,
@@ -367,11 +390,25 @@ function settleAndSkip(
   trigger: SkipCause['trigger'],
 ): void {
   draft.phase[root] = trigger === 'label-removed' ? 'removed' : 'blocked';
-  for (const issue of transitiveDependents([root], state.edges)) {
+  const declared = state.edges.filter((e) => e.source === 'declared');
+  const heads = new Map<number, ReleasedEdge['trigger']>([[root, trigger]]);
+  for (const issue of transitiveDependents([root], declared)) {
     if (draft.phase[issue] !== 'waiting') continue;
     draft.phase[issue] = 'skipped';
     draft.skips.push({ kind: 'skip', issue, cause: { root, trigger } });
+    heads.set(issue, 'skipped');
   }
+  const released = state.edges
+    .filter((e) => e.source === 'overlap' && draft.phase[e.dependent] === 'waiting')
+    .flatMap((e) => {
+      const head = heads.get(e.blocker);
+      return head === undefined
+        ? []
+        : [{ blocker: e.blocker, dependent: e.dependent, trigger: head }];
+    })
+    .sort((a, b) => a.blocker - b.blocker || a.dependent - b.dependent);
+  for (const edge of released) draft.releases.push({ kind: 'release', ...edge });
+  promote(draft, state);
 }
 
 /** Start ready issues from the queue head while a slot is free. */

@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 
 import { advance, createScheduler } from '../../../../src/core/scheduler/run-scheduler.js';
 import type {
+  SchedulerAction,
   SchedulerEvent,
   SchedulerInput,
   Transition,
@@ -20,6 +21,17 @@ function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transit
     transitions.push(advance(last.state, event));
   }
   return transitions;
+}
+
+/** The actions of blocking issue 1 in a one-entry run of epic 900 at `maxSlices: 1`. */
+function blockFirst(
+  issues: readonly number[],
+  edges: SchedulerInput['edges'],
+): readonly SchedulerAction[] | undefined {
+  const blocked = play({ runSet: [{ epic: 900, issues }], edges, maxSlices: 1 }, [
+    { kind: 'blocked', issue: 1, reason: 'x' },
+  ]);
+  return blocked[1]?.actions;
 }
 
 describe('advance — action order', () => {
@@ -54,24 +66,40 @@ describe('advance — action order', () => {
   });
 
   it('emits several skips in ascending issue order, not input or edge order', () => {
-    const [, blocked] = play(
-      {
-        runSet: [{ epic: 900, issues: [1, 4, 2, 3] }],
-        edges: [
-          { blocker: 1, dependent: 4 },
-          { blocker: 1, dependent: 2 },
-          { blocker: 4, dependent: 3 },
-        ],
-        maxSlices: 1,
-      },
-      [{ kind: 'blocked', issue: 1, reason: 'x' }],
+    const actions = blockFirst(
+      [1, 4, 2, 3],
+      [
+        { blocker: 1, dependent: 4 },
+        { blocker: 1, dependent: 2 },
+        { blocker: 4, dependent: 3 },
+      ],
     );
     const cause = { root: 1, trigger: 'blocked' };
-    expect(blocked?.actions).toEqual([
+    expect(actions).toEqual([
       { kind: 'skip', issue: 2, cause },
       { kind: 'skip', issue: 3, cause },
       { kind: 'skip', issue: 4, cause },
       { kind: 'epic-done', epic: 900 },
+    ]);
+  });
+
+  it('emits several releases ascending by blocker, then dependent, not edge order', () => {
+    // 1 → 2 declared; 2 → 3, 1 → 5 and 1 → 4 overlap.
+    const actions = blockFirst(
+      [1, 2, 3, 4, 5],
+      [
+        { blocker: 2, dependent: 3, source: 'overlap' },
+        { blocker: 1, dependent: 5, source: 'overlap' },
+        { blocker: 1, dependent: 2, source: 'declared' },
+        { blocker: 1, dependent: 4, source: 'overlap' },
+      ],
+    );
+    expect(actions).toEqual([
+      { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },
+      { kind: 'release', blocker: 1, dependent: 4, trigger: 'blocked' },
+      { kind: 'release', blocker: 1, dependent: 5, trigger: 'blocked' },
+      { kind: 'release', blocker: 2, dependent: 3, trigger: 'skipped' },
+      { kind: 'start', issue: 3 },
     ]);
   });
 });
@@ -331,6 +359,103 @@ describe('advance — duplicate edges', () => {
     expect(play({ runSet, edges: duplicated, maxSlices: 2 }, events)).toEqual(
       play({ runSet, edges, maxSlices: 2 }, events),
     );
+  });
+});
+
+describe('advance — overlap edges', () => {
+  it('releases the overlap edges out of a blocked head and each declared dependent it skips', () => {
+    // 1 → 2 declared; 1 → 3 and 2 → 4 overlap, listed out of order; 5 → 3 declared, 5 in flight.
+    const [, blocked, committed] = play(
+      {
+        runSet: [{ epic: 900, issues: [1, 2, 3, 4, 5] }],
+        edges: [
+          { blocker: 2, dependent: 4, source: 'overlap' },
+          { blocker: 1, dependent: 2, source: 'declared' },
+          { blocker: 1, dependent: 3, source: 'overlap' },
+          { blocker: 5, dependent: 3, source: 'declared' },
+        ],
+        maxSlices: 2,
+      },
+      [
+        { kind: 'blocked', issue: 1, reason: 'x' },
+        { kind: 'committed', issue: 5 },
+      ],
+    );
+    expect(blocked?.actions).toEqual([
+      { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },
+      { kind: 'release', blocker: 1, dependent: 3, trigger: 'blocked' },
+      { kind: 'release', blocker: 2, dependent: 4, trigger: 'skipped' },
+      { kind: 'start', issue: 4 },
+    ]);
+    expect(committed?.actions).toEqual([{ kind: 'start', issue: 3 }]);
+  });
+
+  it('releases no overlap edge whose tail the same settle skips', () => {
+    // 1 → 2 and 1 → 3 declared; 3 → 2 overlap.
+    const actions = blockFirst(
+      [1, 2, 3],
+      [
+        { blocker: 1, dependent: 2, source: 'declared' },
+        { blocker: 1, dependent: 3, source: 'declared' },
+        { blocker: 3, dependent: 2, source: 'overlap' },
+      ],
+    );
+    const cause = { root: 1, trigger: 'blocked' };
+    expect(actions).toEqual([
+      { kind: 'skip', issue: 2, cause },
+      { kind: 'skip', issue: 3, cause },
+      { kind: 'epic-done', epic: 900 },
+    ]);
+  });
+
+  it.each([
+    ['label-removed', [{ kind: 'label-removed', issue: 1 }], []],
+    [
+      'retry-exhausted',
+      [
+        { kind: 'agent-died', issue: 1 },
+        { kind: 'agent-died', issue: 1 },
+      ],
+      [{ kind: 'block', issue: 1, reason: 'retry-exhausted' }],
+    ],
+  ] as const)('releases an overlap edge whose head ends %s', (trigger, events, response) => {
+    const transitions = play(
+      {
+        runSet: [{ epic: 900, issues: [1, 2] }],
+        edges: [{ blocker: 1, dependent: 2, source: 'overlap' }],
+        maxSlices: 1,
+      },
+      events,
+    );
+    expect(transitions.at(-1)?.actions).toEqual([
+      ...response,
+      { kind: 'release', blocker: 1, dependent: 2, trigger },
+      { kind: 'start', issue: 2 },
+    ]);
+  });
+
+  it.each([
+    ['overlap first', ['overlap', 'declared']],
+    ['declared first', ['declared', 'overlap']],
+    ['an unsourced declared copy', ['overlap', undefined]],
+  ] as const)('reads an edge given both ways as declared (%s)', (_name, sources) => {
+    const [, blocked] = play(
+      {
+        runSet: [{ epic: 900, issues: [1, 2] }],
+        edges: sources.map((source) => ({
+          blocker: 1,
+          dependent: 2,
+          ...(source === undefined ? {} : { source }),
+        })),
+        maxSlices: 1,
+      },
+      [{ kind: 'blocked', issue: 1, reason: 'x' }],
+    );
+    expect(blocked?.state.edges).toEqual([{ blocker: 1, dependent: 2, source: 'declared' }]);
+    expect(blocked?.actions).toEqual([
+      { kind: 'skip', issue: 2, cause: { root: 1, trigger: 'blocked' } },
+      { kind: 'epic-done', epic: 900 },
+    ]);
   });
 });
 

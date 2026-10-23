@@ -14,7 +14,7 @@ skills:
 
 Before the run cuts anything, you judge which of its issues overlap each other and which overlap a run already in flight. The method is the preloaded `issue-overlap` skill; the run's shared rules are the preloaded `unattended-agent` skill. This file adds your inputs, the stage's limits and your output.
 
-The workflow turns every pair you name into a scheduler edge inside an epic, and refuses the launch for any pair across two epics and for any live-run overlap.
+Inside an epic, the workflow turns each `likely` pair you name into a scheduler edge and reports each `unsure` one without ordering it. It refuses the launch for any pair across two epics, `unsure` included, and for any live-run overlap.
 
 ## Inputs (from the prompt)
 

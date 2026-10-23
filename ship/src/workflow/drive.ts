@@ -16,6 +16,7 @@
 
 import { advance, createScheduler } from '../core/scheduler/run-scheduler.js';
 import type {
+  ReleasedEdge,
   SchedulerAction,
   SchedulerEvent,
   SchedulerState,
@@ -83,6 +84,8 @@ interface Drive {
   scheduler: SchedulerState | null;
   readonly flights: Map<string, Promise<Note>>;
   readonly attempts: Map<number, number>;
+  /** The kept patch of each issue whose last attempt a harvest conflict ended, by issue. */
+  readonly previousPatches: Map<number, string>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
   /** Each entry's halt state; an entry it lacks is `running`. */
@@ -91,6 +94,7 @@ interface Drive {
   readonly landed: Map<number, LandedIssue[]>;
   readonly residue: Map<number, string[]>;
   readonly ends: Map<number, EpicReport>;
+  readonly released: ReleasedEdge[];
   /** The run's repo lock, shared by every epic end. */
   readonly repoLock: CommitQueue;
   epicEndEntered: boolean;
@@ -99,7 +103,11 @@ interface Drive {
 /** Drive every entry until each has ended; the reports come in run-set order. */
 export async function drive(input: DriveInput): Promise<EpicReport[]> {
   const d = newDrive(input);
-  apply(d, createScheduler({ ...input.graph, maxSlices: input.maxSlices }));
+  const edges = input.graph.edges.map((e) => ({
+    ...e,
+    source: scheduleBlocker(e.blocker, e.dependent, input.overlap).source,
+  }));
+  apply(d, createScheduler({ runSet: input.graph.runSet, edges, maxSlices: input.maxSlices }));
   while (d.flights.size > 0) {
     const note = await Promise.race(d.flights.values());
     d.flights.delete(flightKey(note));
@@ -116,12 +124,14 @@ function newDrive(input: DriveInput): Drive {
     scheduler: null,
     flights: new Map(),
     attempts: new Map(),
+    previousPatches: new Map(),
     timing: new Map(),
     halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
     residue: new Map(),
     ends: new Map(),
+    released: [],
     repoLock: createCommitQueue(),
     epicEndEntered: false,
   };
@@ -175,8 +185,22 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     committedAt,
     size,
   });
+  keepPreviousPatch(d, issue, ending);
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+
+/**
+ * Hold the ending's kept patch for the issue's next attempt when a harvest conflict ended it, so
+ * the requeued tdd starts from it; any other ending drops the issue's held patch.
+ */
+function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void {
+  const patch =
+    ending.kind === 'unlanded' && ending.primary.kind === 'harvest-conflict'
+      ? (ending.kept?.patch ?? null)
+      : null;
+  if (patch === null) d.previousPatches.delete(issue);
+  else d.previousPatches.set(issue, patch);
 }
 
 /** What settling reads of an ending; a `landed` one's primary is `committed`. */
@@ -286,6 +310,13 @@ function act(d: Drive, action: SchedulerAction): void {
         reason: `blocker #${String(action.cause.root)} ${action.cause.trigger}`,
       });
       break;
+    case 'release':
+      d.released.push({
+        blocker: action.blocker,
+        dependent: action.dependent,
+        trigger: action.trigger,
+      });
+      break;
     case 'block':
       d.outcomes.set(action.issue, {
         issue: action.issue,
@@ -308,7 +339,10 @@ function startAttempt(d: Drive, issue: number): void {
   if (ctx === undefined) throw new Error(`ship: no entry holds #${String(issue)}`);
   const attempt = d.attempts.get(issue) ?? 1;
   d.input.hooks.log(`start #${String(issue)} attempt ${String(attempt)}`);
-  d.flights.set(`issue:${String(issue)}`, runAttempt(ctx, issue, attempt));
+  d.flights.set(
+    `issue:${String(issue)}`,
+    runAttempt(ctx, issue, attempt, d.previousPatches.get(issue) ?? null),
+  );
 }
 
 /**
@@ -419,15 +453,22 @@ function issueReports(d: Drive, i: number): IssueReport[] {
 }
 
 /**
- * An entry's schedule, in the entry's order: each issue's blockers in the drive graph and its
- * final attempt's timing; `attempts: 0` and `null` instants for an issue that never started.
+ * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
+ * overlap edge's with its trigger, and its final attempt's timing; `attempts: 0` and `null`
+ * instants for an issue that never started.
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
-  return issues.map((issue) => ({
-    ...neverStarted(issue, d.input.graph, d.input.overlap),
-    ...d.timing.get(issue),
-  }));
+  return issues.map((issue) => {
+    const entry = neverStarted(issue, d.input.graph, d.input.overlap);
+    const blockers = entry.blockers.map((b): ScheduleBlocker => {
+      const released = d.released.find(
+        (r) => r.blocker === b.issue && r.dependent === issue,
+      )?.trigger;
+      return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
+    });
+    return { ...entry, blockers, ...d.timing.get(issue) };
+  });
 }
 
 /**
@@ -459,9 +500,8 @@ function scheduleBlocker(
   dependent: number,
   overlap: OverlapRecord,
 ): ScheduleBlocker {
-  const added = overlap.added.find((e) => e.blocker === blocker && e.dependent === dependent);
-  if (added === undefined) return { issue: blocker, source: 'declared' };
-  return { issue: blocker, source: 'overlap', confidence: added.confidence };
+  const added = overlap.added.some((e) => e.blocker === blocker && e.dependent === dependent);
+  return { issue: blocker, source: added ? 'overlap' : 'declared' };
 }
 
 /** The part of the run's overlap record that concerns one entry. */
@@ -471,6 +511,7 @@ function entryOverlap(d: Drive, i: number): OverlapRecord {
   return {
     added: overlap.added.filter((e) => issues.has(e.blocker)),
     sequenced: overlap.sequenced.filter((p) => issues.has(p.a)),
+    unsure: overlap.unsure.filter((p) => issues.has(p.a)),
     areaMap: overlap.areaMap,
   };
 }

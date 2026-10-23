@@ -147,6 +147,11 @@ export const TddOutputSchema = z.object({
   sha: z.string(),
   /** The commit's changed paths, repository-relative. */
   files: z.array(z.string()),
+  /**
+   * Every test file it ran green at its commit, repository-relative: the slice reviews take them
+   * as passed and rerun only those an amend reaches.
+   */
+  greenTests: z.array(z.string()),
   /** Every `with-lease:` release line its lease runs printed. */
   leaseLines: z.array(z.string()),
   /** Every probe it ran. */
