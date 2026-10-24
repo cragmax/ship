@@ -351,7 +351,7 @@ describe('runShip — the overlap estimate', () => {
 
     const report = await runShip(run.hooks, 'epics 1 2');
 
-    const never = { attempts: 0, startedAt: null, committedAt: null, size: null };
+    const never = { attempts: 0, startedAt: null, committedAt: null, size: null, deaths: [] };
     expect(report.epics.map((e) => e.schedule)).toEqual([
       [
         { issue: 1, blockers: [], ...never },
@@ -545,7 +545,7 @@ describe('runShip — an overlap edge whose head lands nothing', () => {
     [
       'retry-exhausted',
       { 'tdd:7-1': null, 'tdd:7-2': null },
-      { outcome: 'blocked', reason: 'its agent died on the retry too' },
+      { outcome: 'blocked', reason: 'tdd died on the retry too: returned nothing' },
     ],
     [
       'label-removed',

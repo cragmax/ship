@@ -26,8 +26,8 @@ describe('advance — action order', () => {
         maxSlices: 1,
       },
       [
-        { kind: 'agent-died', issue: 10 },
-        { kind: 'agent-died', issue: 10 },
+        { kind: 'agent-died', issue: 10, stage: 'tdd', cause: 'returned nothing' },
+        { kind: 'agent-died', issue: 10, stage: 'tdd', cause: 'returned nothing' },
       ],
     );
 
@@ -156,7 +156,7 @@ describe('advance — protocol violations', () => {
     { kind: 'committed', issue: 10 },
     { kind: 'blocked', issue: 10, reason: 'x' },
     { kind: 'harvest-conflict', issue: 10 },
-    { kind: 'agent-died', issue: 10 },
+    { kind: 'agent-died', issue: 10, stage: 'tdd', cause: 'returned nothing' },
     { kind: 'slot-free', issue: 10 },
     { kind: 'label-removed', issue: 10 },
   ])('rejects $kind on a settled issue', (event) => {
@@ -211,7 +211,7 @@ describe('advance — epic halt', () => {
 
   it.each<SchedulerEvent>([
     { kind: 'blocked', issue: 1, reason: 'x' },
-    { kind: 'agent-died', issue: 1 },
+    { kind: 'agent-died', issue: 1, stage: 'tdd', cause: 'returned nothing' },
     { kind: 'harvest-conflict', issue: 1 },
   ])(
     'waits for the in-flight issue, then settles it on $kind with no restart or skip',
@@ -428,8 +428,8 @@ describe('advance — overlap edges', () => {
     [
       'retry-exhausted',
       [
-        { kind: 'agent-died', issue: 1 },
-        { kind: 'agent-died', issue: 1 },
+        { kind: 'agent-died', issue: 1, stage: 'tdd', cause: 'returned nothing' },
+        { kind: 'agent-died', issue: 1, stage: 'tdd', cause: 'returned nothing' },
       ],
       [{ kind: 'block', issue: 1, reason: 'retry-exhausted' }],
     ],

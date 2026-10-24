@@ -286,8 +286,17 @@ describe('runShip — issues in flight at once', () => {
         startedAt: 'cut 7-2',
         committedAt: 'land 7-2',
         size: { files: 2, lines: 40 },
+        deaths: [],
       },
-      { issue: 8, blockers: [], attempts: 1, startedAt: 'cut 8-1', committedAt: null, size: null },
+      {
+        issue: 8,
+        blockers: [],
+        attempts: 1,
+        startedAt: 'cut 8-1',
+        committedAt: null,
+        size: null,
+        deaths: [],
+      },
       {
         issue: 9,
         blockers: [{ issue: 8, source: 'declared' }],
@@ -295,6 +304,7 @@ describe('runShip — issues in flight at once', () => {
         startedAt: null,
         committedAt: null,
         size: null,
+        deaths: [],
       },
     ]);
   });

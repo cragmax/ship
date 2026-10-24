@@ -191,7 +191,7 @@ describe('settleEvents', () => {
     ],
     [
       'a shrunk source in an entry already halted',
-      { kind: 'agent-died', issue: 7 },
+      { kind: 'agent-died', issue: 7, stage: 'tdd', cause: 'returned nothing' },
       SHRANK,
       'halted',
       [blockedBy(SHRANK.reason)],
@@ -223,10 +223,10 @@ describe('settleEvents', () => {
     ],
     [
       'a dead agent',
-      { kind: 'agent-died', issue: 7 },
+      { kind: 'agent-died', issue: 7, stage: 'tdd', cause: 'returned nothing' },
       null,
       'running',
-      [{ kind: 'agent-died', issue: 7 }],
+      [{ kind: 'agent-died', issue: 7, stage: 'tdd', cause: 'returned nothing' }],
       'running',
     ],
     [

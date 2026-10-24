@@ -119,6 +119,18 @@ export interface ScheduleEntry {
   readonly committedAt: string | null;
   /** Its landed commit's size; `null` unless it landed. */
   readonly size: SliceSize | null;
+  /** Each of its attempts that ended `agent-died`, in order; empty when none did. */
+  readonly deaths: readonly AgentDeath[];
+}
+
+/** One attempt of an issue that ended `agent-died`. */
+export interface AgentDeath {
+  /** The attempt's number, 1 for the first. */
+  readonly attempt: number;
+  /** The stage or runner step that died. */
+  readonly stage: string;
+  /** Why it counts as dead. */
+  readonly cause: string;
 }
 
 /** The epic review's part of an epic end. */
@@ -727,7 +739,10 @@ function unsurePairLine(pair: UnsurePair): string {
   return `- #${String(pair.a)} and #${String(pair.b)}, reported, not ordered${shared}: ${oneLine(pair.reason)}`;
 }
 
-/** One issue's schedule line: `never` for a missing instant, `none` for no blockers or size. */
+/**
+ * One issue's schedule line: `never` for a missing instant, `none` for no blockers or size, then
+ * its deaths when it has any.
+ */
 function scheduleLine(entry: ScheduleEntry): string {
   const blockers =
     entry.blockers.length === 0 ? 'none' : entry.blockers.map(blockerText).join(', ');
@@ -735,10 +750,14 @@ function scheduleLine(entry: ScheduleEntry): string {
     entry.size === null
       ? 'none'
       : `${String(entry.size.files)} files, ${String(entry.size.lines)} lines`;
+  const deaths = entry.deaths.map(
+    (death) => `attempt ${String(death.attempt)} at ${death.stage} (${oneLine(death.cause)})`,
+  );
 
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
-    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}`
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}` +
+    (deaths.length === 0 ? '' : `; died ${deaths.join(', ')}`)
   );
 }
 

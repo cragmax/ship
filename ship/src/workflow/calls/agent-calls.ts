@@ -1,8 +1,9 @@
 /**
  * The `ship` workflow's judgment-agent calls: each stage's output type, the
  * schema the runtime validates it against, and one wrapper per stage that
- * builds the prompt, takes the tier from `stages.ts` and returns the answer
- * — or `null` when the agent returned none (it died, or answered no object).
+ * builds the prompt, takes the tier from `stages.ts` and returns the answer:
+ * a slice stage's as an {@link AgentReply}, any other's `null` when the agent
+ * returned none (it died, or answered no object).
  *
  * The output shapes are the zod sources in
  * `ship/src/schemas/agent-outputs.ts` — the canonical home of each
@@ -103,6 +104,12 @@ export interface SliceWork {
   readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
+/**
+ * A slice stage agent's reply: its answer, or why the agent counts as dead — `returned nothing`,
+ * or `answered no object: <the start of its answer>`, whitespace runs collapsed to one space.
+ */
+export type AgentReply<T> = { readonly answer: T } | { readonly died: string };
+
 /** The epic review's answer. */
 export type EpicReviewOutput = z.infer<typeof EpicReviewOutputSchema>;
 
@@ -122,16 +129,20 @@ export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
  */
 export const AGENT_CALLS = {
   issueReadiness: (hooks: WorkflowHooks, values: IssueReadinessValues) =>
-    askAgent<IssueReadiness>(
-      hooks,
-      PROMPTS.issueReadiness(values),
-      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
+    answerOrNull(
+      askAgent<IssueReadiness>(
+        hooks,
+        PROMPTS.issueReadiness(values),
+        agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
+      ),
     ),
   issueOverlap: (hooks: WorkflowHooks, values: IssueOverlapValues) =>
-    askAgent<IssueOverlap>(
-      hooks,
-      PROMPTS.issueOverlap(values),
-      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
+    answerOrNull(
+      askAgent<IssueOverlap>(
+        hooks,
+        PROMPTS.issueOverlap(values),
+        agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
+      ),
     ),
   tdd: (hooks: WorkflowHooks, values: TddValues, tag: string) =>
     askAgent<TddOutput>(
@@ -164,34 +175,54 @@ export const AGENT_CALLS = {
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
-    askAgent<EpicReviewOutput>(
-      hooks,
-      PROMPTS.epicReview(values),
-      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
+    answerOrNull(
+      askAgent<EpicReviewOutput>(
+        hooks,
+        PROMPTS.epicReview(values),
+        agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
+      ),
     ),
   retro: (hooks: WorkflowHooks, values: RetroValues, tag: string) =>
-    askAgent<RetroOutput>(
-      hooks,
-      PROMPTS.retro(values),
-      agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
+    answerOrNull(
+      askAgent<RetroOutput>(
+        hooks,
+        PROMPTS.retro(values),
+        agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
+      ),
     ),
   prWriter: (hooks: WorkflowHooks, values: PrWriterValues, tag: string) =>
-    askAgent<PrWriterOutput>(
-      hooks,
-      PROMPTS.prWriter(values),
-      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
+    answerOrNull(
+      askAgent<PrWriterOutput>(
+        hooks,
+        PROMPTS.prWriter(values),
+        agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
+      ),
     ),
 };
 
-/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
+/** The start of a non-object answer an {@link AgentReply} keeps, in characters. */
+const ANSWER_PREFIX = 200;
+
+/** Run one agent; resolves to its answer when it is an object, else why it counts as dead. */
 async function askAgent<T>(
   hooks: WorkflowHooks,
   prompt: string,
   options: AgentOptions,
-): Promise<T | null> {
+): Promise<AgentReply<T>> {
   const out = await hooks.agent(prompt, options);
+  if (typeof out === 'object' && out !== null) return { answer: out as T };
+  if (out === null || out === undefined) return { died: 'returned nothing' };
+  const text = typeof out === 'string' ? out : JSON.stringify(out);
+  const start = text.replace(/\s+/gu, ' ').trim().slice(0, ANSWER_PREFIX);
 
-  return typeof out === 'object' && out !== null ? (out as T) : null;
+  return { died: `answered no object: ${start}` };
+}
+
+/** A reply's answer; `null` when the agent counts as dead. */
+async function answerOrNull<T>(reply: Promise<AgentReply<T>>): Promise<T | null> {
+  const r = await reply;
+
+  return 'answer' in r ? r.answer : null;
 }
 
 /**

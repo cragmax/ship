@@ -37,7 +37,7 @@ import {
   type IssueReport,
 } from './epic-end/epic-end.js';
 import type { WorkflowHooks } from './runtime.types.js';
-import type { LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr/pr-body.js';
+import type { AgentDeath, LandedIssue, ScheduleBlocker, ScheduleEntry } from './pr/pr-body.js';
 import type { MainSnapshot, OverlapRecord } from './preflight.js';
 import {
   runAttempt,
@@ -88,6 +88,8 @@ interface Drive {
   readonly previousPatches: Map<number, string>;
   /** Each settled attempt's timing, by issue; the final attempt's wins. */
   readonly timing: Map<number, Timing>;
+  /** Each `agent-died` ending, by issue, in settle order. */
+  readonly deaths: Map<number, AgentDeath[]>;
   /** Each entry's halt state; an entry it lacks is `running`. */
   readonly halts: Map<number, HaltState>;
   readonly outcomes: Map<number, IssueReport>;
@@ -123,7 +125,7 @@ export async function drive(input: DriveInput): Promise<EpicReport[]> {
  * The schedule line of an issue that never started.
  *
  * @returns Its blockers ascending, each with its source per
- *   {@link scheduleBlocker}, `attempts: 0`, both instants and the size `null`.
+ *   {@link scheduleBlocker}, `attempts: 0`, both instants and the size `null`, no deaths.
  */
 export function neverStarted(
   issue: number,
@@ -136,7 +138,15 @@ export function neverStarted(
     .sort((a, b) => a - b)
     .map((blocker) => scheduleBlocker(blocker, issue, overlap));
 
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+  return {
+    issue,
+    blockers,
+    attempts: 0,
+    startedAt: null,
+    committedAt: null,
+    size: null,
+    deaths: [],
+  };
 }
 
 /**
@@ -160,8 +170,8 @@ function entryReport(d: Drive, i: number): EpicReport {
 
 /**
  * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
- * overlap edge's with its trigger, and its final attempt's timing; `attempts: 0` and `null`
- * instants for an issue that never started.
+ * overlap edge's with its trigger, its final attempt's timing and its deaths; `attempts: 0` and
+ * `null` instants for an issue that never started.
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
   const issues = d.input.graph.runSet[i]?.issues ?? [];
@@ -176,7 +186,7 @@ function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
       return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
     });
 
-    return { ...entry, blockers, ...d.timing.get(issue) };
+    return { ...entry, blockers, ...d.timing.get(issue), deaths: d.deaths.get(issue) ?? [] };
   });
 }
 
@@ -224,7 +234,7 @@ function act(d: Drive, action: SchedulerAction): void {
         issue: action.issue,
         outcome: 'blocked',
         cite: 'see',
-        reason: 'its agent died on the retry too',
+        reason: retryDeathReason(d.deaths.get(action.issue)?.at(-1)),
       });
       break;
     case 'epic-done':
@@ -353,17 +363,28 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
     entry: haltOf(d, i),
   });
 
+  const attempt = d.attempts.get(issue) ?? 1;
+
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.timing.set(issue, {
-    attempts: d.attempts.get(issue) ?? 1,
-    startedAt: ending.startedAt,
-    committedAt,
-    size,
-  });
+  d.timing.set(issue, { attempts: attempt, startedAt: ending.startedAt, committedAt, size });
+
+  if (primary.kind === 'agent-died') {
+    const death = { attempt, stage: primary.stage, cause: primary.cause };
+
+    d.deaths.set(issue, [...(d.deaths.get(issue) ?? []), death]);
+  }
+
   keepPreviousPatch(d, issue, ending);
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+
+/** A `block`'s reason, naming the death that spent the retry. */
+function retryDeathReason(death: AgentDeath | undefined): string {
+  if (death === undefined) return 'its agent died on the retry too';
+
+  return `${death.stage} died on the retry too: ${death.cause}`;
 }
 
 /** Feed events to the scheduler in order, running each transition's actions. */
@@ -489,6 +510,7 @@ function newDrive(input: DriveInput): Drive {
     attempts: new Map(),
     previousPatches: new Map(),
     timing: new Map(),
+    deaths: new Map(),
     halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
