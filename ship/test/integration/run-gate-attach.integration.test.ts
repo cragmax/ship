@@ -5,7 +5,9 @@
  * @integrationTier standalone
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gitIn } from '../../src/cli/run-gate.js';
 import { gatherAndEvaluate, landedIssues, type GhJson } from '../../src/cli/run-gate-gh.js';
@@ -26,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   removeTempDirs([repo]);
 });
 
@@ -78,6 +81,27 @@ describe('landedIssues', () => {
       publishTarget();
 
       expect(await landedIssues(TARGET, gitIn(repo))).toEqual(new Set([11]));
+    },
+  );
+
+  it(
+    'reads its own repository when GIT_DIR points at another, as a git hook exports',
+    TIMEOUT,
+    async () => {
+      const foreign = makeTempRoot('ph-run-gate-foreign-');
+
+      try {
+        mustRun('git', ['init', '-q', '-b', 'master'], foreign);
+        publishMaster();
+        mustRun('git', ['checkout', '-q', '-b', TARGET], repo);
+        commitChanges(repo, {}, 'fix(build): land eleven\n\nfixes #11');
+        publishTarget();
+        vi.stubEnv('GIT_DIR', join(foreign, '.git'));
+
+        expect(await landedIssues(TARGET, gitIn(repo))).toEqual(new Set([11]));
+      } finally {
+        removeTempDirs([foreign]);
+      }
     },
   );
 

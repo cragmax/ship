@@ -122,13 +122,19 @@ export async function main(
 }
 
 /**
- * The real {@link GitText} port: run `git -C <cwd>` and resolve its stdout.
+ * The real {@link GitText} port: run `git -C <cwd>` with every `GIT_*` variable stripped, and
+ * resolve its stdout. An inherited repository-location variable (a git hook exports `GIT_DIR`)
+ * would name another repository.
  *
  * @throws When git fails or times out (60s); the message carries git's stderr, else execa's
  *   short message.
  */
 export function gitIn(cwd: string): GitText {
-  return (args) => captured('git', args, ['-C', cwd]);
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+  );
+
+  return (args) => captured('git', args, { prefix: ['-C', cwd], env });
 }
 
 /**
@@ -148,16 +154,21 @@ async function ghJson(args: readonly string[]): Promise<unknown> {
 }
 
 /**
- * Run `<file> <prefix…> <args…>` and resolve its stdout; an error names `<file> <args…>`.
+ * Run `<file> <prefix…> <args…>` and resolve its stdout; an error names `<file> <args…>`. A given
+ * `env` replaces this process's environment rather than extending it.
  *
  * @throws When it fails or times out (60s), carrying its stderr, else execa's short message.
  */
 async function captured(
   file: string,
   args: readonly string[],
-  prefix: readonly string[] = [],
+  { prefix = [], env }: { prefix?: readonly string[]; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const result = await execa(file, [...prefix, ...args], { timeout: 60_000, reject: false });
+  const result = await execa(file, [...prefix, ...args], {
+    timeout: 60_000,
+    reject: false,
+    ...(env === undefined ? {} : { env, extendEnv: false }),
+  });
 
   if (result.failed) {
     const detail = result.stderr === '' ? (result.shortMessage ?? 'no output') : result.stderr;
