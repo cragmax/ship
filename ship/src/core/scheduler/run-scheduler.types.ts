@@ -77,6 +77,13 @@ export type SchedulerEvent =
       readonly kind: 'agent-died';
       /** The issue. */
       readonly issue: number;
+      /** The stage or runner step that died; see `cause`. */
+      readonly stage: string;
+      /**
+       * Why it counts as dead. With `stage`, it is for the workflow's own record; the scheduler
+       * reads neither.
+       */
+      readonly cause: string;
     }
   | {
       /**

@@ -240,6 +240,7 @@ const INPUT: PrBodyInput = {
       startedAt: '2026-09-29T10:00:00.000Z',
       committedAt: '2026-09-29T10:20:00.000Z',
       size: { files: 2, lines: 40 },
+      deaths: [],
     },
     {
       issue: 9,
@@ -251,6 +252,7 @@ const INPUT: PrBodyInput = {
       startedAt: null,
       committedAt: null,
       size: null,
+      deaths: [],
     },
   ],
   leases: {
@@ -441,7 +443,15 @@ describe('renderPrBody', () => {
     const lines = renderPrBody({
       ...INPUT,
       schedule: [
-        { issue: 9, blockers, attempts: 0, startedAt: null, committedAt: null, size: null },
+        {
+          issue: 9,
+          blockers,
+          attempts: 0,
+          startedAt: null,
+          committedAt: null,
+          size: null,
+          deaths: [],
+        },
       ],
     }).split('\n');
 
@@ -463,11 +473,36 @@ describe('renderPrBody', () => {
           startedAt: '2026-09-29T10:00:00.000Z',
           committedAt: size === null ? null : '2026-09-29T10:20:00.000Z',
           size,
+          deaths: [],
         },
       ],
     }).split('\n');
 
     expect(lines[lines.indexOf('## Schedule') + 2]?.endsWith(`; attempts 1; ${tail}`)).toBe(true);
+  });
+
+  it('ends a schedule line with each of the issue’s deaths', () => {
+    const lines = renderPrBody({
+      ...INPUT,
+      schedule: [
+        {
+          issue: 9,
+          blockers: [],
+          attempts: 2,
+          startedAt: '2026-09-29T10:00:00.000Z',
+          committedAt: null,
+          size: null,
+          deaths: [
+            { attempt: 1, stage: 'spec-review', cause: 'returned nothing' },
+            { attempt: 2, stage: 'tdd', cause: 'answered no object: API Error: 529' },
+          ],
+        },
+      ],
+    }).split('\n');
+
+    expect(lines[lines.indexOf('## Schedule') + 2]).toBe(
+      '- #9: blockers none; started 2026-09-29T10:00:00.000Z; committed never; attempts 2; size none; died attempt 1 at spec-review (returned nothing), attempt 2 at tdd (answered no object: API Error: 529)',
+    );
   });
 
   it('renders None. for an empty section', () => {
@@ -1376,6 +1411,7 @@ const cliqueInput = (reason: (blocker: number, dependent: number) => string): Pr
     startedAt: '2026-09-29T10:00:00.000Z',
     committedAt: '2026-09-29T10:20:00.000Z',
     size: { files: 2, lines: 40 },
+    deaths: [],
   })),
 });
 

@@ -2391,27 +2391,27 @@ const AGENT_CALLS = {
       agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
+    askReply(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
   specReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
   testReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.testReview(values),
       agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   scriptApiTsdoc: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
@@ -2431,9 +2431,18 @@ const AGENT_CALLS = {
       agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
+const ANSWER_PREFIX = 200;
 async function askAgent(hooks, prompt, options) {
+  const r = await askReply(hooks, prompt, options);
+  return 'answer' in r ? r.answer : null;
+}
+async function askReply(hooks, prompt, options) {
   const out = await hooks.agent(prompt, options);
-  return typeof out === 'object' && out !== null ? out : null;
+  if (typeof out === 'object' && out !== null) return { answer: out };
+  if (out === null || out === undefined) return { died: 'returned nothing' };
+  const text = typeof out === 'string' ? out : JSON.stringify(out);
+  const start = text.replace(/\s+/gu, ' ').trim().slice(0, ANSWER_PREFIX);
+  return { died: `answered no object: ${start}` };
 }
 function overlapSchema(issues) {
   const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
@@ -2900,9 +2909,13 @@ function scheduleLine(entry) {
     entry.size === null
       ? 'none'
       : `${String(entry.size.files)} files, ${String(entry.size.lines)} lines`;
+  const deaths = entry.deaths.map(
+    (death) => `attempt ${String(death.attempt)} at ${death.stage} (${oneLine(death.cause)})`,
+  );
   return (
     `- #${String(entry.issue)}: blockers ${blockers}; started ${entry.startedAt ?? 'never'}; ` +
-    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}`
+    `committed ${entry.committedAt ?? 'never'}; attempts ${String(entry.attempts)}; size ${size}` +
+    (deaths.length === 0 ? '' : `; died ${deaths.join(', ')}`)
   );
 }
 function blockerText(blocker) {
@@ -3442,7 +3455,7 @@ async function atBoundary(step, at, stage) {
 }
 async function recheckStage(at) {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
-  if (out === null) return { stop: died(at) };
+  if (out === null) return { stop: runnerDied(at, 'runner:check') };
   if (out.ready === true) return { next: at };
   if (out.ready === false) return { stop: { kind: 'label-removed', issue: at.issue } };
   return {
@@ -3459,7 +3472,7 @@ async function cutStage(at) {
     ...attachedRunArgs(at.ctx),
   ];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
-  if (out === null) return { stop: died(at), cut: NO_CUT };
+  if (out === null) return { stop: runnerDied(at, 'runner:cut-slice'), cut: NO_CUT };
   const cut = {
     slice: typeof out.slice === 'string' ? out.slice : null,
     startedAt: typeof out.at === 'string' ? out.at : null,
@@ -3484,7 +3497,7 @@ async function provisionStage(cut) {
   const { at } = cut;
   const argv = [cut.slice, '--batch', at.ctx.batch, '--server'];
   const out = await runTool(at.ctx.hooks, 'provision', argv, at.place);
-  if (out === null) return { stop: died(at) };
+  if (out === null) return { stop: runnerDied(at, 'runner:provision') };
   const projectDir = out.env?.PH_PROJECT_DIR;
   if (out.status !== 'ok' || typeof projectDir !== 'string') {
     return { stop: blocked(at, envelopeProblem('provision', out)) };
@@ -3506,8 +3519,9 @@ async function tddStage(s) {
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
   };
-  const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
-  if (tdd === null) return { stop: died(at) };
+  const reply = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
+  if ('died' in reply) return { stop: died(at, 'tdd', reply.died) };
+  const tdd = reply.answer;
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
   }
@@ -3520,7 +3534,7 @@ async function specReviewStage(s) {
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec-review', out, (specReview) => ({ ...s, specReview }));
 }
 async function testReviewStage(s) {
   const { at } = s;
@@ -3531,7 +3545,7 @@ async function testReviewStage(s) {
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test-review', out, (testReview) => ({ ...s, testReview }));
 }
 const TEST_PREFIXES = ['test/', 'tooling/test/', 'server-pool/test/', 'ship/test/'];
 async function testSkip(s) {
@@ -3554,7 +3568,7 @@ async function standardsReviewStage(s) {
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  return afterAmend(s, 'standards review', out, (standardsReview) => ({
+  return afterAmend(s, 'standards-review', out, (standardsReview) => ({
     ...s,
     standardsReview,
   }));
@@ -3569,17 +3583,26 @@ async function scriptApiTsdocStage(s) {
     reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'script api tsdoc', out, (scriptApiTsdoc) => ({ ...s, scriptApiTsdoc }));
+  return afterReview(at, 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
+    ...s,
+    scriptApiTsdoc,
+  }));
 }
-function afterReview(at, label, out, next) {
-  if (out === null) return { stop: died(at) };
+function afterReview(at, stage, reply, next) {
+  if ('died' in reply) return { stop: died(at, stage, reply.died) };
+  const label = stageLabel(stage);
+  const out = reply.answer;
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
 }
-async function afterAmend(s, label, out, next) {
-  const step = afterReview(s.at, label, out, next);
-  if ('stop' in step || out?.verdict !== 'fixed') return step;
+function stageLabel(stage) {
+  return stage.replaceAll('-', ' ');
+}
+async function afterAmend(s, stage, reply, next) {
+  const step = afterReview(s.at, stage, reply, next);
+  if ('stop' in step || 'died' in reply || reply.answer.verdict !== 'fixed') return step;
+  const label = stageLabel(stage);
   const [files, amended] = await Promise.all([
     reread(s, label, step.next.sha, s.base),
     reread(s, label, step.next.sha, s.tdd.sha),
@@ -3596,7 +3619,7 @@ async function reread(s, label, sha, base) {
     [s.slice, sha, '--base', base],
     at.place,
   );
-  if (read === null) return { stop: died(at) };
+  if (read === null) return { stop: runnerDied(at, 'runner:changed-files') };
   if (read.status !== 'ok' || read.files === undefined) {
     return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
   }
@@ -3701,8 +3724,11 @@ function messagePath(at) {
 function haltedStop(at) {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };
 }
-function died(at) {
-  return { kind: 'agent-died', issue: at.issue };
+function died(at, stage, cause) {
+  return { kind: 'agent-died', issue: at.issue, stage, cause };
+}
+function runnerDied(at, stage) {
+  return died(at, stage, 'returned nothing');
 }
 function blocked(at, reason) {
   return { kind: 'blocked', issue: at.issue, reason };
@@ -3734,7 +3760,15 @@ function neverStarted(issue, graph, overlap) {
     .map((e) => e.blocker)
     .sort((a, b) => a - b)
     .map((blocker) => scheduleBlocker(blocker, issue, overlap));
-  return { issue, blockers, attempts: 0, startedAt: null, committedAt: null, size: null };
+  return {
+    issue,
+    blockers,
+    attempts: 0,
+    startedAt: null,
+    committedAt: null,
+    size: null,
+    deaths: [],
+  };
 }
 function entryReport(d, i) {
   const end = d.ends.get(i);
@@ -3759,7 +3793,7 @@ function scheduleOf(d, i) {
       )?.trigger;
       return b.source === 'overlap' && released !== undefined ? { ...b, released } : b;
     });
-    return { ...entry, blockers, ...d.timing.get(issue) };
+    return { ...entry, blockers, ...d.timing.get(issue), deaths: d.deaths.get(issue) ?? [] };
   });
 }
 function issueReports(d, i) {
@@ -3799,7 +3833,7 @@ function act(d, action) {
         issue: action.issue,
         outcome: 'blocked',
         cite: 'see',
-        reason: 'its agent died on the retry too',
+        reason: retryDeathReason(d, action.issue),
       });
       break;
     case 'epic-done':
@@ -3898,17 +3932,22 @@ function settle(d, issue, ending) {
     epic,
     entry: haltOf(d, i),
   });
+  const attempt = d.attempts.get(issue) ?? 1;
   d.halts.set(i, entry);
   if (ending.residue !== null) d.residue.set(i, [...(d.residue.get(i) ?? []), ending.residue]);
-  d.timing.set(issue, {
-    attempts: d.attempts.get(issue) ?? 1,
-    startedAt: ending.startedAt,
-    committedAt,
-    size,
-  });
+  d.timing.set(issue, { attempts: attempt, startedAt: ending.startedAt, committedAt, size });
+  if (primary.kind === 'agent-died') {
+    const death = { attempt, stage: primary.stage, cause: primary.cause };
+    d.deaths.set(issue, [...(d.deaths.get(issue) ?? []), death]);
+  }
   keepPreviousPatch(d, issue, ending);
   record(d, i, issue, ending, events);
   feed(d, events);
+}
+function retryDeathReason(d, issue) {
+  const death = d.deaths.get(issue)?.at(-1);
+  if (death === undefined) throw new Error(`ship: #${String(issue)} blocked with no death`);
+  return `${death.stage} died on the retry too: ${death.cause}`;
 }
 function feed(d, events) {
   for (const event of events) {
@@ -3983,6 +4022,7 @@ function newDrive(input) {
     attempts: new Map(),
     previousPatches: new Map(),
     timing: new Map(),
+    deaths: new Map(),
     halts: new Map(),
     outcomes: new Map(),
     landed: new Map(),
@@ -4166,6 +4206,7 @@ async function runPreflight(hooks, args) {
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
+    ...(args.attach === null ? [] : ['--attach', args.attach]),
   ]);
   const live = await runTool(bound, 'live-runs', ['.']);
   const kept = exemptSpentSlices(checks, live);

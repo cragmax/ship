@@ -12,12 +12,12 @@
  * killed at its budget the rollback may fail or `batchClean` re-verify `false`, and the caller
  * halts the epic; a lock file is never deleted here. A Windows budget kill can leave
  * part of the commit's process tree running (what survives: `exec.ts`' header). The build runs
- * under `NPM_TIMEOUT_MS`, the commit under `COMMIT_TIMEOUT_MS` (`commitWithHooks`, `git.ts`).
+ * under `NPM_TIMEOUT_MS`, the commit under `COMMIT_TIMEOUT_MS` (`commitRetryingCrash`, `git.ts`).
  */
 
 import { assertRunBatch } from './cut.js';
 import { NPM_TIMEOUT_MS, runStep } from '../git/exec.js';
-import { commitWithHooks, git, resolveCommit } from '../git/git.js';
+import { commitRetryingCrash, git, resolveCommit } from '../git/git.js';
 import {
   assertBatchClean,
   assertLinkedWorktree,
@@ -40,8 +40,8 @@ interface LandInput {
   /** The commit message file, passed to `git commit -F`. */
   readonly messageFile: string;
   /**
-   * Where the commit's whole output (its hooks' included) is written; a
-   * failed write never fails the landing (`writeLog` in `exec.ts`).
+   * Where the commit's whole output (its hooks' included) is written, a retry's beside it
+   * (`retryLog` in `hooked.ts`); a failed write never fails the landing (`writeLog` in `exec.ts`).
    */
   readonly logFile: string;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
@@ -71,6 +71,7 @@ export function land(input: LandInput): LandResult {
     conflicts: [],
     rolledBack: false,
     batchClean: false,
+    hookAttempts: [],
   };
   let staged = false;
 
@@ -89,7 +90,7 @@ export function land(input: LandInput): LandResult {
         runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
       }
 
-      commitWithHooks(batch, ['-F', input.messageFile], input.logFile);
+      commitRetryingCrash(batch, ['-F', input.messageFile], input.logFile, result.hookAttempts);
       staged = false;
       result.commit = git(batch, ['rev-parse', 'HEAD'], 'commit');
     }

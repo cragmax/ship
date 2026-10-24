@@ -28,6 +28,10 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');
 const TIMEOUT = { timeout: 60_000 };
+const CHILD_SPAWN_TIMEOUT_MS = 60_000;
+// The child's git-repo build outruns vitest's 5 s default under spawn load. Below the spawn cap,
+// a slower child reports its own timeout rather than being killed with its output cut off.
+const CHILD_TEST_TIMEOUT_MS = 45_000;
 // Git dates a commit to the second: a repo rebuilt this long after the first gets a new sha.
 const PAST_ONE_SECOND_MS = 1100;
 
@@ -120,12 +124,13 @@ describe('the template repos', () => {
         'ship/test/fixtures/worktree-fixture-template',
         '--reporter=dot',
         '--no-cache',
+        `--testTimeout=${CHILD_TEST_TIMEOUT_MS}`,
       ],
       {
         cwd: REPO_ROOT,
         env: { ...env, TEMP: temp, TMP: temp, TMPDIR: temp },
         encoding: 'utf8',
-        timeout: 60_000,
+        timeout: CHILD_SPAWN_TIMEOUT_MS,
       },
     );
 

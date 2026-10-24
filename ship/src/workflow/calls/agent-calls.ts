@@ -1,8 +1,9 @@
 /**
  * The `ship` workflow's judgment-agent calls: each stage's output type, the
  * schema the runtime validates it against, and one wrapper per stage that
- * builds the prompt, takes the tier from `stages.ts` and returns the answer
- * — or `null` when the agent returned none (it died, or answered no object).
+ * builds the prompt, takes the tier from `stages.ts` and returns the answer:
+ * a slice stage's as an {@link AgentReply}, any other's `null` when the agent
+ * returned none (it died, or answered no object).
  *
  * The output shapes are the zod sources in
  * `ship/src/schemas/agent-outputs.ts` — the canonical home of each
@@ -103,6 +104,12 @@ export interface SliceWork {
   readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
+/**
+ * A slice stage agent's reply: its answer, or why the agent counts as dead — `returned nothing`,
+ * or `answered no object: <the start of its answer>`, whitespace runs collapsed to one space.
+ */
+export type AgentReply<T> = { readonly answer: T } | { readonly died: string };
+
 /** The epic review's answer. */
 export type EpicReviewOutput = z.infer<typeof EpicReviewOutputSchema>;
 
@@ -134,31 +141,31 @@ export const AGENT_CALLS = {
       agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks: WorkflowHooks, values: TddValues, tag: string) =>
-    askAgent<TddOutput>(
+    askReply<TddOutput>(
       hooks,
       PROMPTS.tdd(values),
       agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd),
     ),
   specReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
   testReview: (hooks: WorkflowHooks, values: TestReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.testReview(values),
       agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   scriptApiTsdoc: (hooks: WorkflowHooks, values: ScriptApiTsdocValues, tag: string) =>
-    askAgent<ScriptApiTsdocOutput>(
+    askReply<ScriptApiTsdocOutput>(
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
@@ -183,15 +190,33 @@ export const AGENT_CALLS = {
     ),
 };
 
+/** The start of a non-object answer an {@link AgentReply} keeps, in characters. */
+const ANSWER_PREFIX = 200;
+
 /** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
 async function askAgent<T>(
   hooks: WorkflowHooks,
   prompt: string,
   options: AgentOptions,
 ): Promise<T | null> {
-  const out = await hooks.agent(prompt, options);
+  const r = await askReply<T>(hooks, prompt, options);
 
-  return typeof out === 'object' && out !== null ? (out as T) : null;
+  return 'answer' in r ? r.answer : null;
+}
+
+/** Run one agent; resolves to its answer when it is an object, else why it counts as dead. */
+async function askReply<T>(
+  hooks: WorkflowHooks,
+  prompt: string,
+  options: AgentOptions,
+): Promise<AgentReply<T>> {
+  const out = await hooks.agent(prompt, options);
+  if (typeof out === 'object' && out !== null) return { answer: out as T };
+  if (out === null || out === undefined) return { died: 'returned nothing' };
+  const text = typeof out === 'string' ? out : JSON.stringify(out);
+  const start = text.replace(/\s+/gu, ' ').trim().slice(0, ANSWER_PREFIX);
+
+  return { died: `answered no object: ${start}` };
 }
 
 /**

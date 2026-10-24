@@ -784,6 +784,7 @@ describe('runShip — an attempt that does not land', () => {
             startedAt: '2026-09-29T10:00:00.000Z',
             committedAt: null,
             size: null,
+            deaths: [],
           },
         ],
         residue: [],
@@ -1064,6 +1065,71 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
+  it('records each death of a tdd that returns nothing twice, and blocks naming the second', async () => {
+    const run = fakeHooks({ tdd: null });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage: 'tdd', cause: 'returned nothing' },
+      { attempt: 2, stage: 'tdd', cause: 'returned nothing' },
+    ]);
+    expect(report.epics[0]?.issues).toEqual([
+      {
+        issue: 7,
+        outcome: 'blocked',
+        cite: 'see',
+        reason: 'tdd died on the retry too: returned nothing',
+      },
+    ]);
+  });
+
+  it('records the start of a tdd answer that is no object, its whitespace collapsed, as the cause', async () => {
+    // 26 characters once collapsed, then 300 x's: the 200-character start ends 174 x's in.
+    const answer = '  API Error: 529\n\n  Overloaded ' + 'x'.repeat(300);
+    const run = fakeHooks({ tdd: answer }, { offSchema: true });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    const cause = `answered no object: API Error: 529 Overloaded ${'x'.repeat(174)}`;
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage: 'tdd', cause },
+      { attempt: 2, stage: 'tdd', cause },
+    ]);
+    expect(report.epics[0]?.issues[0]).toMatchObject({
+      reason: `tdd died on the retry too: ${cause}`,
+    });
+  });
+
+  it('blocks naming the second death’s stage and cause when the two deaths differ', async () => {
+    const run = fakeHooks(
+      { 'specReview:7-1': null, 'tdd:7-2': 'API Error: 529' },
+      { offSchema: true },
+    );
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage: 'spec-review', cause: 'returned nothing' },
+      { attempt: 2, stage: 'tdd', cause: 'answered no object: API Error: 529' },
+    ]);
+    expect(report.epics[0]?.issues[0]).toMatchObject({
+      outcome: 'blocked',
+      reason: 'tdd died on the retry too: answered no object: API Error: 529',
+    });
+  });
+
+  it('records a tdd whose answer resolves undefined as returned nothing', async () => {
+    const run = fakeHooks({ tdd: () => undefined });
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage: 'tdd', cause: 'returned nothing' },
+      { attempt: 2, stage: 'tdd', cause: 'returned nothing' },
+    ]);
+  });
+
   it('retries the issue when the spec review returns nothing, never calling the standards review, then blocks it', async () => {
     const run = fakeHooks({ specReview: null });
 
@@ -1075,7 +1141,12 @@ describe('runShip — an attempt that does not land', () => {
     expect(report.epics[0]).toMatchObject({
       outcome: 'nothing-landed',
       issues: [
-        { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+        {
+          issue: 7,
+          outcome: 'blocked',
+          cite: 'see',
+          reason: 'spec-review died on the retry too: returned nothing',
+        },
       ],
     });
   });
@@ -1410,9 +1481,13 @@ describe('runShip — an attempt after the build', () => {
     },
   );
 
-  it.each(['specReview', 'testReview', 'standardsReview'])(
-    'retries the issue in a fresh slice when the %s returns nothing, then blocks it',
-    async (agent) => {
+  it.each([
+    ['specReview', 'spec-review'],
+    ['testReview', 'test-review'],
+    ['standardsReview', 'standards-review'],
+  ])(
+    'retries the issue in a fresh slice when the %s returns nothing, then blocks it naming %s',
+    async (agent, stage) => {
       const run = fakeHooks({ [agent]: null });
 
       const report = await runShip(run.hooks, 'issues 7');
@@ -1432,12 +1507,47 @@ describe('runShip — an attempt after the build', () => {
       expect(report.epics[0]).toMatchObject({
         outcome: 'nothing-landed',
         issues: [
-          { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+          {
+            issue: 7,
+            outcome: 'blocked',
+            cite: 'see',
+            reason: `${stage} died on the retry too: returned nothing`,
+          },
         ],
-        schedule: [{ issue: 7, attempts: 2, committedAt: null, size: null }],
+        schedule: [
+          {
+            issue: 7,
+            attempts: 2,
+            committedAt: null,
+            size: null,
+            deaths: [
+              { attempt: 1, stage, cause: 'returned nothing' },
+              { attempt: 2, stage, cause: 'returned nothing' },
+            ],
+          },
+        ],
       });
     },
   );
+
+  it.each<[string, Record<string, unknown>]>([
+    [
+      'script-api-tsdoc',
+      { tdd: { ...TDD_GREEN, files: ['src/x.ts', 'test/unit/x.test.ts'] }, scriptApiTsdoc: null },
+    ],
+    ['runner:check', { 'runner:check': null }],
+    ['runner:cut-slice', { 'runner:cut-slice': null }],
+    ['runner:provision', { 'runner:provision': null }],
+  ])('records a death at %s on each attempt when it returns nothing', async (stage, responses) => {
+    const run = fakeHooks(responses);
+
+    const report = await runShip(run.hooks, 'issues 7');
+
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage, cause: 'returned nothing' },
+      { attempt: 2, stage, cause: 'returned nothing' },
+    ]);
+  });
 
   it('halts the entry when the land call throws: teardown, epic-halt then blocked, the issue halted', async () => {
     const run = fakeHooks({
@@ -1971,7 +2081,16 @@ describe('runShip — the slice’s changed files after an amend', () => {
       'runner:teardown:7-2',
     ]);
     expect(report.epics[0]?.issues).toEqual([
-      { issue: 7, outcome: 'blocked', cite: 'see', reason: 'its agent died on the retry too' },
+      {
+        issue: 7,
+        outcome: 'blocked',
+        cite: 'see',
+        reason: 'runner:changed-files died on the retry too: returned nothing',
+      },
+    ]);
+    expect(report.epics[0]?.schedule[0]?.deaths).toEqual([
+      { attempt: 1, stage: 'runner:changed-files', cause: 'returned nothing' },
+      { attempt: 2, stage: 'runner:changed-files', cause: 'returned nothing' },
     ]);
   });
 });
@@ -2107,6 +2226,7 @@ describe('runShip — a halting entry', () => {
             startedAt: '2026-09-29T10:00:00.000Z',
             committedAt: '2026-09-29T10:20:00.000Z',
             size: { files: 2, lines: 40 },
+            deaths: [],
           },
         ],
         residue: ['teardown refused (source-shrank): node_modules lost 40 entries'],

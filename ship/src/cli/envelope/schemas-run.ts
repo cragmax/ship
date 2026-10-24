@@ -135,6 +135,17 @@ export const PreflightResultSchema = ResultBaseSchema.extend({
   problems: z.array(PreflightProblemSchema),
 });
 
+/** One run of a hook-running git command: land's commit, publish's push. */
+export const HookAttemptSchema = z.object({
+  /** The file this attempt's whole output went to. */
+  log: z.string(),
+  /**
+   * The crash `hookCrash` (`hooked.ts`) read from this attempt, which earns one retry; else
+   * `null`.
+   */
+  crash: z.int().nullable(),
+});
+
 /** Envelope of `land <batch> <slice-sha> …`; `worktree` is the batch. */
 export const LandResultSchema = ResultBaseSchema.extend({
   /** The slice commit's full sha; `null` until it resolves. */
@@ -160,6 +171,8 @@ export const LandResultSchema = ResultBaseSchema.extend({
    * checked.
    */
   batchClean: z.boolean(),
+  /** Every run of the commit, in order: a second only after a crash; empty before the commit. */
+  hookAttempts: z.array(HookAttemptSchema),
 });
 
 /**
@@ -264,6 +277,8 @@ export const PublishResultSchema = ResultBaseSchema.extend({
    * mode or before it was read.
    */
   mergeable: z.string().nullable(),
+  /** Every run of the push, in order: a second only after a crash; empty before the push. */
+  hookAttempts: z.array(HookAttemptSchema),
 });
 
 /** Envelope of `append-pr-body <batch> --pr N --section-file F`; `worktree` is the batch. */

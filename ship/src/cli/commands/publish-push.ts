@@ -38,7 +38,10 @@ const PrViewSchema = z.object({ mergeable: z.string(), url: z.string() });
 interface PushOnlyInput {
   /** The batch worktree. */
   readonly batch: string;
-  /** Where the push's whole output (its pre-push gate's included) is written. */
+  /**
+   * Where the push's whole output (its pre-push gate's included) is written, a retry's beside it
+   * (`retryLog` in `hooked.ts`).
+   */
   readonly logFile: string;
   /** The wait between mergeable reads; default {@link MERGEABLE_POLL_MS}. */
   readonly pollMs?: number;
@@ -68,7 +71,7 @@ export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResu
 
     if (aheadOfOrigin(batch, branch)) {
       runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
-      pushBranch(batch, branch, input.logFile);
+      pushBranch(batch, branch, input.logFile, result.hookAttempts);
       result.pushed = true;
     }
 

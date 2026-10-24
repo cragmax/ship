@@ -345,9 +345,13 @@ function pickEvent(view: View, choice: Choice): SchedulerEvent | undefined {
   const issue = pool[choice.pick % Math.max(pool.length, 1)];
   if (issue === undefined) return undefined;
 
-  return choice.kind === 'blocked'
-    ? { kind: 'blocked', issue, reason: 'model' }
-    : { kind: choice.kind, issue };
+  if (choice.kind === 'blocked') return { kind: 'blocked', issue, reason: 'model' };
+
+  if (choice.kind === 'agent-died') {
+    return { kind: 'agent-died', issue, stage: 'model', cause: 'model' };
+  }
+
+  return { kind: choice.kind, issue };
 }
 
 function candidates(view: View, kind: IssueEvent['kind']): number[] {

@@ -410,6 +410,7 @@ describe('append-pr-body (in-process)', () => {
       vi.mocked(runCaptured).mockReturnValueOnce({
         exitCode: 0,
         stdout: 'gh-printed <html>',
+        output: 'gh-printed <html>',
         tail: '',
       });
 

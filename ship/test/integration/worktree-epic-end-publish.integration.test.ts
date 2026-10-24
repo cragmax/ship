@@ -19,7 +19,9 @@ import { StepFailure } from '../../src/cli/envelope/types.js';
 import {
   advanceOrigin,
   commitChanges,
+  failingHookScript,
   headSha,
+  hookRuns,
   installHook,
   prependPath,
   readFakePrCreated,
@@ -198,6 +200,39 @@ describe('publish', () => {
     expect(r.json).toMatchObject({ status: 'failed', pushed: false, pr: null });
     expect(r.json.errors.map((e) => e.step)).toEqual(['push']);
     expect(readFileSync(`${root}/push.log`, 'utf8')).toContain('origin says no');
+    expect(r.json.hookAttempts).toEqual([{ log: `${root}/push.log`, crash: null }]);
+    expect(onOrigin(run.bare, 'ship/r')).toBe(false);
+    expect(readFakePrCreated(bin)).toBeNull();
+  });
+
+  it('retries a push whose pre-push hook crashed once, then opens the PR', TIMEOUT, () => {
+    const run = makeRun();
+    const head = commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-push', failingHookScript(counter, 1, [139]));
+
+    const { r, bin } = publish(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, pr: { number: 42 } });
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(head);
+    expectRetriedOnce(r.json, counter);
+    expect(readFakePrCreated(bin)).not.toBeNull();
+  });
+
+  it('fails a push whose pre-push hook crashed twice as hook-crashed, no PR', TIMEOUT, () => {
+    const run = makeRun();
+    commitChanges(run.batch, { write: { 'a.txt': 'a\n' } }, 'feat(a): one');
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-push', failingHookScript(counter, 2, [139]));
+
+    const { r, bin } = publish(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'failed', pushed: false, pr: null });
+    expect(r.json.errors.map((e) => e.step)).toEqual(['push']);
+    expect(r.json.errors[0]?.message).toBe(
+      `git push -u origin refs/heads/ship/r:refs/heads/ship/r: the hook crashed twice (exit status 139, then 139); output in ${root}/push.log and ${root}/push.retry.log`,
+    );
+    expect(hookRuns(counter)).toBe(2);
     expect(onOrigin(run.bare, 'ship/r')).toBe(false);
     expect(readFakePrCreated(bin)).toBeNull();
   });
@@ -228,6 +263,17 @@ describe('publish', () => {
     expect(readFakePrCreated(bin)?.body).toBe(body);
   });
 });
+
+/** Assert a push whose hook crashed once ran twice, each attempt's output in a log of its own. */
+function expectRetriedOnce(json: PublishResult, counter: string): void {
+  expect(hookRuns(counter)).toBe(2);
+  expect(json.hookAttempts).toEqual([
+    { log: `${root}/push.log`, crash: 139 },
+    { log: `${root}/push.retry.log`, crash: null },
+  ]);
+  expect(readFileSync(`${root}/push.log`, 'utf8')).toContain('run 1 failed');
+  expect(readFileSync(`${root}/push.retry.log`, 'utf8')).toContain('run 2 passed');
+}
 
 /** Whether the bare origin has the branch. */
 function onOrigin(bare: string, branch: string): boolean {
@@ -276,6 +322,18 @@ describe('publish --push-only', () => {
     expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.head);
     expect(readFakePrCreated(bin)).toBeNull();
     expect(readFileSync(`${root}/push.log`, 'utf8')).toContain('pre-push saw the build');
+  });
+
+  it('retries a push whose pre-push hook crashed once and reads the open PR', TIMEOUT, () => {
+    const run = pushedThenAhead();
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-push', failingHookScript(counter, 1, [139]));
+
+    const { r } = pushOnly(run.batch, OPEN_5);
+
+    expect(r.json).toMatchObject({ status: 'ok', pushed: true, mergeable: 'MERGEABLE' });
+    expect(headSha(run.bare, 'refs/heads/ship/r')).toBe(run.head);
+    expectRetriedOnce(r.json, counter);
   });
 
   it.each([
@@ -443,7 +501,7 @@ describe('publish (in-process)', () => {
     let thrown: unknown = null;
 
     try {
-      pushBranch(run.batch, 'ship/r', `${root}/push.log`);
+      pushBranch(run.batch, 'ship/r', `${root}/push.log`, []);
     } catch (err) {
       thrown = err;
     }

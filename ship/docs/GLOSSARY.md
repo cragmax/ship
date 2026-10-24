@@ -33,7 +33,7 @@ The issues one **Unattended run** ships: an epic's open children (never the epic
 _Avoid_: "epic" for the set (a set may span several epics, or none).
 
 **Run gate**:
-The launch check that every **Run set** issue is open and `ready-for-agent` with each `blocked_by` closed or inside the set, in the same epic. It refuses and lists every failure, or in exclude mode drops the failures and their dependents.
+The launch check that every **Run set** issue is open and `ready-for-agent` with each `blocked_by` closed or inside the set, in the same epic. In an **Attached run**, a `blocked_by` landed `fixes #N` on the target branch also passes. It refuses and lists every failure, or in exclude mode drops the failures and their dependents.
 _Avoid_: "pre-flight" for it (pre-flight is the whole launch phase, and the gate is one check in it).
 
 **Overlap edge**:

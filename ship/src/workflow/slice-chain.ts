@@ -8,8 +8,8 @@
  * never runs: such an attempt ends with `epic-halt`. A landing that calls for a halt (or throws)
  * marks the entry inside its queue task, before the queue releases the next landing; a teardown
  * runs outside the queue, so its halt is marked as it returns and a landing already released still
- * runs. An agent that returns nothing is `agent-died` (the issue retried once, in a fresh slice);
- * a stage that cannot proceed, or throws, is `blocked` with the reason, never a rejection.
+ * runs. An agent answering no object is `agent-died` at its {@link DeathStage} (retried once,
+ * in a fresh slice); a stage that cannot proceed, or throws, is `blocked`, never a rejection.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -19,6 +19,7 @@ import type { SchedulerEvent } from '../core/scheduler/run-scheduler.types.js';
 
 import {
   AGENT_CALLS,
+  type AgentReply,
   type ScriptApiTsdocOutput,
   type ScriptApiTsdocSkip,
   type ReviewOutput,
@@ -148,6 +149,21 @@ interface AttemptId {
   readonly tag: string;
   readonly place: ToolPlace;
 }
+
+/**
+ * Where an `agent-died` attempt died: a slice stage agent, or the runner of the step that
+ * `runner:<tool>` names, as its call's label does.
+ */
+type DeathStage =
+  | 'tdd'
+  | ReviewStage
+  | 'runner:check'
+  | 'runner:cut-slice'
+  | 'runner:provision'
+  | 'runner:changed-files';
+
+/** An amending review stage. */
+type ReviewStage = 'spec-review' | 'test-review' | 'standards-review' | 'script-api-tsdoc';
 
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
 type Step<T> = { readonly next: T } | { readonly stop: SchedulerEvent };
@@ -295,7 +311,7 @@ async function atBoundary<I, O>(
 /** Re-check the issue is still open and labelled; `label-removed` when not. */
 async function recheckStage(at: AttemptId): Promise<Step<AttemptId>> {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
-  if (out === null) return { stop: died(at) };
+  if (out === null) return { stop: runnerDied(at, 'runner:check') };
   if (out.ready === true) return { next: at };
   if (out.ready === false) return { stop: { kind: 'label-removed', issue: at.issue } };
 
@@ -318,7 +334,7 @@ async function cutStage(at: AttemptId): Promise<Opened> {
     ...attachedRunArgs(at.ctx),
   ];
   const out = await runTool(at.ctx.hooks, 'cut-slice', argv, at.place);
-  if (out === null) return { stop: died(at), cut: NO_CUT };
+  if (out === null) return { stop: runnerDied(at, 'runner:cut-slice'), cut: NO_CUT };
   const cut: CutTrace = {
     slice: typeof out.slice === 'string' ? out.slice : null,
     startedAt: typeof out.at === 'string' ? out.at : null,
@@ -356,7 +372,7 @@ async function provisionStage(cut: CutSlice): Promise<Step<ProvisionedSlice>> {
   const { at } = cut;
   const argv = [cut.slice, '--batch', at.ctx.batch, '--server'];
   const out = await runTool(at.ctx.hooks, 'provision', argv, at.place);
-  if (out === null) return { stop: died(at) };
+  if (out === null) return { stop: runnerDied(at, 'runner:provision') };
   const projectDir = out.env?.PH_PROJECT_DIR;
 
   if (out.status !== 'ok' || typeof projectDir !== 'string') {
@@ -382,8 +398,9 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
     messageTemplate: commitMessageTemplate(at.issue),
     lease: leaseValues(s),
   };
-  const tdd = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
-  if (tdd === null) return { stop: died(at) };
+  const reply = await AGENT_CALLS.tdd(at.ctx.hooks, values, at.tag);
+  if ('died' in reply) return { stop: died(at, 'tdd', reply.died) };
+  const tdd = reply.answer;
 
   if (tdd.verdict === 'BLOCKED' || tdd.sha === '') {
     return { stop: blocked(at, `tdd ${tdd.verdict}: ${tdd.reason ?? 'no commit'}`) };
@@ -401,7 +418,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
     at.tag,
   );
 
-  return afterAmend(s, 'spec review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec-review', out, (specReview) => ({ ...s, specReview }));
 }
 
 /**
@@ -418,7 +435,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
     at.tag,
   );
 
-  return afterAmend(s, 'test review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test-review', out, (testReview) => ({ ...s, testReview }));
 }
 
 const TEST_PREFIXES: readonly string[] = [
@@ -457,7 +474,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     at.tag,
   );
 
-  return afterAmend(s, 'standards review', out, (standardsReview) => ({
+  return afterAmend(s, 'standards-review', out, (standardsReview) => ({
     ...s,
     standardsReview,
   }));
@@ -480,27 +497,38 @@ async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice
   };
   const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
 
-  return afterReview(at, 'script api tsdoc', out, (scriptApiTsdoc) => ({ ...s, scriptApiTsdoc }));
+  return afterReview(at, 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
+    ...s,
+    scriptApiTsdoc,
+  }));
 }
 
 /**
- * Carry an amending stage's answer on: none stops the slice as died, a `blocked` one or one naming
- * no commit stops it with `label`, else `next` folds it in and `sha` becomes its amend.
+ * Carry an amending stage's reply on: a dead agent stops the slice as died in `stage`, a `blocked`
+ * answer or one naming no commit stops it with the stage's label, else `next` folds it in and
+ * `sha` becomes its amend.
  */
 function afterReview<
   O extends { readonly verdict: string; readonly sha: string; readonly summary: string },
   T,
 >(
   at: AttemptId,
-  label: string,
-  out: O | null,
+  stage: ReviewStage,
+  reply: AgentReply<O>,
   next: (out: O) => T,
 ): Step<T & { readonly sha: string }> {
-  if (out === null) return { stop: died(at) };
+  if ('died' in reply) return { stop: died(at, stage, reply.died) };
+  const label = stageLabel(stage);
+  const out = reply.answer;
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
 
   return { next: { ...next(out), sha: out.sha } };
+}
+
+/** A review stage's label in its blocked reasons: `spec review` for `spec-review`. */
+function stageLabel(stage: ReviewStage): string {
+  return stage.replaceAll('-', ' ');
 }
 
 /**
@@ -510,12 +538,13 @@ function afterReview<
  */
 async function afterAmend<T extends BuiltSlice>(
   s: BuiltSlice,
-  label: string,
-  out: ReviewOutput | null,
+  stage: ReviewStage,
+  reply: AgentReply<ReviewOutput>,
   next: (out: ReviewOutput) => T,
 ): Promise<Step<T>> {
-  const step = afterReview(s.at, label, out, next);
-  if ('stop' in step || out?.verdict !== 'fixed') return step;
+  const step = afterReview(s.at, stage, reply, next);
+  if ('stop' in step || 'died' in reply || reply.answer.verdict !== 'fixed') return step;
+  const label = stageLabel(stage);
   const [files, amended] = await Promise.all([
     reread(s, label, step.next.sha, s.base),
     reread(s, label, step.next.sha, s.tdd.sha),
@@ -542,7 +571,7 @@ async function reread(
     at.place,
   );
 
-  if (read === null) return { stop: died(at) };
+  if (read === null) return { stop: runnerDied(at, 'runner:changed-files') };
 
   if (read.status !== 'ok' || read.files === undefined) {
     return { stop: blocked(at, `${label}: ${envelopeProblem('changed-files', read)}`) };
@@ -704,14 +733,14 @@ function haltedStop(at: AttemptId): SchedulerEvent {
   return { kind: 'epic-halt', epic: at.ctx.epic, reason: 'its epic halted' };
 }
 
-/**
- * The event of an agent that returned nothing.
- *
- * @param at - The attempt.
- * @returns `agent-died`.
- */
-function died(at: AttemptId): SchedulerEvent {
-  return { kind: 'agent-died', issue: at.issue };
+/** The event of an agent that died in `stage`, `cause` saying why. */
+function died(at: AttemptId, stage: DeathStage, cause: string): SchedulerEvent {
+  return { kind: 'agent-died', issue: at.issue, stage, cause };
+}
+
+/** The event of a runner step whose runner answered no envelope ({@link runTool}'s `null`). */
+function runnerDied(at: AttemptId, stage: DeathStage): SchedulerEvent {
+  return died(at, stage, 'returned nothing');
 }
 
 /** The event of a stage that cannot let the issue proceed. */
