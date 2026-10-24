@@ -68,7 +68,7 @@ export function runHooked(run: HookedRun): void {
 
 /**
  * The crash a failed hook run's output shows: the highest `exit status` lefthook printed, one per
- * failed job (unprobed), when every one is {@link SIGNAL_STATUS} or above.
+ * failed job (Ship PF-20), when every one is {@link SIGNAL_STATUS} or above.
  *
  * @returns `null` when the output names no exit status, or any below {@link SIGNAL_STATUS}.
  */
