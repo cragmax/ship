@@ -11,7 +11,15 @@ import { resolve } from 'node:path';
 
 import { toPosix } from '../../../../tooling/lib/strings.js';
 
-import { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, runCaptured, runStep } from './exec.js';
+import {
+  COMMIT_TIMEOUT_MS,
+  FETCH_TIMEOUT_MS,
+  runCaptured,
+  runStep,
+  type Captured,
+} from './exec.js';
+import { runHooked } from './hooked.js';
+import type { HookAttempt } from '../envelope/types-run.js';
 import { Refusal, StepFailure } from '../envelope/types.js';
 
 /** One entry of `git worktree list --porcelain`. */
@@ -155,11 +163,7 @@ export function lsRemoteRef(dir: string, ref: string, step: string): string | nu
  *   spawn failure or budget kill.
  */
 export function commitWithHooks(dir: string, args: readonly string[], logFile: string): void {
-  const r = runCaptured('git', ['-C', dir, 'commit', ...args], {
-    cwd: process.cwd(),
-    timeoutMs: COMMIT_TIMEOUT_MS,
-    logFile,
-  });
+  const r = spawnCommit(dir, args, logFile);
 
   if (r.exitCode !== 0) {
     throw new StepFailure(
@@ -168,6 +172,28 @@ export function commitWithHooks(dir: string, args: readonly string[], logFile: s
       r.tail,
     );
   }
+}
+
+/**
+ * Commit as {@link commitWithHooks} does, and once more when its hooks crashed: `hooked.ts`'s
+ * {@link runHooked}, the retry's output in its own log beside `logFile`.
+ *
+ * @param attempts - Receives each run of the commit.
+ * @throws StepFailure `commit` as {@link runHooked} names it.
+ */
+export function commitRetryingCrash(
+  dir: string,
+  args: readonly string[],
+  logFile: string,
+  attempts: HookAttempt[],
+): void {
+  runHooked({
+    step: 'commit',
+    label: `git commit ${args.join(' ')} in ${dir}`,
+    logFile,
+    attempts,
+    spawn: (log) => spawnCommit(dir, args, log),
+  });
 }
 
 /**
@@ -328,4 +354,13 @@ function worktreeIdentity(path: string, step: string): WorktreeIdentity {
   const main = listWorktrees(path, step)[0]?.path ?? '';
 
   return { toplevel, commonDir, main };
+}
+
+/** One `git commit` under `COMMIT_TIMEOUT_MS`, its whole output to `logFile`. */
+function spawnCommit(dir: string, args: readonly string[], logFile: string): Captured {
+  return runCaptured('git', ['-C', dir, 'commit', ...args], {
+    cwd: process.cwd(),
+    timeoutMs: COMMIT_TIMEOUT_MS,
+    logFile,
+  });
 }

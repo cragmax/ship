@@ -54,6 +54,8 @@ export interface Captured {
   readonly exitCode: number;
   /** The child's stdout alone (for parsing). */
   readonly stdout: string;
+  /** The whole output {@link outputOf} composes, as the log file gets it. */
+  readonly output: string;
   /**
    * Last {@link TAIL_LINES} lines of the output {@link outputOf} composes,
    * then any line {@link writeLog} returns.
@@ -107,10 +109,15 @@ export function runCaptured(
     stdin: 'ignore',
     timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   });
-  let output = outputOf(r.all, r.timedOut, r.shortMessage ?? '', options.cwd);
-  if (options.logFile !== undefined) output += writeLog(options.logFile, output);
+  const output = outputOf(r.all, r.timedOut, r.shortMessage ?? '', options.cwd);
+  const logged = options.logFile === undefined ? '' : writeLog(options.logFile, output);
 
-  return { exitCode: r.exitCode ?? -1, stdout: r.stdout, tail: lastLines(output) };
+  return {
+    exitCode: r.exitCode ?? -1,
+    stdout: r.stdout,
+    output,
+    tail: lastLines(output + logged),
+  };
 }
 
 /**

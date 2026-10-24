@@ -21,7 +21,9 @@ import type { LandResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
 import {
   commitChanges,
+  failingHookScript,
   headSha,
+  hookRuns,
   installHook,
   makeGitRepo,
   stagedNames,
@@ -158,6 +160,65 @@ describe('land', () => {
     expect(headSha(run.batch)).toBe(run.cut);
     expect(porcelain(run.batch)).toBe('');
     expect(readFileSync(`${root}/commit.log`, 'utf8')).toContain(HOOK_SAYS);
+  });
+
+  it('retries a commit whose hook crashed once and lands it, keeping both logs', TIMEOUT, () => {
+    const run = makeRun({ 'base.txt': 'base\n' });
+    const sha = commitChanges(run.slice, { write: { 'added.txt': 'added\n' } }, 'slice');
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-commit', failingHookScript(counter, 1, [139]));
+
+    const r = land(run.batch, sha, run.cut);
+
+    expect(r.json.status).toBe('ok');
+    expect(r.json.commit).toBe(headSha(run.batch));
+    expect(headSha(run.batch, 'HEAD^')).toBe(run.cut);
+    expect(hookRuns(counter)).toBe(2);
+    expect(r.json.hookAttempts).toEqual([
+      { log: `${root}/commit.log`, crash: 139 },
+      { log: `${root}/commit.retry.log`, crash: null },
+    ]);
+    expect(readFileSync(`${root}/commit.log`, 'utf8')).toContain('run 1 failed');
+    expect(readFileSync(`${root}/commit.retry.log`, 'utf8')).toContain('run 2 passed');
+  });
+
+  it('fails a commit whose hook crashed twice as hook-crashed, rolled back', TIMEOUT, () => {
+    const run = makeRun({ 'base.txt': 'base\n' });
+    const sha = commitChanges(run.slice, { write: { 'added.txt': 'added\n' } }, 'slice');
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-commit', failingHookScript(counter, 2, [139]));
+
+    const r = land(run.batch, sha, run.cut);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'failed', rolledBack: true, batchClean: true });
+    expect(r.json.errors[0]?.step).toBe('commit');
+    expect(r.json.errors[0]?.message).toBe(
+      `git commit -F ${root}/msg.txt in ${run.batch}: the hook crashed twice (exit status 139, then 139); output in ${root}/commit.log and ${root}/commit.retry.log`,
+    );
+    expect(hookRuns(counter)).toBe(2);
+    expect(r.json.hookAttempts).toEqual([
+      { log: `${root}/commit.log`, crash: 139 },
+      { log: `${root}/commit.retry.log`, crash: 139 },
+    ]);
+    expect(headSha(run.batch)).toBe(run.cut);
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it('fails a commit at once, no retry, when any failed hook job exits below 128', TIMEOUT, () => {
+    const run = makeRun({ 'base.txt': 'base\n' });
+    const sha = commitChanges(run.slice, { write: { 'added.txt': 'added\n' } }, 'slice');
+    const counter = `${root}/hook-runs`;
+    installHook(root, run.main, 'pre-commit', failingHookScript(counter, 1, [139, 1]));
+
+    const r = land(run.batch, sha, run.cut);
+
+    expect(r.json).toMatchObject({ status: 'failed', rolledBack: true, batchClean: true });
+    expect(r.json.errors[0]?.step).toBe('commit');
+    expect(hookRuns(counter)).toBe(1);
+    expect(r.json.hookAttempts).toEqual([{ log: `${root}/commit.log`, crash: null }]);
+    expect(existsSync(`${root}/commit.retry.log`)).toBe(false);
+    expect(headSha(run.batch)).toBe(run.cut);
   });
 
   it.each([

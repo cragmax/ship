@@ -154,6 +154,7 @@ describe('restartSessionTsserver', () => {
     vi.mocked(runCaptured).mockReturnValueOnce({
       exitCode: 1,
       stdout: '',
+      output: 'Get-CimInstance : Access denied',
       tail: 'Get-CimInstance : Access denied',
     });
     const { deps, kills } = fakeDeps(TWO_SESSIONS, {}, [], ['listProcesses']);
@@ -170,6 +171,7 @@ describe('restartSessionTsserver', () => {
     vi.mocked(runCaptured).mockReturnValueOnce({
       exitCode: 0,
       stdout: '[{"ProcessId":"150","ParentProcessId":140,"Name":"node.exe","CommandLine":null}]',
+      output: '[{"ProcessId":"150","ParentProcessId":140,"Name":"node.exe","CommandLine":null}]',
       tail: '',
     });
     const { deps, kills } = fakeDeps(TWO_SESSIONS, {}, [], ['listProcesses']);

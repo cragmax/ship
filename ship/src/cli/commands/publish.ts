@@ -27,10 +27,11 @@ import {
 } from '../git/exec.js';
 import { assertRunBatch } from './cut.js';
 import { git } from '../git/git.js';
+import { runHooked } from '../git/hooked.js';
 import { assertLinkedWorktree } from './harvest.js';
 import { lookupPr } from './live-runs.js';
 import { RUN_BASE_BRANCH } from '../git/run-layout.js';
-import type { OpenedPr, PublishResult } from '../envelope/types-run.js';
+import type { HookAttempt, OpenedPr, PublishResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /** Inputs of {@link publish}; paths absolute with forward slashes. */
@@ -41,7 +42,10 @@ interface PublishInput {
   readonly title: string;
   /** The PR body, passed to `gh pr create --body-file`. */
   readonly bodyFile: string;
-  /** Where the push's whole output (its pre-push gate's included) is written. */
+  /**
+   * Where the push's whole output (its pre-push gate's included) is written, a retry's beside it
+   * (`retryLog` in `hooked.ts`).
+   */
   readonly logFile: string;
   /** Open the PR as a draft. */
   readonly draft?: boolean;
@@ -67,7 +71,7 @@ export function publish(input: PublishInput): PublishResult {
     assertNoOpenPr(batch, branch);
     assertBodyWithinLimit(input.bodyFile);
     runStep('build', 'npm', ['run', 'build'], { cwd: batch, timeoutMs: NPM_TIMEOUT_MS });
-    pushBranch(batch, branch, input.logFile);
+    pushBranch(batch, branch, input.logFile, result.hookAttempts);
     result.pushed = true;
     result.pr = createPr(batch, branch, input);
   } catch (err) {
@@ -87,6 +91,7 @@ export function newPublishResult(batch: string): PublishResult {
     pushed: false,
     pr: null,
     mergeable: null,
+    hookAttempts: [],
   };
 }
 
@@ -106,32 +111,40 @@ export function publishableBranch(batch: string, selfPath: string): string {
 }
 
 /**
- * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002).
- * Never forced: a push `origin` would have to lose commits for fails, and is reported — never
- * retried with force. `publish` and `publish --push-only` both push through here.
+ * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002),
+ * and once more when that hook crashed: `hooked.ts`'s {@link runHooked}, the retry's output in its
+ * own log beside `logFile`. Never forced: a push `origin` would have to lose commits for fails,
+ * and is reported — never retried with force. `publish` and `publish --push-only` both push
+ * through here.
  *
  * @remarks
  * The refspec names both sides, unforced, so push configuration cannot redirect or force it.
  *
  * @param branch - The run branch, short form.
- * @throws StepFailure `push` on a non-zero exit — a non-fast-forward included — spawn failure or
- *   budget kill.
+ * @param attempts - Receives each run of the push.
+ * @throws StepFailure `push` as {@link runHooked} names it — a non-fast-forward included.
  */
-export function pushBranch(batch: string, branch: string, logFile: string): void {
+export function pushBranch(
+  batch: string,
+  branch: string,
+  logFile: string,
+  attempts: HookAttempt[],
+): void {
   const ref = `refs/heads/${branch}`;
-  const r = runCaptured('git', ['-C', batch, 'push', '-u', 'origin', `${ref}:${ref}`], {
-    cwd: process.cwd(),
-    timeoutMs: PUSH_TIMEOUT_MS,
-    logFile,
-  });
+  const args = ['push', '-u', 'origin', `${ref}:${ref}`];
 
-  if (r.exitCode !== 0) {
-    throw new StepFailure(
-      'push',
-      `git push -u origin ${ref}:${ref} exited ${String(r.exitCode)}; output in ${logFile}`,
-      r.tail,
-    );
-  }
+  runHooked({
+    step: 'push',
+    label: `git ${args.join(' ')}`,
+    logFile,
+    attempts,
+    spawn: (log) =>
+      runCaptured('git', ['-C', batch, ...args], {
+        cwd: process.cwd(),
+        timeoutMs: PUSH_TIMEOUT_MS,
+        logFile: log,
+      }),
+  });
 }
 
 /**

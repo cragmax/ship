@@ -20,6 +20,7 @@ import type {
   ConflictPathSchema,
   CutBatchResultSchema,
   CutSliceResultSchema,
+  HookAttemptSchema,
   LandResultSchema,
   MasterMoveSchema,
   OpenedPrSchema,
@@ -47,6 +48,9 @@ export type PreflightProblem = z.infer<typeof PreflightProblemSchema>;
 
 /** Envelope of `preflight <main>`. */
 export type PreflightResult = z.infer<typeof PreflightResultSchema>;
+
+/** One run of a hook-running git command. */
+export type HookAttempt = z.infer<typeof HookAttemptSchema>;
 
 /** Envelope of `land <batch> <slice-sha> …`. */
 export type LandResult = z.infer<typeof LandResultSchema>;
