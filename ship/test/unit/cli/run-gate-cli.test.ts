@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-import type { GhJson } from '../../../src/cli/run-gate-gh.js';
+import type { GhJson, GitText } from '../../../src/cli/run-gate-gh.js';
 import type { GateVerdict, IssueCheck } from '../../../src/core/gate/run-gate.js';
 import { exitCodeFor, main, parseRunGateArgs } from '../../../src/cli/run-gate.js';
 
@@ -48,6 +48,17 @@ describe('parseRunGateArgs', () => {
     },
   );
 
+  it.each([
+    [['issues', '7', '--attach', 'ship/epic-9']],
+    [['epics', '--attach', 'ship/epic-9', '7', '--exclude']],
+  ])('--attach ship/<slug> names the attach target: %j', (argv) => {
+    expect(parseRunGateArgs(argv)).toMatchObject({ kind: 'gate', attach: 'ship/epic-9' });
+  });
+
+  it('no --attach, no attach target', () => {
+    expect(parseRunGateArgs(['issues', '7'])).not.toHaveProperty('attach');
+  });
+
   it('check with one number', () => {
     expect(parseRunGateArgs(['check', '1031'])).toEqual({ kind: 'check', issue: 1031 });
   });
@@ -70,6 +81,9 @@ describe('parseRunGateArgs usage errors', () => {
     [['issues', '7,7'], "'7,7'"],
     [['check', '1', '--exclude'], "'--exclude'"],
     [['check', '1', '2'], "'2'"],
+    [['issues', '1', '--attach'], "'--attach'"],
+    [['issues', '1', '--attach', 'epic-9'], "'epic-9'"],
+    [['check', '1', '--attach', 'ship/epic-9'], "'--attach'"],
   ])('%j names %s', (argv, token) => {
     expect(() => parseRunGateArgs(argv)).toThrow(token);
   });
@@ -143,7 +157,7 @@ describe('main', () => {
     expect(stdout).toEqual([]);
     expect(stderr.join('')).toContain("'abc'");
     expect(stderr.join('')).toContain(
-      'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] | check N',
+      'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] [--attach ship/<slug>] | check N',
     );
   });
 
@@ -170,6 +184,29 @@ describe('main', () => {
       excluded: [],
     });
     expect(stdout[0]).toBe(`${JSON.stringify(parsed, null, 2)}\n`);
+  });
+
+  it('--attach resolves the landed set through the git port: a landed OPEN blocker passes', async () => {
+    const gh: GhJson = (args) =>
+      Promise.resolve(
+        args[2] === '90'
+          ? { number: 90, state: 'OPEN' }
+          : { ...(facts(['ready-for-agent']) as object), body: '## Blocked by\n- #90\n' },
+      );
+    const gitCalls: string[][] = [];
+
+    const git: GitText = (args) => {
+      gitCalls.push([...args]);
+
+      return Promise.resolve('fixes #90\n');
+    };
+
+    await main(['issues', '7', '--attach', 'ship/epic-9'], gh, git);
+    expect(stderr).toEqual([]);
+    expect(process.exitCode).toBe(0);
+    expect(gitCalls).toEqual([
+      ['log', '--first-parent', '--no-merges', '--format=%b', 'origin/master..origin/ship/epic-9'],
+    ]);
   });
 
   it('a ready check exits 0', async () => {

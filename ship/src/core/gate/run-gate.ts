@@ -61,7 +61,8 @@ export interface EpicChild {
 /**
  * Why the gate refused (or, in exclude mode, dropped) something. Per issue: `closed` — CLOSED;
  * `missing-label` — lacks the exact {@link READY_LABEL}; `open-blocker` — an out-of-set OPEN
- * blocker (an out-of-set CLOSED one is satisfied); `cross-epic-blocker` — an in-set blocker in
+ * blocker outside {@link RunGateInput.landed} (an out-of-set CLOSED or landed one is satisfied);
+ * `cross-epic-blocker` — an in-set blocker in
  * another epic entry, since an epic's branch never carries another epic's commit. Run-wide:
  * `cycle` — each cycle among the in-set edges; `empty-epic` — an epic entry with no issues;
  * `empty-run-set` — exclude mode dropped every issue.
@@ -133,6 +134,11 @@ interface RunGateInput {
   readonly facts: readonly IssueFacts[];
   /** States of every out-of-set blocker. */
   readonly blockerStates: ReadonlyMap<number, IssueState>;
+  /**
+   * An attached run's landed set: the issues its target branch carries `fixes #N` for, not yet on
+   * `origin/master` (Ship ADR-0001 decision 5). Absent for a run without an attach target.
+   */
+  readonly landed?: ReadonlySet<number>;
   /** The gate mode. */
   readonly mode: GateMode;
 }
@@ -316,7 +322,7 @@ function analyse(input: RunGateInput): Analysis {
   const issues = runSetIssues(input.runSet);
 
   for (const issue of issues) {
-    const assessed = assessIssue(factsFor(facts, issue), entries, input.blockerStates);
+    const assessed = assessIssue(factsFor(facts, issue), entries, input);
     subjectFailures.push(...assessed.failures);
     inSetEdges.push(...assessed.edges);
   }
@@ -395,7 +401,7 @@ function factsFor(facts: ReadonlyMap<number, IssueFacts>, issue: number): IssueF
 function assessIssue(
   facts: IssueFacts,
   entries: EntryIndex,
-  blockerStates: ReadonlyMap<number, IssueState>,
+  input: RunGateInput,
 ): { failures: GateFailure[]; edges: RunEdge[] } {
   const issue = facts.number;
   const own = entries.get(issue);
@@ -407,7 +413,7 @@ function assessIssue(
   for (const blocker of blockers) {
     const home = entries.get(blocker);
     if (home !== undefined) edges.push({ blocker, dependent: issue });
-    const failure = blockerFailure(issue, blocker, { home, own }, blockerStates);
+    const failure = blockerFailure(issue, blocker, { home, own }, input);
     if (failure !== undefined) failures.push(failure);
   }
 
@@ -434,21 +440,23 @@ interface BlockerPlacement {
 }
 
 /**
- * The failure one blocker of `issue` causes: `open-blocker` for an OPEN out-of-set blocker,
- * `cross-epic-blocker` for an in-set blocker in another epic entry, else `undefined`.
+ * The failure one blocker of `issue` causes: `open-blocker` for an OPEN out-of-set blocker not in
+ * the landed set, `cross-epic-blocker` for an in-set blocker in another epic entry, else
+ * `undefined`.
  */
 function blockerFailure(
   issue: number,
   blocker: number,
   placement: BlockerPlacement,
-  blockerStates: ReadonlyMap<number, IssueState>,
+  input: RunGateInput,
 ): GateFailure | undefined {
   const { home, own } = placement;
 
   if (home === undefined) {
-    const open = blockerState(blockerStates, blocker) === 'OPEN';
+    const open = blockerState(input.blockerStates, blocker) === 'OPEN';
+    const landed = input.landed?.has(blocker) === true;
 
-    return open ? openBlockerFailure(issue, blocker) : undefined;
+    return open && !landed ? openBlockerFailure(issue, blocker) : undefined;
   }
 
   const crossEpic = home.epic !== null && home.position !== own?.position;

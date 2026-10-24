@@ -6,7 +6,8 @@
  * **Three fetches, each zod-parsed** — an epic (`EPIC_FIELDS`), a run-set
  * issue (`FACTS_FIELDS`) and an out-of-set blocker (`STATE_FIELDS`). Each
  * schema requires only the fields the gate reads and tolerates unknown keys.
- * A shape mismatch throws — the gate never guesses at gh output.
+ * A shape mismatch throws — the gate never guesses at gh output. An attached run adds one
+ * git read, its landed set ({@link landedIssues}), through an injected {@link GitText} port.
  *
  * **Never gate on a partial list.** A gh connection may hold only a page, so every one passes
  * {@link complete} before it is read.
@@ -40,6 +41,15 @@ import { runSetIssues } from '../core/run-set.js';
  * JSON. A rejection propagates out of every gather unchanged.
  */
 export type GhJson = (args: readonly string[]) => Promise<unknown>;
+
+/** The injected git port: run `git <args>` and resolve its stdout. A rejection propagates. */
+export type GitText = (args: readonly string[]) => Promise<string>;
+
+/** An attached run's target: its branch (`ship/<slug>`) and the git port that reads it. */
+interface AttachTarget {
+  readonly branch: string;
+  readonly git: GitText;
+}
 
 const EPIC_FIELDS = 'number,subIssues';
 const FACTS_FIELDS = 'number,state,labels,body,blockedBy';
@@ -89,16 +99,18 @@ export function toIssueFacts(raw: GhFacts): IssueFacts {
 
 /**
  * Gather every fact the gate needs through `gh`, then evaluate it: epic
- * sub-issues → run-set facts → out-of-set blocker states → the core's
- * verdict. Each phase's fetches run concurrently; output order is the core's.
+ * sub-issues → run-set facts → out-of-set blocker states → `attach`'s landed
+ * set, when given → the core's verdict. Each phase's fetches run
+ * concurrently; output order is the core's.
  *
  * @throws When an answer fails its schema or a list is truncated (the message
- *   names the issue), or when a {@link GhJson} call rejects.
+ *   names the issue), or when a {@link GhJson} or {@link GitText} call rejects.
  */
 export async function gatherAndEvaluate(
   spec: LaunchSpec,
   mode: GateMode,
   gh: GhJson,
+  attach?: AttachTarget,
 ): Promise<GateVerdict> {
   const epics = spec.kind === 'epics' ? spec.epics : [];
   const epicChildren = new Map(
@@ -111,8 +123,30 @@ export async function gatherAndEvaluate(
       outOfSetBlockers(runSet, facts).map(async (b) => [b, await fetchState(b, gh)] as const),
     ),
   );
+  const landed =
+    attach === undefined ? new Set<number>() : await landedIssues(attach.branch, attach.git);
 
-  return evaluateRunGate({ runSet, facts, blockerStates, mode });
+  return evaluateRunGate({ runSet, facts, blockerStates, mode, landed });
+}
+
+/**
+ * An attached run's landed set: each issue a `fixes #N` line cites in the body of a first-parent,
+ * non-merge commit of `origin/master..origin/<branch>`. A `see #N` line never counts: the issue
+ * did not fully land.
+ *
+ * @param branch - The attach target, `ship/<slug>`.
+ * @throws When the {@link GitText} call rejects (an unknown ref among its causes).
+ */
+export async function landedIssues(branch: string, git: GitText): Promise<ReadonlySet<number>> {
+  const bodies = await git([
+    'log',
+    '--first-parent',
+    '--no-merges',
+    '--format=%b',
+    `origin/master..origin/${branch}`,
+  ]);
+
+  return new Set([...bodies.matchAll(/^fixes #(\d+)\s*$/gm)].map((m) => Number(m[1])));
 }
 
 /**

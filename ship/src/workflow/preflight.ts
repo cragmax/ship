@@ -183,6 +183,7 @@ export async function runPreflight(
     args.selection,
     ...args.numbers.map(String),
     ...(args.exclude ? ['--exclude'] : []),
+    ...(args.attach === null ? [] : ['--attach', args.attach]),
   ]);
   const live = await runTool(bound, 'live-runs', ['.']);
   const kept = exemptSpentSlices(checks, live);

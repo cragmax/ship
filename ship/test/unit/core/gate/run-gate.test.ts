@@ -76,6 +76,34 @@ describe('evaluateRunGate — per-issue rules', () => {
     });
   });
 
+  describe('an attached run’s landed set', () => {
+    const run: RunSet = [{ epic: null, issues: [3] }];
+    const facts = [issue(3, { blockedBy: [70, 71] })];
+    const blockerStates = { 70: 'OPEN', 71: 'OPEN' } as const;
+
+    it('an OPEN out-of-set blocker in the landed set passes; one not in it fails open-blocker', () => {
+      expect(gate(run, facts, { blockerStates, landed: [70] })).toEqual({
+        verdict: 'refused',
+        mode: 'refuse',
+        runSet: run,
+        edges: [],
+        failures: [{ kind: 'open-blocker', issue: 3, blocker: 71, message: MSG }],
+        excluded: [],
+      });
+    });
+
+    it('both blockers landed → ok', () => {
+      expect(gate(run, facts, { blockerStates, landed: [70, 71] }).verdict).toBe('ok');
+    });
+
+    it('the same inputs with no attach target fail open-blocker on each', () => {
+      expect(gate(run, facts, { blockerStates }).failures).toEqual([
+        { kind: 'open-blocker', issue: 3, blocker: 70, message: MSG },
+        { kind: 'open-blocker', issue: 3, blocker: 71, message: MSG },
+      ]);
+    });
+  });
+
   it('an out-of-set CLOSED blocker → ok, no edge', () => {
     expect(
       gate([{ epic: null, issues: [3] }], [issue(3, { blockedBy: [70] })], {
@@ -133,7 +161,11 @@ function issue(
 function gate(
   runSet: RunSet,
   facts: readonly IssueFacts[],
-  opts: { mode?: GateMode; blockerStates?: Readonly<Record<number, IssueState>> } = {},
+  opts: {
+    mode?: GateMode;
+    blockerStates?: Readonly<Record<number, IssueState>>;
+    landed?: readonly number[];
+  } = {},
 ): ReturnType<typeof evaluateRunGate> {
   return evaluateRunGate({
     runSet,
@@ -142,6 +174,7 @@ function gate(
       Object.entries(opts.blockerStates ?? {}).map(([n, s]) => [Number(n), s] as const),
     ),
     mode: opts.mode ?? 'refuse',
+    ...(opts.landed === undefined ? {} : { landed: new Set(opts.landed) }),
   });
 }
 

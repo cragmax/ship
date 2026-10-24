@@ -91,6 +91,13 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       '--attach',
       'ship/epic-9',
     ]);
+    expect(callOf(run, 'runner:run-gate')?.argv).toEqual([
+      'ship/src/cli/run-gate.ts',
+      'issues',
+      '7',
+      '--attach',
+      'ship/epic-9',
+    ]);
     expect(callOf(run, 'runner:cut-batch:list')?.argv).toEqual([
       'ship/src/cli/worktree.ts',
       'cut-batch',

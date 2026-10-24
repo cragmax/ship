@@ -7,7 +7,7 @@
  *
  * **Output contract.** stdout carries only the JSON (`GateVerdict` for `epics` / `issues`,
  * `IssueCheck` for `check`), pretty-printed, one trailing newline; diagnostics go to stderr. Exit
- * `0` ok / ready, `1` refused / not ready (read the JSON), `2` a usage, `gh` or schema error
+ * `0` ok / ready, `1` refused / not ready (read the JSON), `2` a usage, `gh`, git or schema error
  * (stdout empty, read stderr). Never `process.exit()`: `main` sets `process.exitCode` and
  * returns, so the stdout JSON a caller parses is flushed in full.
  */
@@ -17,15 +17,28 @@ import { pathToFileURL } from 'node:url';
 import { execa } from 'execa';
 
 import { describeError } from '../core/describe-error.js';
-import { gatherAndEvaluate, gatherCheck, type GhJson } from './run-gate-gh.js';
+import { gatherAndEvaluate, gatherCheck, type GhJson, type GitText } from './run-gate-gh.js';
 import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from '../core/gate/run-gate.js';
 
 /** Parsed argv: gate a launch spec, or check one issue. */
 type RunGateArgs =
-  | { readonly kind: 'gate'; readonly spec: LaunchSpec; readonly mode: GateMode }
+  | {
+      readonly kind: 'gate';
+      readonly spec: LaunchSpec;
+      readonly mode: GateMode;
+      /** An attached run's target, `ship/<slug>` (Ship ADR-0001 decision 16); absent otherwise. */
+      readonly attach?: string;
+    }
   | { readonly kind: 'check'; readonly issue: number };
 
-const USAGE = 'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] | check N';
+const USAGE =
+  'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] [--attach ship/<slug>] | check N';
+
+/** The flags after the subcommand: each the token it came from, or the attach target. */
+interface Flags {
+  readonly exclude: string | undefined;
+  readonly attach: string | undefined;
+}
 
 /** One parsed issue number and the argv token it came from. */
 interface Operand {
@@ -39,9 +52,10 @@ interface Operand {
  * @param argv - `process.argv.slice(2)`.
  * @returns The parsed arguments.
  * @throws On a missing or unknown subcommand, an unknown flag, no numbers, a
- *   token that is not a positive integer, a duplicate number, `--exclude`
- *   with `check`, or `check` with other than one number — each message
- *   naming the offending token.
+ *   token that is not a positive integer, a duplicate number, `--attach`
+ *   without a `ship/<slug>` value, `--exclude` or `--attach` with `check`,
+ *   or `check` with other than one number — each message naming the
+ *   offending token.
  */
 export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
   const [command, ...tokens] = argv;
@@ -51,16 +65,17 @@ export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
     throw usageError(`unknown subcommand '${command}'`);
   }
 
-  const { operands, exclude } = parseOperands(tokens);
+  const { operands, flags } = parseOperands(tokens);
   if (operands.length === 0) throw usageError(`no issue numbers after '${command}'`);
-  if (command === 'check') return checkArgs(operands, exclude);
+  if (command === 'check') return checkArgs(operands, flags);
   const numbers = operands.map((o) => o.value);
 
   return {
     kind: 'gate',
     spec:
       command === 'epics' ? { kind: 'epics', epics: numbers } : { kind: 'issues', issues: numbers },
-    mode: exclude === undefined ? 'refuse' : 'exclude',
+    mode: flags.exclude === undefined ? 'refuse' : 'exclude',
+    ...(flags.attach === undefined ? {} : { attach: flags.attach }),
   };
 }
 
@@ -82,14 +97,21 @@ export function exitCodeFor(result: GateVerdict | IssueCheck): number {
  *
  * @param argv - `process.argv.slice(2)`.
  * @param gh - The `gh` port.
+ * @param git - The git port an attached run's landed set is read through.
  */
-export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
+export async function main(
+  argv: readonly string[],
+  gh: GhJson,
+  git: GitText = gitIn(process.cwd()),
+): Promise<void> {
   try {
     const args = parseRunGateArgs(argv);
+    const attach =
+      args.kind === 'gate' && args.attach !== undefined ? { branch: args.attach, git } : undefined;
     const result =
       args.kind === 'check'
         ? await gatherCheck(args.issue, gh)
-        : await gatherAndEvaluate(args.spec, args.mode, gh);
+        : await gatherAndEvaluate(args.spec, args.mode, gh, attach);
 
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exitCode = exitCodeFor(result);
@@ -100,26 +122,50 @@ export async function main(argv: readonly string[], gh: GhJson): Promise<void> {
 }
 
 /**
+ * The real {@link GitText} port: run `git -C <cwd>` and resolve its stdout.
+ *
+ * @throws When git fails or times out (60s); the message carries git's stderr, else execa's
+ *   short message.
+ */
+export function gitIn(cwd: string): GitText {
+  return (args) => captured('git', args, ['-C', cwd]);
+}
+
+/**
  * The real {@link GhJson} port: run `gh` and parse its stdout as JSON.
  *
  * @throws When gh fails or times out (60s) — the message carries gh's
  *   stderr, else execa's short message — or prints non-JSON.
  */
 async function ghJson(args: readonly string[]): Promise<unknown> {
-  const result = await execa('gh', args, { timeout: 60_000, reject: false });
-  const command = `gh ${args.join(' ')}`;
+  const stdout = await captured('gh', args);
+
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    throw new Error(`run-gate: gh ${args.join(' ')} printed non-JSON output`);
+  }
+}
+
+/**
+ * Run `<file> <prefix…> <args…>` and resolve its stdout; an error names `<file> <args…>`.
+ *
+ * @throws When it fails or times out (60s), carrying its stderr, else execa's short message.
+ */
+async function captured(
+  file: string,
+  args: readonly string[],
+  prefix: readonly string[] = [],
+): Promise<string> {
+  const result = await execa(file, [...prefix, ...args], { timeout: 60_000, reject: false });
 
   if (result.failed) {
     const detail = result.stderr === '' ? (result.shortMessage ?? 'no output') : result.stderr;
 
-    throw new Error(`run-gate: ${command} failed: ${detail}`);
+    throw new Error(`run-gate: ${file} ${args.join(' ')} failed: ${detail}`);
   }
 
-  try {
-    return JSON.parse(result.stdout) as unknown;
-  } catch {
-    throw new Error(`run-gate: ${command} printed non-JSON output`);
-  }
+  return result.stdout;
 }
 
 /** A usage error carrying the usage line. */
@@ -130,10 +176,11 @@ function usageError(reason: string): Error {
 /**
  * Build `check` arguments.
  *
- * @throws When `--exclude` is given or there is more than one number.
+ * @throws When `--exclude` or `--attach` is given or there is more than one number.
  */
-function checkArgs(operands: readonly Operand[], exclude: string | undefined): RunGateArgs {
-  if (exclude !== undefined) throw usageError(`'${exclude}' does not apply to check`);
+function checkArgs(operands: readonly Operand[], flags: Flags): RunGateArgs {
+  if (flags.exclude !== undefined) throw usageError(`'${flags.exclude}' does not apply to check`);
+  if (flags.attach !== undefined) throw usageError(`'--attach' does not apply to check`);
   const [first, extra] = operands;
   if (extra !== undefined)
     throw usageError(`check takes exactly one issue; extra '${extra.token}'`);
@@ -143,23 +190,37 @@ function checkArgs(operands: readonly Operand[], exclude: string | undefined): R
 }
 
 /**
- * Split the post-subcommand tokens into numbers and the `--exclude` flag.
+ * Split the post-subcommand tokens into numbers and the flags.
  *
- * @throws On an unknown flag, a non-positive-integer piece, or a duplicate.
+ * @throws On an unknown flag, `--attach` without a `ship/<slug>` value, a non-positive-integer
+ *   piece, or a duplicate.
  */
-function parseOperands(tokens: readonly string[]): {
-  operands: Operand[];
-  exclude: string | undefined;
-} {
+function parseOperands(tokens: readonly string[]): { operands: Operand[]; flags: Flags } {
   const operands: Operand[] = [];
   let exclude: string | undefined;
+  let attach: string | undefined;
 
-  for (const token of tokens) {
-    if (token.startsWith('--')) exclude = parseFlag(token);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i] ?? '';
+    if (token === '--attach') attach = parseAttach(tokens[++i]);
+    else if (token.startsWith('--')) exclude = parseFlag(token);
     else for (const value of parseNumberToken(token)) addOperand(operands, { value, token });
   }
 
-  return { operands, exclude };
+  return { operands, flags: { exclude, attach } };
+}
+
+/**
+ * The value after `--attach`.
+ *
+ * @throws When it is missing or not `ship/<slug>`.
+ */
+function parseAttach(value: string | undefined): string {
+  if (value === undefined) throw usageError(`'--attach' needs a ship/<slug> value`);
+  if (!/^ship\/[^/\s]+$/.test(value))
+    throw usageError(`'--attach' takes ship/<slug>, not '${value}'`);
+
+  return value;
 }
 
 /**
@@ -205,7 +266,7 @@ function parseIssueNumber(piece: string, token: string): number {
 }
 
 /**
- * Accept the one known flag.
+ * Accept the one known value-less flag.
  *
  * @throws When it is not `--exclude`.
  */
