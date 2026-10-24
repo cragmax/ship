@@ -35,7 +35,7 @@ You review ONE slice's commit against the repo's documented rules and amend your
 ## Limits
 
 - **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
-- **A `hard` fix out of scope blocks the slice**: one that needs a file outside `Changed files:` and their tests. Return `blocked`, naming the file in `summary`.
+- **A `hard` fix reaches what the slice made stale.** A file outside `Changed files:` and their tests is in scope when the slice's own change made it wrong: a doc or list naming an export, count, path or name the slice changed. Fix it in the amend and name the file in `summary`. Any other `hard` fix outside them blocks the slice: return `blocked`, naming the file in `summary`.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
 
 ## Checkpoint overrides
