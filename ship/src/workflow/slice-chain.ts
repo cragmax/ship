@@ -156,14 +156,14 @@ interface AttemptId {
  */
 type DeathStage =
   | 'tdd'
-  | 'spec-review'
-  | 'test-review'
-  | 'standards-review'
-  | 'script-api-tsdoc'
+  | ReviewStage
   | 'runner:check'
   | 'runner:cut-slice'
   | 'runner:provision'
   | 'runner:changed-files';
+
+/** An amending review stage. */
+type ReviewStage = 'spec-review' | 'test-review' | 'standards-review' | 'script-api-tsdoc';
 
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
 type Step<T> = { readonly next: T } | { readonly stop: SchedulerEvent };
@@ -418,7 +418,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
     at.tag,
   );
 
-  return afterAmend(s, 'spec review', 'spec-review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec-review', out, (specReview) => ({ ...s, specReview }));
 }
 
 /**
@@ -435,7 +435,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
     at.tag,
   );
 
-  return afterAmend(s, 'test review', 'test-review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test-review', out, (testReview) => ({ ...s, testReview }));
 }
 
 const TEST_PREFIXES: readonly string[] = [
@@ -474,7 +474,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     at.tag,
   );
 
-  return afterAmend(s, 'standards review', 'standards-review', out, (standardsReview) => ({
+  return afterAmend(s, 'standards-review', out, (standardsReview) => ({
     ...s,
     standardsReview,
   }));
@@ -497,7 +497,7 @@ async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice
   };
   const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
 
-  return afterReview(at, 'script api tsdoc', 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
+  return afterReview(at, 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
     ...s,
     scriptApiTsdoc,
   }));
@@ -505,25 +505,30 @@ async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice
 
 /**
  * Carry an amending stage's reply on: a dead agent stops the slice as died in `stage`, a `blocked`
- * answer or one naming no commit stops it with `label`, else `next` folds it in and `sha` becomes
- * its amend.
+ * answer or one naming no commit stops it with the stage's label, else `next` folds it in and
+ * `sha` becomes its amend.
  */
 function afterReview<
   O extends { readonly verdict: string; readonly sha: string; readonly summary: string },
   T,
 >(
   at: AttemptId,
-  label: string,
-  stage: DeathStage,
+  stage: ReviewStage,
   reply: AgentReply<O>,
   next: (out: O) => T,
 ): Step<T & { readonly sha: string }> {
   if ('died' in reply) return { stop: died(at, stage, reply.died) };
+  const label = stageLabel(stage);
   const out = reply.answer;
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
 
   return { next: { ...next(out), sha: out.sha } };
+}
+
+/** A review stage's label in its blocked reasons: `spec review` for `spec-review`. */
+function stageLabel(stage: ReviewStage): string {
+  return stage.replaceAll('-', ' ');
 }
 
 /**
@@ -533,13 +538,13 @@ function afterReview<
  */
 async function afterAmend<T extends BuiltSlice>(
   s: BuiltSlice,
-  label: string,
-  stage: DeathStage,
+  stage: ReviewStage,
   reply: AgentReply<ReviewOutput>,
   next: (out: ReviewOutput) => T,
 ): Promise<Step<T>> {
-  const step = afterReview(s.at, label, stage, reply, next);
+  const step = afterReview(s.at, stage, reply, next);
   if ('stop' in step || 'died' in reply || reply.answer.verdict !== 'fixed') return step;
+  const label = stageLabel(stage);
   const [files, amended] = await Promise.all([
     reread(s, label, step.next.sha, s.base),
     reread(s, label, step.next.sha, s.tdd.sha),

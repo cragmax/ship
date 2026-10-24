@@ -129,82 +129,83 @@ export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
  */
 export const AGENT_CALLS = {
   issueReadiness: (hooks: WorkflowHooks, values: IssueReadinessValues) =>
-    answerOrNull(
-      askAgent<IssueReadiness>(
-        hooks,
-        PROMPTS.issueReadiness(values),
-        agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
-      ),
+    askAgent<IssueReadiness>(
+      hooks,
+      PROMPTS.issueReadiness(values),
+      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
     ),
   issueOverlap: (hooks: WorkflowHooks, values: IssueOverlapValues) =>
-    answerOrNull(
-      askAgent<IssueOverlap>(
-        hooks,
-        PROMPTS.issueOverlap(values),
-        agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
-      ),
+    askAgent<IssueOverlap>(
+      hooks,
+      PROMPTS.issueOverlap(values),
+      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks: WorkflowHooks, values: TddValues, tag: string) =>
-    askAgent<TddOutput>(
+    askReply<TddOutput>(
       hooks,
       PROMPTS.tdd(values),
       agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd),
     ),
   specReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
   testReview: (hooks: WorkflowHooks, values: TestReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.testReview(values),
       agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks: WorkflowHooks, values: SliceReviewValues, tag: string) =>
-    askAgent<ReviewOutput>(
+    askReply<ReviewOutput>(
       hooks,
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   scriptApiTsdoc: (hooks: WorkflowHooks, values: ScriptApiTsdocValues, tag: string) =>
-    askAgent<ScriptApiTsdocOutput>(
+    askReply<ScriptApiTsdocOutput>(
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
-    answerOrNull(
-      askAgent<EpicReviewOutput>(
-        hooks,
-        PROMPTS.epicReview(values),
-        agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
-      ),
+    askAgent<EpicReviewOutput>(
+      hooks,
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks: WorkflowHooks, values: RetroValues, tag: string) =>
-    answerOrNull(
-      askAgent<RetroOutput>(
-        hooks,
-        PROMPTS.retro(values),
-        agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
-      ),
+    askAgent<RetroOutput>(
+      hooks,
+      PROMPTS.retro(values),
+      agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
     ),
   prWriter: (hooks: WorkflowHooks, values: PrWriterValues, tag: string) =>
-    answerOrNull(
-      askAgent<PrWriterOutput>(
-        hooks,
-        PROMPTS.prWriter(values),
-        agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
-      ),
+    askAgent<PrWriterOutput>(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
 
 /** The start of a non-object answer an {@link AgentReply} keeps, in characters. */
 const ANSWER_PREFIX = 200;
 
-/** Run one agent; resolves to its answer when it is an object, else why it counts as dead. */
+/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
 async function askAgent<T>(
+  hooks: WorkflowHooks,
+  prompt: string,
+  options: AgentOptions,
+): Promise<T | null> {
+  const r = await askReply<T>(hooks, prompt, options);
+
+  return 'answer' in r ? r.answer : null;
+}
+
+/** Run one agent; resolves to its answer when it is an object, else why it counts as dead. */
+async function askReply<T>(
   hooks: WorkflowHooks,
   prompt: string,
   options: AgentOptions,
@@ -216,13 +217,6 @@ async function askAgent<T>(
   const start = text.replace(/\s+/gu, ' ').trim().slice(0, ANSWER_PREFIX);
 
   return { died: `answered no object: ${start}` };
-}
-
-/** A reply's answer; `null` when the agent counts as dead. */
-async function answerOrNull<T>(reply: Promise<AgentReply<T>>): Promise<T | null> {
-  const r = await reply;
-
-  return 'answer' in r ? r.answer : null;
 }
 
 /**

@@ -11,25 +11,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gitIn } from '../../src/cli/run-gate.js';
 import { gatherAndEvaluate, landedIssues, type GhJson } from '../../src/cli/run-gate-gh.js';
-import { commitChanges } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { configureFixtureRepo, mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { commitChanges, makeGitRepo } from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
 import { makeTempRoot, removeTempDirs } from '../helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const TARGET = 'ship/epic-9';
 
+let root: string;
 let repo: string;
 
 beforeEach(() => {
-  repo = makeTempRoot('ph-run-gate-attach-');
-  mustRun('git', ['init', '-q', '-b', 'master'], repo);
-  configureFixtureRepo(repo);
-  commitChanges(repo, {}, 'chore(build): fixture base');
+  root = makeTempRoot('ph-run-gate-attach-');
+  repo = makeGitRepo(root, {});
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  removeTempDirs([repo]);
+  removeTempDirs([root]);
 });
 
 describe('gatherAndEvaluate in an attached run', () => {

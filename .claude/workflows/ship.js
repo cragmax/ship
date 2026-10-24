@@ -2379,84 +2379,70 @@ function leaseTenths(seconds) {
 
 const AGENT_CALLS = {
   issueReadiness: (hooks, values) =>
-    answerOrNull(
-      askAgent(
-        hooks,
-        PROMPTS.issueReadiness(values),
-        agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
-      ),
+    askAgent(
+      hooks,
+      PROMPTS.issueReadiness(values),
+      agentOptions('issueReadiness', null, AGENT_OUTPUT_SCHEMAS.issueReadiness),
     ),
   issueOverlap: (hooks, values) =>
-    answerOrNull(
-      askAgent(
-        hooks,
-        PROMPTS.issueOverlap(values),
-        agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
-      ),
+    askAgent(
+      hooks,
+      PROMPTS.issueOverlap(values),
+      agentOptions('issueOverlap', null, overlapSchema(runSetIssues(values.runSet))),
     ),
   tdd: (hooks, values, tag) =>
-    askAgent(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
+    askReply(hooks, PROMPTS.tdd(values), agentOptions('tdd', tag, AGENT_OUTPUT_SCHEMAS.tdd)),
   specReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.specReview(values),
       agentOptions('specReview', tag, AGENT_OUTPUT_SCHEMAS.specReview),
     ),
   testReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.testReview(values),
       agentOptions('testReview', tag, AGENT_OUTPUT_SCHEMAS.testReview),
     ),
   standardsReview: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
     ),
   scriptApiTsdoc: (hooks, values, tag) =>
-    askAgent(
+    askReply(
       hooks,
       PROMPTS.scriptApiTsdoc(values),
       agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   epicReview: (hooks, values, tag) =>
-    answerOrNull(
-      askAgent(
-        hooks,
-        PROMPTS.epicReview(values),
-        agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
-      ),
+    askAgent(
+      hooks,
+      PROMPTS.epicReview(values),
+      agentOptions('epicReview', tag, AGENT_OUTPUT_SCHEMAS.epicReview),
     ),
   retro: (hooks, values, tag) =>
-    answerOrNull(
-      askAgent(
-        hooks,
-        PROMPTS.retro(values),
-        agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro),
-      ),
-    ),
+    askAgent(hooks, PROMPTS.retro(values), agentOptions('retro', tag, AGENT_OUTPUT_SCHEMAS.retro)),
   prWriter: (hooks, values, tag) =>
-    answerOrNull(
-      askAgent(
-        hooks,
-        PROMPTS.prWriter(values),
-        agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
-      ),
+    askAgent(
+      hooks,
+      PROMPTS.prWriter(values),
+      agentOptions('prWriter', tag, AGENT_OUTPUT_SCHEMAS.prWriter),
     ),
 };
 const ANSWER_PREFIX = 200;
 async function askAgent(hooks, prompt, options) {
+  const r = await askReply(hooks, prompt, options);
+  return 'answer' in r ? r.answer : null;
+}
+async function askReply(hooks, prompt, options) {
   const out = await hooks.agent(prompt, options);
   if (typeof out === 'object' && out !== null) return { answer: out };
   if (out === null || out === undefined) return { died: 'returned nothing' };
   const text = typeof out === 'string' ? out : JSON.stringify(out);
   const start = text.replace(/\s+/gu, ' ').trim().slice(0, ANSWER_PREFIX);
   return { died: `answered no object: ${start}` };
-}
-async function answerOrNull(reply) {
-  const r = await reply;
-  return 'answer' in r ? r.answer : null;
 }
 function overlapSchema(issues) {
   const base = AGENT_OUTPUT_SCHEMAS.issueOverlap;
@@ -3548,7 +3534,7 @@ async function specReviewStage(s) {
     sliceReviewValues(s, 'spec-review'),
     at.tag,
   );
-  return afterAmend(s, 'spec review', 'spec-review', out, (specReview) => ({ ...s, specReview }));
+  return afterAmend(s, 'spec-review', out, (specReview) => ({ ...s, specReview }));
 }
 async function testReviewStage(s) {
   const { at } = s;
@@ -3559,7 +3545,7 @@ async function testReviewStage(s) {
     sliceReviewValues(s, 'test-review'),
     at.tag,
   );
-  return afterAmend(s, 'test review', 'test-review', out, (testReview) => ({ ...s, testReview }));
+  return afterAmend(s, 'test-review', out, (testReview) => ({ ...s, testReview }));
 }
 const TEST_PREFIXES = ['test/', 'tooling/test/', 'server-pool/test/', 'ship/test/'];
 async function testSkip(s) {
@@ -3582,7 +3568,7 @@ async function standardsReviewStage(s) {
     sliceReviewValues(s, 'standards-review'),
     at.tag,
   );
-  return afterAmend(s, 'standards review', 'standards-review', out, (standardsReview) => ({
+  return afterAmend(s, 'standards-review', out, (standardsReview) => ({
     ...s,
     standardsReview,
   }));
@@ -3597,21 +3583,26 @@ async function scriptApiTsdocStage(s) {
     reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
   };
   const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
-  return afterReview(at, 'script api tsdoc', 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
+  return afterReview(at, 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
     ...s,
     scriptApiTsdoc,
   }));
 }
-function afterReview(at, label, stage, reply, next) {
+function afterReview(at, stage, reply, next) {
   if ('died' in reply) return { stop: died(at, stage, reply.died) };
+  const label = stageLabel(stage);
   const out = reply.answer;
   if (out.verdict === 'blocked') return { stop: blocked(at, `${label}: ${out.summary}`) };
   if (out.sha === '') return { stop: blocked(at, `${label}: no commit`) };
   return { next: { ...next(out), sha: out.sha } };
 }
-async function afterAmend(s, label, stage, reply, next) {
-  const step = afterReview(s.at, label, stage, reply, next);
+function stageLabel(stage) {
+  return stage.replaceAll('-', ' ');
+}
+async function afterAmend(s, stage, reply, next) {
+  const step = afterReview(s.at, stage, reply, next);
   if ('stop' in step || 'died' in reply || reply.answer.verdict !== 'fixed') return step;
+  const label = stageLabel(stage);
   const [files, amended] = await Promise.all([
     reread(s, label, step.next.sha, s.base),
     reread(s, label, step.next.sha, s.tdd.sha),
@@ -3842,7 +3833,7 @@ function act(d, action) {
         issue: action.issue,
         outcome: 'blocked',
         cite: 'see',
-        reason: retryDeathReason(d.deaths.get(action.issue)?.at(-1)),
+        reason: retryDeathReason(d, action.issue),
       });
       break;
     case 'epic-done':
@@ -3953,8 +3944,9 @@ function settle(d, issue, ending) {
   record(d, i, issue, ending, events);
   feed(d, events);
 }
-function retryDeathReason(death) {
-  if (death === undefined) return 'its agent died on the retry too';
+function retryDeathReason(d, issue) {
+  const death = d.deaths.get(issue)?.at(-1);
+  if (death === undefined) throw new Error(`ship: #${String(issue)} blocked with no death`);
   return `${death.stage} died on the retry too: ${death.cause}`;
 }
 function feed(d, events) {

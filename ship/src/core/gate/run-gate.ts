@@ -143,6 +143,9 @@ interface RunGateInput {
   readonly mode: GateMode;
 }
 
+/** What the gate knows of out-of-set blockers: their states, and an attached run's landed set. */
+type BlockerKnowledge = Pick<RunGateInput, 'blockerStates' | 'landed'>;
+
 /**
  * R1: resolve a launch spec into its run set. An `issues` spec becomes one
  * `epic: null` entry, ascending. An `epics` spec becomes one entry per epic,
@@ -401,7 +404,7 @@ function factsFor(facts: ReadonlyMap<number, IssueFacts>, issue: number): IssueF
 function assessIssue(
   facts: IssueFacts,
   entries: EntryIndex,
-  input: RunGateInput,
+  known: BlockerKnowledge,
 ): { failures: GateFailure[]; edges: RunEdge[] } {
   const issue = facts.number;
   const own = entries.get(issue);
@@ -413,7 +416,7 @@ function assessIssue(
   for (const blocker of blockers) {
     const home = entries.get(blocker);
     if (home !== undefined) edges.push({ blocker, dependent: issue });
-    const failure = blockerFailure(issue, blocker, { home, own }, input);
+    const failure = blockerFailure(issue, blocker, { home, own }, known);
     if (failure !== undefined) failures.push(failure);
   }
 
@@ -448,13 +451,13 @@ function blockerFailure(
   issue: number,
   blocker: number,
   placement: BlockerPlacement,
-  input: RunGateInput,
+  known: BlockerKnowledge,
 ): GateFailure | undefined {
   const { home, own } = placement;
 
   if (home === undefined) {
-    const open = blockerState(input.blockerStates, blocker) === 'OPEN';
-    const landed = input.landed?.has(blocker) === true;
+    const open = blockerState(known.blockerStates, blocker) === 'OPEN';
+    const landed = known.landed?.has(blocker) === true;
 
     return open && !landed ? openBlockerFailure(issue, blocker) : undefined;
   }

@@ -83,11 +83,8 @@ export interface CaptureOptions {
  * Run a child with captured output, never throwing on a child failure.
  *
  * @remarks
- * The child gets this process's environment minus every `GIT_*` variable, with `options.env`
- * laid over it; an overlay must not set a `GIT_*` variable. The CLI names each repository by
- * explicit path (`git -C`), so an inherited repository-location variable is always wrong. A
- * prefix rule rather than a list, so no name that `git rev-parse --local-env-vars`
- * prints can be missed; no child here needs any other `GIT_*` setting.
+ * The child gets {@link gitFreeEnv} with `options.env` laid over it; an overlay must not set a
+ * `GIT_*` variable.
  *
  * @param args - Argument vector, passed without a shell.
  */
@@ -96,10 +93,7 @@ export function runCaptured(
   args: readonly string[],
   options: CaptureOptions,
 ): Captured {
-  const env = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-    ...options.env,
-  };
+  const env = { ...gitFreeEnv(), ...options.env };
   const r = execaSync(file, args, {
     cwd: options.cwd,
     env,
@@ -118,6 +112,17 @@ export function runCaptured(
     output,
     tail: lastLines(output + logged),
   };
+}
+
+/**
+ * This process's environment minus every `GIT_*` variable. Ship names each repository by explicit
+ * path (`git -C`), so an inherited repository-location variable (a git hook exports `GIT_DIR`) is
+ * always wrong. A prefix rule rather than a list, so no name that
+ * `git rev-parse --local-env-vars` prints can be missed; no child here needs any other `GIT_*`
+ * setting.
+ */
+export function gitFreeEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 }
 
 /**

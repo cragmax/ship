@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 import { execa } from 'execa';
 
 import { describeError } from '../core/describe-error.js';
+import { gitFreeEnv } from './git/exec.js';
 import { gatherAndEvaluate, gatherCheck, type GhJson, type GitText } from './run-gate-gh.js';
 import type { GateMode, GateVerdict, IssueCheck, LaunchSpec } from '../core/gate/run-gate.js';
 
@@ -122,19 +123,14 @@ export async function main(
 }
 
 /**
- * The real {@link GitText} port: run `git -C <cwd>` with every `GIT_*` variable stripped, and
- * resolve its stdout. An inherited repository-location variable (a git hook exports `GIT_DIR`)
- * would name another repository.
+ * The real {@link GitText} port: run `git` in `cwd` under {@link gitFreeEnv}, and resolve its
+ * stdout.
  *
  * @throws When git fails or times out (60s); the message carries git's stderr, else execa's
  *   short message.
  */
 export function gitIn(cwd: string): GitText {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
-  );
-
-  return (args) => captured('git', args, { prefix: ['-C', cwd], env });
+  return (args) => captured('git', args, { cwd, env: gitFreeEnv() });
 }
 
 /**
@@ -154,20 +150,21 @@ async function ghJson(args: readonly string[]): Promise<unknown> {
 }
 
 /**
- * Run `<file> <prefix…> <args…>` and resolve its stdout; an error names `<file> <args…>`. A given
- * `env` replaces this process's environment rather than extending it.
+ * Run `<file> <args…>` and resolve its stdout. A given `env` replaces this process's environment
+ * rather than extending it.
  *
  * @throws When it fails or times out (60s), carrying its stderr, else execa's short message.
  */
 async function captured(
   file: string,
   args: readonly string[],
-  { prefix = [], env }: { prefix?: readonly string[]; env?: NodeJS.ProcessEnv } = {},
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const result = await execa(file, [...prefix, ...args], {
+  const result = await execa(file, args, {
     timeout: 60_000,
     reject: false,
-    ...(env === undefined ? {} : { env, extendEnv: false }),
+    ...options,
+    extendEnv: options.env === undefined,
   });
 
   if (result.failed) {

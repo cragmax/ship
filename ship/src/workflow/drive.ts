@@ -234,7 +234,7 @@ function act(d: Drive, action: SchedulerAction): void {
         issue: action.issue,
         outcome: 'blocked',
         cite: 'see',
-        reason: retryDeathReason(d.deaths.get(action.issue)?.at(-1)),
+        reason: retryDeathReason(d, action.issue),
       });
       break;
     case 'epic-done':
@@ -380,9 +380,13 @@ function settle(d: Drive, issue: number, ending: AttemptEnding): void {
   feed(d, events);
 }
 
-/** A `block`'s reason, naming the death that spent the retry. */
-function retryDeathReason(death: AgentDeath | undefined): string {
-  if (death === undefined) return 'its agent died on the retry too';
+/**
+ * A `block`'s reason, naming the death that spent the retry: {@link settle} records each death
+ * before it feeds the `agent-died` that a `block` answers.
+ */
+function retryDeathReason(d: Drive, issue: number): string {
+  const death = d.deaths.get(issue)?.at(-1);
+  if (death === undefined) throw new Error(`ship: #${String(issue)} blocked with no death`);
 
   return `${death.stage} died on the retry too: ${death.cause}`;
 }
