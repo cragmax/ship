@@ -1,7 +1,7 @@
 /**
  * The saved workflows' tooling calls: each runs one repo CLI command through the `runner` agent,
  * which writes the full envelope into a fresh directory of its own under the call's
- * {@link ToolPlace} — so concurrent launches and repeated calls never share one — and returns only
+ * {@link ToolPlace}, so concurrent launches and repeated calls never share one, and returns only
  * the fields the workflow consumes, per the command's {@link TOOL_SCHEMAS} row.
  *
  * **Types.** Each output type is shallow-`Partial`, required fields included: a command
@@ -11,7 +11,7 @@
  * never as a pass.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect; the zod sources are imported for types only.
+ * no top-level side effect. The zod sources are imported for types only.
  */
 
 import type { z } from 'zod';
@@ -87,9 +87,6 @@ export interface RunAt {
 /**
  * The place of a call once its run is cut: under the run's report directory.
  *
- * @param at - The run's report directory.
- * @param tag - The call's {@link ToolPlace.tag}.
- * @param write - The files to write first.
  * @returns `<reportDir>/tool`, the tag and the files.
  */
 export function runPlace(at: RunAt, tag: string, ...write: FileToWrite[]): ToolPlace {
@@ -102,7 +99,7 @@ interface ToolBase {
   readonly exitCode: number;
   /** The full envelope on disk. */
   readonly envelopePath: string;
-  /** The last lines of stderr; present only on exit 2. */
+  /** The last lines of stderr, present only on exit 2. */
   readonly stderrTail?: string;
 }
 
@@ -262,8 +259,8 @@ const RUN_GRAPH = {
 
 /**
  * Each tool's output schema: only what the workflow reads. A worktree tool's row is
- * `schemas.generated.ts`' emission of its pick in `ship/src/schemas/tool-envelopes.ts` —
- * the one source of the consumed fields, their schema and their type, and of which are required —
+ * `schemas.generated.ts`' emission of its pick in `ship/src/schemas/tool-envelopes.ts`,
+ * the one source of the consumed fields, their schema and their type, and of which are required,
  * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
  * hand-written from `ship/src/core/gate/run-gate.ts`' types: every consumed field required,
  * save those a failure or exclusion kind may lack. The `comment-only` row is hand-written from
@@ -335,9 +332,9 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
  * Run one tooling command through the runner.
  *
  * @param argv - The command words after {@link TOOL_COMMANDS}'s, unquoted.
- * @param place - Where the envelope goes, the call's tag and a file to
- *   write first; default {@link PRE_CUT}.
- * @returns Resolves to the consumed fields; `null` when the runner returned none.
+ * @param place - Where the envelope goes, the call's tag, and a file to
+ *   write first. Default {@link PRE_CUT}.
+ * @returns Resolves to the consumed fields, `null` when the runner returned none.
  */
 export async function runTool<N extends ToolName>(
   hooks: WorkflowHooks,
@@ -377,11 +374,11 @@ export function toolCommandLine(name: ToolName, argv: readonly string[]): string
 }
 
 /**
- * One line naming a worktree-CLI tool's non-`ok` outcome — how every stage
+ * One line naming a worktree-CLI tool's non-`ok` outcome: how every stage
  * reports a tool that let it down (pre-flight's refusals, whose outputs may
  * carry no `status`, word theirs apart).
  *
- * @param out - Its output; `null` when the runner returned none.
+ * @param out - Its output, `null` when the runner returned none.
  * @returns `<tool> <status>[ (<reason>)]: <first error or stderr tail>`.
  */
 export function envelopeProblem(
@@ -415,8 +412,8 @@ function envelopeSchema(name: WorktreeToolName): JsonSchema {
 }
 
 /**
- * A tool output's schema: the runner's fields — `exitCode` and
- * `envelopePath` required, `stderrTail` not — plus the tool's consumed
+ * A tool output's schema: the runner's fields (`exitCode` and
+ * `envelopePath` required, `stderrTail` not) plus the tool's consumed
  * fields, their `required` kept.
  */
 function toolSchema(consumed: {

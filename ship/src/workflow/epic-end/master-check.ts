@@ -6,7 +6,7 @@
  * (`epic-end.ts`), so no other epic end talks to `origin` between the check and the push.
  *
  * **Fail closed**: anything but an `ok` check naming two moves that are `equal` or `forward`, each
- * with its current sha, is a failure — a deleted, rewound or undecidable ref, a failed or refused
+ * with its current sha, is a failure: a deleted, rewound, or undecidable ref, a failed or refused
  * check, and a runner that returned nothing. "Could not tell" never passes.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
@@ -40,9 +40,9 @@ export interface PassedMasterCheck {
 export interface FailedMasterCheck {
   /** Always `false`. */
   readonly passed: false;
-  /** Local `master`'s move; `null` when the check named none. */
+  /** Local `master`'s move, `null` when the check named none. */
   readonly local: MasterMove | null;
-  /** `origin`'s `master` move; `null` when the check named none. */
+  /** `origin`'s `master` move, `null` when the check named none. */
   readonly remote: MasterMove | null;
   /** What stopped the epic, one line. */
   readonly failure: string;
@@ -61,8 +61,8 @@ const NO_SYNCED = 'master sync named no origin/master sha to check against';
  * Check that `master` only moved forward since the launch.
  *
  * @param synced - The `origin/master` sha the epic end's sync left the
- *   batch containing; `null` when the sync named none.
- * @returns Resolves to the check; with no launch snapshot, or no synced
+ *   batch containing, `null` when the sync named none.
+ * @returns Resolves to the check. With no launch snapshot, or no synced
  *   sha, a failed check and no tool call.
  */
 export async function checkMasterStep(

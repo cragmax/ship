@@ -6,12 +6,12 @@
  * returned none (it died, or answered no object).
  *
  * The output shapes are the zod sources in
- * `ship/src/schemas/agent-outputs.ts` — the canonical home of each
- * field and its doc; each type here is its `z.infer`, and each schema is its
+ * `ship/src/schemas/agent-outputs.ts`, the canonical home of each
+ * field and its doc. Each type here is its `z.infer`, and each schema is its
  * `schemas.generated.ts` emission ({@link AGENT_OUTPUT_SCHEMAS}).
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
- * no top-level side effect; the zod sources are imported for their types
+ * no top-level side effect. The zod sources are imported for their types
  * only.
  */
 
@@ -105,7 +105,7 @@ export interface SliceWork {
 }
 
 /**
- * A slice stage agent's reply: its answer, or why the agent counts as dead — `returned nothing`,
+ * A slice stage agent's reply: its answer, or why the agent counts as dead: `returned nothing`,
  * or `answered no object: <the start of its answer>`, whitespace runs collapsed to one space.
  */
 export type AgentReply<T> = { readonly answer: T } | { readonly died: string };
@@ -123,7 +123,7 @@ type RetroOutput = z.infer<typeof RetroOutputSchema>;
 export type PrWriterOutput = z.infer<typeof PrWriterOutputSchema>;
 
 /**
- * One wrapper per judgment stage; `tag` tells the call from the stage's
+ * One wrapper per judgment stage. `tag` tells the call from the stage's
  * others (`7-1`). `issue-readiness` and `issue-overlap` run once per launch,
  * so they take none.
  */
@@ -193,7 +193,7 @@ export const AGENT_CALLS = {
 /** The start of a non-object answer an {@link AgentReply} keeps, in characters. */
 const ANSWER_PREFIX = 200;
 
-/** Run one agent; resolves to its answer, or `null` unless the answer is an object. */
+/** Run one agent. Resolves to its answer, or `null` unless the answer is an object. */
 async function askAgent<T>(
   hooks: WorkflowHooks,
   prompt: string,
@@ -204,7 +204,7 @@ async function askAgent<T>(
   return 'answer' in r ? r.answer : null;
 }
 
-/** Run one agent; resolves to its answer when it is an object, else why it counts as dead. */
+/** Run one agent. Resolves to its answer when it is an object, else why it counts as dead. */
 async function askReply<T>(
   hooks: WorkflowHooks,
   prompt: string,

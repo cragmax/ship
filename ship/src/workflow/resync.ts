@@ -1,13 +1,13 @@
 /**
  * The `resync` workflow's entry (Ship ADR-0001 decision 12): bring an open run branch level with
- * `origin/master` — after another PR merged into `master` — through the epic end's own merge step
- * (`epic-end/sync-master-step.ts`) and a lefthook-gated, never-forced push; never a rebase, never
+ * `origin/master`, after another PR merged into `master`, through the epic end's own merge step
+ * (`epic-end/sync-master-step.ts`) and a lefthook-gated, never-forced push, never a rebase, never
  * GitHub's server-side "Update branch". Rendered into `.claude/workflows/resync.js` by
- * `ship/src/build/render-workflows.ts` — edit this source and run `npm run fix`, never the rendered
+ * `ship/src/build/render-workflows.ts`: edit this source and run `npm run fix`, never the rendered
  * file.
  *
- * The attach refuses a branch holding commits of its own `origin` lacks (`unpublished-commits` —
- * a stopped attached run's fixes, recovered first), so nothing merges or pushes; an unpushed merge
+ * The attach refuses a branch holding commits of its own `origin` lacks (`unpublished-commits`:
+ * a stopped attached run's fixes, recovered first), so nothing merges or pushes. An unpushed merge
  * of its own still goes through. An `up-to-date` merge still reaches the push, so a rerun pushes a
  * merge an earlier resync made but never pushed.
  *
@@ -31,17 +31,17 @@ interface ResyncReport {
    * merged (or already level) and pushed (or already pushed).
    */
   readonly status: 'refused' | 'stopped' | 'done';
-  /** The run branch; empty when refused. */
+  /** The run branch, empty when refused. */
   readonly branch: string;
   /** One line on how the run ended. */
   readonly message: string;
   /** The branch's open PR, once known. */
   readonly pr: number | null;
-  /** The merge step's result; `null` before it ran. */
+  /** The merge step's result, `null` before it ran. */
   readonly sync: SyncStepResult | null;
   /** Whether the push ran and succeeded. */
   readonly pushed: boolean;
-  /** The PR's raw mergeable state after the push; `null` before it was read. */
+  /** The PR's raw mergeable state after the push, `null` before it was read. */
   readonly mergeable: string | null;
   /** What the spent-run cleanup did. */
   readonly cleanup: CleanupReport;

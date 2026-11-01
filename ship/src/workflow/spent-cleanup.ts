@@ -1,15 +1,15 @@
 /**
  * The saved workflows' spent-run cleanup, run by `/ship`'s launch and `/resync`'s pre-flight: tear
  * down each live run whose PR is over and whose tip is in that PR's head (`live-runs`' `spent`),
- * guarded — only a batch known clean, with no worktree nested inside it — then, after an `ok`
+ * guarded (only a batch known clean, with no worktree nested inside it), then, after an `ok`
  * teardown, retire the run (`retire-run`).
  *
  * - **Unknown is not none**: a `live-runs` that failed, or answered without its runs, blocks the
- *   cleanup — no teardown at all — and the caller goes on.
+ *   cleanup (no teardown at all), and the caller goes on.
  * - **Unverified is not spent**: a run whose PR head cannot be checked (`spentUnverified`) is
  *   skipped and reported, never torn down.
  * - **A shrunk link target stops the caller** (teardown's `source-shrank` refusal): something
- *   outside the batch lost files. Other teardown failures are residue; the next run is still tried.
+ *   outside the batch lost files. Other teardown failures are residue. The next run is still tried.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level
  * effect.
@@ -42,9 +42,9 @@ export interface CleanupReport {
   readonly skipped: SkippedRun[];
   /** What each failed teardown or non-`ok` retire-run left behind, one line each. */
   readonly residue: string[];
-  /** Why no run was looked at; `null` when `live-runs` answered. */
+  /** Why no run was looked at, `null` when `live-runs` answered. */
   blocked: string | null;
-  /** Why the caller must stop; `null` unless a teardown refused `source-shrank`. */
+  /** Why the caller must stop, `null` unless a teardown refused `source-shrank`. */
   stop: string | null;
 }
 
@@ -52,8 +52,8 @@ export interface CleanupReport {
  * Tear down the spent runs `live-runs` reported.
  *
  * @param hooks - The workflow hooks, bound to the main checkout.
- * @param live - `live-runs`' output; `null` when the runner returned none.
- * @returns Resolves to the report; never rejects on a tool's outcome.
+ * @param live - `live-runs`' output, `null` when the runner returned none.
+ * @returns Resolves to the report. Never rejects on a tool's outcome.
  */
 export async function cleanupSpent(
   hooks: WorkflowHooks,
@@ -86,7 +86,7 @@ export async function cleanupSpent(
  * Clean up one run: leave a live one, skip a spent one it must leave, tear
  * the rest down.
  *
- * @param report - The report; records what happened.
+ * @param report - The report, which records what happened.
  */
 async function cleanupRun(
   hooks: WorkflowHooks,
@@ -126,9 +126,9 @@ async function tearDownSpent(
 }
 
 /**
- * What the cleanup does with one run; it leaves a spent run that is unverified, dirty or of unknown
- * dirtiness, or has nested worktrees. Reads `path` and `nested` unguarded: the `live-runs` row
- * schema requires both, and the runner's answer is held to it.
+ * What the cleanup does with one run. It leaves a spent run that is unverified, dirty, or of
+ * unknown dirtiness, or has nested worktrees. Reads `path` and `nested` unguarded: the `live-runs`
+ * row schema requires both, and the runner's answer is held to it.
  */
 function spentTarget(run: LiveRunOutput): { readonly path: string } | SkippedRun | null {
   if (run.spentUnverified) {

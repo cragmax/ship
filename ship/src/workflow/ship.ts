@@ -3,12 +3,12 @@
  * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` into the Saved workflow
  * `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the rendered file.
  *
- * Every refusal — the arguments, pre-flight, or a `source-shrank` spent-run teardown — ends the run
+ * Every refusal (the arguments, pre-flight, or a `source-shrank` spent-run teardown) ends the run
  * before anything is cut. The epic end never tears down its own batch: while its PR is open, that
  * worktree is how `live-runs`, and so the next launch's collision check, sees the run. An attached
  * run (`--attach ship/<slug>`, issues only, so one entry) lands on an open PR's existing branch
  * instead of cutting one. Resume (`resumeFromRunId`) is safe only for a single-entry run at
- * `maxSlices: 1`; any other run is recovered by hand once cut (`drive.ts` § Concurrency;
+ * `maxSlices: 1`. Any other run is recovered by hand once cut (`drive.ts` § Concurrency,
  * Ship ADR-0001 decision 17).
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
@@ -48,18 +48,18 @@ export interface ShipReport {
    * passed; `done`: a full run ended, each entry's result in `epics`.
    */
   readonly status: 'refused' | 'preflight-ok' | 'done';
-  /** Every refusal; present only when `refused`. */
+  /** Every refusal, present only when `refused`. */
   readonly refusals?: readonly ShipRefusal[];
   /** Every issue exclude mode dropped. */
   readonly dropped: readonly DroppedIssue[];
-  /** The graph the run would schedule, overlap edges merged; present only when `preflight-ok`. */
+  /** The graph the run would schedule, overlap edges merged, present only when `preflight-ok`. */
   readonly graph?: RunGraph;
-  /** The overlap edges pre-flight added; present unless `refused`. */
+  /** The overlap edges pre-flight added, present unless `refused`. */
   readonly overlap?: OverlapRecord;
-  /** Each entry's result, in run-set order; empty unless `done`. */
+  /** Each entry's result, in run-set order, empty unless `done`. */
   readonly epics: readonly EpicReport[];
   /**
-   * What the spent-run cleanup did; present once it ran: `done`, or
+   * What the spent-run cleanup did, present once it ran: `done`, or
    * `refused` by its `source-shrank` stop.
    */
   readonly cleanup?: CleanupReport;
@@ -116,7 +116,7 @@ export async function runShip(hooks: WorkflowHooks, rawArgs: unknown): Promise<S
 
 /**
  * Cut every entry, then drive the graph less every issue of a failed cut and its dependents, each
- * entry paired with its setup by `epic` key — so an entry the drop emptied is never driven, and
+ * entry paired with its setup by `epic` key, so an entry the drop emptied is never driven, and
  * drive's entry `i` is always the graph's.
  */
 async function runEntries(
@@ -151,8 +151,8 @@ async function runEntries(
 }
 
 /**
- * Cut and provision one entry's batch worktree — or, for an attached run, attach the open PR's
- * branch's batch; a failed command yields a `stopped` report naming it.
+ * Cut and provision one entry's batch worktree or, for an attached run, attach the open PR's
+ * branch's batch. A failed command yields a `stopped` report naming it.
  */
 async function cutEntry(
   hooks: WorkflowHooks,
@@ -211,8 +211,8 @@ function cutSelection(entry: RunSetEntry, attach: string | null): string[] {
 }
 
 /**
- * The batch's trimmed pool registry: a reused attached batch's, as `cut-batch --attach` found it —
- * none stops the entry — otherwise `provision-batch`'s, provisioning a batch cut or checked out
+ * The batch's trimmed pool registry: a reused attached batch's, as `cut-batch --attach` found it
+ * (none stops the entry), otherwise `provision-batch`'s, provisioning a batch cut or checked out
  * anew.
  */
 async function batchRegistry(
@@ -242,7 +242,7 @@ function isText(value: string | null | undefined): value is string {
 
 /**
  * The `stopped` report of an entry whose batch could not be set up: every issue `blocked`, cited
- * `see`; the caller, which holds the graph, fills in its schedule.
+ * `see`. The caller, which holds the graph, fills in its schedule.
  */
 function stoppedEntry(entry: RunSetEntry, branch: string, message: string): EntryCut {
   const stopped: EpicReport = {
@@ -265,7 +265,7 @@ function stoppedEntry(entry: RunSetEntry, branch: string, message: string): Entr
 
 /**
  * The report of an entry that was cut: its drive report, every issue a failed cut elsewhere
- * dropped cited `see` as skipped and scheduled as never started — `nothing-landed` when the drop
+ * dropped cited `see` as skipped and scheduled as never started, `nothing-landed` when the drop
  * emptied the entry.
  */
 function cutReport(

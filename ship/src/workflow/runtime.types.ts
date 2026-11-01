@@ -2,17 +2,17 @@
  * The workflow runtime's vocabulary, as the workflow sources see it
  * (Ship ADR-0001 decision 1): the hooks a saved workflow's body is given, the
  * options of one `agent()` call, and the `meta` export. The runtime binds
- * the hooks as globals; the sources take them as one object instead, so a
+ * the hooks as globals (unprobed). The sources take them as one object instead, so a
  * test can drive the body with fakes, and only the rendered tail
  * (`ship/src/build/workflow-render.ts`) names the globals.
  *
- * Type-only — erased at render, so it adds nothing to the render closure.
+ * Type-only: erased at render, so it adds nothing to the render closure.
  */
 
 /** A per-call reasoning effort. */
 export type Effort = 'low' | 'medium' | 'high';
 
-/** A per-call model alias; absent means the call inherits the session's model. */
+/** A per-call model alias. Absent means the call inherits the session's model (unprobed). */
 export type ModelAlias = 'opus' | 'sonnet' | 'haiku';
 
 /** A JSON Schema object an agent's structured output must satisfy. */
@@ -20,7 +20,7 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 /**
  * The options of one `agent()` call. The runtime honours a per-call `model`
- * and `effort` — `effort` with a non-default model included (Ship PF-3).
+ * and `effort`, `effort` with a non-default model included (Ship PF-3).
  *
  * **No working directory.** Every agent starts in the session's current
  * working directory, which a session `cd` moves mid-run, whatever worktree it
@@ -35,22 +35,25 @@ export interface AgentOptions {
   readonly label: string;
   /** The project agent to run (`.claude/agents/<agentType>.md`). */
   readonly agentType?: string;
-  /** The model; absent inherits. */
+  /** The model. Absent inherits (unprobed). */
   readonly model?: ModelAlias;
-  /** The effort; absent inherits. */
+  /** The effort. Absent inherits (unprobed). */
   readonly effort?: Effort;
   /**
-   * The structured output's schema; the runtime validates the answer against
-   * it, constraints such as `minimum` included.
+   * The structured output's schema. The runtime validates the answer against
+   * it, constraints such as `minimum` included (unprobed).
    */
   readonly schema?: JsonSchema;
 }
 
 /** The hooks the workflow body is given. */
 export interface WorkflowHooks {
-  /** Run one agent; resolves to its structured output, or `null` when it returned none. */
+  /**
+   * Run one agent. Resolves to its structured output (Ship PF-5), or `null` when it returned none
+   * (unprobed).
+   */
   readonly agent: (prompt: string, options: AgentOptions) => Promise<unknown>;
-  /** Run thunks concurrently; a thunk that threw yields `null`. */
+  /** Run thunks concurrently (Ship PF-7). A thunk that threw yields `null` (unprobed). */
   readonly parallel: <T>(thunks: readonly (() => Promise<T>)[]) => Promise<(T | null)[]>;
   /** Run `step` over each item. */
   readonly pipeline: <T, R>(items: readonly T[], step: (item: T) => Promise<R>) => Promise<R[]>;

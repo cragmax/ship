@@ -1,15 +1,15 @@
 /**
  * The `ship` workflow's pre-flight (Ship ADR-0001 decision 4): everything a run must hold before
- * it cuts anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set
- * — always checked, as server-tier tdd runs lease it), the run gate, `live-runs`, then, once each,
+ * it cuts anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set,
+ * always checked, as server-tier tdd runs lease it), the run gate, `live-runs`, then, once each,
  * `issue-readiness` on the run set and `issue-overlap` on the rest and unspent live runs' files.
  *
  * **Every refusal is collected**: only an unnamed main checkout and an absent run set stop the
  * phase early. No verdict, a verdict missing its fields, or a run-set issue left unjudged is a
  * refusal, never a pass. **Exclude mode** drops a stale or not-ready issue with its dependents
- * ({@link dropWithDependents}); a live-run overlap, and any pair {@link settleOverlap} keeps across
+ * ({@link dropWithDependents}). A live-run overlap, and any pair {@link settleOverlap} keeps across
  * two epics, still refuses. **An attached run**'s `no-open-pr`, `slices-live` and
- * `unpublished-commits` refuse like any check; `issue-readiness` and `issue-overlap` judge its PR
+ * `unpublished-commits` refuse like any check. `issue-readiness` and `issue-overlap` judge its PR
  * head. **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
  * Render-safe (ship/src/build/workflow-render.ts): ECMAScript built-ins only, no top-level effect.
@@ -98,27 +98,27 @@ export interface DroppedIssue {
 
 /** What pre-flight found. */
 interface PreflightOutcome {
-  /** Every refusal, in check order; empty when the run may start. */
+  /** Every refusal, in check order, empty when the run may start. */
   readonly refusals: readonly ShipRefusal[];
   /** Every issue dropped, gate drops first. */
   readonly dropped: readonly DroppedIssue[];
-  /** The run graph to schedule, drops applied; `null` when the gate gave none. */
+  /** The run graph to schedule, drops applied, `null` when the gate gave none. */
   readonly graph: RunGraph | null;
   /**
-   * The main checkout as pre-flight found it — the baseline of the epic
-   * end's main-untouched comparison and master check; `null` unless the
+   * The main checkout as pre-flight found it: the baseline of the epic
+   * end's main-untouched comparison and master check. `null` unless the
    * checks passed.
    */
   readonly main: MainSnapshot | null;
-  /** The overlap edges merged into `graph`; `null` when `issue-overlap` failed or refused. */
+  /** The overlap edges merged into `graph`, `null` when `issue-overlap` failed or refused. */
   readonly overlap: OverlapRecord | null;
   /**
    * `live-runs`' answer as pre-flight read it, reused by the launch's
-   * spent-run cleanup; `null` when the runner returned none.
+   * spent-run cleanup, `null` when the runner returned none.
    */
   readonly live: LiveRunsOutput | null;
   /**
-   * The main checkout `preflight` named, every later call bound to it ({@link withCheckout});
+   * The main checkout `preflight` named, every later call bound to it ({@link withCheckout}).
    * `null`, with a refusal, when it named none and nothing else ran.
    */
   readonly checkout: string | null;
@@ -165,13 +165,7 @@ interface DropResult {
   readonly dependents: readonly number[];
 }
 
-/**
- * Run the pre-flight phase.
- *
- * @param hooks - The workflow hooks.
- * @param args - The launch arguments.
- * @returns Resolves to every refusal, every drop and the graph to schedule.
- */
+/** Run the pre-flight phase. */
 export async function runPreflight(
   hooks: WorkflowHooks,
   args: ShipArgs,
@@ -202,7 +196,7 @@ export async function runPreflight(
 
 /**
  * Drop `issues` from a graph together with their transitive dependents, every edge with a dropped
- * endpoint, and every entry left empty — so the result is a valid scheduler input whenever `graph`
+ * endpoint, and every entry left empty, so the result is a valid scheduler input whenever `graph`
  * is. An issue not in the graph is ignored.
  */
 export function dropWithDependents(graph: RunGraph, issues: readonly number[]): DropResult {
@@ -222,7 +216,7 @@ export function dropWithDependents(graph: RunGraph, issues: readonly number[]): 
   };
 }
 
-/** The main checkout's snapshot from `preflight`'s output; `null` unless the checks passed. */
+/** The main checkout's snapshot from `preflight`'s output, `null` unless the checks passed. */
 function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
   const snapshot = checks?.status === 'ok' ? checks.snapshot : undefined;
 
@@ -230,7 +224,7 @@ function mainSnapshot(checks: PreflightOutput | null): MainSnapshot | null {
 }
 
 /**
- * Ask `issue-overlap` ({@link overlapValues}): each live overlap refuses; the pairs merge into the
+ * Ask `issue-overlap` ({@link overlapValues}): each live overlap refuses. The pairs merge into the
  * graph, less generated-only ones (a harvest regenerates them) and the `unsure` ones within an
  * entry (recorded as `unsure`), a cross-entry pair refusing.
  */
@@ -296,7 +290,7 @@ function samePair(p: OverlapPair, a: number, b: number): boolean {
 }
 
 /**
- * The refusal of a pair across epics, on its first issue — any confidence: epics in one run must
+ * The refusal of a pair across epics, on its first issue, any confidence: epics in one run must
  * be code-disjoint.
  */
 function crossEpicRefusal(pair: OverlapCrossPair, pairs: readonly EstimatedPair[]): ShipRefusal {
@@ -351,7 +345,7 @@ function unsureWithinEntry(graph: RunGraph, pairs: readonly EstimatedPair[]): Es
 
 /**
  * What `issue-overlap` is asked: a run set of two or more issues, or of one with an unspent live
- * run (for an attached run, any but its target, judged against its PR head); `null` for neither.
+ * run (for an attached run, any but its target, judged against its PR head), `null` for neither.
  */
 function overlapValues(found: PreflightOutcome, attach: string | null): IssueOverlapValues | null {
   const { graph } = found;
@@ -368,7 +362,7 @@ function overlapValues(found: PreflightOutcome, attach: string | null): IssueOve
 /**
  * `preflight`'s output less each `stale-slice-branch` problem ending `of <branch>` of a spent run:
  * cleanup retires that run, or leaves its run branch so `cut-batch` refuses before any slice.
- * A refusal left with no problem reads as `ok` (launch baseline kept); one that named none, as is.
+ * A refusal left with no problem reads as `ok` (launch baseline kept). One that named none, as is.
  */
 function exemptSpentSlices(
   checks: PreflightOutput | null,
@@ -390,7 +384,7 @@ function exemptSpentSlices(
 }
 
 /**
- * `preflight`'s argv: an attached run's target, or every run slug the launch cuts — one per epic,
+ * `preflight`'s argv: an attached run's target, or every run slug the launch cuts, one per epic,
  * or the list's.
  */
 function preflightArgv(args: ShipArgs): string[] {
@@ -439,7 +433,7 @@ function checkRefusals(checks: PreflightOutput | null): ShipRefusal[] {
 }
 
 /**
- * The gate's refusals: none only for an `ok` carrying its `runSet` and `edges`; no verdict, an `ok`
+ * The gate's refusals: none only for an `ok` carrying its `runSet` and `edges`. No verdict, an `ok`
  * without its graph, or a refusal naming no failure is one `gate-error`.
  */
 function gateRefusals(gate: GateOutput | null): ShipRefusal[] {
@@ -479,7 +473,7 @@ function gateDrops(gate: GateOutput): DroppedIssue[] {
 
 /**
  * The live-runs refusal: the command failed, an `ok` came without its `runs` list, or a run's PR
- * state is unknown — "could not ask" is never read as "no PR".
+ * state is unknown: "could not ask" is never read as "no PR".
  */
 function liveRunRefusals(live: LiveRunsOutput | null): ShipRefusal[] {
   if (live?.status !== 'ok' || live.runs === undefined) {
@@ -504,7 +498,7 @@ const RUBRIC_POINTS = [
 
 /**
  * Fold `issue-readiness`'s verdict in: outside exclude mode each stale or not-ready failure
- * refuses; in exclude mode such an issue drops with its dependents.
+ * refuses. In exclude mode such an issue drops with its dependents.
  */
 function settleReadiness(
   found: PreflightOutcome & { readonly graph: RunGraph },

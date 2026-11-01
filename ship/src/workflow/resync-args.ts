@@ -1,6 +1,6 @@
 /**
  * The `resync` workflow's launch arguments: the open run branch, as
- * `args` passed it verbatim — a one-word string, the object `{ branch }`,
+ * `args` passed it verbatim: a one-word string, the object `{ branch }`,
  * or that object's JSON text. Anything else is refused, never guessed: an
  * extra word or key must never launch a merge and push.
  *
@@ -18,12 +18,7 @@ type ResyncArgsOutcome =
 /** What a usage refusal ends with. */
 const RESYNC_USAGE = 'expected the open run branch ship/<slug>, or { branch }';
 
-/**
- * Parse the launch arguments.
- *
- * @param raw - `args` as the runtime passed it.
- * @returns The branch, or a refusal naming the problem.
- */
+/** Parse the launch arguments. */
 export function parseResyncArgs(raw: unknown): ResyncArgsOutcome {
   const branch = resyncBranchOf(raw);
   if (typeof branch !== 'string') return { refusal: `${branch.problem}; ${RESYNC_USAGE}` };
@@ -35,12 +30,7 @@ export function parseResyncArgs(raw: unknown): ResyncArgsOutcome {
   return { branch };
 }
 
-/**
- * The branch the arguments name, before its shape is checked.
- *
- * @param raw - `args` as the runtime passed it.
- * @returns The branch text, or the problem.
- */
+/** The branch the arguments name, before its shape is checked. */
 function resyncBranchOf(raw: unknown): string | { readonly problem: string } {
   return typeof raw === 'string' ? resyncBranchOfText(raw.trim()) : resyncBranchOfObject(raw);
 }
@@ -49,7 +39,7 @@ function resyncBranchOf(raw: unknown): string | { readonly problem: string } {
  * The string shape's branch: one word, or the object shape's JSON text.
  *
  * @param text - The launch text, trimmed.
- * @returns The branch, or the problem.
+ * @returns The branch. A refused text yields its problem, never a throw.
  */
 function resyncBranchOfText(text: string): string | { readonly problem: string } {
   if (text.startsWith('{')) {
@@ -67,8 +57,7 @@ function resyncBranchOfText(text: string): string | { readonly problem: string }
 /**
  * The object shape's branch.
  *
- * @param raw - The parsed object, or anything else.
- * @returns The branch, or the problem.
+ * @returns The branch. A refused value yields its problem, never a throw.
  */
 function resyncBranchOfObject(raw: unknown): string | { readonly problem: string } {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -83,7 +72,7 @@ function resyncBranchOfObject(raw: unknown): string | { readonly problem: string
   return typeof branch === 'string' ? branch : { problem: 'branch is not a string' };
 }
 
-/** Parse JSON text: the value, boxed; `null` when it is not JSON. */
+/** Parse JSON text: the value, boxed, `null` when it is not JSON. */
 function resyncJson(text: string): { readonly value: unknown } | null {
   try {
     return { value: JSON.parse(text) as unknown };

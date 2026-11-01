@@ -1,13 +1,13 @@
 /**
  * The `ship` workflow's prompt builders, one per stage. A prompt carries
- * values only — the command, the paths, the issues, the caps; each stage's
+ * values only: the command, the paths, the issues, and the caps. Each stage's
  * discipline lives in its agent file (`.claude/agents/<agentType>.md`), so
  * a prompt never restates it.
  *
  * Every value sits on its own `Key: value` line. The keys an agent's builders emit, with
  * the `Checkout:` line {@link withCheckout} adds, are exactly those its agent file's
  * `## Inputs (from the prompt)` lists, no more and no fewer. A text the agent must copy to
- * disk byte for byte goes in a {@link verbatimBlock}; a command line's words are each quoted
+ * disk byte for byte goes in a {@link verbatimBlock}. A command line's words are each quoted
  * for bash by {@link shellWord}, so the agent runs the line as given. An issue's text reaches
  * an agent as a file its `Issue command:` line writes ({@link issueLines}).
  *
@@ -42,8 +42,8 @@ interface RunnerValues {
   /** The command words, run from the main checkout, unquoted: the builder quotes each. */
   readonly argv: readonly string[];
   /**
-   * The directory the runner makes the call's fresh envelope directory in;
-   * a relative one resolves against the main checkout.
+   * The directory the runner makes the call's fresh envelope directory in.
+   * A relative one resolves against the main checkout.
    */
   readonly envelopeDir: string;
   /** The envelope's file-name stem, `[a-z0-9-]` only: `<name>.json`, `.err` and `.exit`. */
@@ -57,7 +57,7 @@ export interface IssueReadinessValues {
   /** The run-set issues, ascending. */
   readonly issues: readonly number[];
   /**
-   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges; absent
+   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges, absent
    * otherwise.
    */
   readonly prHead?: string;
@@ -69,10 +69,10 @@ export interface IssueOverlapValues {
   readonly runSet: RunSet;
   /** Its declared edges. */
   readonly edges: readonly RunEdge[];
-  /** The unspent live runs — those whose files the run could still collide with. */
+  /** The unspent live runs: those whose files the run could still collide with. */
   readonly liveRuns: readonly LiveRunFiles[];
   /**
-   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges; absent
+   * An attached run's open PR head (`origin/ship/<slug>`), the tree it judges, absent
    * otherwise.
    */
   readonly prHead?: string;
@@ -114,10 +114,10 @@ export interface TddValues {
   readonly keptDir: string;
   /**
    * The previous attempt's kept `slice.patch` when a harvest conflict requeued this one, the
-   * slice's one commit after every review amend; `null` otherwise.
+   * slice's one commit after every review amend. Otherwise `null`.
    */
   readonly previousPatch: string | null;
-  /** Where the commit message goes; the commit and the landing both read it. */
+  /** Where the commit message goes. The commit and the landing both read it. */
   readonly messagePath: string;
   /** The commit message, its first line and closing keyword left as placeholders. */
   readonly messageTemplate: string;
@@ -198,7 +198,7 @@ export interface EpicReviewValues {
   readonly batch: string;
   /** The run's landed range, `<batch base>..HEAD`. */
   readonly range: string;
-  /** The entry's epic; `null` for an explicit list, whose verdict is profiled. */
+  /** The entry's epic, `null` for an explicit list, whose verdict is profiled. */
   readonly epic: number | null;
   /** The landed issues, in landing order: their texts are under the report dir. */
   readonly issues: readonly number[];
@@ -214,7 +214,7 @@ export interface EpicReviewValues {
 
 /** `PROMPTS.retro`'s input: the entry's run report so far. */
 export interface RetroValues {
-  /** The entry's epic; `null` for an explicit list. */
+  /** The entry's epic, `null` for an explicit list. */
   readonly epic: number | null;
   /** The run's report directory. */
   readonly reportDir: string;
@@ -230,7 +230,7 @@ export interface PrWriterLanded extends LandedSlice {
 
 /** `PROMPTS.prWriter`'s input: the PR's net diff and the issues it lands. */
 export interface PrWriterValues {
-  /** The entry's epic; `null` for an explicit list. */
+  /** The entry's epic, `null` for an explicit list. */
   readonly epic: number | null;
   /** The batch worktree, at the head the PR pushes. */
   readonly batch: string;
@@ -246,7 +246,7 @@ export interface PrWriterValues {
  * Hooks bound to the run's main checkout: every agent prompt, runner and judgment stage alike,
  * starts with a `Checkout: <checkout>` line, so an agent works from it, never from its start
  * directory, which a session `cd` moves mid-run (Ship PF-2). A run binds once, from its first
- * call's envelope; only that call runs unbound.
+ * call's envelope. Only that call runs unbound.
  *
  * @param checkout - The main checkout, absolute.
  */
@@ -263,8 +263,7 @@ const PLAIN_WORD = /^[\w./:@%+=,-]+$/;
 /**
  * One command word, quoted for bash when it needs it.
  *
- * @param word - The word, unquoted.
- * @returns The word itself when it holds only safe characters; otherwise
+ * @returns The word itself when it holds only safe characters, otherwise
  *   the word in single quotes, each `'` spelled `'\''`.
  */
 export function shellWord(word: string): string {
@@ -372,7 +371,6 @@ function issueRef(issue: number): string {
 /**
  * An entry's epic as the epic-end prompts spell it.
  *
- * @param epic - The epic; `null` for an explicit list.
  * @returns `an explicit issue list` for `null`, else `#<epic>`.
  */
 function epicLabel(epic: number | null): string {
@@ -395,8 +393,6 @@ function serverTierLines(lease: LeaseValues): string[] {
 /**
  * The command a slice's full server-tier run uses: the main checkout's pool runner over the run's
  * registry, every shard of both engines at once under `with-lease`, nothing stood up.
- *
- * @param lease - Its values.
  */
 function fullServerTierCommand(lease: LeaseValues): string {
   return [
@@ -418,7 +414,6 @@ function mainToolPrefix(lease: LeaseValues, tool: string): string[] {
 /**
  * The lease command template a slice's server-tier runs use.
  *
- * @param lease - Its values.
  * @returns The command, `<angle>` placeholders for the agent to fill.
  */
 function leaseCommand(lease: LeaseValues): string {
@@ -436,7 +431,7 @@ function issueFile(issue: number, reportDir: string): string {
 }
 
 /**
- * Where an issue's text goes and the command that writes it there — so the
+ * Where an issue's text goes and the command that writes it there, so the
  * agent reads the issue from a file, never from `gh` output in its context.
  * `key` names the two lines (`<key> file:`, `<key> command:`).
  */

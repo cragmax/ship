@@ -1,5 +1,5 @@
 /**
- * The saved workflows' tier table — the one home of every stage's
+ * The saved workflows' tier table: the one home of every stage's
  * `agentType`, `model` and `effort` (Ship ADR-0001 decision 15), plus the run's tunables and
  * each workflow's phase titles. No other workflow source spells a tier:
  * each `agent()` call takes its options from {@link agentOptions}.
@@ -16,7 +16,7 @@ import type {
   WorkflowPhase,
 } from './runtime.types.js';
 
-/** One stage's tier; an absent `model` or `effort` inherits the session's. */
+/** One stage's tier. An absent `model` or `effort` inherits the session's (unprobed). */
 export interface StageRow {
   /** The project agent (`.claude/agents/<agentType>.md`). */
   readonly agentType: string;
@@ -26,7 +26,7 @@ export interface StageRow {
   readonly effort?: Effort;
 }
 
-/** Every stage the workflow runs an agent for; each stage's job is its agent file's. */
+/** Every stage the workflow runs an agent for. Each stage's job is its agent file's. */
 export const STAGES = {
   runner: { agentType: 'runner', model: 'sonnet', effort: 'low' },
   issueReadiness: { agentType: 'issue-readiness', model: 'opus', effort: 'medium' },
@@ -45,14 +45,14 @@ export const STAGES = {
 export type StageName = keyof typeof STAGES;
 
 /**
- * The default most issues in flight at once, from start until settled — the
+ * The default most issues in flight at once, from start until settled, the
  * commit-queue wait included (the `maxSlices` launch arg). Epic ends run
  * outside the cap.
  */
 export const MAX_SLICES = 4;
 
 /**
- * The most minutes one probe of the tdd or a slice review may take; a hit
+ * The most minutes one probe of the tdd or a slice review may take. A hit
  * records a follow-up, never a verdict.
  */
 export const PROBE_CAP_MINUTES = 15;
@@ -153,8 +153,7 @@ export const RESYNC_PHASES: readonly WorkflowPhase[] = [
  * {@link STAGES} tier, nothing re-spelled.
  *
  * @param detail - What distinguishes this call among the stage's calls
- *   (the label becomes `<stage>:<detail>`); `null` labels it `<stage>`.
- * @param schema - The structured output's schema.
+ *   (the label becomes `<stage>:<detail>`). `null` labels it `<stage>`.
  */
 export function agentOptions(
   stage: StageName,

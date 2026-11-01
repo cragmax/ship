@@ -18,7 +18,7 @@ import type { TddEvidence } from '../calls/agent-calls.js';
  * One landed issue's Evidence bullet.
  *
  * @returns A `tracer` per {@link tracerBullet}. A `none` as the one line
- *   `- **#N** no red-green — <reason>`, the reason per {@link oneLine};
+ *   `- **#N** no red-green — <reason>`, the reason per {@link oneLine},
  *   `no reason given` when that is empty.
  */
 export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
@@ -36,10 +36,9 @@ export function evidenceBullet(issue: number, evidence: TddEvidence): string[] {
 /**
  * A text as an inline code span no backtick in it can close.
  *
- * @param text - The text, verbatim.
  * @returns The text between single backticks when it holds none. Else
  *   between runs one longer than its longest backtick run, padded one space
- *   each side (CommonMark strips one; a backtick-edged text needs the pad).
+ *   each side (CommonMark strips one, and a backtick-edged text needs the pad).
  */
 export function codeSpan(text: string): string {
   const longest = longestBacktickRun(text);
@@ -68,7 +67,7 @@ function longestBacktickRun(text: string): number {
 }
 
 /**
- * A tracer's bullet; the one line `- **#N** evidence incomplete` instead when the test is blank,
+ * A tracer's bullet, the one line `- **#N** evidence incomplete` instead when the test is blank,
  * or the red or the green is empty per {@link oneLine}.
  */
 function tracerBullet(ref: string, evidence: TddEvidence): string[] {
@@ -87,7 +86,7 @@ function tracerBullet(ref: string, evidence: TddEvidence): string[] {
   ];
 }
 
-/** The pseudocode as a fenced block nested in the bullet; none for blank pseudocode. */
+/** The pseudocode as a fenced block nested in the bullet, none for blank pseudocode. */
 function codeBlock(pseudocode: string): string[] {
   if (pseudocode.trim() === '') return [];
   const fence = codeFence(pseudocode);

@@ -1,10 +1,10 @@
 /**
- * The epic end's merge step (Ship ADR-0001 decision 12) — the one workflow home
+ * The epic end's merge step (Ship ADR-0001 decision 12): the one workflow home
  * of the `origin/master` merge, which the `resync` workflow reuses, passing
  * `{ batch, reportDir, tag: 'resync' }`.
  *
- * A code conflict or any failure stops the epic before its bump and push;
- * the caller reads {@link SyncStepResult.verdict}.
+ * A code conflict or any failure stops the epic before its bump and push.
+ * The caller reads {@link SyncStepResult.verdict}.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
@@ -22,21 +22,21 @@ export type SyncVerdict = 'up-to-date' | 'merged' | 'code-conflict' | 'failed';
 export interface SyncStepResult {
   /** How it ended. */
   readonly verdict: SyncVerdict;
-  /** The merge commit; `null` unless `merged`. */
+  /** The merge commit, `null` unless `merged`. */
   readonly commit: string | null;
   /**
    * `sync-master`'s `upstream`: the `origin/master` sha the batch contains
-   * after the step; `null` unless `up-to-date` or `merged`.
+   * after the step, `null` unless `up-to-date` or `merged`.
    */
   readonly upstream: string | null;
   /** One line on what happened. */
   readonly message: string;
   /**
-   * `sync-master`'s classified conflicts — what landed each code conflict included; `[]` when it
+   * `sync-master`'s classified conflicts, what landed each code conflict included, `[]` when it
    * named none.
    */
   readonly conflicts: readonly ConflictPath[];
-  /** The versions its merge saw and ended on; `null` when it named none. */
+  /** The versions its merge saw and ended on, `null` when it named none. */
   readonly version: VersionLine | null;
 }
 
@@ -56,10 +56,8 @@ interface SyncStepContext {
 /**
  * Merge `origin/master` into the batch.
  *
- * @param hooks - The workflow hooks.
- * @param ctx - The batch and its report directory.
  * @returns Resolves to the step's result, carrying `sync-master`'s `conflicts`
- *   and `version` on every path; never rejects on a tool's outcome.
+ *   and `version` on every path. Never rejects on a tool's outcome.
  */
 export async function syncMasterStep(
   hooks: WorkflowHooks,
