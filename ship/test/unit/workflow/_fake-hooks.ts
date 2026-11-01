@@ -125,9 +125,7 @@ const READINESS_CHECKS = [
 /**
  * One issue's `issue-readiness` verdict: every check passing but those `fails` names.
  *
- * @param issue - The issue.
  * @param fails - Each failing check and its evidence.
- * @returns The verdict.
  */
 export const readyVerdict = (
   issue: number,
@@ -529,7 +527,6 @@ export function checkoutLines(
  * The words after `node --import tsx` on a prompt's `Command:` line, each unquoted
  * (a `'…'` span is one word, `'\''` a literal quote).
  *
- * @param prompt - The prompt.
  * @returns The words; `[]` when the prompt has no such line.
  */
 function commandWords(prompt: string): string[] {
@@ -618,13 +615,7 @@ function checkRequired(
   }
 }
 
-/**
- * Record a value its schema's `enum` does not allow.
- *
- * @param value - The value.
- * @param schema - Its schema.
- * @param place - Where it sits.
- */
+/** Record a value its schema's `enum` does not allow. */
 function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
   const allowed = schema['enum'];
 
@@ -653,7 +644,6 @@ function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void
 /**
  * A value as a schema, when it is one (a plain object).
  *
- * @param value - The value.
  * @returns It, or `undefined` for anything else.
  */
 function schemaOf(value: unknown): JsonSchema | undefined {

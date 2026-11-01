@@ -167,7 +167,6 @@ export function epicRun(
  * One epic entry's cut, provision and publish answers: batch
  * `C:/src/ph-runs/epic-<E>/batch`, branch `ship/epic-<E>`, PR number `<E>00`.
  *
- * @param epic - The entry's epic.
  * @returns The answers, keyed by the entry's labels.
  */
 function entryResponses(epic: number): Record<string, unknown> {

@@ -37,15 +37,7 @@ export async function renderFresh(name: string): Promise<string> {
   return renderWorkflow(workflowSpec(name), ROOT);
 }
 
-// eslint-disable-next-line local/comment-budget -- jsdoc/require-param forces a tag per parameter
-/**
- * Run a rendered workflow over a fake run's hooks.
- *
- * @param js - The rendered script.
- * @param run - The fake run whose hooks it calls.
- * @param args - The launch arguments.
- * @returns What the script returned.
- */
+/** Run a rendered workflow over a fake run's hooks. */
 export function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
   // The runtime's wrapper: the file as a function body (Ship PF-4), `export` dropped,
   // hooks + `args` as globals (unprobed).

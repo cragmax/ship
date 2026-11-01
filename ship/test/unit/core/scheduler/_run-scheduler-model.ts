@@ -195,14 +195,10 @@ export function arbChoices(): fc.Arbitrary<Choice[]> {
 
 // ---------------------------------------------------------------- driver
 
-// eslint-disable-next-line local/comment-budget -- jsdoc/require-param binds here: 3 @param + @returns
 /**
  * Drive one run, then settle each live issue (`blocked` in a halted entry, else `committed`).
  *
- * @param input - The run graph.
- * @param choices - The generated script.
  * @param factory - The machine under test (the real scheduler by default).
- * @returns The recorded run.
  * @throws InvariantViolation when an invariant fails.
  */
 export function runModel(
@@ -273,12 +269,7 @@ function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput
   return { runSet, edges, maxSlices: parts.maxSlices };
 }
 
-/**
- * Deep-freeze a value so any mutation of it throws.
- *
- * @param value - The value.
- * @returns The same value, frozen.
- */
+/** Deep-freeze a value so any mutation of it throws. */
 function deepFreeze<T>(value: T): T {
   freezeAll(value);
 
@@ -431,9 +422,6 @@ function applyEvent(view: View, event: SchedulerEvent): void {
 /**
  * Halt an entry in the view: its unstarted issues (waiting, ready, or parked
  * for a restart) settle and will never start.
- *
- * @param view - The view.
- * @param epic - The halted entry's epic key.
  */
 function haltEntry(view: View, epic: number | null): void {
   view.halted.add(epic);
