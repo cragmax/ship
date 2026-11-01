@@ -1,8 +1,8 @@
 /**
  * The shared body of `post-pr-comment` and `post-issue-comment`: read the
  * comment file, refuse it over {@link GH_BODY_LIMIT}, post it with
- * `gh <pr|issue> comment --body-file`. It mutates no worktree — the directory is only `gh`'s
- * working directory — so neither command has a linked-worktree or
+ * `gh <pr|issue> comment --body-file`. It mutates no worktree (the directory is only `gh`'s
+ * working directory), so neither command has a linked-worktree or
  * self-hosted guard.
  */
 
@@ -20,14 +20,13 @@ type CommentSubject = 'pr' | 'issue';
 /**
  * Post the comment file on a PR or an issue.
  *
- * @param cwd - `gh`'s working directory.
  * @param file - The comment to post, whole.
  * @returns The comment's URL, as `gh` printed it.
  * @throws StepFailure `comment` (the file unreadable or blank) or
- *   `body-too-long` (over {@link GH_BODY_LIMIT} characters; exactly the
- *   limit is allowed), both before any `gh` call; `<subject>-comment` when
+ *   `body-too-long` (over {@link GH_BODY_LIMIT} characters, exactly the
+ *   limit being allowed), both before any `gh` call; `<subject>-comment` when
  *   `gh <subject> comment` exits non-zero; or `comment-url` when it exits 0
- *   printing no `https://` URL — the comment may have been posted, and the
+ *   printing no `https://` URL: the comment may have been posted, and the
  *   message never echoes stdout.
  */
 export function postCommentFile(

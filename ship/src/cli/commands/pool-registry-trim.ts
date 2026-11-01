@@ -1,5 +1,5 @@
 /**
- * Trim a pool registry to the warm set — the servers every concurrent
+ * Trim a pool registry to the warm set: the servers every concurrent
  * unattended run on the machine may lease (Pool ADR-0001). Lease runs in a batch
  * worktree and its slices read the trimmed copy (`PH_POOL_REGISTRY`), so a
  * cold-but-registered server never enters candidate selection.
@@ -14,7 +14,7 @@ import { StepFailure, type WarmMember } from '../envelope/types.js';
 /**
  * The fixed, machine-wide warm set: two Paper and two Folia servers (the
  * compose services `minecraft`, `minecraft-2`, `minecraft-folia` and
- * `minecraft-folia-2`; sized by Pool PF-1). Pinned, never derived from the
+ * `minecraft-folia-2`, sized by Pool PF-1). Pinned, never derived from the
  * registry, so concurrent runs agree on it without coordinating, and registry
  * drift fails {@link trimRegistry} loudly.
  */
@@ -26,7 +26,7 @@ export const WARM_SET: readonly WarmMember[] = [
 ];
 
 /**
- * Whether a registry entry is the given warm member — the one spelling of
+ * Whether a registry entry is the given warm member: the one spelling of
  * a member's identity, which `preflight` matches by too.
  *
  * @returns `true` when type, host and RCON port all match.
@@ -52,7 +52,7 @@ export function memberLabel(member: WarmMember): string {
  *
  * @returns The warm set, in {@link WARM_SET} order.
  * @throws StepFailure `registry` when `source` fails to load (the loader's
- *   message) or lacks any warm member; `dest` is not written then.
+ *   message) or lacks any warm member. `dest` is not written then.
  */
 export function trimRegistry(source: string, dest: string): WarmMember[] {
   const loaded = loadPoolRegistry(source);

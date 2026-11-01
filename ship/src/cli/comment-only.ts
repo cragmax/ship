@@ -1,13 +1,13 @@
 /**
- * `npx tsx ship/src/cli/comment-only.ts [--json] [--cached] [<base>] | <base>..<head>` — prove a
- * change to TypeScript files is comment-only ({@link proveCommentOnly}); with no head it reads the
+ * `npx tsx ship/src/cli/comment-only.ts [--json] [--cached] [<base>] | <base>..<head>`: prove a
+ * change to TypeScript files is comment-only ({@link proveCommentOnly}). With no head it reads the
  * working tree, or the staged index under `--cached`.
  *
  * Exit 0: stdout lists each `not compared: <path>`, then the count of token-identical files.
  * Exit 1: one stderr line naming the first code difference, or else one line per mojibake
  * hit (`<path>:<line>`). Exit 2: a usage error or a git failure, its detail on the following
  * lines. With `--json` (first), stdout is instead one JSON object `{ compared, notCompared }` on
- * exit 0 and 1 alike, and empty on exit 2; stderr is unchanged. `main` sets `process.exitCode`,
+ * exit 0 and 1 alike, and empty on exit 2. Stderr is unchanged. `main` sets `process.exitCode`,
  * never `process.exit()`, so output is flushed in full.
  */
 

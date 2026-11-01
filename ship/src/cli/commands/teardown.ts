@@ -1,9 +1,9 @@
 /**
- * `teardown <worktree>` — remove a slice or batch worktree without ever
+ * `teardown <worktree>`: remove a slice or batch worktree without ever
  * letting git or a recursive delete follow a live link into its target.
  *
- * Invariant: nothing is mutated before the refusal guards pass; any work asked kept
- * ({@link KeepRequest}) is written before the first unlink; and
+ * Invariant: nothing is mutated before the refusal guards pass, any work asked kept
+ * ({@link KeepRequest}) is written before the first unlink, and
  * `git worktree remove` runs only once no link remains in the worktree and
  * no external link target has lost entries since teardown started. After
  * any outcome `registered` is re-read from git, so a caller sees a half
@@ -60,7 +60,7 @@ const DEFAULT_DEPS: TeardownDeps = {
 
 /** What to keep before the worktree goes: `--keep-to <dir> --base <sha> [--report <file>]`. */
 export interface KeepRequest {
-  /** Where the work is kept, absolute with forward slashes; created when missing. */
+  /** Where the work is kept, absolute with forward slashes. Created when missing. */
   readonly dir: string;
   /** The commit the patch is taken from: the slice base. */
   readonly base: string;
@@ -75,13 +75,13 @@ const PATCH_FILE = 'slice.patch';
  * Tear down a worktree, keeping the file header's invariant.
  *
  * @param worktree - Absolute forward-slash path of the worktree.
- * @param deps - Seams; each defaults to production. `unlink` lets a test
- *   simulate a followed link or a surviving one; `selfPath` lets it
+ * @param deps - Seams. Each defaults to production. `unlink` lets a test
+ *   simulate a followed link or a surviving one, and `selfPath` lets it
  *   exercise the self-hosted guard.
- * @param keep - Work to keep first ({@link keepWork}); an absent worktree keeps nothing.
+ * @param keep - Work to keep first ({@link keepWork}). An absent worktree keeps nothing.
  * @returns The envelope: `ok` with `removed: true`, or with `removed: false`
  *   when the path was already absent; `refused` with `reason` and the
- *   worktree left registered; or `failed` with the step — `keep` leaving the worktree in place.
+ *   worktree left registered; or `failed` with the step, `keep` leaving the worktree in place.
  */
 export function teardownWorktree(
   worktree: string,
@@ -121,8 +121,8 @@ export function teardownWorktree(
 }
 
 /**
- * The guarded removal of an existing worktree, in the order the file header's invariant fixes;
- * sets `result.removed` once git has removed it.
+ * The guarded removal of an existing worktree, in the order the file header's invariant fixes.
+ * Sets `result.removed` once git has removed it.
  */
 function removeWorktree(
   worktree: string,
@@ -305,8 +305,8 @@ function assertNoLinksRemain(worktree: string): void {
 }
 
 /**
- * Recount every gated source against its baseline; none may have shrunk. Throws Refusal
- * `source-shrank` at `gate` (nothing removed yet); StepFailure `post-remove-recount` later: the
+ * Recount every gated source against its baseline: none may have shrunk. Throws Refusal
+ * `source-shrank` at `gate` (nothing removed yet), or StepFailure `post-remove-recount` later: the
  * damage is done, but a git that follows a live link is reported rather than silent.
  */
 function assertSourcesIntact(result: TeardownResult, stage: 'gate' | 'post-remove-recount'): void {

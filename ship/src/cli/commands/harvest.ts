@@ -1,16 +1,15 @@
 /**
- * `harvest <batch> <slice-sha>` — stage one slice commit's change (`sha^..sha`) in the batch,
+ * `harvest <batch> <slice-sha>`: stage one slice commit's change (`sha^..sha`) in the batch,
  * uncommitted, via `git cherry-pick --no-commit` (Ship ADR-0001 decision 7).
  *
- * Invariant: nothing is mutated before two guards pass — a registered non-primary worktree root,
- * clean, no merge, cherry-pick or revert in progress. Once the pick starts, every non-`ok` outcome
- * ends in the rollback and a batch verified clean at its unchanged `HEAD`; a failed or unclean
- * rollback reports `failed` with a `rollback` entry after the triggering error — never `conflict`
- * over a dirty batch, which a scheduler would requeue onto.
+ * Invariant: nothing is mutated before two guards pass (a registered non-primary worktree root,
+ * clean, no merge, cherry-pick, or revert in progress). Once the pick starts, every non-`ok`
+ * outcome ends in the rollback and a batch verified clean at its unchanged `HEAD`. A failed or
+ * unclean rollback reports `failed` with a `rollback` entry after the triggering error, never
+ * `conflict` over a dirty batch, which a scheduler would requeue onto.
  *
  * The rollback is `git reset --hard HEAD`, Ship ADR-0001 decision 10's approved exception: the
  * guards verified a clean linked worktree, so it discards only the failed pick's changes.
- * Known limitation: a force-added path the batch holds ignored is overwritten; rollback deletes it.
  */
 
 import { ESLINT_SUPPRESSIONS } from '../../core/generated-files.js';
@@ -54,6 +53,8 @@ interface HarvestInput {
 /**
  * Harvest one slice commit into the batch, keeping the file header's
  * invariant.
+ * Accepted residual: a force-added path the batch holds ignored is overwritten, and rollback
+ * deletes it (unprobed).
  *
  * @returns The envelope: `ok` with the slice's paths staged; `conflict`
  *   with the paths that would not apply and the batch rolled back;
@@ -154,10 +155,10 @@ export function assertBatchClean(batch: string): void {
  * header's rationale for `--hard`). Sets `rolledBack` only once verified.
  *
  * @param batch - The batch worktree, verified by {@link assertLinkedWorktree}
- *   and {@link assertBatchClean} before anything was staged in it — the
- *   precondition of the approved `--hard`; never call it otherwise. The
+ *   and {@link assertBatchClean} before anything was staged in it: the
+ *   precondition of the approved `--hard`. Never call it otherwise. The
  *   linked-root half is re-checked before the reset ({@link assertResettable}).
- * @param result - Envelope; on a failed or unclean rollback its status
+ * @param result - Envelope. On a failed or unclean rollback its status
  *   becomes `failed` and `errors` gains a `rollback` entry.
  */
 export function rollback(batch: string, result: ResultBase & { rolledBack: boolean }): void {
@@ -175,7 +176,7 @@ export function rollback(batch: string, result: ResultBase & { rolledBack: boole
  * What keeps the batch from being clean: its status entries, then the
  * in-progress refs present.
  *
- * @returns The residue; empty when the batch is clean.
+ * @returns The residue, empty when the batch is clean.
  * @throws StepFailure for `step` when git cannot report the status.
  */
 export function batchResidue(batch: string, step: string): string[] {
@@ -197,7 +198,7 @@ function assertResettable(batch: string): void {
 /**
  * Require the staged set to equal `files`: catches an empty pick and a silently dropped path.
  *
- * @throws StepFailure `staged-check` naming the differences — not a conflict: a requeue repeats it.
+ * @throws StepFailure `staged-check` naming the differences, not a conflict: a requeue repeats it.
  */
 function assertStagedEquals(batch: string, files: readonly string[]): void {
   const diff = compareSets(files, stagedPaths(batch, 'staged-check'));
@@ -299,11 +300,7 @@ function resolveSlice(batch: string, sha: string): string {
   return full;
 }
 
-/**
- * The in-progress refs present in the batch.
- *
- * @returns The present subset of {@link IN_PROGRESS_REFS}.
- */
+/** The in-progress refs present in the batch. */
 function inProgressRefs(batch: string): string[] {
   return IN_PROGRESS_REFS.filter((ref) => refExists(batch, ref));
 }

@@ -19,7 +19,7 @@ interface HookedRun {
   readonly step: string;
   /** The command as a failure message names it. */
   readonly label: string;
-  /** The first attempt's log; the retry's is {@link retryLog} of it. */
+  /** The first attempt's log. The retry's is {@link retryLog} of it. */
   readonly logFile: string;
   /** Receives each attempt as it ends: the envelope's `hookAttempts`. */
   readonly attempts: HookAttempt[];

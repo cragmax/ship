@@ -1,13 +1,13 @@
 /**
- * `publish <batch> --push-only --log L` — push a run branch whose PR is already open, then read
- * that PR's mergeable state: the `/resync` workflow's last step, after `sync-master` merged
+ * `publish <batch> --push-only --log L`: push a run branch whose PR is already open, then read
+ * that PR's mergeable state, the `/resync` workflow's last step, after `sync-master` merged
  * `origin/master` into the batch (Ship ADR-0001 decision 12).
  *
- * Order: the guards (a linked run batch; an open PR for the branch), the fetch, the ancestry
- * pre-check against `origin/<branch>`, then — only when the batch is ahead — `npm run build` and
- * the push through `publish.ts`'s {@link pushBranch}, which is never forced; then the mergeable
+ * Order: the guards (a linked run batch, an open PR for the branch), the fetch, the ancestry
+ * pre-check against `origin/<branch>`, then, only when the batch is ahead, `npm run build` and
+ * the push through `publish.ts`'s {@link pushBranch}, which is never forced, then the mergeable
  * read, polled while GitHub still computes it. A level branch pushes nothing, so no pre-push gate
- * runs; the mergeable state is still read. `UNKNOWN` at the read bound is still `ok`: the envelope
+ * runs. The mergeable state is still read. `UNKNOWN` at the read bound is still `ok`: the envelope
  * reports the raw value, and the caller reads anything but `MERGEABLE` as unconfirmed. It never
  * runs `gh pr create`.
  */
@@ -34,7 +34,7 @@ const UNCOMPUTED = 'UNKNOWN';
 /** `gh pr view --json mergeable,url` output. */
 const PrViewSchema = z.object({ mergeable: z.string(), url: z.string() });
 
-/** Inputs of {@link publishPushOnly}; paths absolute with forward slashes. */
+/** Inputs of {@link publishPushOnly}: paths absolute with forward slashes. */
 interface PushOnlyInput {
   /** The batch worktree. */
   readonly batch: string;
@@ -43,7 +43,7 @@ interface PushOnlyInput {
    * (`retryLog` in `hooked.ts`).
    */
   readonly logFile: string;
-  /** The wait between mergeable reads; default {@link MERGEABLE_POLL_MS}. */
+  /** The wait between mergeable reads, default {@link MERGEABLE_POLL_MS}. */
   readonly pollMs?: number;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
@@ -55,9 +55,9 @@ interface PushOnlyInput {
  *
  * @returns Resolves to the envelope: `ok` with `pushed`, `pr` and
  *   `mergeable`; `refused` before any mutation (harvest's linked-worktree
- *   reasons, `not-run-batch`, `no-open-pr`); or `failed` with the step —
- *   `pr-state` or `fetch` before the push, `push` (the ancestry pre-check,
- *   or the push itself; `pushed` false), `build`, or `mergeable` (`pushed`
+ *   reasons, `not-run-batch`, `no-open-pr`); or `failed` with the step:
+ *   `pr-state` or `fetch` before the push, `push` (the ancestry pre-check
+ *   or the push itself, `pushed` false), `build`, or `mergeable` (`pushed`
  *   kept). Never rejects.
  */
 export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResult> {
@@ -86,7 +86,7 @@ export async function publishPushOnly(input: PushOnlyInput): Promise<PublishResu
 }
 
 /**
- * `true` when `origin/<branch>` is absent or a strict ancestor of `HEAD`, `false` when level; the
+ * `true` when `origin/<branch>` is absent or a strict ancestor of `HEAD`, `false` when level. The
  * batch must be freshly fetched.
  *
  * @throws StepFailure `push` when origin has commits the batch lacks, or git cannot tell.
@@ -111,7 +111,7 @@ function aheadOfOrigin(batch: string, branch: string): boolean {
 
 /**
  * Read the PR's mergeable state, again every `pollMs` while {@link UNCOMPUTED}, at most
- * {@link MERGEABLE_READS} reads; resolves to the last read's `mergeable` and the PR's URL.
+ * {@link MERGEABLE_READS} reads. Resolves to the last read's `mergeable` and the PR's URL.
  *
  * @throws StepFailure `mergeable` when `gh` fails or answers unreadably.
  */

@@ -1,15 +1,15 @@
 /**
- * `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]` — the checks an unattended run holds
+ * `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]`: the checks an unattended run holds
  * before it cuts anything (Ship ADR-0001 decision 4): local `master` level with `origin/master`
  * after a fetch, `gh` logged in, every warm-set server answering RCON; with `--slug`, no leftover
  * slice branch of each run slug ({@link checkSliceBranches}); with `--attach`, the target branch's
  * checks ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and
- * the launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref) — the
+ * the launch shas of local `master` and of `origin`'s (`git ls-remote`, not the tracking ref), the
  * epic end's master-check baseline. A dirty main checkout is recorded, never a problem.
  *
  * Read-only toward every worktree, so no self-hosted guard: the fetch writes only remote-tracking
  * refs. It never starts a server: an unreachable warm member is reported, not fixed. Every check
- * runs even when an earlier one failed, so one envelope names every problem; only a git or
+ * runs even when an earlier one failed, so one envelope names every problem. Only a git or
  * registry failure stops the command.
  */
 
@@ -34,16 +34,16 @@ import { assertNoLiveSlices } from './sync-master.js';
 import type { PreflightCheck, PreflightProblem, PreflightResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure, type WarmMember } from '../envelope/types.js';
 
-/** One RCON round trip to a warm member; the production probe is {@link probeRcon}. */
+/** One RCON round trip to a warm member. The production probe is {@link probeRcon}. */
 export type WarmProbe = (target: RconProbeTarget) => Promise<RconProbeResult>;
 
 /** Inputs of {@link preflight}. */
 interface PreflightInput {
   /** The main checkout, absolute with forward slashes. */
   readonly main: string;
-  /** An attached run's target branch (`ship/<slug>`, short form); absent for an unattached run. */
+  /** An attached run's target branch (`ship/<slug>`, short form). Absent for an unattached run. */
   readonly attach?: string;
-  /** The run slugs whose leftover slice branches refuse; absent for none. */
+  /** The run slugs whose leftover slice branches refuse. Absent for none. */
   readonly slugs?: readonly string[];
   /** The warm-set probe (production: `probeRcon` with `list`). */
   readonly probe?: WarmProbe;
@@ -56,8 +56,8 @@ const REGISTRY_PATH = 'server-pool/src/registry/pool-registry.json';
  * Run every pre-flight check against the main checkout.
  *
  * @returns The envelope: `ok` with the counts and snapshot; `refused`
- *   `preflight-failed` with every problem — with `attach`, the target's
- *   `no-open-pr`, `slices-live` and `unpublished-commits` among them;
+ *   `preflight-failed` with every problem (with `attach`, the target's
+ *   `no-open-pr`, `slices-live`, and `unpublished-commits` among them);
  *   `refused` `not-main-worktree`, or `not-run-batch` for an `attach` outside
  *   `ship/`; or `failed` with the step (`preconditions`, `fetch`, `master`,
  *   `snapshot`, `registry`, `slice-branches`, `unpublished`).
@@ -179,7 +179,7 @@ async function checkWarmSet(main: string, probe: WarmProbe): Promise<PreflightPr
   });
 }
 
-/** Probe one warm member: `null` when it answered; otherwise why not. */
+/** Probe one warm member: `null` when it answered, otherwise why not. */
 async function probeMember(
   member: WarmMember,
   registry: readonly PoolEntry[],
@@ -231,7 +231,7 @@ function checkAttachTarget(main: string, branch: string): PreflightProblem[] {
 }
 
 /**
- * Run one attach guard: `null` when it passed; a thrown Refusal or `pr-state` StepFailure becomes
+ * Run one attach guard: `null` when it passed. A thrown Refusal or `pr-state` StepFailure becomes
  * the `check` problem with its message ("could not ask" refuses, never passes).
  *
  * @throws Whatever else the guard threw.

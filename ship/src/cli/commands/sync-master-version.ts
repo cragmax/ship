@@ -2,12 +2,12 @@
  * The `package.json` and lockfile side of `sync-master`: the version-line
  * rule's git and npm I/O (the rule's arithmetic, and why it exists, is
  * `package-version.ts`'s), and the lockfile's regeneration after a
- * conflict. Every git call reads — `git show`, `git merge-file` over temp
- * copies — except {@link applyVersionRule} and {@link regenerateLockfile},
+ * conflict. Every git call reads (`git show`, `git merge-file` over temp
+ * copies) except {@link applyVersionRule} and {@link regenerateLockfile},
  * which run mid-merge and stage by name.
  *
  * `git show` reaches the CLI through `runCaptured`, which strips one final
- * newline from stdout; this repo's `package.json` ends with exactly one, so
+ * newline from stdout. This repo's `package.json` ends with exactly one, so
  * each copy read, and the merged text written back, gets exactly one again.
  */
 
@@ -56,8 +56,8 @@ const MERGE_FILE_MAX_CONFLICTS = 127;
  * merge once their version lines agree.
  *
  * @param mergeBase - The merge-base of `HEAD` and `origin/master`.
- * @returns `version` for the envelope — `null` when a copy is missing or
- *   has no top-level version line — and `rule`, `null` when the rule stays
+ * @returns `version` for the envelope (`null` when a copy is missing or
+ *   has no top-level version line) and `rule`, `null` when the rule stays
  *   out of the merge.
  * @throws StepFailure `version` when both sides moved and a version is not a
  *   plain `x.y.z`, or `git merge-file` fails.
@@ -77,14 +77,13 @@ export function planVersionRule(
 }
 
 /**
- * Apply the rule mid-merge: write and stage the merged `package.json`, then
- * — when the lockfile is tracked — regenerate it against that file (from
+ * Apply the rule mid-merge: write and stage the merged `package.json`, then,
+ * when the lockfile is tracked, regenerate it against that file (from
  * `origin/master`'s copy when it conflicted) and stage it.
  *
  * @param batch - The batch worktree, `MERGE_HEAD` set.
  * @param merged - {@link mergedPackageJson}'s text.
  * @param target - The version it carries.
- * @param lockConflicted - Whether the lockfile is unmerged.
  * @throws StepFailure `version` when git cannot stage `package.json`;
  *   `lockfile` when git or npm fails, or the regenerated lockfile's
  *   `version` or `packages[""].version` is not `target`.
@@ -108,7 +107,7 @@ export function applyVersionRule(
  * the merged `package.json`, and stage it by name.
  *
  * @param batch - The batch worktree, mid-merge.
- * @param conflicted - Whether the lockfile is unmerged; `origin/master`'s
+ * @param conflicted - Whether the lockfile is unmerged. `origin/master`'s
  *   copy is checked out first then.
  * @throws StepFailure `lockfile` when git or npm fails.
  */
@@ -123,7 +122,7 @@ export function regenerateLockfile(batch: string, conflicted: boolean): void {
 
 /**
  * Merge the copies, every version line set to the base's so a version-only change never conflicts,
- * then set {@link targetVersion}'s; `null` on a conflict beyond the version line. Throws
+ * then set {@link targetVersion}'s. `null` on a conflict beyond the version line. Throws
  * StepFailure `version` from {@link setVersionLine}, {@link targetVersion} or `git merge-file`.
  */
 function mergedPackageJson(batch: string, copies: PackageCopies): string | null {
@@ -154,8 +153,8 @@ function mergedPackageJson(batch: string, copies: PackageCopies): string | null 
 }
 
 /**
- * `package.json` at the merge-base, the batch's `HEAD` and `origin/master`; `null` when a copy is
- * missing (or git cannot show it) or has no top-level version line — never a throw.
+ * `package.json` at the merge-base, the batch's `HEAD`, and `origin/master`. `null` when a copy is
+ * missing (or git cannot show it) or has no top-level version line, never a throw.
  */
 function readVersions(batch: string, mergeBase: string): PackageCopies | null {
   const base = showPackageJson(batch, mergeBase);
@@ -170,7 +169,7 @@ function readVersions(batch: string, mergeBase: string): PackageCopies | null {
   return { versions: { base: b, ours: o, theirs: t }, texts: { base, ours, theirs } };
 }
 
-/** One `package.json` copy's text with one final newline; `null` when git cannot show it. */
+/** One `package.json` copy's text with one final newline. `null` when git cannot show it. */
 function showPackageJson(batch: string, rev: string): string | null {
   const r = runCaptured('git', ['-C', batch, 'show', `${rev}:${PACKAGE_JSON}`], {
     cwd: process.cwd(),

@@ -1,5 +1,5 @@
 /**
- * `live-runs <main>` — every live unattended run: each registered worktree on a run branch
+ * `live-runs <main>`: every live unattended run, each registered worktree on a run branch
  * (`RUN_BRANCH_PREFIX`, `run-layout.ts`) with its commits and files ahead of `RUN_BASE_BRANCH`,
  * its dirtiness, its PR (via `gh`) and its nested worktrees. Read-only: no self-hosted guard.
  *
@@ -52,7 +52,7 @@ const COMMIT_ID = /^[0-9a-f]{40,64}$/u;
 /** What {@link lookupPr} found. */
 interface PrLookup {
   readonly info: PrInfo;
-  /** Why the state is `unknown`; absent otherwise. */
+  /** Why the state is `unknown`. Absent otherwise. */
   readonly error?: string;
 }
 
@@ -97,8 +97,8 @@ export function liveRuns(input: { readonly main: string }): LiveRunsResult {
  *
  * @param dir - A checkout of the repository.
  * @param branch - Short branch name.
- * @returns `none` for no PR; otherwise the highest-precedence PR by
- *   {@link PR_STATES}, its `headOid` `null` when `gh` names none; `unknown`
+ * @returns `none` for no PR, otherwise the highest-precedence PR by
+ *   {@link PR_STATES}, its `headOid` `null` when `gh` names none, or `unknown`
  *   with an `error` when `gh` fails, is missing, or answers something
  *   unreadable.
  */
@@ -137,11 +137,10 @@ export function lookupPr(dir: string, branch: string): PrLookup {
 }
 
 /**
- * The branch's open PR.
+ * The branch's open PR number.
  *
  * @param dir - A checkout of the repository: `gh`'s working directory.
  * @param branch - Short branch name.
- * @returns Its number.
  * @throws {@link StepFailure} `pr-state` when `gh` fails or answers unreadably.
  * @throws {@link Refusal} `no-open-pr` when the branch has no open PR, naming its state and number.
  */
@@ -159,7 +158,7 @@ export function openPr(dir: string, branch: string): number {
 }
 
 /**
- * Describe one run, every git and `gh` query run in `main`; a failed PR lookup sets `result`
+ * Describe one run, every git and `gh` query run in `main`. A failed PR lookup sets `result`
  * `failed` with a `pr-state` error naming the branch.
  *
  * @throws StepFailure `runs` when git fails.
@@ -214,7 +213,7 @@ function isDirty(entry: WorktreeEntry): boolean | null {
 
 /**
  * Spent: tip `ref` is an ancestor of (or is) its merged or closed PR's head. Both `false` while the
- * PR is open, absent or unknown; `unverified` when its head is unnamed or not a commit here.
+ * PR is open, absent, or unknown. `unverified` when its head is unnamed or not a commit here.
  *
  * @throws StepFailure `runs` when `git merge-base --is-ancestor` cannot answer.
  */

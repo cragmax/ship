@@ -1,5 +1,5 @@
 /**
- * `provision <slice> --batch <batch> [--server]` — make a slice worktree
+ * `provision <slice> --batch <batch> [--server]`: make a slice worktree
  * runnable: its `node_modules` linked to the batch worktree's real tree, a
  * real local `dist`, and vitest configs with an isolated cache.
  *
@@ -7,7 +7,7 @@
  * later failure rolls back exactly what this call created (paths absent
  * before it ran). Anything an earlier provision left stays, even if this
  * call rewrote it, so a failed re-provision keeps the earlier junction and
- * configs; its `dist` is whatever the failed build left (a build may delete
+ * configs. Its `dist` is whatever the failed build left (a build may delete
  * `dist` before failing). The last step is {@link assertStatusUnchanged}.
  */
 
@@ -25,7 +25,7 @@ import {
 import { createJunction, isRealDir, linkTarget, unlinkLink } from '../git/links.js';
 import { recordFailure, StepFailure, type ProvisionResult } from '../envelope/types.js';
 
-/** Inputs of {@link provision}; paths absolute with forward slashes. */
+/** Inputs of {@link provision}: paths absolute with forward slashes. */
 interface ProvisionOptions {
   /** The slice worktree to provision. */
   readonly slice: string;
@@ -157,7 +157,7 @@ function requireLinkedWorktree(path: string, role: string): WorktreeIdentity {
 
 /**
  * Link `<slice>/node_modules` to `<batch>/node_modules`, created when absent, reused when it
- * already links there; `run` gains the junction.
+ * already links there. `run` gains the junction.
  *
  * @throws StepFailure `junction` when the path exists as anything else.
  */
@@ -185,7 +185,7 @@ function ensureJunction(run: Run): void {
 /**
  * Build the slice's real local `dist` with `npm run build`.
  *
- * @param run - Call state; gains `dist`.
+ * @param run - Call state: gains `dist`.
  * @throws StepFailure `build` carrying the build's output tail.
  */
 function buildDist(run: Run): void {
@@ -199,7 +199,7 @@ function buildDist(run: Run): void {
  * Write the slice's vitest configs (the integration twin only with
  * `--server`).
  *
- * @param run - Call state; gains each written config.
+ * @param run - Call state: gains each written config.
  */
 function writeVitestConfigs(run: Run): void {
   const specs = run.options.server ? [UNIT_CONFIG, INTEGRATION_CONFIG] : [UNIT_CONFIG];
@@ -224,10 +224,10 @@ function renderConfig(spec: VitestConfigSpec): string {
 }
 
 /**
- * Remove, in reverse, every path this call created; a link is unlinked,
+ * Remove, in reverse, every path this call created. A link is unlinked,
  * never deleted recursively. Updates the envelope's fields to what remains.
  *
- * @param run - Call state; `result.rolledBack` gains each removed path.
+ * @param run - Call state: `result.rolledBack` gains each removed path.
  */
 function rollback(run: Run): void {
   for (const { path, kind } of [...run.created].reverse()) {

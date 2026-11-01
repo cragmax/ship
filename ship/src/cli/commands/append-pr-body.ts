@@ -1,11 +1,11 @@
 /**
- * `append-pr-body <batch> --pr N --section-file F` — append an attached run's section to its
+ * `append-pr-body <batch> --pr N --section-file F`: append an attached run's section to its
  * open PR's body (Ship ADR-0001 decision 16). The command reads the body and sets it back with the
- * section after it; the first failed step ends the command `failed` ({@link appendPrBody}).
+ * section after it. The first failed step ends the command `failed` ({@link appendPrBody}).
  *
  * The body as `gh` read it is the new body's prefix byte for byte ({@link appendSection}), so a
- * body neutralised when it was written is never touched again. It mutates no worktree — the
- * batch is only `gh`'s working directory — so it has no linked-worktree or self-hosted guard.
+ * body neutralised when it was written is never touched again. It mutates no worktree (the
+ * batch is only `gh`'s working directory), so it has no linked-worktree or self-hosted guard.
  * The body file lives in a fresh OS temp directory (`freshLogDir`) the command never removes:
  * it is the caller's to read.
  */
@@ -24,7 +24,7 @@ import { recordFailure, StepFailure } from '../envelope/types.js';
 /** `gh pr view --json body` output. */
 const PrBodySchema = z.object({ body: z.string() });
 
-/** Inputs of {@link appendPrBody}; paths absolute with forward slashes. */
+/** Inputs of {@link appendPrBody}: paths absolute with forward slashes. */
 interface AppendPrBodyInput {
   /** The batch worktree: only `gh`'s working directory. */
   readonly batch: string;
@@ -37,13 +37,12 @@ interface AppendPrBodyInput {
 /**
  * Append the section to the PR's body.
  *
- * @returns The envelope: `ok` with `bodyFile`; or `failed` with the step —
- *   `section` or `pr-body` (`bodyFile` null, no edit made, the PR
- *   untouched), `internal` when the body file cannot be written (no edit
- *   made), `body-too-long` when the new body is over {@link GH_BODY_LIMIT}
- *   characters — exactly the limit is allowed (`bodyFile` set and named in
- *   the error, no edit made, the PR untouched) — or `pr-edit` (`bodyFile`
- *   set and named in the error, so the caller can set the body by hand).
+ * @returns The envelope: `ok` with `bodyFile`, or `failed` with one of these steps: `section` or
+ *   `pr-body` (`bodyFile` null, no edit made, the PR untouched), `internal` when the body file
+ *   cannot be written (no edit made), `body-too-long` when the new body is over
+ *   {@link GH_BODY_LIMIT} characters, exactly the limit being allowed (`bodyFile` set and named in
+ *   the error, no edit made, the PR untouched), or `pr-edit` (`bodyFile` set and named in the
+ *   error, so the caller can set the body by hand).
  */
 export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
   const { batch, pr } = input;
@@ -81,11 +80,10 @@ export function appendPrBody(input: AppendPrBodyInput): AppendPrBodyResult {
 
 /**
  * A PR body with a section appended, the body kept byte for byte as the
- * prefix — never trimmed, never neutralised.
+ * prefix, never trimmed, never neutralised.
  *
- * @param body - The PR's body as `gh` read it.
- * @returns `section` alone for an empty body; otherwise the body, one blank
- *   line (a body ending in `\n`, a CRLF body included, gains one `\n`; any
+ * @returns `section` alone for an empty body. Otherwise the body, one blank
+ *   line (a body ending in `\n`, a CRLF body included, gains one `\n`, any
  *   other gains two), then the section.
  */
 export function appendSection(body: string, section: string): string {
@@ -116,7 +114,7 @@ function readSection(file: string): string {
 /**
  * One `gh pr view <pr> --json body`.
  *
- * @throws StepFailure `pr-body` when `gh` fails or prints no readable body JSON; the message
+ * @throws StepFailure `pr-body` when `gh` fails or prints no readable body JSON. The message
  *   never carries `gh`'s stdout, which can be large.
  */
 function readPrBody(batch: string, pr: number): string {

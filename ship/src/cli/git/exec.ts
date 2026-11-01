@@ -1,14 +1,12 @@
 /**
  * Child-process runner for the worktree CLI. Output is always captured, never inherited: the
  * CLI's stdout carries exactly one JSON object, and a failure's tail travels in `errors[].detail`.
- * The spawn budgets below are the only timeouts of a run's tool steps (the workflow sets none);
- * every spawn that can outlast local git plumbing names its constant here.
+ * The spawn budgets below are the only timeouts of a run's tool steps (the workflow sets none).
+ * Every spawn that can outlast local git plumbing names its constant here.
  *
- * A budget kill is `execaSync`'s `timeout`. On win32 it reaches only the direct child; npm chains,
+ * A budget kill is `execaSync`'s `timeout`. On win32 it reaches only the direct child: npm chains,
  * MSYS fork children and git's launcher and hook survive (Ship PF-10). Async execa kills no
- * further, and never settles while a survivor holds the output pipe. Accepted residual: a Windows
- * budget kill's survivors are reported, not reaped ({@link outputOf}, {@link orphanWarning});
- * POSIX is unprobed.
+ * further, and never settles while a survivor holds the output pipe (unprobed). POSIX is unprobed.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -50,7 +48,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 
 /** What {@link runCaptured} observed. */
 export interface Captured {
-  /** Exit code; `-1` when the child never produced one (spawn failure, timeout kill). */
+  /** Exit code. `-1` when the child never produced one (spawn failure, timeout kill). */
   readonly exitCode: number;
   /** The child's stdout alone (for parsing). */
   readonly stdout: string;
@@ -73,7 +71,7 @@ export interface CaptureOptions {
   readonly env?: Readonly<Record<string, string>>;
   /**
    * Also write the whole output {@link outputOf} composes here (created or
-   * overwritten) after the child exits — even when it failed, timed out or
+   * overwritten) after the child exits, even when it failed, timed out, or
    * never started.
    */
   readonly logFile?: string;
@@ -81,9 +79,11 @@ export interface CaptureOptions {
 
 /**
  * Run a child with captured output, never throwing on a child failure.
+ * Accepted residual: a Windows budget kill's survivors are reported, not reaped
+ * ({@link outputOf}, {@link orphanWarning}).
  *
  * @remarks
- * The child gets {@link gitFreeEnv} with `options.env` laid over it; an overlay must not set a
+ * The child gets {@link gitFreeEnv} with `options.env` laid over it. An overlay must not set a
  * `GIT_*` variable.
  *
  * @param args - Argument vector, passed without a shell.
@@ -118,7 +118,7 @@ export function runCaptured(
  * This process's environment minus every `GIT_*` variable. Ship names each repository by explicit
  * path (`git -C`), so an inherited repository-location variable (a git hook exports `GIT_DIR`) is
  * always wrong. A prefix rule rather than a list, so no name that
- * `git rev-parse --local-env-vars` prints can be missed; no child here needs any other `GIT_*`
+ * `git rev-parse --local-env-vars` prints can be missed. No child here needs any other `GIT_*`
  * setting.
  */
 export function gitFreeEnv(): Record<string, string | undefined> {
@@ -127,7 +127,7 @@ export function gitFreeEnv(): Record<string, string | undefined> {
 
 /**
  * Create a fresh directory for a command's own log and message files, in
- * the OS temp dir — outside every worktree, so nothing written there can be
+ * the OS temp dir, outside every worktree, so nothing written there can be
  * staged. For the commands whose argv names no log file. The CLI never
  * removes it: the envelope names its files for the caller to read.
  *
@@ -165,10 +165,10 @@ export function runStep(
 }
 
 /**
- * Write the whole output to the log file; `''` when written, else a line naming the failure.
+ * Write the whole output to the log file. `''` when written, else a line naming the failure.
  *
- * @silences A failed write: the child's outcome stands — a commit that landed must not read as
- *   failed — and the returned line reaches the caller in the tail.
+ * @silences A failed write: the child's outcome stands (a commit that landed must not read as
+ *   failed), and the returned line reaches the caller in the tail.
  */
 function writeLog(file: string, output: string): string {
   try {
@@ -182,7 +182,7 @@ function writeLog(file: string, output: string): string {
 
 /**
  * What the child printed, then execa's message after a budget kill (else a killed child reads as
- * a bare exit `-1`), or that message alone when it printed nothing; on win32 a budget kill then
+ * a bare exit `-1`), or that message alone when it printed nothing. On win32 a budget kill then
  * appends {@link orphanWarning}'s line.
  */
 function outputOf(all: string, timedOut: boolean, failure: string, cwd: string): string {
@@ -193,7 +193,7 @@ function outputOf(all: string, timedOut: boolean, failure: string, cwd: string):
 }
 
 /**
- * The Windows budget-kill line (the file header has the why), naming `cwd` as given — for a
+ * The Windows budget-kill line (the file header has the why), naming `cwd` as given: for a
  * `git -C` spawn the CLI's own cwd. No remediation command: survivors cannot be found by `cwd`.
  */
 function orphanWarning(cwd: string): string {

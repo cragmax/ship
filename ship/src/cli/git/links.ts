@@ -2,8 +2,8 @@
  * Directory-link primitives for the worktree CLI.
  *
  * Never walk with recursive `readdirSync`: it descends into junctions on
- * Windows (Ship PF-12), so a walk or count would see— and a cleanup
- * would reach — the link target's contents. Every walk here is a manual
+ * Windows (Ship PF-12), so a walk or count would see, and a cleanup
+ * would reach, the link target's contents. Every walk here is a manual
  * `lstat` walk that stops at a link.
  */
 
@@ -17,7 +17,7 @@ import type { LinkRecord } from '../envelope/types.js';
 /**
  * Create a directory link at `link` pointing at `target`.
  *
- * @param link - Path of the new link; must not exist.
+ * @param link - Path of the new link, which must not exist.
  * @param target - Existing directory it points at.
  */
 export function createJunction(link: string, target: string): void {
@@ -36,11 +36,7 @@ export function linkTarget(path: string): string | null {
   return toPosix(resolve(dirname(path), readlinkSync(path)));
 }
 
-/**
- * Whether `path` is a real (non-link) directory.
- *
- * @returns `true` for an existing directory that is not a link.
- */
+/** Whether `path` is a real (non-link) directory. */
 export function isRealDir(path: string): boolean {
   const stat = lstatSync(path, { throwIfNoEntry: false });
 
@@ -74,7 +70,7 @@ export function countSource(dir: string): number | null {
   return countEntries(dir, (name) => name.startsWith('.') && name !== '.bin');
 }
 
-/** Remove a link itself; its target is never touched. */
+/** Remove a link itself. Its target is never touched. */
 export function unlinkLink(path: string): void {
   unlinkSync(path);
 }

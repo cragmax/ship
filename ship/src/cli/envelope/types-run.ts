@@ -1,9 +1,9 @@
 /**
- * Envelope types of the worktree CLI's run-branch commands — the commands
+ * Envelope types of the worktree CLI's run-branch commands (the commands
  * that cut, check and land an unattended run (Ship ADR-0001): `cut-batch`,
- * `cut-slice`, `preflight` and `land` — and of its epic-end commands:
+ * `cut-slice`, `preflight`, and `land`), of its epic-end commands:
  * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
- * `post-pr-comment`; and of `changed-files`, the slice chain's re-read.
+ * `post-pr-comment`, and of `changed-files`, the slice chain's re-read.
  * Each is the `z.infer` of its schema in `schemas-run.ts`, the canonical
  * home of the shapes and their field docs. The status semantics and error
  * classes are `types.ts`'s.

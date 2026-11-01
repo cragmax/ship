@@ -1,8 +1,8 @@
 /**
- * `bump <batch>` — reconcile the run branch's version to its one net bump
+ * `bump <batch>`: reconcile the run branch's version to its one net bump
  * over `master` (Ship ADR-0001 decision 14). The kind is `minor` when any of the batch's own
  * non-merge commits since it left `origin/master` is a `feat`, else
- * `patch`; the target is `origin/master`'s version bumped by that kind. A
+ * `patch`. The target is `origin/master`'s version bumped by that kind. A
  * batch already at the target gets no commit. Otherwise one commit of
  * `package.json` and the lockfile sets the version to the target, through
  * {@link stageBump} and a logged hook commit, the message carrying the run's
@@ -46,17 +46,16 @@ interface BumpInput {
 /**
  * Set the batch's version to its target, in at most one commit.
  *
- * @param input - The batch and the self-hosted seam.
  * @returns The envelope: `ok` with `kind`, `from`, `to` (the target) and,
- *   when a commit landed, `commit` and `log` — an `ok` no-op has `from`
- *   equal to `to`, `commit` and `log` `null`, and touches nothing;
+ *   when a commit landed, `commit` and `log` (an `ok` no-op has `from`
+ *   equal to `to`, `commit` and `log` `null`, and touches nothing);
  *   `refused` before any mutation (harvest's linked-worktree reasons,
  *   `not-run-batch`, `batch-dirty`, `nothing-to-bump`) or after staging
- *   (`staged-mismatch`); or `failed` with the step (`version` —
- *   `origin/master`'s `package.json` unreadable, or a version not plain
- *   `x.y.z` — `stage`, `commit`, …). Once `npm version` has started, every
+ *   (`staged-mismatch`); or `failed` with the step (`version` when
+ *   `origin/master`'s `package.json` is unreadable or a version is not plain
+ *   `x.y.z`, `stage`, `commit`, …). Once `npm version` has started, every
  *   outcome but `ok` restores both files to `HEAD`, leaving the batch
- *   clean; a failed restore adds a `restore` error.
+ *   clean. A failed restore adds a `restore` error.
  */
 export function bump(input: BumpInput): BumpResult {
   const { batch, selfPath = import.meta.filename } = input;
@@ -117,8 +116,8 @@ function assertBumpable(subjects: readonly string[]): void {
 }
 
 /**
- * Put both files back at `HEAD`, index and worktree, after a failed bump — the batch was verified
- * clean before it, so only the bump's change goes; a failed restore adds a `restore` error.
+ * Put both files back at `HEAD`, index and worktree, after a failed bump. The batch was verified
+ * clean before it, so only the bump's change goes. A failed restore adds a `restore` error.
  */
 function restore(batch: string, result: BumpResult): void {
   try {
@@ -172,7 +171,7 @@ function upstreamVersion(batch: string): string {
 }
 
 /**
- * The `version` field of a `package.json` text; `source` names its origin in the failure message.
+ * The `version` field of a `package.json` text. `source` names its origin in the failure message.
  *
  * @throws StepFailure `version` when the text is not JSON or has no string `version`.
  */

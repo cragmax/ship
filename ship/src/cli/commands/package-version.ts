@@ -5,11 +5,11 @@
  * bump. That keeps the PR's net at one bump over `master`
  * (Ship ADR-0001 decision 14).
  * The rule intervenes only when both sides moved ({@link bothMoved}):
- * without it an identical bump — both sides at the same number — merges
- * clean in git, and the PR's net bump is zero. {@link bumpVersion} also
+ * without it an identical bump, both sides at the same number, merges
+ * clean in git (unprobed), and the PR's net bump is zero. {@link bumpVersion} also
  * gives `bump`'s target: `origin/master`'s version bumped by the PR's kind.
  *
- * Only plain `x.y.z` versions take part in arithmetic; anything else (a
+ * Only plain `x.y.z` versions take part in arithmetic. Anything else (a
  * prerelease, a non-number) throws `StepFailure` step `version`.
  *
  * Pure: no filesystem or git access.
@@ -39,7 +39,7 @@ const PLAIN_VERSION = /^(\d+)\.(\d+)\.(\d+)$/u;
 /**
  * Which component moved from `from` to `to`.
  *
- * @returns The first differing component, `major` first; `none` when equal.
+ * @returns The first differing component, `major` first, or `none` when equal.
  * @throws StepFailure `version` unless both are plain `x.y.z`.
  */
 export function versionDelta(from: string, to: string): VersionDelta {
@@ -54,7 +54,7 @@ export function versionDelta(from: string, to: string): VersionDelta {
 /**
  * Bump a version by one step of `delta`, resetting the lower components.
  *
- * @param delta - The step; `none` returns `version` unchanged.
+ * @param delta - The step. `none` returns `version` unchanged.
  * @throws StepFailure `version` unless `version` is a plain `x.y.z`.
  */
 export function bumpVersion(version: string, delta: VersionDelta): string {
@@ -73,10 +73,8 @@ export function bumpVersion(version: string, delta: VersionDelta): string {
 }
 
 /**
- * Whether both sides moved the version since the merge-base — the one case
+ * Whether both sides moved the version since the merge-base: the one case
  * the rule intervenes in.
- *
- * @returns `true` when `ours` and `theirs` both differ from `base`.
  */
 export function bothMoved(v: VersionTriple): boolean {
   return v.ours !== v.base && v.theirs !== v.base;
@@ -86,7 +84,7 @@ export function bothMoved(v: VersionTriple): boolean {
  * The version the merge ends on.
  *
  * @returns `theirs` when only master moved, `ours` when only the batch
- *   did; when both moved, `theirs` bumped by the batch's own bump
+ *   did, and when both moved, `theirs` bumped by the batch's own bump
  *   ({@link versionDelta} of `base` → `ours`).
  * @throws StepFailure `version` when both moved and a version is not a
  *   plain `x.y.z`.
@@ -101,7 +99,7 @@ export function targetVersion(v: VersionTriple): string {
 /**
  * Read the top-level version line of a `package.json` text.
  *
- * @returns The first top-level version; `null` when there is none.
+ * @returns The first top-level version, or `null` when there is none.
  */
 export function readVersionLine(text: string): string | null {
   const m = new RegExp(VERSION_LINE.source, VERSION_LINE.flags).exec(text);
@@ -111,7 +109,7 @@ export function readVersionLine(text: string): string | null {
 
 /**
  * Rewrite the top-level version line of a `package.json` text, keeping its
- * trailing comma and line ending; every other line is untouched.
+ * trailing comma and line ending. Every other line is untouched.
  *
  * @throws StepFailure `version` unless the text has exactly one top-level
  *   version line.

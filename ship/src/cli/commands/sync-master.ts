@@ -5,9 +5,9 @@
  * identical bump stops before its commit.
  *
  * Invariant: a `failed` envelope never leaves a merge this call started in progress: it is
- * aborted; a failed abort adds an `abort` error. `refused` leaves the batch as found. Nothing is
+ * aborted. A failed abort adds an `abort` error. `refused` leaves the batch as found. Nothing is
  * mutated, not even the fetch's remote-tracking refs, before the batch is verified a clean linked
- * worktree, no slice linked in. The merged tree is refreshed before reporting; a refresh failing
+ * worktree, no slice linked in. The merged tree is refreshed before reporting. A refresh failing
  * after a clean merge keeps that commit (`merged`, `commit` / `upstream` set, `install` / `build`
  * failed), no rollback.
  */
@@ -114,7 +114,7 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
  * on an attached run's target batch, through the main checkout.
  *
  * @param dir - Any checkout of the repository, to list the worktrees through.
- * @param batch - The batch worktree; it need not exist.
+ * @param batch - The batch worktree, which need not exist.
  * @throws Refusal `slices-live` naming each such worktree; StepFailure
  *   `preconditions` when git cannot list the worktrees.
  */
@@ -139,7 +139,7 @@ export function assertNoLiveSlices(dir: string, batch: string): void {
 }
 
 /**
- * Fetch, probe, merge; a held merge is settled, refreshed, then committed.
+ * Fetch, probe, merge. A held merge is settled, refreshed, then committed.
  *
  * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; StepFailure per failed step,
  *   {@link planVersionRule}'s before merging.
@@ -252,7 +252,7 @@ function probeConflicts(batch: string): string[] {
   );
 }
 
-/** A conflicted path's kind; a `package.json` conflict the version rule can't resolve is `code`. */
+/** A conflicted path's kind. A `package.json` conflict the version rule can't resolve is `code`. */
 function conflictKind(path: string, packageResolved: boolean): ConflictKind {
   if (path === LOCKFILE) return 'lockfile';
 
@@ -286,7 +286,6 @@ function landedBy(batch: string, mergeBase: string, path: string): string[] {
 /**
  * Refuse before merging when any conflict is code.
  *
- * @param conflicts - The classified conflicts.
  * @throws Refusal `code-conflict` naming each code path.
  */
 function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
@@ -301,7 +300,7 @@ function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
 }
 
 /**
- * Merge, output logged; a clean merge commits unless `stop` holds it (`--no-ff --no-commit`, for
+ * Merge, output logged. A clean merge commits unless `stop` holds it (`--no-ff --no-commit`, for
  * the version rule to edit the tree): `true` when it committed, `false` when it stopped with
  * `MERGE_HEAD` set. Throws StepFailure `merge` when it ends uncommitted, no merge in progress.
  */
@@ -376,7 +375,7 @@ function commitMerge(run: Run): void {
 /**
  * Record the landed merge commit and the `origin/master` it merged.
  *
- * @param run - Call state; gains `outcome` `merged`, `commit` and `upstream`.
+ * @param run - Call state: gains `outcome` `merged`, `commit`, and `upstream`.
  * @param upstream - The merged-in `origin/master` sha.
  */
 function recordMerged(run: Run, upstream: string): void {
@@ -388,7 +387,7 @@ function recordMerged(run: Run, upstream: string): void {
 /**
  * Abort this call's merge after a failure, when one is in progress.
  *
- * @param run - Call state; a failed abort adds an `abort` error.
+ * @param run - Call state: a failed abort adds an `abort` error.
  */
 function abortMerge(run: Run): void {
   try {

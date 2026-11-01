@@ -1,17 +1,17 @@
 /**
- * Worktree lifecycle CLI (Ship ADR-0001) — checks, cuts, provisions, lands into and tears down an
- * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs;
+ * Worktree lifecycle CLI (Ship ADR-0001): checks, cuts, provisions, lands into, and tears down an
+ * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs.
  * `COMMANDS` holds each command's flags and arity. A command prints one JSON object on one stdout
  * line and nothing else: its envelope, checked against its schema (`envelope/schemas*.ts`) before
  * printing ({@link runWorktreeCli}).
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
- * when the CLI lies inside its target — except `cut-batch` (it writes only `.git` and gitignored
+ * when the CLI lies inside its target, except `cut-batch` (it writes only `.git` and gitignored
  * run paths), `retire-run` (no worktree lies in the run root it removes) and `commit` (it touches
  * only its cwd's index and `HEAD`). Target paths and path flags resolve against the starting cwd.
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
- * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout) — the runner
+ * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout): the runner
  * rule shared with `ship/src/cli/run-gate.ts`, which leaves stdout empty on `2`.
  */
 
@@ -53,7 +53,7 @@ import {
 import type { KeepRequest } from './commands/teardown.js';
 import { recordFailure, type ResultBase } from './envelope/types.js';
 
-/** A command line that cannot be dispatched — exit 2. */
+/** A command line that cannot be dispatched: exit 2. */
 class UsageError extends Error {}
 
 /** A subcommand's parsed argv. */
@@ -70,9 +70,9 @@ interface ParsedArgs {
 
 /** One entry of the dispatch table. */
 interface CommandSpec {
-  /** Flags taking a value; every one is required. */
+  /** Flags taking a value. Every one is required. */
   readonly valueFlags: readonly string[];
-  /** Flags taking a value that may be absent; `run` checks their combination. */
+  /** Flags taking a value that may be absent. `run` checks their combination. */
   readonly optionFlags?: readonly string[];
   /** Flags taking no value. */
   readonly switchFlags: readonly string[];
@@ -406,10 +406,10 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
  *
  * @param argv - `process.argv.slice(2)`.
  * @returns Resolves to the envelope, stamped with its `at` instant on every
- *   path (ok, refused, failed, usage), and the process exit code; never
+ *   path (ok, refused, failed, usage), and the process exit code. Never
  *   rejects. The stamped envelope is checked against its schema
  *   ({@link guardEnvelope}): one that fails it is replaced by a `failed`
- *   envelope at step `envelope`, exit code `1`; an unchecked envelope is
+ *   envelope at step `envelope`, exit code `1`. An unchecked envelope is
  *   never returned.
  */
 export async function runWorktreeCli(
@@ -527,9 +527,9 @@ function positiveInt(text: string, flag: string): number {
 }
 
 /**
- * Read `teardown`'s keep flags: `--keep-to` and `--base` go together; `--report` needs them.
+ * Read `teardown`'s keep flags: `--keep-to` and `--base` go together, and `--report` needs them.
  *
- * @returns The request, its paths resolved ({@link toTarget}); `null` with none of the flags.
+ * @returns The request, its paths resolved ({@link toTarget}), or `null` with none of the flags.
  * @throws UsageError for any other combination.
  */
 function keepFlags(args: ParsedArgs): KeepRequest | null {
@@ -557,7 +557,6 @@ function pathFlag(args: ParsedArgs, flag: string): string {
 /**
  * Resolve a CLI path against the starting cwd into envelope form.
  *
- * @param path - Path as given on the command line.
  * @returns Absolute forward-slash path.
  */
 function toTarget(path: string): string {
@@ -565,8 +564,8 @@ function toTarget(path: string): string {
 }
 
 /**
- * Dispatch one invocation to its command; never rejects. Resolves the unstamped envelope, the exit
- * code and the schema the envelope must satisfy — the command's for its own result,
+ * Dispatch one invocation to its command. Never rejects. Resolves the unstamped envelope, the exit
+ * code, and the schema the envelope must satisfy: the command's for its own result,
  * `ResultBaseSchema` for a usage error or a throw.
  */
 async function dispatch(
@@ -595,7 +594,7 @@ async function dispatch(
 }
 
 /**
- * Parse one subcommand's arguments against its spec; a `--` ends the flags.
+ * Parse one subcommand's arguments against its spec. A `--` ends the flags.
  *
  * @throws UsageError on an unknown flag, a flag missing its value, a missing
  *   required flag, or a positional count outside the spec's range.
@@ -653,7 +652,7 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
 }
 
 /**
- * Split argv at its first `--` into the arguments before it and the positionals after it; the
+ * Split argv at its first `--` into the arguments before it and the positionals after it. The
  * positional list starts with the cwd target for a {@link CommandSpec.cwdTarget} command.
  */
 function splitAtDashes(
