@@ -106,8 +106,6 @@ interface Trace {
  */
 const realMachine: MachineFactory = () => ({ create: createScheduler, advance });
 
-// ---------------------------------------------------------------- arbitraries
-
 interface InputParts {
   readonly issues: readonly number[];
   readonly epics: readonly number[];
@@ -192,8 +190,6 @@ export function arbChoices(): fc.Arbitrary<Choice[]> {
     { maxLength: 30 },
   );
 }
-
-// ---------------------------------------------------------------- driver
 
 /**
  * Drive one run, then settle each live issue (`blocked` in a halted entry, else `committed`).
@@ -465,8 +461,6 @@ function applyAction(view: View, action: SchedulerAction): void {
   }
 }
 
-// ---------------------------------------------------------------- checker
-
 function checkStep(
   view: View,
   event: SchedulerEvent | null,
@@ -655,8 +649,6 @@ function checkFinalSkips(view: View): void {
   const got = [...view.skipped].sort((a, b) => a - b).join();
   if (got !== want) violate('skip-closure-complete (final)', `skipped [${got}], want [${want}]`);
 }
-
-// ---------------------------------------------------------------- mutants
 
 /** A must-fail twin: a fault around the real scheduler, and the invariant it trips first. */
 interface Mutant {

@@ -15,11 +15,7 @@ import { checkRenderedWorkflows } from './workflow-render.js';
 import { checkSchemaModule } from './workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
 
-// ── Configuration ──────────────────────────────────────────────────────────
-
 const ROOT_DIR = resolve(import.meta.dirname, '../../..');
-
-// ── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const results = [
