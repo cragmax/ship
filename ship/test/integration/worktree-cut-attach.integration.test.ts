@@ -264,7 +264,9 @@ describe('cut-batch --attach', () => {
         reason: 'unpublished-commits',
         batch: null,
       });
-      expect(r.json.errors[0]?.message).toContain('1 commit');
+      expect(r.json.errors[0]?.message).toBe(
+        'ship/s has 1 commit(s) of its own origin lacks; push them first from a continuation epic end (publish --push-only)',
+      );
       expect(repoState(main)).toEqual(before);
       if (!reuse) expect(existsSync(BATCH())).toBe(false);
     },

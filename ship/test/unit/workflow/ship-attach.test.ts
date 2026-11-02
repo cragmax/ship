@@ -146,7 +146,7 @@ describe('runShip --attach — pre-flight', () => {
     {
       check: 'unpublished-commits',
       message:
-        'ship/epic-9 has 2 commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)',
+        'ship/epic-9 has 2 commit(s) of its own origin lacks; push them first from a continuation epic end (publish --push-only)',
     },
   ])('refuses the attach target’s $check problem, cutting nothing', async (problem) => {
     const run = fakeHooks({

@@ -141,7 +141,7 @@ export function assertPublished(main: string, branch: string): void {
   throw new Refusal(
     'unpublished-commits',
     'preconditions',
-    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)`,
+    `${branch} has ${String(n)} commit(s) of its own origin lacks; push them first from a continuation epic end (publish --push-only)`,
   );
 }
 
