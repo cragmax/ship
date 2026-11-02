@@ -148,16 +148,33 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(exitCode).toBe(1);
   });
 
-  it('keeps an unknown command’s usage envelope and exit 2', async () => {
-    const { result, exitCode } = await runWorktreeCli(['bogus']);
+  it.each([['bogus'], ['commit', '--message-file', 'C:/m', '--', 'a.ts']])(
+    'keeps an unknown command’s usage envelope and exit 2: %s',
+    async (...argv) => {
+      const [command = ''] = argv;
+      const { result, exitCode } = await runWorktreeCli(argv);
 
-    expect(result).toEqual({
-      command: 'bogus',
-      status: 'failed',
-      worktree: null,
-      errors: [{ step: 'usage', message: "unknown command 'bogus'" }],
-      at: expect.any(String),
-    });
-    expect(exitCode).toBe(2);
+      expect(commandMock).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        command,
+        status: 'failed',
+        worktree: null,
+        errors: [{ step: 'usage', message: `unknown command '${command}'` }],
+        at: expect.any(String),
+      });
+      expect(exitCode).toBe(2);
+    },
+  );
+});
+
+describe('runWorktreeCli — arguments', () => {
+  it('passes an argument after -- as a positional, never as a flag', async () => {
+    commandMock.mockReturnValue({ command: 'staged-guard', status: 'ok', worktree: 'C:/w' });
+
+    await runWorktreeCli(['staged-guard', 'C:/w', 'a.ts', '--', '--odd.ts']);
+
+    expect(commandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['a.ts', '--odd.ts'] }),
+    );
   });
 });

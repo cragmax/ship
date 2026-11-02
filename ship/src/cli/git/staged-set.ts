@@ -24,20 +24,6 @@ interface SetDifference {
 }
 
 /**
- * Normalise a caller-given repo-relative path: backslashes become forward
- * slashes and a leading `./` is dropped. Case and absolute paths are left
- * alone, to fail loudly as `missing`.
- *
- * @returns The path in git's spelling.
- */
-export function normaliseRepoPath(path: string): string {
-  let out = toPosix(path);
-  while (out.startsWith('./')) out = out.slice(2);
-
-  return out;
-}
-
-/**
  * Render a {@link SetDifference} for an error message.
  *
  * @returns `missing: [..]; unexpected: [..]`, each list comma-separated.
@@ -110,6 +96,17 @@ export function stagedGuard(input: {
   }
 
   return result;
+}
+
+/**
+ * A caller-given repo-relative path in git's spelling: backslashes become forward slashes and a
+ * leading `./` is dropped. Case and absolute paths are left alone, to fail loudly as `missing`.
+ */
+function normaliseRepoPath(path: string): string {
+  let out = toPosix(path);
+  while (out.startsWith('./')) out = out.slice(2);
+
+  return out;
 }
 
 /**
