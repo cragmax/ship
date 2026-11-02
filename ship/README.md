@@ -29,7 +29,7 @@ Tests live in `test/`, under the subfolder of the file they test; the helpers th
 ## What Ship owns under `.claude/`
 
 Claude Code finds these only under `.claude/`, so they stay there (Framework ADR-0045
-decision 4):
+decision 3):
 
 - **Rendered:** `.claude/workflows/ship.js` and `resync.js`, the Saved
   workflows. `npm run codegen` renders them from `src/workflow/`;

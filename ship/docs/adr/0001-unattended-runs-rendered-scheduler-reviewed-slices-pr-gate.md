@@ -4,7 +4,7 @@ status: draft
 
 # Ship ADR-0001: Unattended runs with a rendered scheduler, a reviewed slice chain, and the PR as the sole human gate
 
-Ship performs unattended runs. Workflow sources are rendered into saved workflows, which drive a deterministic scheduler over an epic's issues. Each issue is built from its triage brief in a slice worktree, reviewed by stage agents that amend its one commit, and landed on the epic's branch. One pull request (PR) per epic is the only human gate. Ship replaces a long-lived orchestrator session. That session spent half its flow keeping its own context alive, and it hardcoded repo internals that no gate checked. It also planned in bulk, so its plans went stale, and it idled finished slices behind rung barriers. This record restates the retired root unattended-runs record (Framework ADR-0045).
+Ship performs unattended runs. Workflow sources are rendered into saved workflows, which drive a deterministic scheduler over an epic's issues. Each issue is built from its triage brief in a slice worktree, reviewed by stage agents that amend its one commit, and landed on the epic's branch. One pull request (PR) per epic is the only human gate. Ship replaces a long-lived orchestrator session. That session spent half its flow keeping its own context alive, and it hardcoded repo internals that no gate checked. It also planned in bulk, so its plans went stale, and it idled finished slices behind rung barriers. This record restates the retired root unattended-runs record (Framework ADR-0078).
 
 ## Decision
 
@@ -22,7 +22,7 @@ Ship performs unattended runs. Workflow sources are rendered into saved workflow
    - `server-pool/src/lease-timings.ts`, for `workflow/` only, in place of the pool barrel ([Pool ADR-0003](../../../server-pool/docs/adr/0003-one-lease-per-vitest-process-through-the-with-lease-cli.md) decision 2).
    - `tooling/hooks/lib/platform-wide.ts`, for the PR body's full-tiers line.
 
-   Type-only imports are free, since the render erases them. So render-safety rests on the folder, not on review. The whole worktree CLI is Ship's, the interactive `commit` command included, since running a CLI is no import edge (Framework ADR-0045 decision 3). Ship's part of `.claude/` stays where Claude Code reads it, and [Ship's README](../../README.md) lists it (Framework ADR-0045 decision 5).
+   Type-only imports are free, since the render erases them. So render-safety rests on the folder, not on review. The whole worktree CLI is Ship's, the interactive `commit` command included, since running a CLI is no import edge (Framework ADR-0077 decision 1). Ship's part of `.claude/` stays where Claude Code reads it, and [Ship's README](../../README.md) lists it (Framework ADR-0045 decision 3).
 
 3. **Instructions come from the main checkout.** Every agent instruction (`CLAUDE.md`, `.claude/rules/`, skills, agent files, and the Saved workflow) comes from the main checkout's working tree when each agent starts. A slice's copies are its diff, and no agent follows them. So a run can't change the rules that its later agents obey before the PR is reviewed. Project docs (GLOSSARY, ADRs, and platform facts) are read from the tree under review.
 

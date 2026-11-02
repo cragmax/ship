@@ -16,5 +16,5 @@ Ship's source is split by where each part runs, and a dependency-cruiser (depcru
 
    Type-only imports are free, since the render erases them.
 
-3. **The whole worktree command-line interface (CLI) is Ship's.** The interactive `commit` command is included, since running a CLI is no import edge (Framework ADR-0045 decision 3).
-4. **Ship's part of `.claude/` stays where Claude Code reads it.** Ship's README lists it (Framework ADR-0045 decision 5).
+3. **The whole worktree command-line interface (CLI) is Ship's.** The interactive `commit` command is included, since running a CLI is no import edge (Framework ADR-0077 decision 1).
+4. **Ship's part of `.claude/` stays where Claude Code reads it.** Ship's README lists it (Framework ADR-0045 decision 3).
