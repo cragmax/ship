@@ -9,7 +9,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { toPosix } from '../../../../tooling/lib/strings.js';
+import { toPosix } from '../../core/strings.js';
 
 import {
   COMMIT_TIMEOUT_MS,

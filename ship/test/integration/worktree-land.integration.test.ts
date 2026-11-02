@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { compareStrings } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../src/core/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { COMMIT_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { rollback } from '../../src/cli/commands/harvest.js';

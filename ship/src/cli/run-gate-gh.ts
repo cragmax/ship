@@ -18,8 +18,6 @@
 
 import { z } from 'zod';
 
-import { formatZodIssues } from '../../../src/contracts/index.js';
-
 import { parseBlockedBySection } from '../core/gate/run-gate-blocked-by.js';
 import {
   checkIssue,
@@ -193,8 +191,10 @@ function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number
   const result = schema.safeParse(raw);
 
   if (!result.success) {
+    const problems = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+
     throw new Error(
-      `run-gate: gh answer for #${String(issue)} has an unexpected shape: ${formatZodIssues(result.error)}`,
+      `run-gate: gh answer for #${String(issue)} has an unexpected shape: ${problems.join('; ')}`,
     );
   }
 

@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareStrings } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../src/core/strings.js';
 import { preflight, type WarmProbe } from '../../src/cli/commands/preflight.js';
 import type { PreflightResult } from '../../src/cli/envelope/types-run.js';
 import {

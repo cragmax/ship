@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { toPosix } from '../../src/core/strings.js';
 import {
   commitChanges,
   headSha,

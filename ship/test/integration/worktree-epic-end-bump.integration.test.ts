@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareStrings } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../src/core/strings.js';
 import type { BumpResult } from '../../src/cli/envelope/types-run.js';
 import {
   advanceOrigin,

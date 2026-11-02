@@ -20,7 +20,7 @@ import * as prettier from 'prettier';
 import ts from 'typescript';
 
 import type { WorkflowMeta } from '../workflow/runtime.types.js';
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { toPosix } from '../core/strings.js';
 
 import { WORKFLOW_GLOBALS } from './workflow-globals.js';
 

@@ -35,7 +35,7 @@ import {
   templatesRoot,
 } from '../../../tooling/test/helpers/worktree-fixture.js';
 import { makeGitRepo } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { compareStrings, toPosix } from '../../../tooling/lib/strings.js';
+import { compareStrings, toPosix } from '../../src/core/strings.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
 
