@@ -43,7 +43,7 @@ What to look for in the report directory: the issues' text (`issues/<N>.md`), th
 - **Plan deviations**: what the tdd or a slice review recorded doing differently from the issue or its brief.
 - **Tool refusals**: a refused or failed envelope under `tool/`, and what it named.
 - **Teardown residue**: what a slice or batch teardown left behind.
-- **Records created**: the ADRs, platform facts and glossary entries the run added. Run both from the run branch, with `<base>` the commit the run started from: `git diff --name-status --diff-filter=A <base>.. -- docs/adr docs/platform-facts '*/docs/adr/*' '*/docs/platform-facts/*'` lists the new records, and `git diff -U0 <base>.. -- docs/GLOSSARY.md '*/docs/GLOSSARY.md' | grep -E '^\+\*\*'` the glossaries' added entries (a reworded term line shows there too).
+- **Records created**: the ADRs, platform facts and glossary entries the run added. Grep the report directory's `land-*.log` files for `create mode` and `rename` lines under a `docs/adr/` or `docs/platform-facts/` folder: each names a new or moved record. No log shows a glossary's added entries: name those the tdd and review reports mention.
 
 ## Output
 
