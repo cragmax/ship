@@ -5,7 +5,7 @@ last-verified: 2026-10-10
 relied-on-by: [ship/src/cli/commands/rcon-probe.ts]
 ---
 
-# Framework PF-67: An rcon-client packet timeout, in auth or on a command, leaves the socket open
+# Ship PF-22: An rcon-client packet timeout, in auth or on a command, leaves the socket open
 
 A packet timeout in rcon-client 4.2 only rejects the pending promise (`Timeout for packet id N`). Nothing ends or destroys the socket. This holds for the auth exchange, where `connect()` rejects and `rcon.socket` stays set and open, and for a command.
 
