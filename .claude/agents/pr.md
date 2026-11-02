@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: pr
 description: >
   Writes the Summary and Merge Danger of an unattended run's pull request body

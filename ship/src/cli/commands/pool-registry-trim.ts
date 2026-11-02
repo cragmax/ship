@@ -7,9 +7,8 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { loadPoolRegistry, type PoolEntry } from '../../../../server-pool/src/index.js';
-
 import { StepFailure, type WarmMember } from '../envelope/types.js';
+import { loadPoolRegistry, type PoolEntry } from './pool-registry.js';
 
 /**
  * The fixed, machine-wide warm set: two Paper and two Folia servers (the
@@ -56,9 +55,9 @@ export function memberLabel(member: WarmMember): string {
  *   message) or lacks any warm member. `dest` is not written then.
  */
 export function trimRegistry(source: string, dest: string): WarmMember[] {
-  const loaded = loadPoolRegistry(source);
-  if (!loaded.ok) throw new StepFailure('registry', loaded.error.message);
-  const kept = loaded.value.filter((entry) => WARM_SET.some((member) => isMember(member, entry)));
+  const kept = loadPoolRegistry(source).filter((entry) =>
+    WARM_SET.some((member) => isMember(member, entry)),
+  );
   const missing = WARM_SET.filter((member) => !kept.some((entry) => isMember(member, entry)));
 
   if (missing.length > 0) {

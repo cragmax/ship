@@ -19,7 +19,7 @@ import {
   prependPath,
   repoState,
   writeFakeGh,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   expectUsageFailure,
   makePlainMain,
@@ -27,7 +27,7 @@ import {
   removeTempDirs,
   runCli,
 } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

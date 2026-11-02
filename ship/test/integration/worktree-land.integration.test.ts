@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { compareStrings } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../src/core/strings.js';
 import type * as ExecModule from '../../src/cli/git/exec.js';
 import { COMMIT_TIMEOUT_MS, runCaptured } from '../../src/cli/git/exec.js';
 import { rollback } from '../../src/cli/commands/harvest.js';
@@ -28,14 +28,14 @@ import {
   makeGitRepo,
   stagedNames,
   type Changes,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   expectUsageFailure,
   makeTempRoot,
   removeTempDirs,
   runCli,
 } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.
@@ -49,7 +49,7 @@ const TIMEOUT = { timeout: 60_000 };
 const WIN32 = process.platform === 'win32';
 const MESSAGE = 'feat(build): land one slice\n\nBody line of the slice commit.\n';
 const HOOK_SAYS = 'fixture hook: commit refused';
-// `dist/` is ignored by the real .gitignore, so the build leaves the batch clean.
+// `dist/` is ignored by the main checkout's .gitignore, so the build leaves the batch clean.
 const BUILD_MARKER = 'dist/built.txt';
 const BUILD_SCRIPT = `require('fs').mkdirSync('dist', { recursive: true });\nrequire('fs').writeFileSync('${BUILD_MARKER}', 'built\\n');\n`;
 const FIXTURE_PACKAGE = `${JSON.stringify({ name: 'land-fixture', private: true, scripts: { build: 'node build.js' } })}\n`;

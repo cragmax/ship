@@ -1,0 +1,38 @@
+node_modules
+dist/
+# The rendered saved workflows: a build output, installed into .claude/workflows/.
+/ship/workflows/
+pack/
+ph-plugin/build/
+ph-plugin/.gradle/
+ph-plugin/bin/
+
+/reports/
+coverage/
+dependency-graph.*
+# In-checkout, not node_modules/.cache: slice worktrees junction one node_modules.
+.prettiercache
+
+.mcp.json
+.vscode/
+/paper-harness/
+
+.claude/*
+!.claude/skills/
+!.claude/agents/
+!.claude/rules/
+!.claude/workflows/
+!.claude/settings.json
+
+tmp/
+docs/hand-off/
+docs/tmp/
+# Throwaway live-server probe drivers.
+test/integration/probe-*
+
+# Sentinels init-bin.integration.test.ts drops and removes; a crashed run leaves them behind.
+src/init/templates/**/_zzz_*
+
+# Written at a slice worktree's root by provisioning; never part of a slice's diff.
+vitest.worktree*.config.ts
+.vitest-cache*/

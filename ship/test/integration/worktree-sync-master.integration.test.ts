@@ -20,9 +20,9 @@ import {
   snapshot,
   withOriginAndBatch,
   type FixtureRun,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import { makeTempRoot, removeTempDirs, runSyncMaster } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { addWorktree, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const DOC_INDEX = 'docs/GLOSSARY.md';

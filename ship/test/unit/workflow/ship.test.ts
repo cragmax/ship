@@ -1928,7 +1928,7 @@ describe('runShip — the slice test review', () => {
 
     if (proofRuns) {
       expect(run.calls.find((c) => c.label === 'runner:comment-only:7-1')?.argv).toEqual([
-        'ship/src/cli/comment-only.ts',
+        'tooling/git/comment-only.ts',
         '--json',
         'cut1..spec1',
       ]);

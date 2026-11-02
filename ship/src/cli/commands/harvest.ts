@@ -13,7 +13,7 @@
  */
 
 import { ESLINT_SUPPRESSIONS } from '../../core/generated-files.js';
-import { sortedSet } from '../../../../tooling/lib/strings.js';
+import { sortedSet } from '../../core/strings.js';
 
 import { runCaptured } from '../git/exec.js';
 import {

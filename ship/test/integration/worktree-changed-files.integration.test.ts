@@ -10,13 +10,9 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { toPosix } from '../../src/core/strings.js';
 import type { ChangedFilesResult } from '../../src/cli/envelope/types-run.js';
-import {
-  commitChanges,
-  headSha,
-  makeGitRepo,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { commitChanges, headSha, makeGitRepo } from '../helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };

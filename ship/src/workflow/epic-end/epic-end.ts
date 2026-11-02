@@ -16,11 +16,8 @@
  * effect.
  */
 
-import {
-  aggregateLeaseTimings,
-  type LeaseAggregate,
-} from '../../../../server-pool/src/lease-timings.js';
-import type { PushedChanges } from '../../../../tooling/hooks/lib/push-scope.js';
+import { aggregateLeaseTimings, type LeaseAggregate } from '../pr/lease-timings.js';
+import type { PushedChanges } from '../pr/push-scope.js';
 
 import { AGENT_CALLS, type PrWriterOutput, type RetroFinding } from '../calls/agent-calls.js';
 import type { CommitQueue } from '../commit-queue.js';

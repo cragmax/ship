@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareStrings } from '../../../tooling/lib/strings.js';
+import { compareStrings } from '../../src/core/strings.js';
 import type { BumpResult } from '../../src/cli/envelope/types-run.js';
 import {
   advanceOrigin,
@@ -21,7 +21,7 @@ import {
   withOriginAndBatch,
   type Changes,
   type FixtureRun,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
   makeTempRoot,
@@ -29,7 +29,7 @@ import {
   removeTempDirs,
   runCli,
 } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook: commit refused';

@@ -8,7 +8,6 @@ import * as prettier from 'prettier';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  checkRenderedWorkflows,
   FORBIDDEN_TOKENS,
   FORBIDDEN_WORDS,
   renderWorkflow,
@@ -18,6 +17,8 @@ import {
 } from '../../../src/build/workflow-render.js';
 import { RESYNC_META } from '../../../src/workflow/resync.meta.js';
 import { SHIP_META } from '../../../src/workflow/ship.meta.js';
+import { FIXTURE_PRETTIER_CONFIG, fixtureGitignore } from '../../helpers/fixtures.js';
+import { fixtureEnv } from '../../helpers/worktree-fixture.js';
 import { workflowSpec } from '../workflow/_render.js';
 
 const ROOT = resolve(import.meta.dirname, '../../../..');
@@ -72,7 +73,7 @@ const FIXTURE_SPEC: WorkflowSpec = {
   name: 'a',
   entry: 'fx/a.ts',
   meta: { name: 'a', description: 'd', whenToUse: 'w', phases: [] },
-  out: '.claude/workflows/a.js',
+  out: 'fx/a.js',
 };
 
 describe('the ship render', () => {
@@ -121,10 +122,7 @@ describe('the ship render', () => {
   });
 
   it('is already prettier-formatted', async () => {
-    const outPath = join(ROOT, workflowSpec('ship').out);
-    const config = await prettier.resolveConfig(outPath);
-
-    expect(await prettier.format(out, { ...config, filepath: outPath })).toBe(out);
+    expect(await formatted(workflowSpec('ship').out, out)).toBe(out);
   });
 
   it('guards the whole render-safety list', () => {
@@ -143,6 +141,13 @@ describe('the ship render', () => {
     expect(fromLf).not.toContain('\r');
   });
 });
+
+/** `source` as Prettier formats it at `filepath` under the fixture config. */
+async function formatted(filepath: string, source: string): Promise<string> {
+  const config = await prettier.resolveConfig(filepath, { config: FIXTURE_PRETTIER_CONFIG });
+
+  return prettier.format(source, { ...config, filepath });
+}
 
 /** Asserts `out` opens with a meta literal deep-equal to `expected`, then the generated-by line. */
 function expectMetaHead(out: string, expected: unknown, source: 'ship' | 'resync'): void {
@@ -184,10 +189,7 @@ describe('the resync render', () => {
   });
 
   it('is already prettier-formatted', async () => {
-    const outPath = join(ROOT, workflowSpec('resync').out);
-    const config = await prettier.resolveConfig(outPath);
-
-    expect(await prettier.format(out, { ...config, filepath: outPath })).toBe(out);
+    expect(await formatted(workflowSpec('resync').out, out)).toBe(out);
   });
 
   it('shares the merge step with ship, and reaches no worktree CLI and no epic end', () => {
@@ -233,7 +235,7 @@ describe('the render closure', () => {
     const at = (file: string): number => files.indexOf(file);
 
     expect(files).toContain('ship/src/core/scheduler/run-scheduler.ts');
-    expect(files).toContain('server-pool/src/lease-timings.ts');
+    expect(files).toContain('ship/src/workflow/pr/lease-timings.ts');
     expect(files).not.toContain('ship/src/core/scheduler/run-scheduler.types.ts');
     expect(files.filter((f) => f.startsWith('ship/src/cli/'))).toEqual([]);
     expect(at('ship/src/core/run-set.ts')).toBeLessThan(
@@ -307,7 +309,7 @@ describe('the render guards', () => {
   });
 });
 
-describe('checkRenderedWorkflows and writeRenderedWorkflows', () => {
+describe('writeRenderedWorkflows', () => {
   let dir = '';
   let spec: WorkflowSpec = workflowSpec('ship');
   let rendered = '';
@@ -320,40 +322,6 @@ describe('checkRenderedWorkflows and writeRenderedWorkflows', () => {
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('reports FAIL for a mutated on-disk copy', async () => {
-    writeFileSync(spec.out, rendered.replace('runShip', 'runShop'));
-
-    expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([
-      { target: spec.out, ok: false, reason: expect.stringMatching(/differs/) },
-    ]);
-  });
-
-  it('reports FAIL for a missing copy', async () => {
-    expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([
-      { target: spec.out, ok: false, reason: expect.stringMatching(/missing/) },
-    ]);
-  });
-
-  it('reports OK for an equal copy', async () => {
-    writeFileSync(spec.out, rendered);
-
-    expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([{ target: spec.out, ok: true }]);
-  });
-
-  it('reports FAIL for a mutated copy stored with CRLF', async () => {
-    writeFileSync(spec.out, rendered.replace('runShip', 'runShop').replaceAll('\n', '\r\n'));
-
-    expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([
-      { target: spec.out, ok: false, reason: expect.stringMatching(/differs/) },
-    ]);
-  });
-
-  it('reports OK for an equal copy stored with CRLF', async () => {
-    writeFileSync(spec.out, rendered.replaceAll('\n', '\r\n'));
-
-    expect(await checkRenderedWorkflows([spec], ROOT)).toEqual([{ target: spec.out, ok: true }]);
   });
 
   it('rewrites an existing CRLF file LF', async () => {
@@ -373,12 +341,27 @@ describe('checkRenderedWorkflows and writeRenderedWorkflows', () => {
 });
 
 describe('the rendered workflow directory', () => {
-  it('is not gitignored', () => {
-    // --no-index: judge the ignore rules even once the file is tracked.
-    const argv = ['check-ignore', '-q', '--no-index', '.claude/workflows/ship.js'];
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally, fixed argv, no shell
-    const result = spawnSync('git', argv, { cwd: ROOT });
+  let repo = '';
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'workflow-ignore-'));
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
 
-    expect(result.status).toBe(1);
+  it("is ignored by the main checkout's .gitignore, and the installed copy is not", () => {
+    // A hook's inherited GIT_DIR would point both commands at the repository under commit.
+    const options = { cwd: repo, env: fixtureEnv() };
+    writeFileSync(join(repo, '.gitignore'), fixtureGitignore());
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally, fixed argv, no shell
+    expect(spawnSync('git', ['init', '-q'], options).status).toBe(0);
+    // --no-index: judge the ignore rules even once the file is tracked.
+    const ignored = (path: string): number | null =>
+      // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally, fixed argv, no shell
+      spawnSync('git', ['check-ignore', '-q', '--no-index', path], options).status;
+
+    expect(ignored(workflowSpec('ship').out)).toBe(0);
+    expect(ignored('ship/workflows/ship.js')).toBe(0);
+    expect(ignored('.claude/workflows/ship.js')).toBe(1);
   });
 });

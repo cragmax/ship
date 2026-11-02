@@ -1,7 +1,7 @@
 /**
  * Fixture repos (per-test `mkdtemp` roots, never this repository's own
- * worktrees) carry the real `.gitignore`, so the clean-status assertions run
- * against the actual patterns. Link-dependent cases are win32-only: junction
+ * worktrees) carry the main checkout's `.gitignore`, so the clean-status assertions run
+ * against its patterns. Link-dependent cases are win32-only: junction
  * and ignore behaviour has been observed there alone.
  *
  * @integrationTier standalone
@@ -17,13 +17,12 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadPoolRegistry } from '../../../server-pool/src/index.js';
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { loadPoolRegistry } from '../../src/cli/commands/pool-registry.js';
+import { toPosix } from '../../src/core/strings.js';
 import { unlinkLink } from '../../src/cli/git/links.js';
 import { provisionBatch } from '../../src/cli/commands/provision-batch.js';
 import { provision } from '../../src/cli/commands/provision.js';
@@ -47,16 +46,11 @@ import {
   runCli,
   seedBatch,
 } from '../helpers/worktree-cli-fixture.js';
-import {
-  addWorktree,
-  mustRun,
-  porcelain,
-  runIn,
-} from '../../../tooling/test/helpers/worktree-fixture.js';
-import { commitChanges, headSha } from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { fixtureGitignore } from '../helpers/fixtures.js';
+import { addWorktree, mustRun, porcelain, runIn } from '../helpers/worktree-fixture.js';
+import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 
 const WIN32 = process.platform === 'win32';
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const TIMEOUT = { timeout: 60_000 };
 
 prebuildNpmTemplate();
@@ -207,8 +201,6 @@ describe('provision-batch', () => {
       expect(lstatSync(join(batch, 'paper-harness', 'tests')).isDirectory()).toBe(true);
       const registry = toPosix(join(reportDir, 'pool-registry.batch.json'));
       expect(run.json.registry).toBe(registry);
-      const loaded = loadPoolRegistry(registry);
-      expect(loaded.ok).toBe(true);
       const servers = [
         { type: 'paper', host: 'localhost', rconPort: 25701 },
         { type: 'paper', host: 'localhost', rconPort: 25703 },
@@ -217,7 +209,7 @@ describe('provision-batch', () => {
       ];
 
       expect(
-        (loaded.ok ? loaded.value : []).map((e) => ({
+        loadPoolRegistry(registry).map((e) => ({
           type: e.type,
           host: e.host,
           rconPort: e.rconPort,
@@ -339,9 +331,9 @@ describe('provision-batch', () => {
   );
 });
 
-/** The real `.gitignore` with its `pattern` line replaced, or dropped when `null`. */
+/** {@link fixtureGitignore} with its `pattern` line replaced, or dropped when `null`. */
 function gitignoreReplacing(pattern: string, replacement: string | null): string {
-  return readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
+  return fixtureGitignore()
     .split(/\r?\n/u)
     .flatMap((line) => {
       if (line.trim() !== pattern) return [line];

@@ -17,7 +17,6 @@ import type { z } from 'zod';
 
 import type {
   CommandStatusSchema,
-  CommitResultSchema,
   HarvestResultSchema,
   LinkRecordSchema,
   LiveRunSchema,
@@ -73,9 +72,6 @@ export type HarvestResult = z.infer<typeof HarvestResultSchema>;
 
 /** Envelope of `staged-guard <worktree> <file>…`. Every list is sorted. */
 export type StagedGuardResult = z.infer<typeof StagedGuardResultSchema>;
-
-/** Envelope of `commit --message-file <f> -- <path>…`. */
-export type CommitResult = z.infer<typeof CommitResultSchema>;
 
 /** A run branch's pull request as `gh` reports it. */
 export type PrInfo = z.infer<typeof PrInfoSchema>;

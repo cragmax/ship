@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: tdd
 description: >
   Builds one ready-for-agent issue of an unattended run with the tdd skill, in
@@ -28,7 +29,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
 - `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
-- `Probe caps:` — minutes per probe and probes per stage.
+- `Probe caps:` — minutes per probe and probes per stage (`unattended-agent` § Probes).
 - `Commit message template:` — the commit message file's path, then its message between `----- BEGIN FILE -----` and `----- END FILE -----`, with a `<type>(<scope>): <subject>` and a `<fixes|see>` placeholder for you to fill (§ Commit line).
 
 ## Limits

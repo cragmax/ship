@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 
 import { z } from 'zod';
 
-import { compareStrings } from '../../../../tooling/lib/strings.js';
+import { compareStrings } from '../../core/strings.js';
 
 import { GH_TIMEOUT_MS, runCaptured } from '../git/exec.js';
 import {

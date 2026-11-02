@@ -11,8 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gitIn } from '../../src/cli/run-gate.js';
 import { gatherAndEvaluate, landedIssues, type GhJson } from '../../src/cli/run-gate-gh.js';
-import { commitChanges, makeGitRepo } from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { mustRun } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { commitChanges, makeGitRepo } from '../helpers/worktree-fixture-git.js';
+import { mustRun } from '../helpers/worktree-fixture.js';
 import { makeTempRoot, removeTempDirs } from '../helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };

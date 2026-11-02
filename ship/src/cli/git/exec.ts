@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { execaSync } from 'execa';
 
-import { toPosix } from '../../../../tooling/lib/strings.js';
+import { toPosix } from '../../core/strings.js';
 
 import { StepFailure } from '../envelope/types.js';
 

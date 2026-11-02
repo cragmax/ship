@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 
 import { findCycles, runSetIssues, transitiveDependents } from '../../../src/core/run-set.js';
 
-import { describeRenderSafety } from '../../../../server-pool/test/helpers/render-safety.js';
+import { describeRenderSafety } from '../../helpers/render-safety.js';
 
 describe('runSetIssues', () => {
   it('flattens every entry, ascending', () => {

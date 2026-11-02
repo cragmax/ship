@@ -12,7 +12,7 @@
  * failed), no rollback.
  */
 
-import { sortedSet } from '../../../../tooling/lib/strings.js';
+import { sortedSet } from '../../core/strings.js';
 
 import {
   COMMIT_TIMEOUT_MS,

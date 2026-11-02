@@ -10,7 +10,7 @@ import type {
   SchedulerInput,
   Transition,
 } from '../../../../src/core/scheduler/run-scheduler.types.js';
-import { stripComments } from '../../../../../server-pool/test/helpers/render-safety.js';
+import { stripComments } from '../../../helpers/render-safety.js';
 
 describe('advance — action order', () => {
   it('emits response, then skips, then starts, then epic-done', () => {

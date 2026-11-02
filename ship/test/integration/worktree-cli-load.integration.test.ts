@@ -13,8 +13,8 @@ import { pathToFileURL } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { toPosix } from '../../../tooling/lib/strings.js';
-import { prependPath, writeFakeGh } from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { toPosix } from '../../src/core/strings.js';
+import { prependPath, writeFakeGh } from '../helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
@@ -25,7 +25,6 @@ const COMMAND_MODULES = [
   'bump',
   'changed-files',
   'check-master',
-  'commit',
   'cut',
   'cut-attach',
   'harvest',
@@ -119,11 +118,6 @@ describe('worktree CLI module loading', () => {
       'land',
       (m) => ['land', m, 'abc', '--base', 'b', '--message-file', `${m}/m.txt`, '--log', `${m}/l`],
       ['cut', 'harvest', 'land', 'staged-set'],
-    ],
-    [
-      'commit',
-      (m) => ['commit', '--message-file', `${m}/m.txt`, 'f.txt'],
-      ['commit', 'staged-set'],
     ],
     ['changed-files', (m) => ['changed-files', m, 'abc', '--base', 'b'], ['changed-files']],
     [

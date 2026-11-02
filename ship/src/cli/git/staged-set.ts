@@ -10,7 +10,7 @@
  * win32, observed 2026-09-28), and a case-folded compare passes that loss.
  */
 
-import { sortedSet, toPosix } from '../../../../tooling/lib/strings.js';
+import { sortedSet, toPosix } from '../../core/strings.js';
 
 import { gitPaths, requireWorktreeRoot } from './git.js';
 import { Refusal, recordFailure, type StagedGuardResult } from '../envelope/types.js';
@@ -21,20 +21,6 @@ interface SetDifference {
   readonly missing: string[];
   /** Present but not expected, sorted. */
   readonly unexpected: string[];
-}
-
-/**
- * Normalise a caller-given repo-relative path: backslashes become forward
- * slashes and a leading `./` is dropped. Case and absolute paths are left
- * alone, to fail loudly as `missing`.
- *
- * @returns The path in git's spelling.
- */
-export function normaliseRepoPath(path: string): string {
-  let out = toPosix(path);
-  while (out.startsWith('./')) out = out.slice(2);
-
-  return out;
 }
 
 /**
@@ -110,6 +96,17 @@ export function stagedGuard(input: {
   }
 
   return result;
+}
+
+/**
+ * A caller-given repo-relative path in git's spelling: backslashes become forward slashes and a
+ * leading `./` is dropped. Case and absolute paths are left alone, to fail loudly as `missing`.
+ */
+function normaliseRepoPath(path: string): string {
+  let out = toPosix(path);
+  while (out.startsWith('./')) out = out.slice(2);
+
+  return out;
 }
 
 /**

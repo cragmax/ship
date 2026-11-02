@@ -5,7 +5,7 @@ last-verified: 2026-06-10
 relied-on-by: [ship/src/cli/commands/rcon-probe.ts, ship/src/cli/commands/preflight.ts]
 ---
 
-# Framework PF-21: RCON AUTH can wedge, timing out on packet id 0, while TCP stays open
+# Ship PF-21: RCON AUTH can wedge, timing out on packet id 0, while TCP stays open
 
 Under Java virtual machine (JVM) starvation from host memory exhaustion, a server's RCON can wedge half-alive. The TCP port still accepts connections, but the AUTH request never completes (`Timeout for packet id 0`). TCP-reachable and AUTH-serviceable are two distinct health states. The wedge did not heal itself once host memory recovered. Recovery required restarting the Docker engine and warming the servers again.
 

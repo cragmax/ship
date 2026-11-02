@@ -7,8 +7,8 @@
  *
  * Run it from a checkout other than the one it mutates: a mutating command refuses `self-hosted`
  * when the CLI lies inside its target, except `cut-batch` (it writes only `.git` and gitignored
- * run paths), `retire-run` (no worktree lies in the run root it removes) and `commit` (it touches
- * only its cwd's index and `HEAD`). Target paths and path flags resolve against the starting cwd.
+ * run paths) and `retire-run` (no worktree lies in the run root it removes). Target paths and path
+ * flags resolve against the starting cwd.
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
  * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout): the runner
@@ -21,11 +21,10 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 
 import type { RunSelection } from '../core/run-slug.js';
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { toPosix } from '../core/strings.js';
 import { RUN_BRANCH_SHAPE } from '../core/run-branch.js';
 import type { CutSliceInput } from './commands/cut.js';
 import {
-  CommitResultSchema,
   guardEnvelope,
   HarvestResultSchema,
   LiveRunsResultSchema,
@@ -78,8 +77,6 @@ interface CommandSpec {
   readonly switchFlags: readonly string[];
   /** How many positionals may follow the target (`max` may be `Infinity`). */
   readonly rest: { readonly min: number; readonly max: number };
-  /** The target is the starting cwd, and every positional is `rest`. */
-  readonly cwdTarget?: true;
   /** The envelope schema `run`'s result must satisfy, in every mode of the command. */
   readonly schema: z.ZodType;
   /**
@@ -170,22 +167,6 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       const { stagedGuard } = await import('./git/staged-set.js');
 
       return stagedGuard({ worktree: args.target, files: args.rest });
-    },
-  },
-  commit: {
-    schema: CommitResultSchema,
-    valueFlags: ['--message-file'],
-    switchFlags: [],
-    rest: { min: 1, max: Infinity },
-    cwdTarget: true,
-    run: async (args) => {
-      const { commit } = await import('./commands/commit.js');
-
-      return commit({
-        worktree: args.target,
-        messageFile: pathFlag(args, '--message-file'),
-        files: args.rest,
-      });
     },
   },
   'retire-run': {
@@ -602,7 +583,9 @@ async function dispatch(
 function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
   const values = new Map<string, string>();
   const switches = new Set<string>();
-  const { flags, positionals, trailing } = splitAtDashes(argv, spec);
+  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+  const flags = argv.slice(0, end);
+  const positionals: string[] = [];
 
   for (let i = 0; i < flags.length; i++) {
     const arg = flags[i] ?? '';
@@ -613,7 +596,7 @@ function parseArgs(argv: readonly string[], spec: CommandSpec): ParsedArgs {
     else positionals.push(arg);
   }
 
-  positionals.push(...trailing);
+  positionals.push(...argv.slice(end + 1));
   assertArity(positionals.length, spec.rest);
   const missing = spec.valueFlags.find((flag) => !values.has(flag));
   if (missing !== undefined) throw new UsageError(`missing required flag ${missing}`);
@@ -649,23 +632,6 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
   else if (rest.max > 0) expected += ` plus ${String(rest.min)}..${String(rest.max)} more`;
 
   throw new UsageError(`expected ${expected}, got ${String(count)} positionals`);
-}
-
-/**
- * Split argv at its first `--` into the arguments before it and the positionals after it. The
- * positional list starts with the cwd target for a {@link CommandSpec.cwdTarget} command.
- */
-function splitAtDashes(
-  argv: readonly string[],
-  spec: CommandSpec,
-): { flags: readonly string[]; positionals: string[]; trailing: readonly string[] } {
-  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
-
-  return {
-    flags: argv.slice(0, end),
-    positionals: spec.cwdTarget === true ? ['.'] : [],
-    trailing: argv.slice(end + 1),
-  };
 }
 
 // Entry-point guard: run only when executed as a script, not when imported.

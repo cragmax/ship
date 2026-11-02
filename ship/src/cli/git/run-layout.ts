@@ -14,7 +14,7 @@
  */
 
 import { EPIC_SLUG_PREFIX } from '../../core/run-slug.js';
-import { toPosix } from '../../../../tooling/lib/strings.js';
+import { toPosix } from '../../core/strings.js';
 
 /**
  * The branch namespace of every unattended run's feature branch

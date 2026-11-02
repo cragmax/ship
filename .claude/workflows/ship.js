@@ -796,7 +796,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -881,7 +880,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -963,7 +961,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1026,7 +1023,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1080,7 +1076,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1132,7 +1127,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1185,7 +1179,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1250,7 +1243,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1305,7 +1297,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1353,7 +1344,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1426,7 +1416,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1478,7 +1467,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1533,7 +1521,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1601,7 +1588,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1649,7 +1635,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1698,7 +1683,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -1747,7 +1731,6 @@ const TOOL_ENVELOPE_SCHEMAS = {
           'batch-dirty',
           'unregistered-worktree',
           'staged-mismatch',
-          'merge-in-progress',
           'slice-not-single-commit',
           'not-main-worktree',
           'not-run-batch',
@@ -2063,12 +2046,13 @@ function runPlace(at, tag, ...write) {
 }
 const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
 const RUN_GATE_CLI = 'ship/src/cli/run-gate.ts';
+const COMMENT_ONLY_CLI = 'tooling/git/comment-only.ts';
 const TOOL_COMMANDS = {
   preflight: [WORKTREE_CLI, 'preflight'],
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
-  'comment-only': ['ship/src/cli/comment-only.ts', '--json'],
+  'comment-only': [COMMENT_ONLY_CLI, '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
@@ -2276,32 +2260,7 @@ function classifyLanding(land) {
 
 const LEASE_LINE =
   /^[ \t]*with-lease: waited (\d+(?:\.\d+)?)s for (\w+)@(\S+), held (\d+(?:\.\d+)?)s(?:, waited on (.+?))?\r?$/u;
-function formatLeaseLine(timing) {
-  const waited = timing.waitedSeconds.toFixed(1);
-  const held = timing.heldSeconds.toFixed(1);
-  const suffix = timing.waitedOn === undefined ? '' : `, waited on ${timing.waitedOn}`;
-  return `with-lease: waited ${waited}s for ${timing.type}@${timing.endpoint}, held ${held}s${suffix}`;
-}
 const LEASE_WAIT_LINE = /^with-lease: waiting for \w+@\S+ /u;
-const LEASE_UNKNOWN_HOLDER = 'an unknown holder';
-function formatLeaseWaitLine(wait) {
-  const { holder } = wait;
-  const head = `with-lease: waiting for ${wait.type}@${wait.endpoint} — held by`;
-  if (holder === null) return `${head} ${LEASE_UNKNOWN_HOLDER}`;
-  const state = holder.alive ? 'alive' : 'dead, lock reclaimed once stale';
-  return `${head} ${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)}, since ${holder.since}, ${state}): ${holder.command}`;
-}
-function leaseWaitedOn(holder) {
-  if (holder === null) return LEASE_UNKNOWN_HOLDER;
-  return `${leaseHolderLabel(holder.cwd)} (pid ${String(holder.pid)})`;
-}
-function parseLeaseLine(line) {
-  const match = LEASE_LINE.exec(line);
-  if (match === null) return null;
-  const [, waited = '', type = '', endpoint = '', held = '', waitedOn] = match;
-  const timing = { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
-  return waitedOn === undefined ? timing : { ...timing, waitedOn };
-}
 function parseLeaseLines(text) {
   const timings = [];
   for (const line of text.split('\n')) {
@@ -2348,18 +2307,21 @@ function aggregateLeaseTimings(samples) {
     unparsed,
   };
 }
-function leaseHolderLabel(cwd) {
-  return cwd
-    .split(/[\\/]/u)
-    .filter((segment) => segment !== '')
-    .slice(-2)
-    .join('/');
+function parseLeaseLine(line) {
+  const match = LEASE_LINE.exec(line);
+  if (match === null) return null;
+  const [, waited = '', type = '', endpoint = '', held = '', waitedOn] = match;
+  const timing = { type, endpoint, waitedSeconds: Number(waited), heldSeconds: Number(held) };
+  return waitedOn === undefined ? timing : { ...timing, waitedOn };
 }
 function leaseIsWaitLine(sample) {
   return 'line' in sample && LEASE_WAIT_LINE.test(sample.line);
 }
 function leaseSampleLine(sample) {
-  return 'line' in sample ? sample.line : formatLeaseLine(sample.lease);
+  if ('line' in sample) return sample.line;
+  const { type, endpoint, waitedSeconds, heldSeconds, waitedOn } = sample.lease;
+  const suffix = waitedOn === undefined ? '' : `, waited on ${waitedOn}`;
+  return `with-lease: waited ${waitedSeconds.toFixed(1)}s for ${type}@${endpoint}, held ${heldSeconds.toFixed(1)}s${suffix}`;
 }
 function leaseAddToEngine(engine, lease) {
   engine.leases += 1;
@@ -4700,3 +4662,4 @@ function refusedReport(refusals, dropped) {
 }
 
 return await runShip({ agent, parallel, pipeline, phase, log }, args);
+// Ship's workflow: change it upstream under ship/src/workflow/, then run `npm run codegen`.

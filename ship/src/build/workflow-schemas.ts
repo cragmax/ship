@@ -22,10 +22,19 @@ import { AGENT_OUTPUTS } from '../schemas/agent-outputs.js';
 import { TOOL_ENVELOPES } from '../schemas/tool-envelopes.js';
 
 import { emitJsonSchema } from './json-schema-normalise.js';
-import type { RenderCheck } from './workflow-render.js';
 
 /** The emitted module, repository-relative. */
 export const SCHEMA_MODULE = 'ship/src/workflow/schemas.generated.ts';
+
+/** One codegen-check result. */
+interface RenderCheck {
+  /** The generated file, repository-relative. */
+  readonly target: string;
+  /** Whether the on-disk copy equals a fresh emission, line endings aside. */
+  readonly ok: boolean;
+  /** Why not, when not. */
+  readonly reason?: string;
+}
 
 /** Reads the on-disk module by absolute path, or `undefined` when there is none. */
 type ModuleReader = (path: string) => string | undefined;

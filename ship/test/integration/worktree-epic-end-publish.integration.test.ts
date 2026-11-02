@@ -32,7 +32,7 @@ import {
   type FakeGhResponse,
   type FakePrCreate,
   type FixtureRun,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
   makeTempRoot,
@@ -40,7 +40,7 @@ import {
   removeTempDirs,
   runCli,
 } from '../helpers/worktree-cli-fixture.js';
-import { mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { mustRun, runIn } from '../helpers/worktree-fixture.js';
 
 // A pass-through spy: every spawn still runs, and the in-process test reads
 // the options each one got. The CLI-spawned tests run in their own process.

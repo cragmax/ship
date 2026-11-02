@@ -1,9 +1,8 @@
 /**
- * Build-time script: render each saved workflow in {@link WORKFLOWS} from its
- * typed sources under `ship/src/workflow/` into `.claude/workflows/`. The
- * rendered files are committed and never hand-edited.
- * `ship/src/build/check-codegen.ts` (`npm run gate:codegen`) is their drift check.
- * The render itself is `ship/src/build/workflow-render.ts`.
+ * Build-time script: render each saved workflow in {@link WORKFLOWS} from its typed sources under
+ * `ship/src/workflow/` into the gitignored {@link RENDER_DIR}, a build output like `dist/`.
+ * `ship/src/build/install.ts` copies each render into `.claude/workflows/`, and its `--check` is
+ * the drift check. The render itself is `ship/src/build/workflow-render.ts`.
  *
  * Run via `npm run codegen`.
  */
@@ -16,6 +15,9 @@ import { SHIP_META } from '../workflow/ship.meta.js';
 
 const ROOT_DIR = resolve(import.meta.dirname, '../../..');
 
+/** Where the renders go, repository-relative. */
+const RENDER_DIR = 'ship/workflows';
+
 /**
  * Every saved workflow. To add one: write its entry (exporting
  * `run<Name>(hooks, rawArgs)`) and its meta, add a row, run `npm run fix`.
@@ -25,17 +27,17 @@ export const WORKFLOWS: readonly WorkflowSpec[] = [
     name: 'ship',
     entry: 'ship/src/workflow/ship.ts',
     meta: SHIP_META,
-    out: '.claude/workflows/ship.js',
+    out: `${RENDER_DIR}/ship.js`,
   },
   {
     name: 'resync',
     entry: 'ship/src/workflow/resync.ts',
     meta: RESYNC_META,
-    out: '.claude/workflows/resync.js',
+    out: `${RENDER_DIR}/resync.js`,
   },
 ];
 
-/** Render and write every workflow. */
+/** Render every workflow. */
 async function main(): Promise<void> {
   const written = await writeRenderedWorkflows(WORKFLOWS, ROOT_DIR);
   console.log(`[codegen] Rendered ${String(written.length)} workflow(s): ${written.join(', ')}.`);

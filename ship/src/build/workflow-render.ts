@@ -1,6 +1,6 @@
 /**
  * Renders a workflow's typed sources into the one plain-JS file the runtime loads (it loads no
- * module) and checks a committed copy against a fresh render.
+ * module).
  *
  * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
  * ones erased and never followed, a non-relative value import an error), each transpiled (ES2022,
@@ -13,14 +13,14 @@
  * top-level `export`, a SyntaxError (unprobed).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 
 import * as prettier from 'prettier';
 import ts from 'typescript';
 
 import type { WorkflowMeta } from '../workflow/runtime.types.js';
-import { toPosix } from '../../../tooling/lib/strings.js';
+import { toPosix } from '../core/strings.js';
 
 import { WORKFLOW_GLOBALS } from './workflow-globals.js';
 
@@ -38,16 +38,6 @@ export interface WorkflowSpec {
 
 /** Reads one source file by absolute path. */
 type SourceReader = (path: string) => string;
-
-/** One codegen-check result. */
-export interface RenderCheck {
-  /** The rendered file, as its spec names it. */
-  readonly target: string;
-  /** Whether the on-disk copy equals a fresh render, line endings aside. */
-  readonly ok: boolean;
-  /** Why not, when not. */
-  readonly reason?: string;
-}
 
 /**
  * The names the workflow's scope already binds, the runtime's globals and
@@ -141,34 +131,7 @@ export async function renderWorkflow(
 }
 
 /**
- * The drift check: re-render each workflow and compare with its on-disk
- * copy, line endings normalised. Writes nothing.
- *
- * @returns Resolves to one result per workflow, in order. Rejects when a
- *   render violates the render contract.
- */
-export async function checkRenderedWorkflows(
-  workflows: readonly WorkflowSpec[],
-  root: string,
-): Promise<RenderCheck[]> {
-  return Promise.all(
-    workflows.map(async (spec): Promise<RenderCheck> => {
-      const rendered = await renderWorkflow(spec, root);
-      const out = resolve(root, spec.out);
-      if (!existsSync(out))
-        return { target: spec.out, ok: false, reason: 'missing — never rendered' };
-
-      return readFileSync(out, 'utf8').replaceAll('\r\n', '\n') === rendered
-        ? { target: spec.out, ok: true }
-        : { target: spec.out, ok: false, reason: 'differs from the rendered output' };
-    }),
-  );
-}
-
-/**
- * Render each workflow and write it LF, replacing any existing file. A file holding CR still runs
- * (unprobed). The writer writes LF regardless, `.gitattributes` checks `.claude/workflows/*.js` out
- * LF, and the drift check normalises.
+ * Render each workflow and write it LF, replacing any existing file.
  *
  * @returns Resolves to each written file, as its spec names it. Rejects
  *   when a render violates the render contract, writing nothing for that

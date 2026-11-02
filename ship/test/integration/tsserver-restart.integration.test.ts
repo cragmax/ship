@@ -14,7 +14,6 @@ import { createInterface } from 'node:readline';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isPidAlive } from '../../../src/contracts/index.js';
 import { restartSessionTsserver } from '../../src/cli/commands/tsserver-restart.js';
 
 const WIN32 = process.platform === 'win32';
@@ -86,6 +85,16 @@ describe.skipIf(!WIN32)('restartSessionTsserver against real processes', () => {
     expect(isPidAlive(session)).toBe(true);
   });
 });
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function pidOf(child: ChildProcess): number {
   if (child.pid === undefined) throw new Error('the process did not start');

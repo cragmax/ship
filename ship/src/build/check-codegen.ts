@@ -1,40 +1,33 @@
 /**
- * Drift gate: each generated target must equal a fresh in-memory render, with line endings
- * normalised. The targets are `schemas.generated.ts` ({@link checkSchemaModule}) and each saved
- * workflow in {@link WORKFLOWS} ({@link checkRenderedWorkflows}).
+ * Drift gate, first half: `schemas.generated.ts` must equal a fresh emission, line endings
+ * normalised ({@link checkSchemaModule}), and every saved workflow is rendered afresh into
+ * `ship/workflows/` ({@link writeRenderedWorkflows}). The second half,
+ * `ship/src/build/install.ts --check`, then compares each committed copy with the current sources.
  *
- * On drift, prints a per-target failure line and the hint
- * "Run `npm run codegen` to regenerate." then exits 1.
+ * On drift, prints a failure line and the hint "Run `npm run codegen` to regenerate." then exits 1.
  *
  * Run via `npm run gate:codegen`.
  */
 
 import { resolve } from 'node:path';
 
-import { checkRenderedWorkflows } from './workflow-render.js';
-import { checkSchemaModule } from './workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
+import { writeRenderedWorkflows } from './workflow-render.js';
+import { checkSchemaModule } from './workflow-schemas.js';
 
 const ROOT_DIR = resolve(import.meta.dirname, '../../..');
 
 async function main(): Promise<void> {
-  const results = [
-    await checkSchemaModule(ROOT_DIR),
-    ...(await checkRenderedWorkflows(WORKFLOWS, ROOT_DIR)),
-  ];
+  const schema = await checkSchemaModule(ROOT_DIR);
+  await writeRenderedWorkflows(WORKFLOWS, ROOT_DIR);
 
-  const failures = results.filter((r) => !r.ok);
-
-  if (failures.length > 0) {
-    for (const f of failures) {
-      console.error(`FAIL: ${f.target} — ${f.reason ?? 'unknown'}`);
-    }
-
+  if (!schema.ok) {
+    console.error(`FAIL: ${schema.target} — ${schema.reason ?? 'unknown'}`);
     console.error('\nRun `npm run codegen` to regenerate.');
     process.exit(1);
   }
 
-  console.log(`codegen-check: OK (${String(results.length)} targets)`);
+  console.log('codegen-check: OK');
 }
 
 await main();

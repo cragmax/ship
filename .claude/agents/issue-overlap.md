@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: issue-overlap
 description: >
   Read-only pre-flight stage of an unattended run: runs the issue-overlap skill
