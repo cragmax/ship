@@ -42,7 +42,7 @@ describe('findCycles', () => {
           { blocker: 60, dependent: 40 },
           { blocker: 40, dependent: 50 },
           { blocker: 50, dependent: 60 },
-          // cycle {10, 30}; 20 hangs off it but is not in it
+          // cycle {10, 30}. 20 hangs off it but is not in it
           { blocker: 30, dependent: 10 },
           { blocker: 10, dependent: 30 },
           { blocker: 30, dependent: 20 },

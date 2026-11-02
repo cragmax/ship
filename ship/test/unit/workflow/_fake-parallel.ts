@@ -13,7 +13,7 @@ import { readyVerdict, type RecordedCall } from './_fake-hooks.js';
 interface Holdable {
   /** Pass as `fakeHooks`' `gate`. */
   readonly gate: (call: RecordedCall, answer: unknown) => Promise<unknown>;
-  /** Settle every held call with this label; later calls with it pass. */
+  /** Settle every held call with this label. Later calls with it pass. */
   readonly release: (label: string) => void;
   /** Settle every held call, and hold nothing from now on. */
   readonly releaseAll: () => void;
@@ -27,12 +27,7 @@ interface HeldCall {
   readonly settle: () => void;
 }
 
-/**
- * A gate holding every call whose label `match` accepts.
- *
- * @param match - The labels to hold.
- * @returns The gate and its controls.
- */
+/** A gate holding every call whose label `match` accepts. */
 export function holdable(match: RegExp): Holdable {
   let holding = true;
   const released = new Set<string>();
@@ -82,13 +77,12 @@ export type SettleOrder = 'oldest' | 'newest';
 
 /** A gate holding every call, and the pump that settles them. */
 interface SettlePump {
-  /** Pass as `fakeHooks`' `gate`; it holds every call. */
+  /** Pass as `fakeHooks`' `gate`. It holds every call. */
   readonly gate: (call: RecordedCall, answer: unknown) => Promise<unknown>;
   /**
    * Settle one held call per standstill until `done` settles.
    *
-   * @param done - The run.
-   * @returns Resolves or rejects as `done` does; rejects when the run stands
+   * @returns Resolves or rejects as `done` does. Rejects when the run stands
    *   still with no call held.
    */
   readonly drain: <T>(done: Promise<T>) => Promise<T>;
@@ -97,9 +91,6 @@ interface SettlePump {
 /**
  * A pump settling every held call one per standstill ({@link idle}): the
  * oldest held first, or the newest.
- *
- * @param order - Which held call each standstill settles.
- * @returns The gate and its drain.
  */
 export function settleInOrder(order: SettleOrder): SettlePump {
   const pending: HeldCall[] = [];
@@ -116,7 +107,7 @@ export function settleInOrder(order: SettleOrder): SettlePump {
         run.settled = true;
       };
 
-      // Handles `done`'s rejection here; the `return done` below surfaces it.
+      // Handles `done`'s rejection here. The `return done` below surfaces it.
       void done.then(mark, mark);
 
       for (;;) {
@@ -137,8 +128,6 @@ const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] };
  * A run of epic entries: the gate's run set and edges, every issue ready, each entry's answers.
  *
  * @param entries - Each epic and its issues, in run-set order.
- * @param edges - The declared edges.
- * @returns The answers.
  */
 export function epicRun(
   entries: readonly { readonly epic: number; readonly issues: readonly number[] }[],

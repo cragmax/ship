@@ -15,8 +15,6 @@ const ROOT = resolve(import.meta.dirname, '../../../..');
 /**
  * The `WORKFLOWS` row named `name`.
  *
- * @param name - The row's name.
- * @returns The row.
  * @throws {@link Error} when `WORKFLOWS` has no row of that name.
  */
 export function workflowSpec(name: string): WorkflowSpec {
@@ -29,8 +27,6 @@ export function workflowSpec(name: string): WorkflowSpec {
 /**
  * Render the `WORKFLOWS` row named `name` from the current sources.
  *
- * @param name - The row's name.
- * @returns The rendered script.
  * @throws {@link Error} as {@link workflowSpec} or {@link renderWorkflow}.
  */
 export async function renderFresh(name: string): Promise<string> {

@@ -1,9 +1,9 @@
 /**
- * Plain fixture repos (per-test `mkdtemp` roots, no npm template — only the
+ * Plain fixture repos (per-test `mkdtemp` roots, no npm template: only the
  * suppressions-regeneration cases borrow this checkout's `node_modules`),
  * each holding a batch worktree and the slice worktrees whose commits it
- * harvests; never this repository's own worktrees. Case-collision and case-rename cases are
- * win32-only: that filesystem behaviour has been observed there alone.
+ * harvests, never this repository's own worktrees. Case-collision and case-rename cases are
+ * win32-only: that filesystem behaviour has been observed there alone (Framework PF-88).
  *
  * @integrationTier standalone
  */
@@ -59,7 +59,6 @@ interface Pair {
  * One `no-console` hit.
  *
  * @param n - The logged value, which keeps each line distinct.
- * @returns The line.
  */
 const line = (n: number): string => `console.log(${String(n)});\n`;
 // Five lines keep the two sides' a.js edits apart, so git merges a.js and
@@ -212,7 +211,7 @@ describe('harvest', () => {
     'fails a regeneration ESLint refuses as the suppressions step, rolled back',
     { timeout: 120_000 },
     () => {
-      // Each side adds hits to a.js; the merged a.js holds 4, one above the
+      // Each side adds hits to a.js. The merged a.js holds 4, one above the
       // larger side's count.
       const { batch, sha } = slicePair(
         {
@@ -528,7 +527,6 @@ describe('harvest', () => {
  * An `eslint-suppressions.json` body in ESLint's own format.
  *
  * @param entries - Each file's `no-console` count.
- * @returns The body.
  */
 function supp(entries: Record<string, number>): string {
   return JSON.stringify(
@@ -540,14 +538,14 @@ function supp(entries: Record<string, number>): string {
   );
 }
 
-/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
+/** HEAD, porcelain, and staged set of a checkout: what "nothing touched" compares. */
 function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
   return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
 }
 
 /**
  * A repo whose `ship/batch` worktree and `slice-1` worktree both start at
- * the base commit; the slice commits `slice`, then the batch commits `batch`.
+ * the base commit. The slice commits `slice`, then the batch commits `batch`.
  */
 function slicePair(base: Record<string, string>, slice: Changes, batch?: Changes): Pair {
   const main = makeGitRepo(root, base);

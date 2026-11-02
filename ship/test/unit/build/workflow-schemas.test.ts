@@ -376,8 +376,7 @@ describe('the fake hooks outside a running test', () => {
 /**
  * What `fn` threw.
  *
- * @param fn - The call.
- * @returns The thrown value; `undefined` when it returned.
+ * @returns The thrown value, `undefined` when it returned.
  */
 function thrownBy(fn: () => unknown): unknown {
   try {

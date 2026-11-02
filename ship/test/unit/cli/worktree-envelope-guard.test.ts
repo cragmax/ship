@@ -113,7 +113,7 @@ describe('runWorktreeCli — the envelope guard', () => {
   });
 
   // A base-only `ok` envelope lacks every command's own required fields, so
-  // only the command's own schema — never the base one — can reject it.
+  // only the command's own schema, never the base one, can reject it.
   it.each(
     [
       ['provision', 'C:/s', '--batch', 'C:/b'],

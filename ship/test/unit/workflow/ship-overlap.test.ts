@@ -26,7 +26,6 @@ const REASON = 'both edit tooling/x.ts';
  * An issue-overlap answer naming the given pairs.
  *
  * @param pairs - Each pair's endpoints, confidence and shared paths (default `tooling/x.ts`).
- * @returns The answer.
  */
 const estimate = (
   ...pairs: readonly {
@@ -44,7 +43,7 @@ const estimate = (
 
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
-/** A call's prompt lines; fails the test when there is no such call. */
+/** A call's prompt lines. Fails the test when there is no such call. */
 const promptLines = (run: FakeRun, label: string): string[] => {
   const call = run.calls.find((c) => c.label === label);
   expect(call, `a ${label} call`).toBeDefined();
@@ -602,7 +601,7 @@ describe('runShip — an overlap edge whose head lands nothing', () => {
   });
 
   it('still skips a declared dependent of the blocked head, and its own declared dependent', async () => {
-    // 7 → 8 overlap; 7 → 9 and 9 → 10 declared.
+    // 7 → 8 overlap. 7 → 9 and 9 → 10 declared.
     const run = fakeHooks({
       'runner:run-gate': {
         ...GATE_OK,

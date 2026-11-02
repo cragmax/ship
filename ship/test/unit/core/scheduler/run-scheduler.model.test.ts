@@ -1,5 +1,5 @@
 /**
- * Property model for the run scheduler; the harness is `_run-scheduler-model.ts`.
+ * Property model for the run scheduler. The harness is `_run-scheduler-model.ts`.
  * The same property runs against the real scheduler (must hold) and against each mutant (must
  * fail with its paired invariant), so a later checker "simplification" cannot silently disarm one.
  * `requeued-restarted` has no twin: a withheld restart `start` with a free slot trips

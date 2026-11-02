@@ -41,8 +41,8 @@ afterEach(() => {
   try {
     rmSync(root, { recursive: true, force: true });
   } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
+    // Windows occasionally holds a lock on a just-used directory (unprobed).
+    // The leak is a bounded temp dir.
   }
 });
 

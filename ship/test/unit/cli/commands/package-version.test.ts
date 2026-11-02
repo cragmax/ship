@@ -31,7 +31,7 @@ describe('bumpVersion', () => {
   });
 });
 
-/** The step a throwing call's `StepFailure` names; `null` when it does not throw one. */
+/** The step a throwing call's `StepFailure` names, `null` when it does not throw one. */
 function failedStep(fn: () => unknown): string | null {
   try {
     fn();

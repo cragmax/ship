@@ -1,6 +1,6 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots) holding a batch worktree and
- * the slice worktrees whose single commits `land` harvests and commits; the
+ * the slice worktrees whose single commits `land` harvests and commits. The
  * message file and the commit log live in the temp root, outside every
  * worktree.
  *
@@ -306,7 +306,7 @@ function rawMessage(dir: string, sha: string): string {
   return `${raw.slice(raw.indexOf('\n\n') + 2)}\n`;
 }
 
-/** HEAD, porcelain and staged set of a checkout — what "nothing touched" compares. */
+/** HEAD, porcelain, and staged set of a checkout: what "nothing touched" compares. */
 function snapshot(dir: string): { head: string; porcelain: string; staged: string[] } {
   return { head: headSha(dir), porcelain: porcelain(dir), staged: stagedNames(dir) };
 }

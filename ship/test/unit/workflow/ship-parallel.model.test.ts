@@ -18,7 +18,7 @@ import {
   type RecordedCall,
 } from './_fake-hooks.js';
 
-/** How one of an issue's first two attempts goes; every later attempt lands. */
+/** How one of an issue's first two attempts goes. Every later attempt lands. */
 type Outcome = 'ok' | 'conflict' | 'die';
 
 const LAND_CONFLICT = {
@@ -107,9 +107,7 @@ function brokenInvariants(run: FakeRun, input: SchedulerInput, report: ShipRepor
 /**
  * The fake answers of one generated run.
  *
- * @param input - The run graph and cap.
  * @param script - Per issue (by run-set position), its first two attempts' outcomes.
- * @returns The answers.
  */
 function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[]) {
   const order = input.runSet.flatMap((e) => e.issues);
@@ -135,8 +133,7 @@ function answers(input: SchedulerInput, script: readonly (readonly Outcome[])[])
 /**
  * An issue and attempt from a `<stage>:<issue>-<attempt>` label.
  *
- * @param label - The label.
- * @returns Both numbers; `null` for a label without them.
+ * @returns Both numbers, `null` for a label without them.
  */
 function attemptOf(label: string): { issue: number; attempt: number } | null {
   const match = /:(\d+)-(\d+)$/.exec(label);

@@ -1,9 +1,9 @@
 /**
  * The worktree CLI's test helpers: its envelope-typed runner, and the npm-template fixture repos
- * it provisions and tears down — the real `.gitignore` (so clean-status checks run against the
- * actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci` installs
- * offline, and fake `build` / `test` scripts. The plain process and template-copy helpers they
- * build on are tooling's `tooling/test/helpers/worktree-fixture.ts` (Framework ADR-0045
+ * it provisions and tears down. Each repo holds the real `.gitignore` (so clean-status checks run
+ * against the actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci`
+ * installs offline, and fake `build` / `test` scripts. The plain process and template-copy helpers
+ * they build on are tooling's `tooling/test/helpers/worktree-fixture.ts` (Framework ADR-0045
  * decision 4).
  */
 
@@ -93,7 +93,7 @@ export function prebuildNpmTemplate(): void {
 
 /** Options for {@link makeFixtureRepo}. */
 export interface FixtureRepoOptions {
-  /** `.gitignore` content; defaults to the real repository's file. */
+  /** `.gitignore` content, by default the real repository's file. */
   readonly gitignore?: string;
 }
 
@@ -152,8 +152,8 @@ export function seedBatch(batch: string): string {
 }
 
 /**
- * Sorted relative listing of `dir` — one entry per file, directory (`name/`) and link
- * (`name -> target`) — that does not descend into links. Independent of the CLI's own walker.
+ * Sorted relative listing of `dir`, one entry per file, directory (`name/`), and link
+ * (`name -> target`), that does not descend into links. Independent of the CLI's own walker.
  */
 export function listTree(dir: string): string[] {
   const out: string[] = [];
@@ -167,7 +167,7 @@ export function listTree(dir: string): string[] {
  * loader (by absolute URL, so any `cwd` works). The default cwd is the OS
  * temp dir, so a relative or defaulted path can never resolve into a real
  * checkout. `options.env` is laid over the fixture env: a key must match the existing spelling to
- * replace it — see `prependPath` in `tooling/test/helpers/worktree-fixture-git.ts`.
+ * replace it. See `prependPath` in `tooling/test/helpers/worktree-fixture-git.ts`.
  */
 export function runCli<T extends ResultBase = ResultBase>(
   args: readonly string[],
@@ -199,7 +199,7 @@ export function expectUsageFailure(run: CliRun<ResultBase>): void {
 }
 
 /**
- * Run `sync-master` on `batch`; the log dirs it leaves in the OS temp dir for its caller are
+ * Run `sync-master` on `batch`. The log dirs it leaves in the OS temp dir for its caller are
  * removed when the calling test finishes.
  */
 export function runSyncMaster(batch: string, ...flags: string[]): CliRun<SyncMasterResult> {
@@ -232,8 +232,8 @@ export function removeTempDirs(dirs: Iterable<string>): void {
     try {
       rmSync(dir, { recursive: true, force: true });
     } catch {
-      // Windows occasionally holds a lock on a just-used directory; the leak
-      // is a bounded temp dir.
+      // Windows occasionally holds a lock on a just-used directory (unprobed).
+      // The leak is a bounded temp dir.
     }
   }
 }

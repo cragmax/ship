@@ -1,6 +1,6 @@
 /**
  * Which `ship/src/cli/` command modules one CLI invocation loads, read from a resolve hook the
- * spawned CLI registers through `NODE_OPTIONS`; each command runs against a missing target, so it
+ * spawned CLI registers through `NODE_OPTIONS`. Each command runs against a missing target, so it
  * fails at its first step and touches nothing.
  *
  * @integrationTier standalone
@@ -78,8 +78,8 @@ afterAll(() => {
   try {
     rmSync(root, { recursive: true, force: true });
   } catch {
-    // Windows occasionally holds a lock on a just-used directory; the leak
-    // is a bounded temp dir.
+    // Windows occasionally holds a lock on a just-used directory (unprobed).
+    // The leak is a bounded temp dir.
   }
 });
 
@@ -90,7 +90,7 @@ describe('worktree CLI module loading', () => {
     expect(modules).toEqual([]);
   });
 
-  // The expected set is the command module's own import graph; `m` is a missing path, and
+  // The expected set is the command module's own import graph. `m` is a missing path, and
   // `commit` targets the cwd, the non-repo temp dir `runCli` starts in.
   it.each<[string, (m: string) => string[], string[]]>([
     ['live-runs', (m) => ['live-runs', m], ['live-runs']],

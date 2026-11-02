@@ -274,12 +274,7 @@ const INPUT: PrBodyInput = {
   writer: WRITER,
 };
 
-/**
- * A closing keyword before `#<issue>`, as GitHub reads one.
- *
- * @param issue - The issue.
- * @returns The pattern.
- */
+/** A closing keyword before `#<issue>`, as GitHub reads one. */
 const closes = (issue: number): RegExp =>
   new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[\\s:]*#${String(issue)}\\b`, 'i');
 
@@ -973,8 +968,8 @@ describe('renderPrBody — evidence', () => {
     expect(lines[before - 1]).toBe(`  ${fence}`);
   });
 
-  // A single-backtick span closes at the name's first backtick;
-  // this repo's test names often carry one.
+  // A single-backtick span closes at the name's first backtick,
+  // and this repo's test names often carry one.
   it.each<[string, string]>([
     ['x › shadows `bot`', '- **#11** `` x › shadows `bot` ``'],
     ['x › a `` b', '- **#11** ``` x › a `` b ```'],
@@ -1300,7 +1295,7 @@ describe('renderPrBody — the PR writer’s sections', () => {
   );
 });
 
-/** A body's section from its heading up to the blank line ending it; none when absent. */
+/** A body's section from its heading up to the blank line ending it, none when absent. */
 const sectionOf = (body: string, heading: string): string[] => {
   const lines = body.split('\n');
   const at = lines.indexOf(heading);

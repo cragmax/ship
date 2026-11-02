@@ -26,7 +26,6 @@ const checkMasterArgv = (synced: string): string[] => [
 /**
  * The publish calls a run made.
  *
- * @param run - The fake run.
  * @returns Their labels.
  */
 const publishes = (run: FakeRun): string[] =>
@@ -320,13 +319,7 @@ describe('runShip — the master check', () => {
   });
 });
 
-/**
- * Assert the epic stopped on a master check that never ran: no check-master call, no publish.
- *
- * @param run - The fake run.
- * @param report - Its report.
- * @param stop - The stop's message, `mainUntouched` and failure.
- */
+/** Assert the epic stopped on a master check that never ran: no check-master call, no publish. */
 function expectStoppedUnchecked(
   run: FakeRun,
   report: Awaited<ReturnType<typeof runShip>>,

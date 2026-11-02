@@ -34,7 +34,7 @@ describe('issue-readiness’s PR head', () => {
 });
 
 describe('a slice review’s Passed at line', () => {
-  /** A spec review prompt's lines at slice commit `sha`; the tdd ran nothing green at slice1. */
+  /** A spec review prompt's lines at slice commit `sha`. The tdd ran nothing green at slice1. */
   const reviewLines = (sha: string): string[] =>
     PROMPTS.specReview({
       issue: 7,

@@ -1,6 +1,6 @@
 /**
  * Fake workflow hooks for driving `runShip` in vitest: `agent()` answers from a label-keyed
- * response table and records every call; `pipeline` runs its work in order; `parallel` starts
+ * response table and records every call. `pipeline` runs its work in order. `parallel` starts
  * every thunk at once, in array order, and settles as `Promise.all` does, so a recorded call
  * sequence stays deterministic. Each answer passes through its call's schema as an agent's would:
  * cut to the schema's properties, each violation recorded in {@link FakeRun.violations}. A `null`
@@ -26,7 +26,7 @@ export interface RecordedCall {
   readonly model: string | undefined;
   /** Its `effort`, `undefined` when not given. */
   readonly effort: string | undefined;
-  /** The words after `node --import tsx` on the prompt's `Command:` line, unquoted; else `[]`. */
+  /** The words after `node --import tsx` on the prompt's `Command:` line, unquoted, else `[]`. */
   readonly argv: readonly string[];
   /** The prompt. */
   readonly prompt: string;
@@ -37,7 +37,7 @@ export interface RecordedCall {
 /** Options of {@link fakeHooks}. */
 interface FakeOptions {
   /**
-   * Wraps each answer before its `agent()` promise settles; the default
+   * Wraps each answer before its `agent()` promise settles. The default
    * settles it at once. A held call is one whose promise the gate has not
    * settled yet.
    */
@@ -70,12 +70,7 @@ export interface FakeRun {
 /** A table entry answering per call: `nth` counts the earlier calls it answered. */
 type Responder = (call: RecordedCall, nth: number) => unknown;
 
-/**
- * A responder answering its values in turn, the last one for every later call.
- *
- * @param values - The answers.
- * @returns The responder.
- */
+/** A responder answering its values in turn, the last one for every later call. */
 export function inTurn(...values: readonly unknown[]): Responder {
   return (_call, nth) => values[Math.min(nth, values.length - 1)];
 }
@@ -153,7 +148,6 @@ export const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [
  * A `live-runs` answer holding `runs`.
  *
  * @param runs - The runs, each over a spent, clean, un-nested default.
- * @returns The answer.
  */
 export const liveRuns = (...runs: Readonly<Record<string, unknown>>[]) => ({
   'runner:live-runs': {
@@ -196,11 +190,11 @@ export const STANDING_SPENT_RUNS = [
 interface ScriptedMove {
   /** The move. */
   readonly move: MasterMove['move'];
-  /** The current sha; `null` when deleted. */
+  /** The current sha, `null` when deleted. */
   readonly current: string | null;
   /**
-   * `origin`'s synced sha; defaults to `origin0`, the default sync's
-   * `upstream`; ignored for local.
+   * `origin`'s synced sha, by default `origin0`, the default sync's
+   * `upstream`. Ignored for local.
    */
   readonly synced?: string | null;
 }
@@ -398,9 +392,7 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
 /**
  * Fake hooks answering from `responses` over the all-pass defaults of a full `issues 7` run.
  *
- * @param responses - Per-label answers or {@link Responder}s; a label no key matches gets `null`.
- * @param options - The answer gate, and whether the run answers off its schemas on purpose.
- * @returns The hooks and their records.
+ * @param responses - Per-label answers or {@link Responder}s. A label no key matches gets `null`.
  */
 export function fakeHooks(
   responses: Readonly<Record<string, unknown>> = {},
@@ -481,20 +473,14 @@ const TYPE_TESTS: Readonly<Record<string, (value: unknown) => boolean>> = {
   object: (v) => schemaOf(v) !== undefined,
 };
 
-/**
- * The recorded labels, in call order.
- *
- * @param run - The fake run.
- * @returns Each call's label.
- */
+/** The recorded labels, in call order. */
 export const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 /**
  * Where an entry sits on the timeline.
  *
- * @param run - The fake run.
  * @param entry - `call <label>` or `log <message>`.
- * @returns Its first index; fails the test when absent.
+ * @returns Its first index. Fails the test when absent.
  */
 export const when = (run: FakeRun, entry: string): number => {
   const at = run.timeline.indexOf(entry);
@@ -509,8 +495,6 @@ export const MAIN = 'D:/checkouts/main';
 /**
  * Each call `keep` takes, as its label and its prompt's `Checkout:` lines.
  *
- * @param run - The fake run.
- * @param keep - Which calls to take; every call by default.
  * @returns One entry per call taken, in call order.
  */
 export function checkoutLines(
@@ -527,7 +511,7 @@ export function checkoutLines(
  * The words after `node --import tsx` on a prompt's `Command:` line, each unquoted
  * (a `'…'` span is one word, `'\''` a literal quote).
  *
- * @returns The words; `[]` when the prompt has no such line.
+ * @returns The words, `[]` when the prompt has no such line.
  */
 function commandWords(prompt: string): string[] {
   const line = prompt.split('\n').find((l) => l.startsWith('Command: node --import tsx '));
@@ -541,9 +525,7 @@ function commandWords(prompt: string): string[] {
 /**
  * The table key answering `label`: the label itself, else its longest held `:`-prefix.
  *
- * @param table - The response table.
- * @param label - The call's label.
- * @returns The key; `undefined` when none is held.
+ * @returns The key, `undefined` when none is held.
  */
 function tableKey(table: Readonly<Record<string, unknown>>, label: string): string | undefined {
   const parts = label.split(':');
@@ -593,13 +575,7 @@ function conform(value: unknown, schema: JsonSchema | undefined, place: AnswerPl
   return pickProperties(record, properties, place);
 }
 
-/**
- * Record each `required` key an object lacks, or holds as `undefined` (which JSON drops).
- *
- * @param record - The object.
- * @param schema - Its schema.
- * @param place - Where it sits.
- */
+/** Record each `required` key an object lacks, or holds as `undefined` (which JSON drops). */
 function checkRequired(
   record: Readonly<Record<string, unknown>>,
   schema: JsonSchema,
@@ -628,8 +604,7 @@ function checkEnum(value: unknown, schema: JsonSchema, place: AnswerPlace): void
  * Record a value of none of its schema's `type`s.
  *
  * @param value - The value, `null` included.
- * @param schema - Its schema; one without a `type` allows anything.
- * @param place - Where it sits.
+ * @param schema - Its schema. One without a `type` allows anything.
  */
 function checkType(value: unknown, schema: JsonSchema, place: AnswerPlace): void {
   const type = schema['type'];

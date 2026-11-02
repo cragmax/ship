@@ -65,7 +65,7 @@ describe('append-pr-body', () => {
   const BODY = '## Summary\r\n\r\nAdds x — fixes #3.  \r\n';
   const SECTION = '## Attached run 1\n\n### Issues\n\n- fixes #8 — y\n';
 
-  /** Run `append-pr-body` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  /** Run `append-pr-body` on PR 9 with a fake `gh` first on `PATH`. `root` is `gh`'s cwd. */
   function appendRun({
     bodies = { 9: BODY },
     editExit,
@@ -135,7 +135,7 @@ describe('append-pr-body', () => {
     expect(readFakePrEdited(bin)).toBeNull();
   });
 
-  // 65,001 characters read; the new body adds one '\n', then the section.
+  // 65,001 characters read. The new body adds one '\n', then the section.
   const LONG_BODY = `${'b'.repeat(65_000)}\n`;
 
   it('refuses a new body of 65,537 characters at body-too-long, editing nothing', TIMEOUT, () => {
@@ -178,7 +178,7 @@ describe('post-pr-comment', () => {
   // CRLF and non-ASCII: both must reach gh unchanged.
   const COMMENT = '<details><summary>Run report — attached run 2</summary>\r\n\r\n## Landed\r\n';
 
-  /** Run `post-pr-comment` on PR 9 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  /** Run `post-pr-comment` on PR 9 with a fake `gh` first on `PATH`. `root` is `gh`'s cwd. */
   function commentRun({
     comment = COMMENT,
     gh,
@@ -288,7 +288,7 @@ describe('post-issue-comment', () => {
   const COMMENT =
     '> *Posted by an unattended `/ship` run.*\r\n\r\n**Not landed: blocked.** over — budget\r\n';
 
-  /** Run `post-issue-comment` on issue 7 with a fake `gh` first on `PATH`; `root` is `gh`'s cwd. */
+  /** Run `post-issue-comment` on issue 7 with a fake `gh` first on `PATH`. `root` is `gh`'s cwd. */
   function issueCommentRun({
     comment = COMMENT,
     gh,

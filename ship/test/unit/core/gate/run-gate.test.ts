@@ -10,7 +10,7 @@ import {
 } from '../../../../src/core/gate/run-gate.js';
 import type { RunSet } from '../../../../src/core/run-set.js';
 
-// Whole-verdict pins leave `message` open; each kind's message content is
+// Whole-verdict pins leave `message` open. Each kind's message content is
 // pinned once, by substring, in the `failure messages` block.
 const MSG = expect.any(String) as unknown as string;
 
@@ -275,8 +275,7 @@ describe('evaluateRunGate — run-level rules', () => {
 /**
  * The gate over two epic entries: 100's issue 101 waits on 200's issue 201, and 102 on 101.
  *
- * @param opts - The gate's mode; `refuse` by default.
- * @returns The verdict.
+ * @param opts - The gate's mode, `refuse` by default.
  */
 function crossEpicGate(opts: { mode?: GateMode } = {}): ReturnType<typeof evaluateRunGate> {
   return gate(

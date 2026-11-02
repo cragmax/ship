@@ -1,6 +1,6 @@
 /**
- * Plain fixture repos (per-test `mkdtemp` roots), each with a bare `origin`;
- * the check runs in-process except for one CLI spawn.
+ * Plain fixture repos (per-test `mkdtemp` roots), each with a bare `origin`.
+ * The check runs in-process except for one CLI spawn.
  *
  * @integrationTier standalone
  */
@@ -320,7 +320,7 @@ function rewindOrigin(): void {
 }
 
 /**
- * Push a commit to origin and fetch it into main, then {@link rewindOrigin}; returns the pushed
+ * Push a commit to origin and fetch it into main, then {@link rewindOrigin}. Returns the pushed
  * sha, which main has seen and origin no longer holds.
  */
 function pushFetchRewind(): string {

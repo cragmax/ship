@@ -7,7 +7,7 @@ import { PROMPTS } from '../../../src/workflow/calls/prompts.js';
 import { TOOL_COMMANDS } from '../../../src/workflow/calls/tool-calls.js';
 
 // A stale literal surfaces only in the first run after a move, as a pre-flight failure of every
-// runner call; these read the paths from the Workflow source, never from a copied list.
+// runner call. These read the paths from the Workflow source, never from a copied list.
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 

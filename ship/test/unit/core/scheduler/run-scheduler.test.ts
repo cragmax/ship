@@ -14,7 +14,7 @@ import { stripComments } from '../../../../../server-pool/test/helpers/render-sa
 
 describe('advance — action order', () => {
   it('emits response, then skips, then starts, then epic-done', () => {
-    // R=10 blocks D=11 in epic 900; X=20 alone in epic 800. The second death
+    // R=10 blocks D=11 in epic 900, X=20 alone in epic 800. The second death
     // blocks R (response), skips D, frees the slot for X and finishes 900.
     const [init, first, second] = play(
       {
@@ -63,7 +63,7 @@ describe('advance — action order', () => {
   });
 
   it('emits several releases ascending by blocker, then dependent, not edge order', () => {
-    // 1 → 2 declared; 2 → 3, 1 → 5 and 1 → 4 overlap.
+    // 1 → 2 declared. 2 → 3, 1 → 5, and 1 → 4 overlap.
     const actions = blockFirst(
       [1, 2, 3, 4, 5],
       [
@@ -84,7 +84,7 @@ describe('advance — action order', () => {
   });
 });
 
-/** Create, then feed each event in turn; returns every transition, the initial one first. */
+/** Create, then feed each event in turn. Returns every transition, the initial one first. */
 function play(input: SchedulerInput, events: readonly SchedulerEvent[]): Transition[] {
   const transitions = [createScheduler(input)];
 
@@ -116,7 +116,7 @@ describe('advance — protocol violations', () => {
     maxSlices: 1,
   };
 
-  // Issue 11 waits on 10; 12 is a root queued behind 10 (one slot), so ready.
+  // Issue 11 waits on 10. 12 is a root queued behind 10 (one slot), so ready.
   it.each(
     (['committed', 'blocked', 'harvest-conflict', 'agent-died', 'slot-free'] as const).flatMap(
       (kind) => [
@@ -187,7 +187,7 @@ describe('advance — protocol violations', () => {
 
 describe('advance — epic halt', () => {
   it('halts an entry with nothing in flight at once, leaving the other entry running', () => {
-    // Issue 20 of epic 800 holds the one slot; epic 900's 1 and 3 are ready, 2 waits on 1.
+    // Issue 20 of epic 800 holds the one slot. Epic 900's 1 and 3 are ready, 2 waits on 1.
     const [, halted, first, second] = play(
       {
         runSet: [
@@ -378,7 +378,7 @@ describe('advance — duplicate edges', () => {
 
 describe('advance — overlap edges', () => {
   it('releases the overlap edges out of a blocked head and each declared dependent it skips', () => {
-    // 1 → 2 declared; 1 → 3 and 2 → 4 overlap, listed out of order; 5 → 3 declared, 5 in flight.
+    // 1 → 2 declared. 1 → 3 and 2 → 4 overlap, listed out of order. 5 → 3 declared, 5 in flight.
     const [, blocked, committed] = play(
       {
         runSet: [{ epic: 900, issues: [1, 2, 3, 4, 5] }],
@@ -406,7 +406,7 @@ describe('advance — overlap edges', () => {
   });
 
   it('releases no overlap edge whose tail the same settle skips', () => {
-    // 1 → 2 and 1 → 3 declared; 3 → 2 overlap.
+    // 1 → 2 and 1 → 3 declared. 3 → 2 overlap.
     const actions = blockFirst(
       [1, 2, 3],
       [
@@ -703,7 +703,7 @@ describe('createScheduler — input guards', () => {
   });
 
   it('rejects out-of-set edges even when findCycles alone would accept them', () => {
-    // 1 -> 99 -> 1 is a cycle only through 99; findCycles ignores edges that
+    // 1 -> 99 -> 1 is a cycle only through 99. findCycles ignores edges that
     // leave the issue list, so only the scheduler's own guard catches this.
     expect(() =>
       createScheduler({
