@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: retro
 description: >
   Runs the retro skill over one entry's report directory after an unattended

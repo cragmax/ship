@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.296, windows 11]
 last-verified: 2026-10-10
-relied-on-by: [.claude/agents/tdd.md, .claude/agents/spec-review.md, .claude/agents/standards-review.md, .claude/agents/test-review.md, .claude/agents/script-api-tsdoc.md, .claude/agents/epic-review.md, .claude/agents/issue-readiness.md, .claude/agents/issue-overlap.md]
+relied-on-by: [ship/agents/tdd.md, ship/agents/spec-review.md, ship/agents/standards-review.md, ship/agents/test-review.md, ship/agents/script-api-tsdoc.md, ship/agents/epic-review.md, ship/agents/issue-readiness.md, ship/agents/issue-overlap.md]
 ---
 
 # Ship PF-18: An agent file whose `tools:` lists `LSP` without `ToolSearch` gets the LSP tool preloaded

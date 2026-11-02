@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: standards-review
 description: >
   Holds one slice of an unattended run to the repo's documented rules with the

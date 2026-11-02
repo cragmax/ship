@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: runner
 description: >
   Runs exactly one repo tooling command for a saved workflow, from the main

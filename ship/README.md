@@ -22,7 +22,8 @@ Folders follow where the code runs (Ship ADR-0003):
 | `src/core/`     | on both sides                         | pure decisions and shared constants (scheduler, run gate, run set); no I/O |
 | `src/cli/`      | in a runner agent or a session        | the worktree CLI's commands and the run gate CLI; one JSON envelope out    |
 | `src/schemas/`  | at codegen                            | the zod sources of the agent outputs and tool envelopes                    |
-| `src/build/`    | at build and gate time                | the render, the schema emit and the codegen check                          |
+| `src/build/`    | at build and gate time                | the render, the schema emit, the agent install and the codegen check       |
+| `agents/`       | in Claude Code, once installed        | the sources of the stage agent files                                       |
 
 Tests live in `test/`, under the subfolder of the file they test; the helpers they share live in `test/helpers/`.
 
@@ -34,10 +35,15 @@ decision 3):
 - **Rendered:** `.claude/workflows/ship.js` and `resync.js`, the Saved
   workflows. `npm run codegen` renders them from `src/workflow/`;
   `gate:codegen` checks they match. Never edit them by hand.
-- **Kept in place:** the stage agent files in `.claude/agents/` (`tdd`,
+- **Installed:** the stage agent files in `.claude/agents/` (`tdd`,
   `spec-review`, `test-review`, `standards-review`, `script-api-tsdoc`,
   `issue-readiness`, `issue-overlap`, `epic-review`, `retro`, `pr`,
-  `runner`) and the run-only `unattended-agent` skill.
+  `runner`). `npm run codegen` copies each from its source under `agents/`,
+  with a header line saying it is Ship's, and removes a copy with that
+  header whose source is gone; `gate:codegen` checks they match. Edit the
+  source, never the copy. The repo's own `github` agent carries no header,
+  and the install leaves it alone.
+- **Kept in place:** the run-only `unattended-agent` skill.
 - **The run layout,** gitignored: `.claude/worktrees/ship-*` (batch and slice
   worktrees) and `reports/ship-*` (run roots), `reports/kept/`.
 

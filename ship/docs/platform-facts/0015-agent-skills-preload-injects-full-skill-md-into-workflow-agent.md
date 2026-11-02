@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.299]
 last-verified: 2026-10-14
-relied-on-by: [.claude/agents/tdd.md, .claude/skills/unattended-agent/SKILL.md]
+relied-on-by: [ship/agents/tdd.md, .claude/skills/unattended-agent/SKILL.md]
 ---
 
 # Ship PF-15: An agent file's `skills:` preload injects each skill's full SKILL.md into a workflow `agent()`, its links resolving against the main checkout

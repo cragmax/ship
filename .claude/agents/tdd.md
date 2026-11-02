@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: tdd
 description: >
   Builds one ready-for-agent issue of an unattended run with the tdd skill, in

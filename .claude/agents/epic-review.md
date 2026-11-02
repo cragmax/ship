@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: epic-review
 description: >
   Judges an unattended run's landed issues as one change at its epic end with

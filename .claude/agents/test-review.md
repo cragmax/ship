@@ -1,4 +1,5 @@
 ---
+# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.
 name: test-review
 description: >
   Holds one slice of an unattended run's tests to the claims its diff makes
