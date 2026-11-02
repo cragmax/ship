@@ -1,6 +1,6 @@
 # Ship ADR-0012: The Warm set is 2 Paper and 2 Folia servers
 
-A run's slices are the per-invocation consumer of Pool ADR-0001, on the four registry servers that the batch's registry trim keeps. Pre-flight requires all four to be warm.
+A run's slices are the per-invocation consumer of Pool ADR-0003, on the four registry servers that the batch's registry trim keeps. Pre-flight requires all four to be warm.
 
 ## Decision
 
