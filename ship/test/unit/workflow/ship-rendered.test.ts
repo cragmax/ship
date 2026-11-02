@@ -82,7 +82,6 @@ describe('ship.js — a fresh render of the current sources', () => {
 /**
  * Drive the TS source and the render through one launch, each over its own fake hooks.
  *
- * @param args - The launch arguments.
  * @param responses - Per-label answers over the fakes' defaults, given to both runs.
  * @returns Both fake runs, the source's report and the render's.
  */
@@ -95,11 +94,7 @@ async function runBoth(args: string, responses: Readonly<Record<string, unknown>
   return { source, rendered, expected, report };
 }
 
-/**
- * Assert the render ran exactly as the source did.
- *
- * @param both - What {@link runBoth} resolved to.
- */
+/** Assert the render ran exactly as the source did. */
 function expectSameRun(both: Awaited<ReturnType<typeof runBoth>>): void {
   expect(both.report).toEqual(both.expected);
   expect(both.rendered.calls).toEqual(both.source.calls);

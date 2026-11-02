@@ -36,7 +36,7 @@ function proc(
   return { pid, ppid, name, commandLine };
 }
 
-// The teardown (150) runs under session 100's Bash; session 200 is another Claude Code session.
+// The teardown (150) runs under session 100's Bash. Session 200 is another Claude Code session.
 const TWO_SESSIONS: ProcessEntry[] = [
   proc(4, 0, 'explorer.exe'),
   proc(100, 4, 'claude.exe'),
@@ -47,7 +47,7 @@ const TWO_SESSIONS: ProcessEntry[] = [
   ...lspTree(200, 210),
 ];
 
-// Session 320 was started from a Bash of session 300; each case adds the teardown under 320.
+// Session 320 was started from a Bash of session 300. Each case adds the teardown under 320.
 const NESTED: ProcessEntry[] = [
   proc(300, 4, 'claude.exe'),
   ...lspTree(300, 310),
@@ -208,7 +208,7 @@ describe('restartSessionTsserver', () => {
 });
 
 /**
- * Deps over a fake process table; each kill is recorded, failing when `failing` names it. Each
+ * Deps over a fake process table. Each kill is recorded, failing when `failing` names it. Each
  * `omit`ted seam falls back to production.
  */
 function fakeDeps(

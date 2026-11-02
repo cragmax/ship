@@ -1,6 +1,6 @@
 /**
  * The `ship` workflow's `meta` export, rendered as the literal that opens
- * `.claude/workflows/ship.js`. Read by `ship/src/build/render-workflows.ts`; not
+ * `.claude/workflows/ship.js`. Read by `ship/src/build/render-workflows.ts`, not
  * part of the render closure.
  */
 

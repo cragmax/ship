@@ -1,15 +1,16 @@
 /**
  * Emit a zod schema as the JSON Schema a saved workflow hands the workflow runtime
  * (`AgentOptions.schema`): zod's draft-07 output, rewritten into the construct set the runtime
- * has been seen to accept — `type` (a name, or a name plus `'null'`), `properties`, `required`,
- * `items` and `enum`. Anything else fails the emit rather than reaching the runtime, whose
- * handling of it is unobserved. Pure: no filesystem access.
+ * has been seen to accept: `type` (a name, or a name plus `'null'`), `properties`, `required`,
+ * `items`, and `enum` (unprobed). Anything else fails the emit rather than reaching the runtime,
+ * whose handling of it is unobserved. Pure: no filesystem access.
  *
  * Rewrites, each exactly as zod 4 writes the construct: the root `$schema`,
- * `additionalProperties: false` (every `z.object`), `readOnly: true` (`.readonly()`) and an
- * `integer`'s `minimum` / `maximum` at the safe-integer bounds (`z.int()`'s own) are dropped; a
- * nullable — `anyOf: [X, { type: 'null' }]` and no other key, X naming one `type` — becomes X
- * with `type` widened to `[X.type, 'null']` and `null` appended to X's `enum` when it has one.
+ * `additionalProperties: false` (every `z.object`), `readOnly: true` (`.readonly()`), and an
+ * `integer`'s `minimum` / `maximum` at the safe-integer bounds (`z.int()`'s own) are dropped
+ * (unprobed). A nullable is `anyOf: [X, { type: 'null' }]` and no other key, X naming one `type`.
+ * It becomes X with `type` widened to `[X.type, 'null']` and `null` appended to X's `enum` when it
+ * has one.
  */
 
 import { z } from 'zod';
@@ -29,11 +30,10 @@ const SAFE_BOUNDS: Readonly<Record<string, number>> = {
 };
 
 /**
- * Emit a zod schema in the runtime's construct set.
+ * Emit a zod schema in the runtime's construct set, rewritten as the file header lists.
  *
- * @returns Its JSON Schema, rewritten as the file header lists.
  * @throws {@link Error} `schema emit: unsupported construct '<key>' at <path>`
- *   for the first key outside the construct set that no rewrite removes —
+ *   for the first key outside the construct set that no rewrite removes.
  *   `<path>` is the key's node as `properties.a.items` steps, `(root)` for
  *   the root.
  */
@@ -66,7 +66,7 @@ function normaliseNode(node: Node, path: readonly string[]): JsonSchema {
 
 /**
  * X for a nullable `{ anyOf: [X, { type: 'null' }] }` with no other key, when X names exactly one
- * `type`; `undefined` for anything else, whose `anyOf` the emit then refuses.
+ * `type`, or `undefined` for anything else, whose `anyOf` the emit then refuses.
  */
 function nullableInner(node: Node): Node | undefined {
   const anyOf = node['anyOf'];
@@ -121,7 +121,7 @@ function assertKept(key: string, path: readonly string[]): void {
 }
 
 /**
- * Rewrite a kept key's value: the nodes under `properties` and `items`; `type`, `required` and
+ * Rewrite a kept key's value: the nodes under `properties` and `items`. `type`, `required`, and
  * `enum` pass as they are.
  */
 function normaliseChild(key: string, value: unknown, path: readonly string[]): unknown {

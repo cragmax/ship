@@ -51,7 +51,7 @@ vi.mock('../../src/cli/git/exec.js', async (importOriginal) => {
 });
 
 const TIMEOUT = { timeout: 60_000 };
-// Hooks run from the worktree root; `dist/index.js` is what the fixture build writes.
+// Hooks run from the worktree root. `dist/index.js` is what the fixture build writes.
 const PRE_PUSH_NEEDS_BUILD = [
   '#!/bin/sh',
   'if [ -f dist/index.js ]; then echo "pre-push saw the build"; exit 0; fi',

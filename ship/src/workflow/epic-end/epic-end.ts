@@ -1,16 +1,16 @@
 /**
  * The `ship` workflow's epic end (Ship ADR-0001 decision 12). For an entry whose issues all
  * settled with at least one landed ({@link epicEnd}): the epic review, the master sync, the bump,
- * the pushed paths, the retro and PR writer concurrently, then the publish task; a halted or empty
+ * the pushed paths, the retro and PR writer concurrently, then the publish task. A halted or empty
  * one gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
- * No server-tier step: pre-push runs it on a Platform-wide change; red refuses the push
+ * No server-tier step: pre-push runs it on a Platform-wide change, and red refuses the push
  * (Tooling ADR-0002). A code conflict, a failed sync, a failed bump or a throwing step stops the
- * epic; a bump finding the version already at its target commits nothing, and the end goes on.
+ * epic. A bump finding the version already at its target commits nothing, and the end goes on.
  *
  * The master sync and the publish task each run as one task of the run's repo lock
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
- * at once; the epic review, the bump, the retro and the PR writer run outside it.
+ * at once. The epic review, the bump, the retro, and the PR writer run outside it.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -68,7 +68,7 @@ export type IssueOutcome =
 export interface IssueReport {
   /** The issue. */
   readonly issue: number;
-  /** How it ended; `landed-then-halted`: its commit landed, then its epic halted. */
+  /** How it ended. `landed-then-halted`: its commit landed, then its epic halted. */
   readonly outcome: IssueOutcome;
   /** How the PR cites it: `fixes` only for a landed issue whose tdd says so. */
   readonly cite: 'fixes' | 'see';
@@ -84,11 +84,11 @@ export interface IssueReport {
 interface IssueComment {
   /** The issue. */
   readonly issue: number;
-  /** The posted comment's URL; `null` when the post failed. */
+  /** The posted comment's URL, `null` when the post failed. */
   readonly url: string | null;
   /**
-   * Why the post failed — the `post-issue-comment` envelope's problem, or the
-   * call's throw; absent when it posted.
+   * Why the post failed: the `post-issue-comment` envelope's problem, or the
+   * call's throw. Absent when it posted.
    */
   readonly problem?: string;
 }
@@ -97,7 +97,7 @@ interface IssueComment {
 export interface EpicReport {
   /** The entry's epic, or `null` for an explicit list. */
   readonly epic: number | null;
-  /** The entry's feature branch; empty when it was never cut. */
+  /** The entry's feature branch, empty when it was never cut. */
   readonly branch: string;
   /**
    * `pr`: opened; `halted`: a landing or a slice teardown left the batch
@@ -116,32 +116,32 @@ export interface EpicReport {
   readonly message?: string;
   /**
    * After a failed publish only: the commands that finish the epic end by hand, in order, run
-   * from the main checkout; each file they name is in the report directory. A
+   * from the main checkout. Each file they name is in the report directory. A
    * {@link PR_PLACEHOLDER} stands for the number of the PR the first one opens.
    */
   readonly recovery?: readonly string[];
   /**
-   * Why an attached run's section was not appended to its PR's body — the
-   * `append-pr-body` problem, or the call's throw — while the push stood;
-   * absent when it was appended or no edit was due.
+   * Why an attached run's section was not appended to its PR's body (the
+   * `append-pr-body` problem, or the call's throw) while the push stood.
+   * Absent when it was appended or no edit was due.
    */
   readonly prBodyEdit?: string;
   /**
-   * Why a run-report comment — an attached run's report, or a PR body's
-   * moved sections — was not posted to its PR: the `post-pr-comment`
+   * Why a run-report comment (an attached run's report, or a PR body's
+   * moved sections) was not posted to its PR: the `post-pr-comment`
    * problem, or the call's throw, one per failed post, `; `-joined, while the
-   * push stood; absent when every post was made or none was due.
+   * push stood. Absent when every post was made or none was due.
    */
   readonly prReportComment?: string;
   /**
    * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
    * read before the push on the shipping path, after the epic end
-   * otherwise; `null` when either read failed. Absent without an epic end.
+   * otherwise, `null` when either read failed. Absent without an epic end.
    */
   readonly mainUntouched?: boolean | null;
   /**
    * The forward-only check of `master`, taken in the publish task before the
-   * push; absent when the epic end stopped before it or the check threw.
+   * push. Absent when the epic end stopped before it or the check threw.
    */
   readonly masterCheck?: MasterCheck;
   /**
@@ -149,15 +149,15 @@ export interface EpicReport {
    * retire-run, left behind, one line each.
    */
   readonly residue: readonly string[];
-  /** The epic review's part; absent without an epic end. */
+  /** The epic review's part, absent without an epic end. */
   readonly epicReview?: EpicReviewReport;
-  /** The retro's findings, `null` when it returned none; absent for an entry never cut. */
+  /** The retro's findings, `null` when it returned none, absent for an entry never cut. */
   readonly retro?: readonly RetroFinding[] | null;
-  /** The entry's lease totals; absent without an epic end. */
+  /** The entry's lease totals, absent without an epic end. */
   readonly leases?: LeaseAggregate;
   /**
    * One record per issue the run blocked, in the entry's order: its
-   * reason's comment, posted or not ({@link commentBlockedStep}); absent
+   * reason's comment, posted or not ({@link commentBlockedStep}). Absent
    * when no issue was blocked.
    */
   readonly issueComments?: readonly IssueComment[];
@@ -190,7 +190,7 @@ interface EndState {
   epicReview?: EpicReviewReport;
   leases?: LeaseAggregate;
   retro?: readonly RetroFinding[] | null;
-  /** The PR writer's answer, once it ran; `null` when it returned none or threw. */
+  /** The PR writer's answer, once it ran, `null` when it returned none or threw. */
   writer?: PrWriterOutput | null;
   /** The main-checkout comparison, once the publish task read it. */
   mainUntouched?: boolean | null;
@@ -207,7 +207,7 @@ type Published = Pick<
 /**
  * Run the epic end.
  *
- * @returns Resolves to the entry's report; a step that throws stops the
+ * @returns Resolves to the entry's report. A step that throws stops the
  *   epic (`the epic end threw: …`), the retro still run over the stopped report.
  */
 export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
@@ -241,13 +241,13 @@ export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
 }
 
 /**
- * The epic end of an entry that halted or landed nothing: the blocked-issue comments and the retro;
- * then, for an unattached run that landed nothing only, tear its batch down and, after an `ok`
+ * The epic end of an entry that halted or landed nothing: the blocked-issue comments and the retro.
+ * Then, for an unattached run that landed nothing only, tear its batch down and, after an `ok`
  * teardown, retire it (`retire-run`: run branch, slice branches and report dir). `halted`
- * cleans up nothing — its batch is unverified — and an attached run's batch and branch are the open
+ * cleans up nothing (its batch is unverified), and an attached run's batch and branch are the open
  * PR's.
  *
- * @returns Resolves to the entry's report; a non-`ok` teardown or retire-run is one `residue` line,
+ * @returns Resolves to the entry's report. A non-`ok` teardown or retire-run is one `residue` line,
  *   never a rejection.
  */
 export async function unshippedEpicEnd(
@@ -321,7 +321,7 @@ async function commentBlockedStep(
   return comments;
 }
 
-/** One `post-issue-comment` call, its outcome as the report records it; never rejects. */
+/** One `post-issue-comment` call, its outcome as the report records it. Never rejects. */
 async function postIssueComment(
   hooks: WorkflowHooks,
   issue: number,
@@ -346,9 +346,9 @@ async function postIssueComment(
 }
 
 /**
- * The shipping path up to the pull request — epic review, sync, bump, the pushed-paths read, the
- * retro and (unattached runs only) the PR writer concurrently, then the publish task — filling in
- * `state` as steps report.
+ * The shipping path up to the pull request, filling in `state` as steps report: epic review, sync,
+ * bump, the pushed-paths read, the retro and (unattached runs only) the PR writer concurrently,
+ * then the publish task.
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
   const { hooks, entry } = input;
@@ -381,7 +381,7 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
 
 /**
  * The paths the push will change, read from the batch's `HEAD` after the bump, from the base
- * pre-push diffs it from: the synced `origin/master`, the merge base of a new branch; for an
+ * pre-push diffs it from: the synced `origin/master`, the merge base of a new branch, or, for an
  * attached run, the batch's cut, the open PR's tip. Never rejects: a failure is `unresolved`.
  */
 async function pushedPathsStep(
@@ -417,7 +417,7 @@ interface EndFindings {
 
 /**
  * The publish task, one repo-lock task: read the main checkout, check `master`, then, only when
- * the check passed, push and open the PR — or push onto an attached run's open PR
+ * the check passed, push and open the PR, or push onto an attached run's open PR
  * ({@link pushOntoPr}).
  */
 async function publishStep(input: EpicEndInput, found: EndFindings): Promise<Published> {
@@ -458,7 +458,7 @@ const PR_SECTION = { name: 'pr-section.md', flag: '--section-file' } as const;
 
 /**
  * Push an attached run's branch onto its open PR, then post its report and append its section: a
- * failed post or edit keeps the outcome `pr`, named in `prReportComment` / `prBodyEdit`; a failed
+ * failed post or edit keeps the outcome `pr`, named in `prReportComment` / `prBodyEdit`. A failed
  * push, a PR no longer open included, stops the epic with nothing posted.
  */
 async function pushOntoPr(
@@ -543,7 +543,7 @@ function reportFile(entry: Pick<EntrySetup, 'reportDir'>, file: PrFile): FileToW
   return { path: `${entry.reportDir}/${file.name}`, content: file.content };
 }
 
-/** The words of a PR file tool's call on the batch; `pr` may be {@link PR_PLACEHOLDER}. */
+/** The words of a PR file tool's call on the batch. `pr` may be {@link PR_PLACEHOLDER}. */
 function prFileArgv(
   entry: Pick<EntrySetup, 'batch' | 'reportDir'>,
   pr: string,
@@ -692,7 +692,7 @@ function leaseTotals(landed: readonly LandedIssue[]): LeaseAggregate {
 }
 
 /**
- * Judge the landed change as one, once the last slice has landed; never rejects. Profiled for an
+ * Judge the landed change as one, once the last slice has landed. Never rejects. Profiled for an
  * entry with no epic. An issue that did not land forces `rejected`, whatever the review answered.
  */
 async function epicReviewStep(input: EpicEndInput): Promise<EpicReviewReport> {
@@ -810,7 +810,7 @@ async function mainAtEnd(input: EpicEndInput, state: EndState): Promise<boolean 
 }
 
 /**
- * Read the main checkout again: whether its `HEAD` and dirtiness equal the launch's; `null` when
+ * Read the main checkout again: whether its `HEAD` and dirtiness equal the launch's, `null` when
  * either snapshot is missing.
  */
 async function mainUntouched(input: EpicEndInput): Promise<boolean | null> {

@@ -3,10 +3,10 @@
  * the pure core (`ship/src/core/gate/run-gate.ts`) decides over, through an injected
  * {@link GhJson} port. The real port lives only in the CLI (`ship/src/cli/run-gate.ts`).
  *
- * **Three fetches, each zod-parsed** — an epic (`EPIC_FIELDS`), a run-set
+ * **Three fetches, each zod-parsed**: an epic (`EPIC_FIELDS`), a run-set
  * issue (`FACTS_FIELDS`) and an out-of-set blocker (`STATE_FIELDS`). Each
  * schema requires only the fields the gate reads and tolerates unknown keys.
- * A shape mismatch throws — the gate never guesses at gh output. An attached run adds one
+ * A shape mismatch throws: the gate never guesses at gh output. An attached run adds one
  * git read, its landed set ({@link landedIssues}), through an injected {@link GitText} port.
  *
  * **Never gate on a partial list.** A gh connection may hold only a page, so every one passes
@@ -80,7 +80,7 @@ type GhConnection = z.infer<typeof ConnectionSchema>;
 /**
  * Normalise a parsed facts answer into the core's {@link IssueFacts}.
  *
- * @returns The facts; `blockedBy` is the body's `## Blocked by` section ∪ the
+ * @returns The facts. `blockedBy` is the body's `## Blocked by` section ∪ the
  *   native link numbers, deduped, ascending.
  */
 export function toIssueFacts(raw: GhFacts): IssueFacts {
@@ -101,7 +101,7 @@ export function toIssueFacts(raw: GhFacts): IssueFacts {
  * Gather every fact the gate needs through `gh`, then evaluate it: epic
  * sub-issues → run-set facts → out-of-set blocker states → `attach`'s landed
  * set, when given → the core's verdict. Each phase's fetches run
- * concurrently; output order is the core's.
+ * concurrently. Output order is the core's.
  *
  * @throws When an answer fails its schema or a list is truncated (the message
  *   names the issue), or when a {@link GhJson} or {@link GitText} call rejects.
@@ -186,7 +186,7 @@ function ghView(gh: GhJson, issue: number, fields: string): Promise<unknown> {
 /**
  * Validate a gh answer about `issue` against its schema.
  *
- * @throws When the answer fails the schema; the message names the issue and each failing field
+ * @throws When the answer fails the schema. The message names the issue and each failing field
  *   path.
  */
 function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number): z.infer<S> {
@@ -204,7 +204,7 @@ function parseAnswer<S extends z.ZodType>(schema: S, raw: unknown, issue: number
 /**
  * The truncation guard over a parsed `subIssues` / `blockedBy` connection, returned unchanged.
  *
- * @throws When `totalCount` exceeds `nodes.length` — gh returned only a page.
+ * @throws When `totalCount` exceeds `nodes.length`: gh returned only a page (unprobed).
  */
 function complete(connection: GhConnection, issue: number, field: string): GhConnection {
   if (connection.totalCount > connection.nodes.length) {

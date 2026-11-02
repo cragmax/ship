@@ -15,12 +15,7 @@ const TWO_INDEPENDENT = {
   },
 };
 
-/**
- * A fake run's call labels, in call order.
- *
- * @param run - The fake run.
- * @returns The labels.
- */
+/** A fake run's call labels, in call order. */
 const labels = (run: FakeRun): string[] => run.calls.map((c) => c.label);
 
 describe('runShip — call order under different settle timings', () => {

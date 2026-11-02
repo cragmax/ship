@@ -1,5 +1,5 @@
 /**
- * A throwaway repo per test (`mkdtemp`), its `origin/*` refs written with `update-ref`; the run
+ * A throwaway repo per test (`mkdtemp`), its `origin/*` refs written with `update-ref`. The run
  * gate's landed set is resolved through the CLI's real git port, `gh` faked.
  *
  * @integrationTier standalone

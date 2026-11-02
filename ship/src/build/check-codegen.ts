@@ -1,7 +1,7 @@
 /**
- * Drift gate: each generated target must equal a fresh in-memory render —
- * `schemas.generated.ts` ({@link checkSchemaModule}) and each saved workflow in
- * {@link WORKFLOWS} ({@link checkRenderedWorkflows}), with line endings normalised.
+ * Drift gate: each generated target must equal a fresh in-memory render, with line endings
+ * normalised. The targets are `schemas.generated.ts` ({@link checkSchemaModule}) and each saved
+ * workflow in {@link WORKFLOWS} ({@link checkRenderedWorkflows}).
  *
  * On drift, prints a per-target failure line and the hint
  * "Run `npm run codegen` to regenerate." then exits 1.
@@ -15,11 +15,7 @@ import { checkRenderedWorkflows } from './workflow-render.js';
 import { checkSchemaModule } from './workflow-schemas.js';
 import { WORKFLOWS } from './render-workflows.js';
 
-// ── Configuration ──────────────────────────────────────────────────────────
-
 const ROOT_DIR = resolve(import.meta.dirname, '../../..');
-
-// ── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const results = [

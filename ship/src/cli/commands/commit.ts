@@ -1,5 +1,5 @@
 /**
- * `commit --message-file <f> -- <path>…` — an interactive session's commit, run from the root of
+ * `commit --message-file <f> -- <path>…`: an interactive session's commit, run from the root of
  * the checkout it commits in: exactly the named paths become one commit under the hooks, or
  * nothing does. The hook output goes to a log in a fresh temp dir, read only on failure.
  */
@@ -18,7 +18,7 @@ import {
 } from '../git/staged-set.js';
 import { Refusal, recordFailure, type CommitResult } from '../envelope/types.js';
 
-/** Inputs of {@link commit}; paths absolute with forward slashes, `files` repo-relative. */
+/** Inputs of {@link commit}: paths absolute with forward slashes, `files` repo-relative. */
 interface CommitInput {
   /** The checkout root. */
   readonly worktree: string;
@@ -35,7 +35,7 @@ interface CommitInput {
  * @returns The envelope: `ok` with the new `commit`; `refused` `merge-in-progress` with the index
  *   untouched, or `staged-mismatch` with the named paths left staged and nothing committed;
  *   `failed` at `preconditions` (not a checkout root), `reset`, `stage` (a path git cannot add) or
- *   `commit` (a hook or git refused; `errors[0].detail` holds the log's tail, no commit made).
+ *   `commit` (a hook or git refused, `errors[0].detail` holds the log's tail, no commit made).
  */
 export function commit(input: CommitInput): CommitResult {
   const { worktree } = input;

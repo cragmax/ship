@@ -1,9 +1,9 @@
 /**
- * `provision-batch <batch> --report-dir <dir>` — make a batch worktree the
+ * `provision-batch <batch> --report-dir <dir>`: make a batch worktree the
  * junction source for its slices: a real `npm ci` tree, a real `dist`, a
  * `paper-harness/` project-dir marker, and the trimmed warm-set pool registry,
  * written outside every worktree. No rollback: this runs at launch with the
- * maintainer present, and `npm ci` cannot meaningfully be undone — a
+ * maintainer present, and `npm ci` cannot meaningfully be undone: a
  * failure fails the launch.
  */
 
@@ -29,7 +29,7 @@ import {
   type ProvisionBatchResult,
 } from '../envelope/types.js';
 
-/** Inputs of {@link provisionBatch}; paths absolute with forward slashes. */
+/** Inputs of {@link provisionBatch}: paths absolute with forward slashes. */
 interface ProvisionBatchOptions {
   /** The batch worktree. */
   readonly batch: string;

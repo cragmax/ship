@@ -1,6 +1,6 @@
 /**
  * Plain fixture repos (per-test `mkdtemp` roots) with run, slice, agent and
- * detached worktrees; the spawned CLI finds a fake `gh` first on its `PATH`,
+ * detached worktrees. The spawned CLI finds a fake `gh` first on its `PATH`,
  * so the real one is never called.
  *
  * @integrationTier standalone

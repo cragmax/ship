@@ -82,9 +82,7 @@ const SYNC_NO_UPSTREAM = {
 /**
  * The prompt of a recorded call.
  *
- * @param run - The fake run.
- * @param label - The call's label.
- * @returns Its prompt; `''` when there is none.
+ * @returns Its prompt, `''` when there is none.
  */
 const promptOf = (run: FakeRun, label: string): string =>
   run.calls.find((c) => c.label === label)?.prompt ?? '';
@@ -490,7 +488,6 @@ describe('runShip — the bump', () => {
 /**
  * The PR body the publish call writes, line for line.
  *
- * @param run - The fake run.
  * @returns The lines of the publish prompt's first file block.
  */
 const bodyOf = (run: FakeRun): string[] => {

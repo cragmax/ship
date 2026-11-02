@@ -2,7 +2,7 @@
  * Plain fixture repos (per-test `mkdtemp` roots): the fixture main checkout
  * sits at `<root>/main` and ignores the run paths as this repo does, so a run
  * it cuts lands in its `.claude/worktrees/` and `reports/`. `preflight` gets a
- * bare `origin` and a fake `gh`; its RCON probe is injected in-process, never
+ * bare `origin` and a fake `gh`. Its RCON probe is injected in-process, never
  * aimed at the real warm-set ports, which may be live.
  *
  * @integrationTier standalone

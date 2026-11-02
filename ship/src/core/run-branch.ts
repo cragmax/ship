@@ -8,9 +8,9 @@
  */
 
 /**
- * A run branch: `ship/` — the namespace `RUN_BRANCH_PREFIX` names
- * (`ship/src/cli/git/run-layout.ts`, which cannot enter the render closure)
- * — then a slug in `runSlug`'s domain (`epic-<E>`, or issue numbers joined
+ * A run branch: `ship/`, the namespace `RUN_BRANCH_PREFIX` names
+ * (`ship/src/cli/git/run-layout.ts`, which cannot enter the render closure),
+ * then a slug in `runSlug`'s domain (`epic-<E>`, or issue numbers joined
  * with `-`).
  */
 export const RUN_BRANCH_SHAPE = /^ship\/[a-z0-9][a-z0-9-]*$/;

@@ -15,8 +15,6 @@ const ROOT = resolve(import.meta.dirname, '../../../..');
 /**
  * The `WORKFLOWS` row named `name`.
  *
- * @param name - The row's name.
- * @returns The row.
  * @throws {@link Error} when `WORKFLOWS` has no row of that name.
  */
 export function workflowSpec(name: string): WorkflowSpec {
@@ -29,23 +27,13 @@ export function workflowSpec(name: string): WorkflowSpec {
 /**
  * Render the `WORKFLOWS` row named `name` from the current sources.
  *
- * @param name - The row's name.
- * @returns The rendered script.
  * @throws {@link Error} as {@link workflowSpec} or {@link renderWorkflow}.
  */
 export async function renderFresh(name: string): Promise<string> {
   return renderWorkflow(workflowSpec(name), ROOT);
 }
 
-// eslint-disable-next-line local/comment-budget -- jsdoc/require-param forces a tag per parameter
-/**
- * Run a rendered workflow over a fake run's hooks.
- *
- * @param js - The rendered script.
- * @param run - The fake run whose hooks it calls.
- * @param args - The launch arguments.
- * @returns What the script returned.
- */
+/** Run a rendered workflow over a fake run's hooks. */
 export function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
   // The runtime's wrapper: the file as a function body (Ship PF-4), `export` dropped,
   // hooks + `args` as globals (unprobed).

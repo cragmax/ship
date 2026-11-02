@@ -4,8 +4,8 @@
  * events an issue attempt ends with (Ship ADR-0001 decision 10).
  *
  * **The settle rule** (the `epic-halt` event's doc, `run-scheduler.types.ts`): every attempt's
- * slice is torn down before its final events are fed. A halt — from the landing or from a
- * teardown that found a link target shrunk — feeds `epic-halt` for the entry, then `blocked` for
+ * slice is torn down before its final events are fed. A halt, from the landing or from a
+ * teardown that found a link target shrunk, feeds `epic-halt` for the entry, then `blocked` for
  * the halting issue itself, so the issue settles as halted and the entry can drain
  * ({@link settleEvents}).
  *
@@ -19,7 +19,7 @@ import { envelopeProblem, type LandOutput, type TeardownOutput } from './calls/t
 
 /**
  * A serial queue: each task starts once every earlier task has settled.
- * One per epic serialises its landings; the drive's run-wide one doubles as
+ * One per epic serialises its landings. The drive's run-wide one doubles as
  * the run's repo lock, serialising the epic ends' network-bearing steps
  * (`epic-end.ts`).
  */
@@ -27,7 +27,7 @@ export interface CommitQueue {
   /**
    * Queue a task.
    *
-   * @param task - The work; its rejection never stalls the queue.
+   * @param task - The work. Its rejection never stalls the queue.
    * @returns Resolves or rejects as the task does.
    */
   readonly enqueue: <T>(task: () => Promise<T>) => Promise<T>;
@@ -54,7 +54,7 @@ interface Settled {
 interface EventSubject {
   /** The issue. */
   readonly issue: number;
-  /** Its entry's `epic` key; `null` for an explicit list. */
+  /** Its entry's `epic` key, `null` for an explicit list. */
   readonly epic: number | null;
 }
 
@@ -100,10 +100,10 @@ export function landingEvent(land: LandOutput | null, at: EventSubject): Schedul
 }
 
 /**
- * The halt a teardown calls for; `teardown` is `null` when none ran or the runner returned none.
+ * The halt a teardown calls for. `teardown` is `null` when none ran or the runner returned none.
  *
  * @returns `epic-halt` for a refused `source-shrank` (a link was followed into
- *   its target); `null` otherwise.
+ *   its target), `null` otherwise.
  */
 export function teardownEvent(
   teardown: TeardownOutput | null,
@@ -117,24 +117,24 @@ export function teardownEvent(
 /**
  * What a teardown left behind, for the run report.
  *
- * @returns `null` for an `ok` teardown; otherwise one line naming the outcome.
+ * @returns `null` for an `ok` teardown, otherwise one line naming the outcome.
  */
 export function teardownResidue(teardown: TeardownOutput | null): string | null {
   return teardown?.status === 'ok' ? null : envelopeProblem('teardown', teardown);
 }
 
 /**
- * The events that settle an issue attempt, in feeding order — the file
+ * The events that settle an issue attempt, in feeding order: the file
  * header's settle rule.
  *
  * @param primary - What ended the attempt: the landing's event, or the
  *   chain's own (`blocked`, `agent-died`, `label-removed`, or `epic-halt`
  *   when it stopped for its halting entry).
- * @param halt - The halt the attempt called for — `primary` itself when it is
- *   an `epic-halt`; `null` for none.
- * @returns With a halt, `[epic-halt, blocked]` — `[blocked]` alone in an entry
- *   already halted — and the entry `halted`; for a `committed` in an entry
- *   already halted, which the scheduler refuses, `[blocked]`; otherwise
+ * @param halt - The halt the attempt called for: `primary` itself when it is
+ *   an `epic-halt`, `null` for none.
+ * @returns With a halt, `[epic-halt, blocked]` (`[blocked]` alone in an entry
+ *   already halted) and the entry `halted`. For a `committed` in an entry
+ *   already halted, which the scheduler refuses, `[blocked]`. Otherwise
  *   `[primary]` and the entry's state unchanged.
  */
 export function settleEvents(
@@ -162,9 +162,9 @@ export function settleEvents(
 }
 
 /**
- * Classify a landing (`null`: no output): `committed` for an `ok` with its commit; on a clean
+ * Classify a landing (`null`: no output): `committed` for an `ok` with its commit. On a clean
  * batch, `conflict`, or `blocked` for `slice-not-single-commit` or a rolled-back `commit`/`build`
- * step; anything else, a batch not verified clean included, is `halt`.
+ * step. Anything else, a batch not verified clean included, is `halt`.
  */
 function classifyLanding(land: LandOutput | null): LandingClass {
   if (land?.status === 'ok' && typeof land.commit === 'string') return 'committed';

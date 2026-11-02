@@ -60,7 +60,7 @@ const fixture = (files: Readonly<Record<string, string>>) => {
 
 /**
  * A thunk compiling a render, meta `export` dropped, as the body of the
- * runtime's async workflow function — compiled only, never run.
+ * runtime's async workflow function, compiled only, never run (Ship PF-4).
  */
 const compileAsBody = (out: string) => (): vm.Script =>
   // eslint-disable-next-line sonarjs/code-eval -- test-owned render output, compiled not run
@@ -376,7 +376,7 @@ describe('the rendered workflow directory', () => {
   it('is not gitignored', () => {
     // --no-index: judge the ignore rules even once the file is tracked.
     const argv = ['check-ignore', '-q', '--no-index', '.claude/workflows/ship.js'];
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally; fixed argv, no shell
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- git resolved via PATH intentionally, fixed argv, no shell
     const result = spawnSync('git', argv, { cwd: ROOT });
 
     expect(result.status).toBe(1);

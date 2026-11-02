@@ -1,15 +1,15 @@
 /**
  * A pure `(state, event) → (state, actions)` machine deciding which issue of an unattended run
  * starts, waits, restarts or is skipped, and when each entry ends, from the gate's run graph plus
- * `maxSlices`. Transitions: {@link IssuePhase}; the slot rule, ready and action order and
- * consumer obligations: their docs in `run-scheduler.types.ts`. One retry per issue for life,
- * requeues included, no requeue cap; a skip only for a still-waiting dependent, so never twice; a
- * halt never touches another entry.
+ * `maxSlices`. Transitions: {@link IssuePhase}. The slot rule, ready and action order, and consumer
+ * obligations: their docs in `run-scheduler.types.ts`. One retry per issue for life, requeues
+ * included, no requeue cap. A skip only for a still-waiting dependent, so never twice. A halt never
+ * touches another entry.
  *
  * **Fail loud, pure.** Every throw an `Error` prefixed `run scheduler:` naming the offender; no
  * I/O, clock or randomness; input never mutated; issue-keyed records never iterated (integer-like
- * keys enumerate numerically; input order decides). **Render-ready, a contract** (the `ship`
- * workflow loads no module): one value import (`../run-set.js`), the rest type-only;
+ * keys enumerate numerically, and input order decides). **Render-ready, a contract** (the `ship`
+ * workflow loads no module, Ship PF-4): one value import (`../run-set.js`), the rest type-only;
  * built-ins only (the renderer's `FORBIDDEN_TOKENS`); no top-level side effect or name `run-set.ts`
  * declares (the renderer refuses a repeat); erasable syntax only. A text guard test enforces it.
  */
@@ -59,7 +59,7 @@ const SETTLED_PHASES: readonly IssuePhase[] = [
 /**
  * Validate the run graph and build the initial state and actions.
  *
- * @remarks The guards run in the order the `@throws` below list; the first
+ * @remarks The guards run in the order the `@throws` below list. The first
  * failure throws. Duplicate edges are tolerated and deduplicated, a pair given both
  * `declared` and `overlap` kept `declared`.
  *
@@ -82,9 +82,7 @@ export function createScheduler(input: SchedulerInput): Transition {
 /**
  * Apply one event.
  *
- * @param state - The current state; never mutated.
- * @param event - What the workflow observed.
- * @returns The next state and the actions to execute, in order.
+ * @param state - The current state, never mutated.
  * @throws Error when `event.kind` is not an event kind (an untyped caller's typo).
  * @throws Error when `event.issue` is not in the run.
  * @throws Error when the issue's phase does not accept `event.kind` (a settled issue accepts none).
@@ -152,7 +150,7 @@ function settleInHaltedEntry(draft: Draft, state: SchedulerState, event: IssueEv
 
 /**
  * Halt the entry keyed `epic`: settle its waiting and ready issues as halted and drop them from
- * the ready queue; its in-flight issues keep their phase.
+ * the ready queue. Its in-flight issues keep their phase.
  */
 function onEpicHalt(draft: Draft, state: SchedulerState, epic: number | null): void {
   const index = state.runSet.findIndex((entry) => entry.epic === epic);
@@ -371,7 +369,7 @@ function cleared(draft: Draft, e: SchedulerEdge): boolean {
   return e.source === 'overlap' && head !== undefined && UNLANDED_PHASES.includes(head);
 }
 
-/** Retry on the first death; block and skip the dependents on the second. */
+/** Retry on the first death. Block and skip the dependents on the second. */
 function onAgentDied(draft: Draft, state: SchedulerState, issue: number): void {
   if (draft.retried[issue]) {
     draft.response.push({ kind: 'block', issue, reason: 'retry-exhausted' });

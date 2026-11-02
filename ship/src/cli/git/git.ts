@@ -1,8 +1,8 @@
 /**
  * Git and path-identity helpers for the worktree CLI. Every git call runs as
- * `git -C <dir>` with captured output ({@link runCaptured}); git prints
- * forward-slash absolute paths on every platform. Local plumbing runs under
- * the default budget; the fetch and the hooked commit take theirs from
+ * `git -C <dir>` with captured output ({@link runCaptured}). Git prints
+ * forward-slash absolute paths on every platform (unprobed). Local plumbing runs under
+ * the default budget. The fetch and the hooked commit take theirs from
  * `exec.ts`.
  */
 
@@ -60,7 +60,7 @@ export function git(dir: string, args: readonly string[], step = 'git'): string 
 }
 
 /**
- * List the repository's worktrees; the first entry is the main worktree.
+ * List the repository's worktrees. The first entry is the main worktree.
  *
  * @param dir - Any directory inside the repository.
  * @returns Worktree entries in git's order.
@@ -101,7 +101,7 @@ export function gitPaths(dir: string, args: readonly string[], step: string): st
  * Resolve a commit-ish to a full commit sha.
  *
  * @param dir - Any checkout of the repository.
- * @param ref - Any commit-ish; never read as an option.
+ * @param ref - Any commit-ish, never read as an option.
  * @throws StepFailure for `step` when it does not resolve to a commit.
  */
 export function resolveCommit(dir: string, ref: string, step: string): string {
@@ -123,11 +123,11 @@ export function fetchOrigin(dir: string): void {
 
 /**
  * Read one ref of `origin` live with `git ls-remote`, under
- * `FETCH_TIMEOUT_MS` — never the checkout's remote-tracking copy of it.
+ * `FETCH_TIMEOUT_MS`, never the checkout's remote-tracking copy of it.
  *
  * @param dir - The checkout whose `origin` is asked.
  * @param ref - The full ref name, e.g. `refs/heads/master`.
- * @returns The sha `origin` names for exactly `ref`; `null` when `origin`
+ * @returns The sha `origin` names for exactly `ref`, or `null` when `origin`
  *   has no such ref.
  * @throws StepFailure for `step` carrying the output tail, on a non-zero
  *   exit, spawn failure or budget kill.
@@ -197,7 +197,7 @@ export function commitRetryingCrash(
 }
 
 /**
- * Whether a ref resolves in a checkout — for the per-worktree in-progress
+ * Whether a ref resolves in a checkout, for the per-worktree in-progress
  * refs (`MERGE_HEAD`, …), which {@link git} cannot probe since it throws on
  * the non-zero exit an absent ref gives.
  *
@@ -212,7 +212,7 @@ export function refExists(dir: string, ref: string): boolean {
 
 /**
  * The local branches under `prefix` (`git for-each-ref refs/heads/<prefix>`), short form, in ref
- * order; end `prefix` with `/` to match whole path components.
+ * order. End `prefix` with `/` to match whole path components.
  *
  * @throws StepFailure for `step` when git cannot list them.
  */
@@ -235,10 +235,9 @@ export function statusEntries(dir: string, step: string): string[] {
 }
 
 /**
- * Check provisioning added nothing `git status` can see — every scaffold
+ * Check provisioning added nothing `git status` can see: every scaffold
  * path must be ignored, so none can ever be staged and committed.
  *
- * @param dir - The provisioned checkout.
  * @param before - Its status entries before any mutation.
  * @throws StepFailure `post-check` listing every new entry.
  */
@@ -314,11 +313,7 @@ export function samePath(a: string, b: string): boolean {
   return canonical(a) === canonical(b);
 }
 
-/**
- * Whether `child` is `parent` or lies beneath it.
- *
- * @returns `true` when `child` is inside `parent` (inclusive).
- */
+/** Whether `child` is `parent` or lies beneath it. */
 export function isInside(child: string, parent: string): boolean {
   const c = canonical(child);
   const p = canonical(parent);

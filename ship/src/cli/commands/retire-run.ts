@@ -1,13 +1,13 @@
 /**
- * `retire-run <main> --branch ship/<slug>` — retire a merged run: delete its slice branches
- * (`slice/<slug>/…`), remove its run root (its report dir, `reports/ship-<head>/`) and delete its
- * run branch, once its batch is torn down.
+ * `retire-run <main> --branch ship/<slug>` retires a merged run. It deletes its slice branches
+ * (`slice/<slug>/…`), removes its run root (its report dir, `reports/ship-<head>/`), and deletes
+ * its run branch, once its batch is torn down.
  *
- * Invariant: every guard runs before any mutation — the branch guard ({@link assertMerged}), then
- * the folder guard: the run root's place ({@link assertRunRoot}), nested worktrees, links
- * ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed and the
- * run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
- * A missing run root skips the folder guard and the removal; the branches still go.
+ * Invariant: every guard runs before any mutation. The branch guard ({@link assertMerged}) comes
+ * first, then the folder guard: the run root's place ({@link assertRunRoot}), nested worktrees,
+ * links ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed, and
+ * the run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
+ * A missing run root skips the folder guard and the removal. The branches still go.
  * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream
  * (Ship PF-8).
  */
@@ -135,7 +135,7 @@ function assertMerged(main: string, branch: string): void {
  * Refuse `not-run-root` unless the run root is a real directory named `ship-*` directly under the
  * main checkout's {@link REPORTS_DIR}, so a path bug can remove one run's reports at most.
  *
- * @returns `true` when it passes, `false` when it is missing; any other `lstat` error throws.
+ * @returns `true` when it passes, `false` when it is missing. Any other `lstat` error throws.
  */
 function assertRunRoot(main: string, root: string): boolean {
   const stat = lstatSync(root, { throwIfNoEntry: false });
@@ -155,7 +155,7 @@ function assertRunRoot(main: string, root: string): boolean {
 
 /**
  * Refuse `nested-worktree` naming each registered worktree inside the run root, then
- * `links-remain` naming each link in it; nothing is unlinked.
+ * `links-remain` naming each link in it. Nothing is unlinked.
  */
 function assertNothingLive(main: string, root: string): void {
   const nested = listWorktrees(main, 'folder-guard')

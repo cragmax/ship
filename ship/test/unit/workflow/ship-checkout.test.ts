@@ -17,7 +17,7 @@ import {
   type FakeRun,
 } from './_fake-hooks.js';
 
-/** Pre-flight names {@link MAIN}; the cut's envelope names no main checkout. */
+/** Pre-flight names {@link MAIN}. The cut's envelope names no main checkout. */
 const AT_MAIN = {
   'runner:preflight': { ...PREFLIGHT_OK, worktree: MAIN },
   'runner:cut-batch': {

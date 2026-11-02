@@ -1,5 +1,5 @@
 /**
- * The co-author trailer — the one home of the attribution line on every
+ * The co-author trailer: the one home of the attribution line on every
  * commit an unattended run writes the message for: each landed issue's
  * commit (`ship/src/workflow/pr/pr-body.ts`) and the version bump
  * (`ship/src/cli/commands/bump.ts`).

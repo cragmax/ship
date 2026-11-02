@@ -1,17 +1,18 @@
 /**
- * `publish <batch> --title T --body-file F --log L [--draft]` — push the run's
+ * `publish <batch> --title T --body-file F --log L [--draft]`: push the run's
  * feature branch and open its pull request, as a draft with `--draft`
  * (Ship ADR-0001 decision 12: the PR is the sole human gate).
  *
  * Order: the guards (a linked run batch, no open PR for the branch, a body
- * file within {@link GH_BODY_LIMIT}), then `npm run build` — so the
- * pre-push gate's tests read a current `dist/` — then the push, then
+ * file within {@link GH_BODY_LIMIT}), then `npm run build`, so the
+ * pre-push gate's tests read a current `dist/`, then the push, then
  * `gh pr create`.
  * A failed push opens no PR. The PR number is read from the PR URL that
- * `gh pr create` prints on stdout on success; no URL is a `pr` failure with `pushed` true.
+ * `gh pr create` prints on stdout on success (unprobed). No URL is a `pr` failure with
+ * `pushed` true.
  *
- * `publish --push-only` — the push to an open PR's branch — is
- * `publish-push.ts`'s; both push through {@link pushBranch}.
+ * `publish --push-only`, the push to an open PR's branch, is
+ * `publish-push.ts`'s. Both push through {@link pushBranch}.
  */
 
 import { readFileSync } from 'node:fs';
@@ -34,7 +35,7 @@ import { RUN_BASE_BRANCH } from '../git/run-layout.js';
 import type { HookAttempt, OpenedPr, PublishResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
-/** Inputs of {@link publish}; paths absolute with forward slashes. */
+/** Inputs of {@link publish}: paths absolute with forward slashes. */
 interface PublishInput {
   /** The batch worktree. */
   readonly batch: string;
@@ -58,7 +59,7 @@ interface PublishInput {
  *
  * @returns The envelope: `ok` with `pushed` and `pr`; `refused` before any
  *   mutation (harvest's linked-worktree reasons, `not-run-batch`,
- *   `pr-exists`); or `failed` with the step — `pr-state`, `body-too-long`
+ *   `pr-exists`); or `failed` with the step: `pr-state`, `body-too-long`
  *   (the body file over {@link GH_BODY_LIMIT} characters) or `build` before
  *   the push, `push` (`pushed` false), or `pr` (`pushed` true, `pr` null).
  */
@@ -114,7 +115,7 @@ export function publishableBranch(batch: string, selfPath: string): string {
  * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002),
  * and once more when that hook crashed: `hooked.ts`'s {@link runHooked}, the retry's output in its
  * own log beside `logFile`. Never forced: a push `origin` would have to lose commits for fails,
- * and is reported — never retried with force. `publish` and `publish --push-only` both push
+ * and is reported, never retried with force. `publish` and `publish --push-only` both push
  * through here.
  *
  * @remarks
@@ -122,7 +123,7 @@ export function publishableBranch(batch: string, selfPath: string): string {
  *
  * @param branch - The run branch, short form.
  * @param attempts - Receives each run of the push.
- * @throws StepFailure `push` as {@link runHooked} names it — a non-fast-forward included.
+ * @throws StepFailure `push` as {@link runHooked} names it, a non-fast-forward included.
  */
 export function pushBranch(
   batch: string,

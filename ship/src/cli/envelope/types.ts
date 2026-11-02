@@ -1,15 +1,15 @@
 /**
- * Result envelope types of the worktree CLI (`../worktree.ts`) — the single JSON object every
- * command prints on one stdout line — plus the error classes a step throws to end its command
+ * Result envelope types of the worktree CLI (`../worktree.ts`), the single JSON object every
+ * command prints on one stdout line, plus the error classes a step throws to end its command
  * early. Each type is the `z.infer` of its schema in `schemas.ts`, the canonical home of shapes,
- * field docs and path spelling; the run-branch and epic-end envelopes are in `types-run.ts`.
+ * field docs, and path spelling. The run-branch and epic-end envelopes are in `types-run.ts`.
  *
- * Status (the envelope's `status`): `ok` — every step ran and every check held. `refused` — a
- * safety guard fired before, or instead of, mutating the thing it protects; `reason` names the
- * guard ({@link Refusal}). `failed` — a step failed; `errors[0].step` names it
- * ({@link StepFailure}); any other throw is step `internal`, a bad command line step `usage`, and
- * an envelope that fails its schema step `envelope` (`schemas.ts` `guardEnvelope`). `conflict` —
- * `harvest` and `land`: the change cannot apply to the batch's current head, the batch back at a
+ * Status (the envelope's `status`). `ok`: every step ran and every check held. `refused`: a
+ * safety guard fired before, or instead of, mutating the thing it protects, and `reason` names the
+ * guard ({@link Refusal}). `failed`: a step failed and `errors[0].step` names it
+ * ({@link StepFailure}). Any other throw is step `internal`, a bad command line step `usage`, and
+ * an envelope that fails its schema step `envelope` (`schemas.ts` `guardEnvelope`). `conflict`
+ * (`harvest` and `land`): the change cannot apply to the batch's current head, the batch back at a
  * verified-clean `HEAD` ({@link Conflict}).
  */
 
@@ -68,10 +68,10 @@ export type TsserverSkipReason = z.infer<typeof TsserverSkipReasonSchema>;
 /** Envelope of `retire-run <main> --branch ship/<slug>`. */
 export type RetireRunResult = z.infer<typeof RetireRunResultSchema>;
 
-/** Envelope of `harvest <batch> <slice-sha>`; `worktree` is the batch. */
+/** Envelope of `harvest <batch> <slice-sha>`. `worktree` is the batch. */
 export type HarvestResult = z.infer<typeof HarvestResultSchema>;
 
-/** Envelope of `staged-guard <worktree> <file>…`; every list is sorted. */
+/** Envelope of `staged-guard <worktree> <file>…`. Every list is sorted. */
 export type StagedGuardResult = z.infer<typeof StagedGuardResultSchema>;
 
 /** Envelope of `commit --message-file <f> -- <path>…`. */
@@ -83,10 +83,10 @@ export type PrInfo = z.infer<typeof PrInfoSchema>;
 /** One live unattended run: a registered worktree on a run branch. */
 export type LiveRun = z.infer<typeof LiveRunSchema>;
 
-/** Envelope of `live-runs <main>`; `worktree` is the main checkout. */
+/** Envelope of `live-runs <main>`. `worktree` is the main checkout. */
 export type LiveRunsResult = z.infer<typeof LiveRunsResultSchema>;
 
-/** A step failed; the command stops and reports `failed`. */
+/** A step failed: the command stops and reports `failed`. */
 export class StepFailure extends Error {
   override readonly name: string = 'StepFailure';
   /** The failing step, reported as `errors[0].step`. */
@@ -97,7 +97,6 @@ export class StepFailure extends Error {
   /**
    * Create a step failure.
    *
-   * @param step - The failing step's name.
    * @param message - One-line cause.
    * @param detail - Optional child-output tail.
    */
@@ -109,7 +108,7 @@ export class StepFailure extends Error {
 }
 
 /**
- * A safety guard fired; the command stops and reports `refused` with
+ * A safety guard fired: the command stops and reports `refused` with
  * {@link Refusal.reason}.
  */
 export class Refusal extends StepFailure {
@@ -120,10 +119,7 @@ export class Refusal extends StepFailure {
   /**
    * Create a refusal.
    *
-   * @param reason - The guard that fired.
-   * @param step - The step the guard belongs to.
    * @param message - One-line cause.
-   * @param detail - Optional supporting detail.
    */
   constructor(reason: RefusalReason, step: string, message: string, detail?: string) {
     super(step, message, detail);
@@ -132,7 +128,7 @@ export class Refusal extends StepFailure {
 }
 
 /**
- * A change would not apply to the batch; the command reports `conflict`
+ * A change would not apply to the batch: the command reports `conflict`
  * with {@link Conflict.files}.
  */
 export class Conflict extends StepFailure {
@@ -143,9 +139,7 @@ export class Conflict extends StepFailure {
   /**
    * Create a conflict.
    *
-   * @param step - The step that detected it.
    * @param message - One-line cause.
-   * @param files - The paths that would not apply.
    * @param detail - Optional child-output tail.
    */
   constructor(step: string, message: string, files: readonly string[], detail?: string) {
@@ -158,8 +152,7 @@ export class Conflict extends StepFailure {
  * Record a caught throw on an envelope, mapped to a status as the file
  * header describes.
  *
- * @param result - The envelope being built; mutated.
- * @param err - The caught value.
+ * @param result - The envelope being built, mutated.
  */
 export function recordFailure(result: ResultBase, err: unknown): void {
   if (err instanceof StepFailure) {
@@ -184,7 +177,6 @@ export function recordFailure(result: ResultBase, err: unknown): void {
 /**
  * The status a {@link StepFailure} maps to.
  *
- * @param err - The failure.
  * @returns `conflict`, `refused` or `failed` by the failure's class.
  */
 function statusOf(err: StepFailure): CommandStatus {

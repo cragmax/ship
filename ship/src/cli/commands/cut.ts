@@ -1,11 +1,11 @@
 /**
  * `cut-batch <main> (--epic E | --issues N,…)` and
- * `cut-slice <batch> --issue N --attempt K [--attached-run R]` — cut an
+ * `cut-slice <batch> --issue N --attempt K [--attached-run R]`: cut an
  * unattended run's feature branch and batch worktree, and one slice worktree, at the places
  * `run-layout.ts` names (Ship ADR-0001 decision 3).
  *
- * Invariant, both commands: every guard runs before the first mutation — a `git worktree add -b`
- * — so a refusal leaves the repository's branches, worktree list and every checkout as they were.
+ * Invariant, both commands: every guard runs before the first mutation, a `git worktree add -b`,
+ * so a refusal leaves the repository's branches, worktree list, and every checkout as they were.
  *
  * `cut-batch` is the one mutating command of the CLI without the self-hosted guard: it runs from
  * the main checkout, its target, and writes only `.git` (a branch, the worktree registry) and the
@@ -36,7 +36,7 @@ export interface CutSliceInput {
   readonly batch: string;
   /** Which issue attempt's slice (attempt 1 for the first). */
   readonly slice: { readonly issue: number; readonly attempt: number };
-  /** The attached run whose slice this is, naming it `a<R>-…`; absent for an unattached run. */
+  /** The attached run whose slice this is, naming it `a<R>-…`. Absent for an unattached run. */
   readonly attachedRun?: number;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
   readonly selfPath?: string;
@@ -162,7 +162,6 @@ function assertBranchFree(dir: string, branch: string): void {
 /**
  * Refuse when the path exists already, as anything.
  *
- * @param path - The directory to be created.
  * @throws Refusal `path-exists`.
  */
 function assertPathFree(path: string): void {

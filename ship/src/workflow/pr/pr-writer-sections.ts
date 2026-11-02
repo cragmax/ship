@@ -13,9 +13,9 @@ import type { PrWriterOutput } from '../calls/agent-calls.js';
 /**
  * The Summary section's lines.
  *
- * @param writer - The PR writer's answer; `null` when it returned none.
+ * @param writer - The PR writer's answer, `null` when it returned none.
  * @returns For `null`, the one line
- *   `Summary unavailable — the PR writer returned nothing`; else the
+ *   `Summary unavailable — the PR writer returned nothing`, else the
  *   summary's lines per {@link textLines}, none for a blank summary.
  */
 export function summaryLines(writer: PrWriterOutput | null): string[] {
@@ -27,7 +27,7 @@ export function summaryLines(writer: PrWriterOutput | null): string[] {
 /**
  * The Merge Danger section's lines.
  *
- * @param writer - The PR writer's answer; `null` when it returned none.
+ * @param writer - The PR writer's answer, `null` when it returned none.
  * @returns For `null`, the one line
  *   `Unavailable — the PR writer returned nothing`. Else `**Door:** <door>`
  *   and a blank line; the door note's lines and a blank line, when it has
@@ -50,8 +50,8 @@ export function mergeDangerLines(writer: PrWriterOutput | null): string[] {
 }
 
 /**
- * A text's LF- or CRLF-separated lines, outer blank lines and trailing whitespace dropped;
- * inner lines verbatim, indentation and blank lines kept. None for a blank text.
+ * A text's LF- or CRLF-separated lines, outer blank lines and trailing whitespace dropped.
+ * Inner lines verbatim, indentation and blank lines kept. None for a blank text.
  */
 function textLines(text: string): string[] {
   const trimmed = text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();

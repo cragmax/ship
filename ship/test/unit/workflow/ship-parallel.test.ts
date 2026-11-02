@@ -27,13 +27,7 @@ const CUT_OK = {
   slice: 'C:/src/ph-runs/7/slice',
 };
 
-/**
- * The gate and issue-readiness answers of an explicit list.
- *
- * @param issues - The list.
- * @param edges - Its declared edges.
- * @returns The answers.
- */
+/** The gate and issue-readiness answers of an explicit list. */
 const list = (
   issues: readonly number[],
   edges: readonly { blocker: number; dependent: number }[] = [],
@@ -360,7 +354,6 @@ describe('runShip — epics side by side', () => {
    * Launch `epics 1 2`, one issue each, holding every call `match` accepts, and let it run to a
    * standstill.
    *
-   * @param match - The labels to hold.
    * @returns The hold, the fake run, and the launch's promise.
    */
   async function launchTwoEpicsHolding(match: RegExp) {
@@ -378,11 +371,7 @@ describe('runShip — epics side by side', () => {
     return { hold, run, done };
   }
 
-  /**
-   * Release the first held call and let the run reach its next standstill.
-   *
-   * @param hold - The run's hold.
-   */
+  /** Release the first held call and let the run reach its next standstill. */
   async function releaseFirst(hold: ReturnType<typeof holdable>): Promise<void> {
     const [first = ''] = hold.held();
     hold.release(first);

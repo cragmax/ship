@@ -1,13 +1,13 @@
 /**
  * The `ship` workflow's event loop (Ship ADR-0001 decision 7): drives the run scheduler over every
  * cut entry, running each action in the order the scheduler emits it and feeding each settled
- * attempt's events in order. **The cap bounds everything in flight; epic ends run outside it**:
+ * attempt's events in order. **The cap bounds everything in flight. Epic ends run outside it**:
  * an authored attempt feeds nothing, so its issue keeps its slot until its landing settles.
  *
  * **Concurrency.** The workflow runtime resolves `Promise.race` over un-awaited flights in
  * completion order (Ship PF-7), so while more than one flight is in progress the order of the run's
- * `agent()` calls follows settle timing. With one flight at a time — a single entry at
- * `maxSlices: 1` — it does not: the resume boundary, Ship ADR-0001 decision 17.
+ * `agent()` calls follows settle timing. With one flight at a time (a single entry at
+ * `maxSlices: 1`) it does not: the resume boundary, Ship ADR-0001 decision 17.
  *
  * **One halt state per entry** ({@link HaltState}): once it leaves `running`, the entry's attempts
  * stop and its queued landings never run. Render-safe (`ship/src/build/workflow-render.ts`):
@@ -52,7 +52,7 @@ import { PHASE_TITLES } from './stages.js';
 export interface DriveInput {
   /** The workflow hooks. */
   readonly hooks: WorkflowHooks;
-  /** The run graph, overlap edges merged; entry `i` is `entries[i]`. */
+  /** The run graph, overlap edges merged. Entry `i` is `entries[i]`. */
   readonly graph: RunGraph;
   /** Each entry, cut and provisioned, in run-set order. */
   readonly entries: readonly EntrySetup[];
@@ -86,11 +86,11 @@ interface Drive {
   readonly attempts: Map<number, number>;
   /** The kept patch of each issue whose last attempt a harvest conflict ended, by issue. */
   readonly previousPatches: Map<number, string>;
-  /** Each settled attempt's timing, by issue; the final attempt's wins. */
+  /** Each settled attempt's timing, by issue. The final attempt's wins. */
   readonly timing: Map<number, Timing>;
   /** Each `agent-died` ending, by issue, in settle order. */
   readonly deaths: Map<number, AgentDeath[]>;
-  /** Each entry's halt state; an entry it lacks is `running`. */
+  /** Each entry's halt state. An entry it lacks is `running`. */
   readonly halts: Map<number, HaltState>;
   readonly outcomes: Map<number, IssueReport>;
   readonly landed: Map<number, LandedIssue[]>;
@@ -102,7 +102,7 @@ interface Drive {
   epicEndEntered: boolean;
 }
 
-/** Drive every entry until each has ended; the reports come in run-set order. */
+/** Drive every entry until each has ended. The reports come in run-set order. */
 export async function drive(input: DriveInput): Promise<EpicReport[]> {
   const d = newDrive(input);
   const edges = input.graph.edges.map((e) => ({
@@ -170,7 +170,7 @@ function entryReport(d: Drive, i: number): EpicReport {
 
 /**
  * An entry's schedule, in the entry's order: each issue's blockers in the drive graph, a released
- * overlap edge's with its trigger, its final attempt's timing and its deaths; `attempts: 0` and
+ * overlap edge's with its trigger, its final attempt's timing, and its deaths. `attempts: 0` and
  * `null` instants for an issue that never started.
  */
 function scheduleOf(d: Drive, i: number): ScheduleEntry[] {
@@ -247,7 +247,7 @@ function act(d: Drive, action: SchedulerAction): void {
 }
 
 /**
- * Start the unshipped end of an entry that halted or landed nothing; one that rejects reports
+ * Start the unshipped end of an entry that halted or landed nothing. One that rejects reports
  * the entry without retro findings.
  */
 function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed'): void {
@@ -276,7 +276,7 @@ function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed')
 }
 
 /**
- * Put an entry's end in flight, entering the `Epic end` phase with the first; `report` must never
+ * Put an entry's end in flight, entering the `Epic end` phase with the first. `report` must never
  * reject.
  */
 function startEnd(d: Drive, i: number, report: Promise<EpicReport>): void {
@@ -290,8 +290,8 @@ function startEnd(d: Drive, i: number, report: Promise<EpicReport>): void {
 
 /**
  * Start an entry's epic end as a flight, or its unshipped end ({@link unshippedEpicEnd}) when
- * nothing landed. An epic end that rejects reports its entry `stopped` with the throw's message —
- * it never rejects the drive, so the other entries still report.
+ * nothing landed. An epic end that rejects reports its entry `stopped` with the throw's message.
+ * It never rejects the drive, so the other entries still report.
  */
 function endEpic(d: Drive, i: number): void {
   const landed = d.landed.get(i) ?? [];
@@ -401,7 +401,7 @@ function feed(d: Drive, events: readonly SchedulerEvent[]): void {
 }
 
 /**
- * Record how an attempt left its issue, before its events are fed — so an epic end the feed
+ * Record how an attempt left its issue, before its events are fed, so an epic end the feed
  * starts sees every landing.
  */
 function record(
@@ -423,7 +423,7 @@ function record(
 
 /**
  * An attempt's outcome for its issue, `committed` whether its settle events
- * hold one; `null` when the issue restarts ({@link unlandedOutcome}).
+ * hold one, `null` when the issue restarts ({@link unlandedOutcome}).
  */
 function issueOutcome(
   issue: number,
@@ -446,8 +446,8 @@ function issueOutcome(
 }
 
 /**
- * An attempt's outcome for an issue whose slice did not land: `halted`, `blocked` or `removed`;
- * `null` when the issue restarts (`harvest-conflict`, a first `agent-died`) — the scheduler's
+ * An attempt's outcome for an issue whose slice did not land: `halted`, `blocked`, or `removed`.
+ * `null` when the issue restarts (`harvest-conflict`, a first `agent-died`). The scheduler's
  * `block` records a second death.
  */
 function unlandedOutcome(
@@ -468,7 +468,7 @@ function unlandedOutcome(
   return null;
 }
 
-/** What settling reads of an ending; a `landed` one's primary is `committed`. */
+/** What settling reads of an ending. A `landed` one's primary is `committed`. */
 function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
   switch (ending.kind) {
     case 'landed':
@@ -484,7 +484,7 @@ function endingFacts(issue: number, ending: AttemptEnding): EndingFacts {
 
 /**
  * Hold the ending's kept patch for the issue's next attempt when a harvest conflict ended it, so
- * the requeued tdd starts from it; any other ending drops the issue's held patch.
+ * the requeued tdd starts from it. Any other ending drops the issue's held patch.
  */
 function keepPreviousPatch(d: Drive, issue: number, ending: AttemptEnding): void {
   const patch =
@@ -543,7 +543,7 @@ function newDrive(input: DriveInput): Drive {
 /**
  * One graph edge's blocker and its source: an edge both declared and estimated reads `declared`,
  * since `mergeOverlapEdges` (`ship/src/core/run-overlap.ts`) adds no edge for a pair the declared
- * edges already order — so a graph edge absent from `overlap.added` is declared.
+ * edges already order, so a graph edge absent from `overlap.added` is declared.
  */
 function scheduleBlocker(
   blocker: number,

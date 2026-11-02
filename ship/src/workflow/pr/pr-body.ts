@@ -7,11 +7,11 @@
  * issue whose tdd says so, in its commit message and once in a PR body's or attached
  * section's Issues list ({@link landedLine}), never in a run report. Every other issue, the epic
  * container included, is `see #N`, and every text carrying agent- or tool-written words, each
- * moved section included, passes through {@link neutralText}; the body a
+ * moved section included, passes through {@link neutralText}. The body a
  * section is appended to is never neutralised again.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect; `server-pool/src/lease-timings.ts`, which parses the lease lines, and
+ * effect. `server-pool/src/lease-timings.ts`, which parses the lease lines, and
  * `tooling/hooks/lib/platform-wide.ts`, which names the Platform-wide paths, join the closure.
  */
 
@@ -93,7 +93,7 @@ export type ScheduleBlocker =
       readonly issue: number;
       /** `overlap`: an edge pre-flight's overlap estimate added. */
       readonly source: 'overlap';
-      /** How the blocking issue settled without landing, releasing the edge; absent when not. */
+      /** How the blocking issue settled without landing, releasing the edge, absent when not. */
       readonly released?: ReleasedEdge['trigger'];
     };
 
@@ -111,15 +111,15 @@ export interface ScheduleEntry {
   readonly issue: number;
   /** Its blockers in the scheduled graph, ascending, each with its source. */
   readonly blockers: readonly ScheduleBlocker[];
-  /** How many attempts it took; 0 when it never started. */
+  /** How many attempts it took, 0 when it never started. */
   readonly attempts: number;
-  /** When its final attempt's slice was cut; `null` when none was. */
+  /** When its final attempt's slice was cut, `null` when none was. */
   readonly startedAt: string | null;
-  /** When its commit landed; `null` unless it landed. */
+  /** When its commit landed, `null` unless it landed. */
   readonly committedAt: string | null;
-  /** Its landed commit's size; `null` unless it landed. */
+  /** Its landed commit's size, `null` unless it landed. */
   readonly size: SliceSize | null;
-  /** Each of its attempts that ended `agent-died`, in order; empty when none did. */
+  /** Each of its attempts that ended `agent-died`, in order, empty when none did. */
   readonly deaths: readonly AgentDeath[];
 }
 
@@ -135,7 +135,7 @@ export interface AgentDeath {
 
 /** The epic review's part of an epic end. */
 export interface EpicReviewReport {
-  /** The verdict; `null` when the review returned none and nothing forced one. */
+  /** The verdict, `null` when the review returned none and nothing forced one. */
   readonly verdict: EpicReviewOutput['verdict'] | null;
   /** Judged on the landed issues' criteria alone, with no epic's: a list's or attached run's. */
   readonly profiled: boolean;
@@ -143,13 +143,13 @@ export interface EpicReviewReport {
   readonly forced?: string;
   /** Why the review gave no answer. */
   readonly notRun?: string;
-  /** Its answer; `null` when it gave none. */
+  /** Its answer, `null` when it gave none. */
   readonly answer: EpicReviewOutput | null;
 }
 
 /** Everything an epic's pull request body reports. */
 export interface PrBodyInput {
-  /** The epic; `null` for an explicit list. */
+  /** The epic, `null` for an explicit list. */
   readonly epic: number | null;
   /** The feature branch. */
   readonly branch: string;
@@ -161,16 +161,16 @@ export interface PrBodyInput {
   readonly unlanded: readonly UnlandedIssue[];
   /** The master sync. */
   readonly sync: SyncStepResult;
-  /** The bump; `null` when the runner returned none. */
+  /** The bump, `null` when the runner returned none. */
   readonly bump: BumpOutput | null;
   /** The master check, passed: a failed check opens no PR. */
   readonly masterCheck: PassedMasterCheck;
   /**
    * Whether the main checkout's `HEAD` and dirtiness equal pre-flight's,
-   * read before the push; `null` when a read failed.
+   * read before the push, `null` when a read failed.
    */
   readonly mainUntouched: boolean | null;
-  /** The epic review's part: it leads the body; `rejected` or no verdict opens a draft PR. */
+  /** The epic review's part: it leads the body, and `rejected` or no verdict opens a draft PR. */
   readonly epicReview: EpicReviewReport;
   /** The paths the push changes, which decide the tests pre-push runs on it (Tooling ADR-0002). */
   readonly pushed: PushedChanges;
@@ -180,9 +180,9 @@ export interface PrBodyInput {
   readonly schedule: readonly ScheduleEntry[];
   /** The entry's lease totals. */
   readonly leases: LeaseAggregate;
-  /** The retro's findings; `null` when it returned none. */
+  /** The retro's findings, `null` when it returned none. */
   readonly retro: readonly RetroFinding[] | null;
-  /** The PR writer's answer; `null` when it returned none. */
+  /** The PR writer's answer, `null` when it returned none. */
   readonly writer: PrWriterOutput | null;
 }
 
@@ -195,7 +195,7 @@ export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
   readonly run: number;
   /**
    * The URL of the PR comment carrying the run's report
-   * ({@link renderAttachedReport}); `null` when it was not posted.
+   * ({@link renderAttachedReport}), `null` when it was not posted.
    */
   readonly reportComment: string | null;
 }
@@ -204,7 +204,7 @@ export interface AttachedSectionInput extends Omit<PrBodyInput, 'writer'> {
 interface BlockedCommentInput {
   /** The issue. */
   readonly issue: number;
-  /** Why the run blocked it, as the run report records it; absent when unknown. */
+  /** Why the run blocked it, as the run report records it, absent when unknown. */
   readonly reason?: string;
   /** The run's pull request, when it opened one. */
   readonly pr?: number;
@@ -221,11 +221,10 @@ interface BlockedCommentInput {
  * (`post-issue-comment`), so the reason sits on the issue the next triage or
  * `/to-tickets` reads.
  *
- * @param input - The issue, its reason and the run.
  * @returns A quote line saying the run changed nothing on the issue; the
  *   reason (`no reason recorded` without one) with every closing keyword
- *   defused ({@link neutralText}); then the run — `PR #N`, or its branch
- *   and `no pull request` — and the kept paths (`Kept: patch …, tdd report …`), or the report
+ *   defused ({@link neutralText}); then the run (`PR #N`, or its branch
+ *   and `no pull request`) and the kept paths (`Kept: patch …, tdd report …`), or the report
  *   dir when nothing was kept; a trailing newline.
  */
 export function renderBlockedComment(input: BlockedCommentInput): string {
@@ -263,8 +262,7 @@ export function commitMessageTemplate(issue: number): string {
 /**
  * An epic's pull request title.
  *
- * @param input - The epic's report.
- * @returns The one landed issue's subject line; `<branch>: <n> issues` for several.
+ * @returns The one landed issue's subject line, `<branch>: <n> issues` for several.
  */
 export function prTitle(input: Pick<PrBodyInput, 'branch' | 'landed'>): string {
   const [only] = input.landed;
@@ -279,9 +277,8 @@ type SliceLeaseWork = Pick<SliceWork, 'tdd' | 'specReview' | 'testReview' | 'sta
 /**
  * A slice's lease lines by role: the one reader of each slice agent's `leaseLines`.
  *
- * @param work - The slice's tdd and slice review answers.
- * @returns The tdd's, the spec review's, the test review's, then the standards review's; no
- *   test-review entry when it was skipped; lines unparsed and unfiltered.
+ * @returns The tdd's, the spec review's, the test review's, then the standards review's. No
+ *   test-review entry when it was skipped. Lines unparsed and unfiltered.
  */
 export function sliceLeaseLines(work: SliceLeaseWork): RoleLeaseLines[] {
   const test = work.testReview;
@@ -297,7 +294,6 @@ export function sliceLeaseLines(work: SliceLeaseWork): RoleLeaseLines[] {
 /**
  * An epic's pull request body.
  *
- * @param input - The epic's report.
  * @returns Markdown, neutralised whole but for the landed `fixes` issues,
  *   the PR writer's prose included: `## Epic review` per {@link epicReviewLines};
  *   `## Summary` per {@link summaryLines};
@@ -322,7 +318,7 @@ interface MovedSection {
 interface FittedPrBody {
   /** The body to publish. */
   readonly body: string;
-  /** The moved sections, in moving order; none when the body fit whole. */
+  /** The moved sections, in moving order, none when the body fit whole. */
   readonly comments: readonly MovedSection[];
 }
 
@@ -330,13 +326,12 @@ interface FittedPrBody {
  * An epic's pull request body within GitHub's body limit, as far as moving
  * the run report's bulky sections out reaches.
  *
- * @param input - The epic's report.
  * @returns The {@link renderPrBody} body and no comment when it is within
  *   {@link GH_BODY_LIMIT}. Otherwise every movable section with at least one
- *   line moves out — `Overlap edges`, `Unsure overlap pairs`, `Schedule`,
- *   `Retro findings`, in that order; an empty one stays in the body as `None.`,
- *   but for `Unsure overlap pairs`, left out — its lines in the body
+ *   line moves out (`Overlap edges`, `Unsure overlap pairs`, `Schedule`, and
+ *   `Retro findings`, in that order), its lines in the body
  *   replaced by one line naming the limit and the comment's report-dir file.
+ *   An empty one stays in the body as `None.`, but for `Unsure overlap pairs`, left out.
  *   A body still over the limit after the move is returned as it is:
  *   `publish` refuses it before the push.
  */
@@ -361,7 +356,7 @@ export function fitPrBody(input: PrBodyInput): FittedPrBody {
  * blank line; `### Epic review` per {@link epicReviewLines}; `### Evidence` per
  * {@link evidenceList}; `### Tests at push` per {@link testsAtPushLines}; `### Issues` per
  * {@link issueRefLines}, no container line; `### Recorded`
- * per {@link recordedSection}; then one run-report line and a blank line —
+ * per {@link recordedSection}; then one run-report line and a blank line:
  * `Run report: [PR comment](<url>)` with a `reportComment`, else
  * `Run report: not posted to this PR; it is in <reportDir>.`, the report dir in a code span.
  * No run report, no Summary and no Merge Danger: the report is posted as its own PR comment
@@ -390,10 +385,9 @@ export function renderAttachedSection(input: AttachedSectionInput): string {
 /**
  * An attached run's report, posted as one comment on the open PR.
  *
- * @param input - The attached run's report.
  * @returns The run report per {@link runReportLines}, folded
  *   ({@link foldedReport}, summary `Run report — attached run <R>`), every
- *   closing keyword neutralised — this run's landed `fixes` issues included:
+ *   closing keyword neutralised, this run's landed `fixes` issues included:
  *   a run report never closes an issue.
  */
 export function renderAttachedReport(input: Omit<AttachedSectionInput, 'reportComment'>): string {
@@ -427,7 +421,6 @@ function issueMessage(subject: string, cite: string): string {
 /**
  * A commit's first line.
  *
- * @param commit - The tdd's proposal.
  * @returns `<type>(<scope>): <subject>`, neutralised whole.
  */
 function subjectLine(commit: CommitSpec): string {
@@ -501,7 +494,7 @@ function testsAtPushLines(pushed: PushedChanges): string[] {
 
 /**
  * Each landed issue's {@link recordedItems}, nested under its `- #N` line, in a `Recorded`
- * section at `depth`; an issue with none is left out, and no lines at all when no issue has any.
+ * section at `depth`. An issue with none is left out, and no lines at all when no issue has any.
  */
 function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[] {
   const lines = landed.flatMap((l) => {
@@ -517,8 +510,8 @@ function recordedSection(landed: readonly LandedIssue[], depth: 2 | 3): string[]
 
 /**
  * A landed issue's recorded values in the tdd's order, each per {@link oneLine}, blanks dropped,
- * as a {@link codeSpan} so its markdown and mentions render inert; its closing keywords are left
- * to the body's {@link neutralText}.
+ * as a {@link codeSpan} so its markdown and mentions render inert (unprobed). Its closing keywords
+ * are left to the body's {@link neutralText}.
  */
 function recordedItems(landed: LandedIssue): string[] {
   return landed.tdd.recorded
@@ -549,7 +542,7 @@ function foldedReport(summary: string, lines: readonly string[]): string[] {
 }
 
 /**
- * The run report, folded or not per {@link reportBlock}; always folded in an attached run's report
+ * The run report, folded or not per {@link reportBlock}. Always folded in an attached run's report
  * comment ({@link renderAttachedReport}). A section in `moved` keeps only its pointer line
  * ({@link movableSection}).
  */
@@ -636,7 +629,6 @@ function movableSection(
 /**
  * The Issues list.
  *
- * @param input - The epic's report.
  * @returns The {@link epicLine}, then the {@link issueRefLines}.
  */
 function issueListLines(input: Pick<PrBodyInput, 'epic' | 'landed' | 'unlanded'>): string[] {
@@ -651,8 +643,7 @@ function issueRefLines(input: Pick<PrBodyInput, 'landed' | 'unlanded'>): string[
 /**
  * The Issues list's container line.
  *
- * @param epic - The epic; `null` for an explicit list.
- * @returns `- Epic: see #E`, or `- An explicit issue list`.
+ * @returns `- Epic: see #E`, or `- An explicit issue list` for `null`.
  */
 function epicLine(epic: number | null): string {
   return epic === null ? '- An explicit issue list' : `- Epic: see #${String(epic)}`;
@@ -660,7 +651,7 @@ function epicLine(epic: number | null): string {
 
 /**
  * One landed issue's Issues-list line: `fixes #N` only when its tdd says so, else `see #N` with
- * `(its acceptance needs a human)`; the subject is the tdd's bare one, not `type(scope):`.
+ * `(its acceptance needs a human)`. The subject is the tdd's bare one, not `type(scope):`.
  */
 function landedLine(landed: LandedIssue): string {
   const ref = `#${String(landed.issue)}`;
@@ -671,7 +662,7 @@ function landedLine(landed: LandedIssue): string {
     : `- see ${ref} — ${subject} (its acceptance needs a human)`;
 }
 
-/** One body section, its heading at `depth` (3 in an attached run's); an empty one says `None.`. */
+/** One body section, its heading at `depth` (3 in an attached run's). An empty one says `None.`. */
 function section(heading: string, lines: readonly string[], depth: 2 | 3 = 2): string[] {
   return [`${'#'.repeat(depth)} ${heading}`, '', ...(lines.length === 0 ? ['None.'] : lines), ''];
 }
@@ -709,7 +700,7 @@ function epicAnswerLines(answer: EpicReviewOutput): string[] {
 }
 
 /**
- * One `- #B → #D1, #D2: <reason>` line per group of edges sharing blocker and reason; groups and
+ * One `- #B → #D1, #D2: <reason>` line per group of edges sharing blocker and reason. Groups and
  * dependents in edge order.
  */
 function overlapLines(edges: readonly OverlapEdge[]): string[] {
@@ -787,14 +778,14 @@ function leaseLines(leases: LeaseAggregate): string[] {
   ];
 }
 
-/** One line per retro finding; a note line when the retro returned nothing. */
+/** One line per retro finding, a note line when the retro returned nothing. */
 function retroLines(retro: readonly RetroFinding[] | null): string[] {
   if (retro === null) return ['- The retro returned nothing.'];
 
   return retro.map((f) => `- ${f.title} (${f.kind}): ${f.evidence} — ${f.suggestion}`);
 }
 
-/** One landed issue's run-report section; its Issue line carries no closing keyword. */
+/** One landed issue's run-report section. Its Issue line carries no closing keyword. */
 function issueSection(landed: LandedIssue): string[] {
   return [
     `### ${subjectLine(landed.tdd.commit)}`,
@@ -839,7 +830,7 @@ function durationText(seconds: number): string {
 }
 
 /**
- * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order; a role with no
+ * A slice's lease timings as one phrase, by role in {@link sliceLeaseLines} order. A role with no
  * release line is omitted, and the phrase is `none` when no role has one.
  */
 function sliceLeaseText(work: SliceLeaseWork): string {
@@ -873,7 +864,7 @@ function masterCheckText(check: PassedMasterCheck): string {
   return `passed — local ${forwardText(check.local)}; origin ${forwardText(check.remote)}`;
 }
 
-/** One ref's passing move as a phrase; a move carrying a synced sha (`origin`) names it. */
+/** One ref's passing move as a phrase. A move carrying a synced sha (`origin`) names it. */
 function forwardText(move: ForwardMove): string {
   const text =
     move.move === 'equal'
@@ -883,7 +874,7 @@ function forwardText(move: ForwardMove): string {
   return move.synced === null ? text : `${text}, checked against synced ${move.synced}`;
 }
 
-/** The main-checkout comparison as a phrase; `null` means a snapshot read failed. */
+/** The main-checkout comparison as a phrase. `null` means a snapshot read failed. */
 function mainCheckoutText(untouched: boolean | null): string {
   if (untouched === null) return 'not compared (a snapshot could not be read)';
 
@@ -892,7 +883,7 @@ function mainCheckoutText(untouched: boolean | null): string {
     : 'touched since pre-flight (HEAD or dirtiness changed)';
 }
 
-/** The bump as one phrase; an `ok` with a `null` commit found the version already at its target. */
+/** The bump as one phrase. An `ok` with a `null` commit found the version already at its target. */
 function bumpText(bump: BumpOutput | null): string {
   if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
   if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;

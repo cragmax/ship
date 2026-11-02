@@ -3,15 +3,14 @@
  * module) and checks a committed copy against a fresh render (Ship ADR-0001 decision 1).
  *
  * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
- * ones erased, never followed; a non-relative value import an error), each transpiled (ES2022,
+ * ones erased and never followed, a non-relative value import an error), each transpiled (ES2022,
  * comments removed, module syntax dropped), concatenated in dependency post-order into one scope: a
  * top-level name is unique across it and never a {@link HOOK_NAMES} member, and no
  * {@link FORBIDDEN_TOKENS} / {@link FORBIDDEN_WORDS} member appears. Every guard throws an `Error`
- * prefixed `workflow render:` naming the files. The runtime runs the file as an async function
- * body, hooks and `args` as globals (so the tail `return` works at top level; the ES2022 built-in
- * `Object.hasOwn` runs too), accepting a leading `export const meta` but not a second top-level
- * `export` (a SyntaxError). A file holding CR still runs; the writer writes LF regardless,
- * `.gitattributes` checks `.claude/workflows/*.js` out LF, the drift check normalises.
+ * prefixed `workflow render:` naming the files. The runtime runs the file as an async function body
+ * (Ship PF-4), hooks and `args` as globals (so the tail `return` works at top level, and the ES2022
+ * built-in `Object.hasOwn` runs too), accepting a leading `export const meta` but not a second
+ * top-level `export`, a SyntaxError (unprobed).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -27,7 +26,7 @@ import { WORKFLOW_GLOBALS } from './workflow-globals.js';
 
 /** One saved workflow to render. */
 export interface WorkflowSpec {
-  /** The workflow's name; the entry must export `run<Name>` (first letter upper-cased). */
+  /** The workflow's name. The entry must export `run<Name>` (first letter upper-cased). */
   readonly name: string;
   /** The entry source, repository-relative (or absolute). */
   readonly entry: string;
@@ -51,7 +50,7 @@ export interface RenderCheck {
 }
 
 /**
- * The names the workflow's scope already binds — the runtime's globals and
+ * The names the workflow's scope already binds, the runtime's globals and
  * the `meta` export: no top-level name may take one.
  */
 const HOOK_NAMES: readonly string[] = [...WORKFLOW_GLOBALS, 'meta'];
@@ -86,7 +85,7 @@ export const FORBIDDEN_WORDS: readonly string[] = ['Date'];
 interface ClosureFile {
   /** Absolute path. */
   readonly path: string;
-  /** Repository-relative, forward slashes — how messages name it. */
+  /** Repository-relative, forward slashes: how messages name it. */
   readonly file: string;
   /** Its TypeScript source. */
   readonly source: string;
@@ -96,7 +95,6 @@ interface ClosureFile {
  * The render closure of `entry`, in render (dependency post-order) order.
  *
  * @param entry - The entry source, relative to `root` (or absolute).
- * @param read - The source reader (default: the filesystem).
  * @returns Each closure file, repository-relative with forward slashes.
  * @throws {@link Error} when a closure file has a non-relative value import, naming the file.
  */
@@ -109,15 +107,14 @@ export function workflowClosure(
 }
 
 /**
- * Render one workflow: the `export const meta` literal first (nothing precedes it; the runtime
- * accepts the leading `export`), a generated-by comment line, the closure, then a tail returning
- * `run<Name>`'s result for the hooks object and `args` — formatted by prettier under the
- * repository's config.
+ * Render one workflow: the `export const meta` literal first, nothing preceding it, and the runtime
+ * accepts the leading `export` (unprobed). Then a generated-by comment line, the closure, and a
+ * tail returning `run<Name>`'s result for the hooks object and `args`. The whole is formatted by
+ * prettier under the repository's config.
  *
- * @param root - The repository root; `spec`'s paths resolve against it.
- * @param read - The source reader (default: the filesystem).
+ * @param root - The repository root, which `spec`'s paths resolve against.
  * @returns Resolves to the rendered file's content, LF line endings whatever
- *   the sources' own; rejects with an `Error` on any render-contract
+ *   the sources' own. Rejects with an `Error` on any render-contract
  *   violation (the file header).
  */
 export async function renderWorkflow(
@@ -147,7 +144,7 @@ export async function renderWorkflow(
  * The drift check: re-render each workflow and compare with its on-disk
  * copy, line endings normalised. Writes nothing.
  *
- * @returns Resolves to one result per workflow, in order; rejects when a
+ * @returns Resolves to one result per workflow, in order. Rejects when a
  *   render violates the render contract.
  */
 export async function checkRenderedWorkflows(
@@ -169,9 +166,11 @@ export async function checkRenderedWorkflows(
 }
 
 /**
- * Render each workflow and write it LF, replacing any existing file.
+ * Render each workflow and write it LF, replacing any existing file. A file holding CR still runs
+ * (unprobed). The writer writes LF regardless, `.gitattributes` checks `.claude/workflows/*.js` out
+ * LF, and the drift check normalises.
  *
- * @returns Resolves to each written file, as its spec names it; rejects
+ * @returns Resolves to each written file, as its spec names it. Rejects
  *   when a render violates the render contract, writing nothing for that
  *   workflow.
  */

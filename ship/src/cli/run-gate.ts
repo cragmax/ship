@@ -3,10 +3,10 @@
  * the pure core `ship/src/core/gate/run-gate.ts` and its `gh` boundary
  * `ship/src/cli/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
- * `#` — quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
+ * `#`. Quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
  * **Output contract.** stdout carries only the JSON (`GateVerdict` for `epics` / `issues`,
- * `IssueCheck` for `check`), pretty-printed, one trailing newline; diagnostics go to stderr. Exit
+ * `IssueCheck` for `check`), pretty-printed, one trailing newline. Diagnostics go to stderr. Exit
  * `0` ok / ready, `1` refused / not ready (read the JSON), `2` a usage, `gh`, git or schema error
  * (stdout empty, read stderr). Never `process.exit()`: `main` sets `process.exitCode` and
  * returns, so the stdout JSON a caller parses is flushed in full.
@@ -27,7 +27,7 @@ type RunGateArgs =
       readonly kind: 'gate';
       readonly spec: LaunchSpec;
       readonly mode: GateMode;
-      /** An attached run's target, `ship/<slug>` (Ship ADR-0001 decision 16); absent otherwise. */
+      /** An attached run's target, `ship/<slug>` (Ship ADR-0001 decision 16). Absent otherwise. */
       readonly attach?: string;
     }
   | { readonly kind: 'check'; readonly issue: number };
@@ -50,12 +50,10 @@ interface Operand {
 /**
  * Parse `argv` (everything after `run-gate.ts`).
  *
- * @param argv - `process.argv.slice(2)`.
- * @returns The parsed arguments.
  * @throws On a missing or unknown subcommand, an unknown flag, no numbers, a
  *   token that is not a positive integer, a duplicate number, `--attach`
  *   without a `ship/<slug>` value, `--exclude` or `--attach` with `check`,
- *   or `check` with other than one number — each message naming the
+ *   or `check` with other than one number, each message naming the
  *   offending token.
  */
 export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
@@ -83,7 +81,6 @@ export function parseRunGateArgs(argv: readonly string[]): RunGateArgs {
 /**
  * The process exit code for a verdict or check.
  *
- * @param result - The printed result.
  * @returns `0` for ok / ready, `1` for refused / not ready.
  */
 export function exitCodeFor(result: GateVerdict | IssueCheck): number {
@@ -97,7 +94,6 @@ export function exitCodeFor(result: GateVerdict | IssueCheck): number {
  * file header). Every error lands in the one catch, before stdout is written.
  *
  * @param argv - `process.argv.slice(2)`.
- * @param gh - The `gh` port.
  * @param git - The git port an attached run's landed set is read through.
  */
 export async function main(
@@ -126,7 +122,7 @@ export async function main(
  * The real {@link GitText} port: run `git` in `cwd` under {@link gitFreeEnv}, and resolve its
  * stdout.
  *
- * @throws When git fails or times out (60s); the message carries git's stderr, else execa's
+ * @throws When git fails or times out (60s). The message carries git's stderr, else execa's
  *   short message.
  */
 export function gitIn(cwd: string): GitText {
@@ -136,8 +132,8 @@ export function gitIn(cwd: string): GitText {
 /**
  * The real {@link GhJson} port: run `gh` and parse its stdout as JSON.
  *
- * @throws When gh fails or times out (60s) — the message carries gh's
- *   stderr, else execa's short message — or prints non-JSON.
+ * @throws When gh fails or times out (60s), the message carrying gh's
+ *   stderr, else execa's short message, or prints non-JSON.
  */
 async function ghJson(args: readonly string[]): Promise<unknown> {
   const stdout = await captured('gh', args);
@@ -245,7 +241,7 @@ function addOperand(operands: Operand[], operand: Operand): void {
 }
 
 /**
- * Split one token on commas into issue numbers; empty pieces (`1027,`) are
+ * Split one token on commas into issue numbers. Empty pieces (`1027,`) are
  * skipped so a comma-then-space list splits cleanly across tokens.
  *
  * @throws When a piece is not a positive integer.

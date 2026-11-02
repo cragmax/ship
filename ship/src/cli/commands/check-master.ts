@@ -1,13 +1,13 @@
 /**
- * `check-master <main> --local SHA --remote SHA [--synced SHA]` — whether local `master` and
+ * `check-master <main> --local SHA --remote SHA [--synced SHA]`: whether local `master` and
  * `origin`'s only moved forward since the launch shas given, and `origin`'s also since the
  * `--synced` sha, when given: the `origin/master` the epic end's own sync merged or found merged.
  * The epic end runs it just before its push. `origin`'s side is read live with
  * `git ls-remote`, never the remote-tracking ref, which only says what the last fetch saw. Each
  * ref's move is one of the moves `schemas-run.ts` `MasterMoveSchema` defines.
  *
- * **Fail closed.** A sha the object store lacks — launch, synced or current — triggers a fetch of
- * `origin`, then a second look; a sha still missing makes the move `undecidable`, which refuses
+ * **Fail closed.** A sha the object store lacks (launch, synced, or current) triggers a fetch of
+ * `origin`, then a second look. A sha still missing makes the move `undecidable`, which refuses
  * like `deleted` and `rewound`. Only `equal` and `forward` on both refs pass.
  *
  * Read-only toward every worktree, so there is no self-hosted guard: the fetch writes only
@@ -29,10 +29,10 @@ interface CheckMasterInput {
   /** `origin`'s `master` launch sha, kept as given. */
   readonly remote: string;
   /**
-   * `origin`'s high-water sha, kept as given; `null` judges `origin` against
+   * `origin`'s high-water sha, kept as given. `null` judges `origin` against
    * its launch sha only. Optional only so a run whose saved workflow script
-   * predates `--synced`, and so never passes it, still reaches its push;
-   * every current caller passes it.
+   * predates `--synced`, and so never passes it, still reaches its push.
+   * Every current caller passes it.
    */
   readonly synced: string | null;
 }
@@ -87,7 +87,7 @@ export function checkMaster(input: CheckMasterInput): CheckMasterResult {
 }
 
 /**
- * Read local `master`'s sha; `null` when the ref does not exist.
+ * Read local `master`'s sha, or `null` when the ref does not exist.
  *
  * @throws StepFailure `local-master` on any other non-zero exit.
  */
@@ -107,7 +107,7 @@ function localMaster(main: string): string | null {
 }
 
 /**
- * Judge `origin`'s move from its launch sha; when that move is `equal` or `forward` and a synced
+ * Judge `origin`'s move from its launch sha. When that move is `equal` or `forward` and a synced
  * sha was given, the move from the synced sha instead.
  *
  * @throws StepFailure `fetch` when the fetch a missing sha needs fails.
@@ -156,7 +156,7 @@ function moveFrom(
   return ancestry(main, pair[0], pair[1]);
 }
 
-/** Both shas of a move as full shas; `null` when either is not in the object store. */
+/** Both shas of a move as full shas, or `null` when either is not in the object store. */
 function knownPair(main: string, launch: string, current: string): [string, string] | null {
   const from = knownCommit(main, launch);
   const to = knownCommit(main, current);
@@ -165,8 +165,8 @@ function knownPair(main: string, launch: string, current: string): [string, stri
 }
 
 /**
- * Resolve a sha, never read as an option, to a full commit sha; `null` when no such commit is in
- * the object store.
+ * Resolve a sha, never read as an option, to a full commit sha, or `null` when no such commit is
+ * in the object store.
  */
 function knownCommit(main: string, sha: string): string | null {
   const r = runCaptured(
@@ -179,7 +179,7 @@ function knownCommit(main: string, sha: string): string | null {
 }
 
 /**
- * Whether full sha `launch` is an ancestor of `current`; `undecidable` when git cannot answer.
+ * Whether full sha `launch` is an ancestor of `current`, or `undecidable` when git cannot answer.
  */
 function ancestry(main: string, launch: string, current: string): MasterMove['move'] {
   const r = runCaptured('git', ['-C', main, 'merge-base', '--is-ancestor', launch, current], {

@@ -1,8 +1,8 @@
 /**
  * The zod source of each `ship` judgment agent's output schema: the
  * canonical home of the answer shapes `ship/src/workflow/calls/agent-calls.ts`
- * types as their `z.infer`. Every field is required — the tdd's `reason`
- * alone is optional — so a verdict never reaches the workflow without what
+ * types as their `z.infer`. Every field is required, the tdd's `reason`
+ * alone optional, so a verdict never reaches the workflow without what
  * backs it.
  *
  * Emitted, never rendered: `ship/src/build/emit-workflow-schemas.ts` writes it as
@@ -24,7 +24,7 @@ const ReadinessCheckSchema = z.object({
 export const ReadinessVerdictSchema = z.object({
   /** The run-set issue's number. */
   issue: z.int(),
-  /** It still describes the tree; failing makes it stale. */
+  /** It still describes the tree. Failing makes it stale. */
   current: ReadinessCheckSchema,
   /** Rubric point 1. */
   sliceable: ReadinessCheckSchema,
@@ -107,7 +107,7 @@ export const ProbeRecordSchema = z.object({
   claim: z.string(),
   /** `confirmed`, `falsified`, `inconclusive`, or `cap-hit` (a follow-up, never a verdict). */
   verdict: z.enum(['confirmed', 'falsified', 'inconclusive', 'cap-hit']),
-  /** The follow-up to file, for an inconclusive probe or a cap hit; empty otherwise. */
+  /** The follow-up to file, for an inconclusive probe or a cap hit. Empty otherwise. */
   followUp: z.string(),
   /**
    * Measured wallclock seconds summed across every run of the claim, a killed run counted up to
@@ -124,18 +124,18 @@ export const ProbeRecordSchema = z.object({
 export const TddEvidenceSchema = z.object({
   /**
    * `tracer`: the slice's tracer test, seen red then green; `none`: no
-   * red-green — docs or config only, `PARTIAL`, `BLOCKED`.
+   * red-green, for docs or config only, `PARTIAL`, `BLOCKED`.
    */
   kind: z.enum(['tracer', 'none']),
-  /** The tracer test, as `<path> › <test name>`; empty for `none`. */
+  /** The tracer test, as `<path> › <test name>`. Empty for `none`. */
   test: z.string(),
-  /** At most three lines: what the test drives and asserts; empty for `none`. */
+  /** At most three lines: what the test drives and asserts. Empty for `none`. */
   pseudocode: z.string(),
-  /** The failure line as printed when the test was seen red; empty for `none`. */
+  /** The failure line as printed when the test was seen red. Empty for `none`. */
   red: z.string(),
-  /** The line showing the test passing; empty for `none`. */
+  /** The line showing the test passing. Empty for `none`. */
   green: z.string(),
-  /** Why there is no red-green; empty for `tracer`. */
+  /** Why there is no red-green. Empty for `tracer`. */
   reason: z.string(),
 });
 
@@ -143,7 +143,7 @@ export const TddEvidenceSchema = z.object({
 export const TddOutputSchema = z.object({
   /** `GREEN`, `PARTIAL` (some tests authored but unrun), or `BLOCKED`. */
   verdict: z.enum(['GREEN', 'PARTIAL', 'BLOCKED']),
-  /** The slice's one commit; empty when `BLOCKED` before committing. */
+  /** The slice's one commit. Empty when `BLOCKED` before committing. */
   sha: z.string(),
   /** The commit's changed paths, repository-relative. */
   files: z.array(z.string()),
@@ -160,7 +160,7 @@ export const TddOutputSchema = z.object({
   evidence: TddEvidenceSchema,
   /**
    * Each value its issue asked it to record for the PR body (a count, a size
-   * the build produced), one per entry; empty when the issue asks for none.
+   * the build produced), one per entry. Empty when the issue asks for none.
    */
   recorded: z.array(z.string()),
   /** The landing commit's first line. */
@@ -207,7 +207,7 @@ const EpicCriterionSchema = z.object({
 
 /** One verified finding of the epic review. */
 const EpicFindingSchema = z.object({
-  /** The cross-issue view that found it; `parked`: a slice review's skipped finding still open. */
+  /** The cross-issue view that found it. `parked`: a slice review's skipped finding still open. */
   view: z.enum(['duplication', 'drift', 'size', 'intent', 'architecture', 'parked']),
   /** `hard`: it rejects the change; `judgement`: an open item. */
   severity: z.enum(['hard', 'judgement']),
@@ -255,11 +255,11 @@ export const PrWriterOutputSchema = z.object({
   summary: z.string(),
   /** `one-way`: the merge cannot be walked back; `two-way`: it can. */
   door: z.enum(['one-way', 'two-way']),
-  /** What makes the door what it is; empty when none. */
+  /** What makes the door what it is. Empty when none. */
   doorNote: z.string(),
   /** The merge's blast radius, one word. */
   blastRadius: z.string(),
-  /** The merge's potential ramifications; empty when none. */
+  /** The merge's potential ramifications. Empty when none. */
   ramifications: z.string(),
 });
 

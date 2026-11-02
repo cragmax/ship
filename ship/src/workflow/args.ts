@@ -1,7 +1,7 @@
 /**
  * The `ship` workflow's launch arguments. `args` is whatever the launching Workflow call passed,
  * verbatim: the main-loop model writes that call, so a string is possible (Ship ADR-0001). Two
- * shapes are accepted — the object (also as its JSON text) and the string, its numbers space- or
+ * shapes are accepted: the object (also as its JSON text) and the string, its numbers space- or
  * comma-separated, each with an optional leading `#`:
  *
  * ```
@@ -33,13 +33,13 @@ export interface ShipArgs {
   readonly exclude: boolean;
   /** Stop after pre-flight. */
   readonly preflightOnly: boolean;
-  /** The most issues in flight at once, from start until settled; default `MAX_SLICES`. */
+  /** The most issues in flight at once, from start until settled, default `MAX_SLICES`. */
   readonly maxSlices: number;
-  /** The open PR's run branch an attached run lands on; `null` for an unattached run. */
+  /** The open PR's run branch an attached run lands on, `null` for an unattached run. */
   readonly attach: string | null;
 }
 
-/** The parse's outcome: the arguments, or the usage refusal. */
+/** The parse's outcome: the arguments, or the usage refusal naming the problem. */
 type ArgsOutcome =
   | { readonly args: ShipArgs; readonly refusal?: never }
   | { readonly refusal: ShipRefusal; readonly args?: never };
@@ -47,14 +47,10 @@ type ArgsOutcome =
 /** The keys the object shape accepts. */
 const ARG_KEYS = ['epics', 'issues', 'exclude', 'preflightOnly', 'maxSlices', 'attach'];
 
-/** A usage error while parsing; caught by {@link parseShipArgs}. */
+/** A usage error while parsing, caught by {@link parseShipArgs}. */
 class ArgsError extends Error {}
 
-/**
- * Parse the launch arguments; a usage error is returned as a refusal, never thrown.
- *
- * @returns The arguments, or a `usage` refusal naming the problem.
- */
+/** Parse the launch arguments. A usage error is returned as a refusal, never thrown. */
 export function parseShipArgs(raw: unknown): ArgsOutcome {
   try {
     return { args: typeof raw === 'string' ? parseText(raw) : parseObject(raw) };
@@ -84,7 +80,7 @@ function parseText(text: string): ShipArgs {
 }
 
 /**
- * The string shape's first word; `undefined` or empty for no arguments.
+ * The string shape's first word, `undefined` or empty for no arguments.
  *
  * @throws {@link ArgsError} when it is neither `epics` nor `issues`.
  */
@@ -239,7 +235,7 @@ function attachTarget(value: unknown, what: string): string {
 }
 
 /**
- * An optional boolean key; `false` when absent.
+ * An optional boolean key, `false` when absent.
  *
  * @throws {@link ArgsError} when present and not a boolean.
  */

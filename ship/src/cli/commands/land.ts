@@ -1,16 +1,16 @@
 /**
- * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>` — the commit queue's
+ * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>`: the commit queue's
  * one deterministic step: a slice commit becomes exactly one batch commit, or nothing (Ship
  * ADR-0001 decision 10).
  *
- * Invariant: nothing is mutated before four guards pass — harvest's linked-worktree and clean-batch
+ * Invariant: nothing is mutated before four guards pass: harvest's linked-worktree and clean-batch
  * guards, cut-slice's `ship/` run-branch guard, and a slice of exactly one commit whose parent is
  * the cut. Once staged, every non-`ok` outcome ends in harvest's rollback with the batch verified
  * clean at its unchanged `HEAD`, or reports `failed` with a `rollback` entry.
  *
  * The rollback's `reset --hard` is the exception `harvest.ts`' header states. After a commit
  * killed at its budget the rollback may fail or `batchClean` re-verify `false`, and the caller
- * halts the epic; a lock file is never deleted here. A Windows budget kill can leave
+ * halts the epic. A lock file is never deleted here. A Windows budget kill can leave
  * part of the commit's process tree running (what survives: `exec.ts`' header). The build runs
  * under `NPM_TIMEOUT_MS`, the commit under `COMMIT_TIMEOUT_MS` (`commitRetryingCrash`, `git.ts`).
  */
@@ -29,7 +29,7 @@ import { compareSets, formatDifference, stagedPaths } from '../git/staged-set.js
 import type { LandResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure } from '../envelope/types.js';
 
-/** Inputs of {@link land}; paths absolute with forward slashes. */
+/** Inputs of {@link land}: paths absolute with forward slashes. */
 interface LandInput {
   /** The batch worktree. */
   readonly batch: string;
@@ -41,7 +41,7 @@ interface LandInput {
   readonly messageFile: string;
   /**
    * Where the commit's whole output (its hooks' included) is written, a retry's beside it
-   * (`retryLog` in `hooked.ts`); a failed write never fails the landing (`writeLog` in `exec.ts`).
+   * (`retryLog` in `hooked.ts`). A failed write never fails the landing (`writeLog` in `exec.ts`).
    */
   readonly logFile: string;
   /** The running CLI's file, for the self-hosted guard (production: this module). */
@@ -150,7 +150,7 @@ function assertStagedSet(batch: string, files: readonly string[]): void {
  * Harvest the slice, copying its `files`, `conflicts` and `rolledBack` onto `result`, and on a
  * non-`ok` harvest its status, reason and errors.
  *
- * @returns `true` when staged; `false` when the harvest failed (it rolled back itself).
+ * @returns `true` when staged, `false` when the harvest failed (it rolled back itself).
  */
 function pick(result: LandResult, batch: string, sha: string, selfPath: string): boolean {
   const h = harvest({ batch, sha, selfPath });
@@ -193,7 +193,7 @@ function assertSingleCommit(batch: string, sha: string, base: string): string {
 
 /**
  * The size the schedule reports: insertions plus deletions over the slice commit's text
- * files; a binary file adds none.
+ * files. A binary file adds none.
  *
  * @throws StepFailure `preconditions` when git fails.
  */

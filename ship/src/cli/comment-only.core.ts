@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 import { git, gitPaths } from './git/git.js';
 
-/** One code token; comments and JSDoc are never tokens. */
+/** One code token. Comments and JSDoc are never tokens. */
 export interface CodeToken {
   /** As the parser re-scanned it in context (a template middle, a regex). */
   readonly kind: ts.SyntaxKind;
@@ -21,7 +21,7 @@ export interface TokenDifference {
   readonly head: CodeToken;
 }
 
-/** One changed file, by root-relative path; a side is `null` when the file is absent there. */
+/** One changed file, by root-relative path. A side is `null` when the file is absent there. */
 export interface FileChange {
   readonly basePath: string | null;
   readonly headPath: string | null;
@@ -68,7 +68,7 @@ export interface Mojibake extends MojibakeLine {
   readonly path: string;
 }
 
-/** Windows-1252's images of the UTF-8 continuation bytes; any one after U+00E2 is mojibake. */
+/** Windows-1252's images of the UTF-8 continuation bytes. Any one after U+00E2 is mojibake. */
 const CONTINUATION = new TextDecoder('windows-1252').decode(
   Uint8Array.from({ length: 64 }, (_, i) => 0x80 + i),
 );
@@ -76,11 +76,11 @@ const CONTINUATION = new TextDecoder('windows-1252').decode(
 const MOJIBAKE = new RegExp(`\u00e2[${CONTINUATION}]|\u00c3|\u00c2[\\p{P}\\p{S}]`, 'gu');
 
 /**
- * Find the head lines holding a mojibake sequence — UTF-8 read as Windows-1252,
- * so an em dash or an arrow comes back as two or three Latin-1 characters —
+ * Find the head lines holding a mojibake sequence (UTF-8 read as Windows-1252,
+ * so an em dash or an arrow comes back as two or three Latin-1 characters)
  * that the base lacks.
  *
- * @param base - The base side's text; a sequence it holds anywhere is never flagged.
+ * @param base - The base side's text. A sequence it holds anywhere is never flagged.
  * @param head - The head side's text, split into lines on LF.
  * @returns One entry per head line, its first sequence the base lacks, in line order.
  */
@@ -111,12 +111,12 @@ const isJSDoc = (node: ts.Node): boolean =>
 
 /**
  * Compare two versions of a file token by token, on kind, text and place in
- * the syntax tree — so a line break a comment edit adds or removes, which
+ * the syntax tree, so a line break a comment edit adds or removes, which
  * changes where a statement ends (`return` then a newline), is a difference.
  *
  * @param fileName - Name the parser is given for both sides.
- * @param base - The base side's text; `''` when the file is added.
- * @param head - The head side's text; `''` when the file is deleted.
+ * @param base - The base side's text, `''` when the file is added.
+ * @param head - The head side's text, `''` when the file is deleted.
  * @returns The first differing pair, or `null` when the code is identical.
  */
 export function firstDifference(
@@ -193,8 +193,8 @@ const isCompared = (c: FileChange): boolean =>
   [c.basePath, c.headPath].some((p) => p !== null && /\.m?ts$/u.test(p));
 
 /**
- * Prove every changed TypeScript file between two revisions — or a revision
- * and the staged index, or the working tree with untracked files included —
+ * Prove every changed TypeScript file between two revisions (or a revision
+ * and the staged index, or the working tree with untracked files included)
  * differs in comments only.
  *
  * @remarks

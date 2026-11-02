@@ -1,17 +1,18 @@
 /**
  * Overlap edges: the scheduler edges pre-flight adds between two issues of one entry likely to
  * touch the same files, so they land in turn instead of racing to a harvest conflict (Ship
- * ADR-0001 decision 6). `issue-overlap` names the pairs, unordered; {@link mergeOverlapEdges}
+ * ADR-0001 decision 6). `issue-overlap` names the pairs, unordered. {@link mergeOverlapEdges}
  * directs each one and merges it into the run graph.
  *
- * **Direction rule.** The declared edges are ordered topologically (Kahn's algorithm; among ready
- * issues the earliest in run-set order goes first), and each pair runs earlier → later: one linear
- * extension, so the union stays acyclic. "The lower number blocks" does not: entry `[10, 15, 20]`
- * declaring `20 → 10`, with pairs `{10, 15}` and `{15, 20}`, gives `10 → 15 → 20 → 10`.
+ * **Direction rule.** The declared edges are ordered topologically (Kahn's algorithm, the earliest
+ * ready issue in run-set order first), and each pair runs earlier → later: one linear extension, so
+ * the union stays acyclic. "The lower number blocks" does not: entry `[10, 15, 20]` declaring
+ * `20 → 10`, with pairs `{10, 15}` and `{15, 20}`, gives `10 → 15 → 20 → 10`.
  *
- * **Render-ready — a contract.** One value import (`./run-set.js`); ECMAScript built-ins only; no
- * top-level side effect; every top-level name prefixed `overlap` / `Overlap`, since the `ship`
- * render closure shares one scope and the renderer refuses a repeated top-level name.
+ * **Render-ready, a contract.** One value import (`./run-set.js`); ECMAScript built-ins only; no
+ * top-level side effect; every top-level name but {@link mergeOverlapEdges} prefixed
+ * `overlap` / `Overlap`, since the `ship` render closure shares one scope and the renderer refuses
+ * a repeated top-level name.
  */
 
 import {
@@ -22,7 +23,7 @@ import {
   type RunGraph,
 } from './run-set.js';
 
-/** Two issues likely to touch the same files; unordered. */
+/** Two issues likely to touch the same files, unordered. */
 export interface OverlapPair {
   /** One issue. */
   readonly a: number;
@@ -32,9 +33,9 @@ export interface OverlapPair {
 
 /** A pair whose issues sit in different entries, with both entries' `epic` keys. */
 export interface OverlapCrossPair extends OverlapPair {
-  /** `a`'s entry's `epic` key; `null` for an explicit list. */
+  /** `a`'s entry's `epic` key, or `null` for an explicit list. */
   readonly epicA: number | null;
-  /** `b`'s entry's `epic` key; `null` for an explicit list. */
+  /** `b`'s entry's `epic` key, or `null` for an explicit list. */
   readonly epicB: number | null;
 }
 
@@ -63,13 +64,12 @@ export type OverlapMerge =
  * counts. Repeated pairs, in either order, count once.
  *
  * @param graph - The run graph: the gate's, drops applied.
- * @param pairs - `issue-overlap`'s pairs.
- * @returns `cross-entry` listing every pair across entries, when any is;
- *   otherwise `ok` with the merged graph, the added edges and the pairs the
+ * @returns `cross-entry` listing every pair across entries, when any is.
+ *   Otherwise `ok` with the merged graph, the added edges, and the pairs the
  *   declared edges already sequence.
  * @throws Error `run overlap: …` when a pair names an issue outside the run
  *   set, when a pair names one issue twice, or when the declared edges hold a
- *   cycle — in that order, naming the offender.
+ *   cycle, in that order, naming the offender.
  */
 export function mergeOverlapEdges(graph: RunGraph, pairs: readonly OverlapPair[]): OverlapMerge {
   const issues = runSetIssues(graph.runSet);
@@ -172,7 +172,7 @@ function overlapDirect(graph: RunGraph, pairs: readonly OverlapPair[]): OverlapM
 /**
  * Each issue's place in the direction rule's topological order.
  *
- * @param graph - The run graph; its declared edges are acyclic.
+ * @param graph - The run graph, whose declared edges are acyclic.
  * @returns Issue number to rank, 0 first.
  */
 function overlapTopoRank(graph: RunGraph): ReadonlyMap<number, number> {

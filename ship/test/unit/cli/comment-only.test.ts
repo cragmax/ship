@@ -58,7 +58,8 @@ describe('firstDifference', () => {
     expect(firstDifference('a.ts', BASE, COMMENT_ONLY)).toBeNull();
   });
 
-  // Tags and links parse into identifier nodes inside the JSDoc tree; plain JSDoc text does not.
+  // Tags and links parse into identifier nodes inside the JSDoc tree. Plain JSDoc text does not
+  // (unprobed).
   it('passes a diff that rewrites JSDoc tags and links', () => {
     const base = '/** See {@link g}.\n * @param a - n */\nexport function f(a: number) {}\n';
     const head = '/** Doc. */\nexport function f(a: number) {}\n';
@@ -74,7 +75,7 @@ describe('firstDifference', () => {
     expect(d?.head.text).toBe(headText);
   });
 
-  // core.autocrlf=true checks a blob's LF out as CRLF; a multi-line template must still match.
+  // core.autocrlf=true checks a blob's LF out as CRLF. A multi-line template must still match.
   it('reads a CRLF side as its LF blob', () => {
     const lf = 'const q = `a\nb`;\n';
     expect(firstDifference('a.ts', lf, lf.replaceAll('\n', '\r\n'))).toBeNull();

@@ -1,18 +1,18 @@
 /**
  * The run gate's pure decision core: resolve a launch spec into a
  * run set, decide whether the run may start, and derive its dependency edges.
- * No I/O — `ship/src/cli/run-gate-gh.ts` gathers the inputs, and the rules
+ * No I/O: `ship/src/cli/run-gate-gh.ts` gathers the inputs, and the rules
  * below are the oracle the unit tests pin.
  *
  * **What an `ok` verdict guarantees the scheduler.** Every edge has both ends
  * inside one run-set entry (no cross-epic edge), the edge graph is acyclic,
- * and — given a non-empty launch spec, which the CLI enforces and nothing here
- * re-checks — no entry is empty. The scheduler (`createScheduler` in
+ * and, given a non-empty launch spec, which the CLI enforces and nothing here
+ * re-checks, no entry is empty. The scheduler (`createScheduler` in
  * `run-scheduler.ts`) re-validates all three anyway: edges unioned in after
  * the gate (overlap edges, `run-overlap.ts`) never pass through this module.
  *
- * **The epic container is never gated.** It is only asked for its sub-issues;
- * its state, labels and body never reach this module.
+ * **The epic container is never gated.** It is only asked for its sub-issues.
+ * Its state, labels, and body never reach this module.
  */
 
 import {
@@ -46,7 +46,7 @@ export interface IssueFacts {
   readonly state: IssueState;
   /** Its label names. */
   readonly labels: readonly string[];
-  /** Its blockers — body section ∪ native links, deduped, ascending. */
+  /** Its blockers: body section ∪ native links, deduped, ascending. */
   readonly blockedBy: readonly number[];
 }
 
@@ -59,13 +59,13 @@ export interface EpicChild {
 }
 
 /**
- * Why the gate refused (or, in exclude mode, dropped) something. Per issue: `closed` — CLOSED;
- * `missing-label` — lacks the exact {@link READY_LABEL}; `open-blocker` — an out-of-set OPEN
+ * Why the gate refused (or, in exclude mode, dropped) something. Per issue: `closed`: CLOSED;
+ * `missing-label`: lacks the exact {@link READY_LABEL}; `open-blocker`: an out-of-set OPEN
  * blocker outside {@link RunGateInput.landed} (an out-of-set CLOSED or landed one is satisfied);
- * `cross-epic-blocker` — an in-set blocker in
+ * `cross-epic-blocker`: an in-set blocker in
  * another epic entry, since an epic's branch never carries another epic's commit. Run-wide:
- * `cycle` — each cycle among the in-set edges; `empty-epic` — an epic entry with no issues;
- * `empty-run-set` — exclude mode dropped every issue.
+ * `cycle`: each cycle among the in-set edges; `empty-epic`: an epic entry with no issues;
+ * `empty-run-set`: exclude mode dropped every issue.
  */
 export type GateFailure =
   | { readonly kind: 'closed'; readonly issue: number; readonly message: string }
@@ -97,8 +97,8 @@ export type Exclusion =
  * failure, `excluded` is `[]`, and `runSet` / `edges` are the resolved pre-exclusion set, for
  * information only. An `ok` exclude verdict: the post-exclusion set, the drop reasons as
  * `failures`, the drop list as `excluded`. Deterministic: `edges` are the same-entry in-set
- * edges, deduped, sorted by (`blocker`, `dependent`); `runSet` keeps spec order; `excluded` is
- * ascending by issue, each dependent listing its dropped OPEN direct blockers ascending;
+ * edges, deduped, sorted by (`blocker`, `dependent`). `runSet` keeps spec order. `excluded` is
+ * ascending by issue, each dependent listing its dropped OPEN direct blockers ascending.
  * `failures` are ordered by subject (issue, else epic), then kind in {@link GateFailure}
  * declaration order, then blocker, with `cycle` and `empty-run-set` last.
  */
@@ -149,7 +149,7 @@ type BlockerKnowledge = Pick<RunGateInput, 'blockerStates' | 'landed'>;
 /**
  * R1: resolve a launch spec into its run set. An `issues` spec becomes one
  * `epic: null` entry, ascending. An `epics` spec becomes one entry per epic,
- * in spec order, holding its OPEN sub-issues ascending — a closed sub-issue is
+ * in spec order, holding its OPEN sub-issues ascending. A closed sub-issue is
  * done, so it is omitted rather than failed (and, being CLOSED, it satisfies
  * any dependent it blocks). An epic left with no open sub-issue resolves to an
  * empty entry, which {@link evaluateRunGate} refuses.
@@ -175,12 +175,10 @@ export function resolveRunSet(
 }
 
 /**
- * R11: whether one issue is ready — OPEN and labelled exactly
+ * R11: whether one issue is ready, meaning OPEN and labelled exactly
  * {@link READY_LABEL}. Blockers are deliberately never checked: mid-run, an
  * in-set blocker stays OPEN until the run's PR merges its `fixes #N`, so a
  * blocker check would mark every dependent not-ready.
- *
- * @returns The check; `failures` holds only `closed` / `missing-label`.
  */
 export function checkIssue(facts: IssueFacts): IssueCheck {
   const failures = ownFailures(facts);
@@ -189,7 +187,7 @@ export function checkIssue(facts: IssueFacts): IssueCheck {
 }
 
 /**
- * The blockers outside the run set — the issues whose state
+ * The blockers outside the run set: the issues whose state
  * {@link evaluateRunGate} needs in `blockerStates`.
  *
  * @param facts - Facts for every run-set issue.
@@ -208,15 +206,14 @@ export function outOfSetBlockers(runSet: RunSet, facts: readonly IssueFacts[]): 
 
 /**
  * Evaluate the run gate over a resolved run set: the failures of {@link GateFailure}, the verdict
- * shapes and ordering of {@link GateVerdict}; an in-set blocker yields an edge. `refuse` mode
- * refuses on any failure. `exclude` mode refuses only on a `cycle` or `empty-epic`; otherwise it
- * drops each failed issue, then the transitive dependents of the failed OPEN ones — walked over
+ * shapes and ordering of {@link GateVerdict}. An in-set blocker yields an edge. `refuse` mode
+ * refuses on any failure. `exclude` mode refuses only on a `cycle` or `empty-epic`. Otherwise it
+ * drops each failed issue, then the transitive dependents of the failed OPEN ones, walked over
  * the in-set edges minus every edge whose blocker is CLOSED, since a closed blocker satisfies its
- * dependent — then removes emptied entries, and refuses with `empty-run-set` if nothing remains.
+ * dependent. It then removes emptied entries, and refuses with `empty-run-set` if nothing remains.
  *
- * @param input - The resolved run set, facts, blocker states and mode.
  * @throws When `facts` lacks a run-set issue or `blockerStates` lacks an
- *   out-of-set blocker — a caller bug, never a verdict.
+ *   out-of-set blocker: a caller bug, never a verdict.
  */
 export function evaluateRunGate(input: RunGateInput): GateVerdict {
   const analysis = analyse(input);
@@ -273,7 +270,7 @@ function isExcludable(f: GateFailure): f is Extract<GateFailure, { issue: number
 }
 
 /**
- * The exclude-mode drop list ({@link evaluateRunGate}), ascending by issue; every failure in
+ * The exclude-mode drop list ({@link evaluateRunGate}), ascending by issue. Every failure in
  * `analysis` is excludable.
  */
 function exclusions(analysis: Analysis): Exclusion[] {

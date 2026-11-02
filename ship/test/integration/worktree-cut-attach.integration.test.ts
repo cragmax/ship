@@ -60,7 +60,7 @@ describe('cut-batch --attach', () => {
 
   /**
    * Create `ship/s` from master with one commit of its own, pushed as an open
-   * PR's branch is; no worktree left on it.
+   * PR's branch is, with no worktree left on it.
    */
   function localBranch(): string {
     mustRun('git', ['branch', 'ship/s'], main);
@@ -386,7 +386,7 @@ describe('cut-batch --attach', () => {
   );
 
   // An attached run that checks the batch out anew provisions into its own
-  // attach-<R>/, a /ship or /resync into reports/; mtimes (seconds) order them.
+  // attach-<R>/, a /ship or /resync into reports/. Mtimes (seconds) order them.
   it.each([
     { name: 'only an attached run provisioned', rootAt: null, attachedAt: 1_000, want: 'attach' },
     { name: 'an attached run provisioned last', rootAt: 1_000, attachedAt: 2_000, want: 'attach' },

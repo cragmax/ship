@@ -673,9 +673,7 @@ describe('runShip — every tool failure is a refusal', () => {
 /**
  * The prompt of a recorded call.
  *
- * @param run - The fake run.
- * @param label - The call's label.
- * @returns Its prompt; fails the test when there is no such call.
+ * @returns Its prompt. Fails the test when there is no such call.
  */
 const promptOf = (run: FakeRun, label: string): string => {
   const call = run.calls.find((c) => c.label === label);
@@ -684,7 +682,7 @@ const promptOf = (run: FakeRun, label: string): string => {
   return call?.prompt ?? '';
 };
 
-/** A call's prompt line starting with `prefix`; fails the test when there is no such call. */
+/** A call's prompt line starting with `prefix`. Fails the test when there is no such call. */
 const lineSeenBy = (run: FakeRun, label: string, prefix: string): string | undefined =>
   promptOf(run, label)
     .split('\n')
@@ -891,7 +889,7 @@ describe('runShip — an attempt that does not land', () => {
       registered: false,
       kept: patch === null ? null : { patch, report: null },
     });
-    // Attempt 1's teardown keeps its patch; every later one keeps nothing.
+    // Attempt 1's teardown keeps its patch. Every later one keeps nothing.
     const KEEPS_FIRST = { 'runner:teardown': inTurn(keeping(PATCH), keeping(null)) };
     const patchLines = (run: FakeRun, label: string): string[] =>
       promptOf(run, label)
@@ -1953,7 +1951,7 @@ describe('runShip — the slice test review', () => {
 
 describe('runShip — the slice’s changed files after an amend', () => {
   it('re-reads the amended commit’s changed files after each fixed review, every later stage reading them', async () => {
-    // The spec review's amend adds src/y.ts; the standards review's adds docs/y.md. Each amend
+    // The spec review's amend adds src/y.ts. The standards review's adds docs/y.md. Each amend
     // is re-read from the slice base, then from the tdd's commit.
     const run = fakeHooks({
       'runner:changed-files': inTurn(
@@ -2486,7 +2484,7 @@ describe('runAttempt — how an attempt ends', () => {
 });
 
 describe('runShip — a failed cut', () => {
-  // A cross-entry edge (the gate refuses one; the drop must still hold) lets
+  // A cross-entry edge (the gate refuses one, and the drop must still hold) lets
   // the failed cut of epic 1 drop issue 2 from epic 2.
   const failedCut = (epicTwo: readonly number[]): FakeRun =>
     fakeHooks({
@@ -2700,7 +2698,8 @@ describe('runShip — the slice reviews’ Passed at block', () => {
   });
 
   it('tells each review after an amend that the slice commit moved from tdd’s sha, naming the files the amends changed', async () => {
-    // The re-read from the slice base lists the whole commit; the one from tdd's sha, the amends.
+    // The re-read from the slice base lists the whole commit. The one from tdd's sha lists the
+    // amends.
     const run = fakeHooks({
       'runner:changed-files': (call: { readonly argv: readonly string[] }) => ({
         ...OK,

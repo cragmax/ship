@@ -1,12 +1,12 @@
 /**
- * `cut-batch <main> --attach ship/<slug> [--attached-run]` — give an open run branch its batch
+ * `cut-batch <main> --attach ship/<slug> [--attached-run]`: give an open run branch its batch
  * worktree at the place `run-layout.ts` names, for a `/resync` or an attached run: reuse the
  * batch already registered there, or check the branch out anew when the batch was torn down
  * while its PR is still open. With `--attached-run` it also allocates the attached run's number
  * and its own report folder.
  *
  * Invariant: every refusal comes before the first mutation of a branch, the worktree list or the
- * report dir — the `update-ref` fast-forward, the `worktree add`, the run folder — and only the
+ * report dir (the `update-ref` fast-forward, the `worktree add`, the run folder), and only the
  * fetch (remote-tracking refs alone) precedes the checks that need it. The branch's own
  * unpublished commits ({@link assertPublished}) refuse on both the reused and the
  * checked-out-anew path. Like `cut-batch`, it runs from the main checkout it targets and writes
@@ -52,10 +52,10 @@ interface AttachInput {
 /**
  * Attach the run branch's batch worktree.
  *
- * @returns The envelope: `ok` with the branch, its tip as `base`, the batch and report dir — with
- *   `attachedRun`, the run's own `reports/attach-<R>` — and `attach`, whose `run` is R (`null`
+ * @returns The envelope: `ok` with the branch, its tip as `base`, the batch, the report dir (with
+ *   `attachedRun`, the run's own `reports/attach-<R>`), and `attach`, whose `run` is R (`null`
  *   without `attachedRun`) and whose `registry` is the batch's trimmed pool registry from its last
- *   provisioning ({@link lastRegistry}; `null` when none); `refused` before any branch,
+ *   provisioning ({@link lastRegistry}, `null` when none); `refused` before any branch,
  *   worktree or report-dir mutation (`not-main-worktree`, `not-run-batch`, `no-open-pr`,
  *   `branch-checked-out`, `unpublished-commits`, `path-exists`, `branch-missing`,
  *   `branch-diverged`); or `failed` with the step (`pr-state`, `unpublished`, `fetch`, `attach`,
@@ -126,7 +126,7 @@ export function attachSlug(branch: string): string {
 }
 
 /**
- * Refuse a branch holding commits of its own `origin` lacks — a stopped
+ * Refuse a branch holding commits of its own `origin` lacks: a stopped
  * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
  * unpushed merge alone passes.
  *
@@ -147,7 +147,7 @@ export function assertPublished(main: string, branch: string): void {
 
 /**
  * How many first-parent, non-merge commits of the branch no `origin` remote-tracking ref holds (a
- * merge and its second parent's `master` commits never count); `0` without a local branch.
+ * merge and its second parent's `master` commits never count), or `0` without a local branch.
  *
  * @throws StepFailure `unpublished` when git fails.
  */
@@ -169,9 +169,9 @@ function unpublishedCommits(main: string, branch: string): number {
 
 /**
  * Allocate an attached run: the lowest number no earlier run's report folder or slice branch
- * holds, and its report folder `<reports>/attach-<run>`, created now; the report dir must exist.
+ * holds, and its report folder `<reports>/attach-<run>`, created now. The report dir must exist.
  *
- * @throws StepFailure `attach` when git cannot list the slice branches; a filesystem error else.
+ * @throws StepFailure `attach` when git cannot list the slice branches, a filesystem error else.
  */
 function allocateRun(
   main: string,
@@ -195,7 +195,7 @@ function allocateRun(
 
 /**
  * The newest {@link BATCH_REGISTRY_FILE} by modification time among the run's report dir and its
- * attached runs' folders; `null` when no provisioning left one.
+ * attached runs' folders, or `null` when no provisioning left one.
  *
  * @throws A filesystem error when the report dir cannot be read.
  */
@@ -238,7 +238,7 @@ function reusesBatch(main: string, layout: RunLayout): boolean {
 }
 
 /**
- * Check the branch out at the batch path; `true` when it fast-forwarded the local branch.
+ * Check the branch out at the batch path. `true` when it fast-forwarded the local branch.
  *
  * @throws Refusal `path-exists`, `branch-missing` or `branch-diverged` before any mutation but the
  *   fetch; StepFailure `fetch`, `attach` or `worktree-add` when git fails.
@@ -280,7 +280,7 @@ function checkOut(main: string, layout: RunLayout): boolean {
 }
 
 /**
- * Move the local branch to `origin`'s only when strictly behind (`true`); a level or ahead branch
+ * Move the local branch to `origin`'s only when strictly behind (`true`). A level or ahead branch
  * (an unpushed resync merge) stays.
  *
  * @throws Refusal `branch-diverged` when each has commits the other lacks; StepFailure `attach`.

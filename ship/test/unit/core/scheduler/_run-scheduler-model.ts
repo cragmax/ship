@@ -20,7 +20,7 @@ import type {
   Transition,
 } from '../../../../src/core/scheduler/run-scheduler.types.js';
 
-/** The checker's invariants; per-step ones first, in check order, then end-of-run ones. */
+/** The checker's invariants, per-step ones first, in check order, then end-of-run ones. */
 type InvariantName =
   | 'halt-stops-entry'
   | 'dependency-order'
@@ -43,7 +43,6 @@ export class InvariantViolation extends Error {
   /**
    * Build the violation.
    *
-   * @param invariant - The invariant that failed.
    * @param detail - What was seen.
    */
   constructor(invariant: InvariantName, detail: string) {
@@ -84,13 +83,13 @@ interface View {
   readonly ends: Map<number | null, EndKind[]>;
 }
 
-/** The scheduler surface the driver talks to — the real one, or a mutant around it. */
+/** The scheduler surface the driver talks to: the real one, or a mutant around it. */
 interface Machine {
   readonly create: (input: SchedulerInput) => Transition;
   readonly advance: (state: SchedulerState, event: SchedulerEvent) => Transition;
 }
 
-/** Builds a machine; a mutant reads the driver's pre-step view to aim its fault. */
+/** Builds a machine. A mutant reads the driver's pre-step view to aim its fault. */
 type MachineFactory = (view: View) => Machine;
 
 /** The recorded run: every fed event, and every transition (the initial one first). */
@@ -99,14 +98,7 @@ interface Trace {
   readonly transitions: readonly Transition[];
 }
 
-/**
- * The real scheduler.
- *
- * @returns The scheduler's own `createScheduler` and `advance`.
- */
 const realMachine: MachineFactory = () => ({ create: createScheduler, advance });
-
-// ---------------------------------------------------------------- arbitraries
 
 interface InputParts {
   readonly issues: readonly number[];
@@ -121,8 +113,6 @@ interface InputParts {
  * A valid run graph: 1–3 entries of 1–6 unique issues, distinct epic keys (at
  * most one `null`), a forward-only (so acyclic) random DAG inside each entry,
  * sometimes a duplicated edge, and `maxSlices` 1–4.
- *
- * @returns The arbitrary.
  */
 export function arbInput(): fc.Arbitrary<SchedulerInput> {
   return fc.array(fc.integer({ min: 1, max: 6 }), { minLength: 1, maxLength: 3 }).chain((sizes) => {
@@ -150,8 +140,6 @@ export function arbInput(): fc.Arbitrary<SchedulerInput> {
 /**
  * A valid run graph plus a planted ring of 1 or more issues kept inside one
  * entry (a 1-ring is a self-loop).
- *
- * @returns The arbitrary: the cyclic input and the ring's members.
  */
 export function arbPlantedCycle(): fc.Arbitrary<{
   readonly input: SchedulerInput;
@@ -169,11 +157,7 @@ export function arbPlantedCycle(): fc.Arbitrary<{
   );
 }
 
-/**
- * A script of up to 30 choices, biased toward `committed`.
- *
- * @returns The arbitrary.
- */
+/** A script of up to 30 choices, biased toward `committed`. */
 export function arbChoices(): fc.Arbitrary<Choice[]> {
   return fc.array(
     fc.record({
@@ -193,16 +177,9 @@ export function arbChoices(): fc.Arbitrary<Choice[]> {
   );
 }
 
-// ---------------------------------------------------------------- driver
-
-// eslint-disable-next-line local/comment-budget -- jsdoc/require-param binds here: 3 @param + @returns
 /**
  * Drive one run, then settle each live issue (`blocked` in a halted entry, else `committed`).
  *
- * @param input - The run graph.
- * @param choices - The generated script.
- * @param factory - The machine under test (the real scheduler by default).
- * @returns The recorded run.
  * @throws InvariantViolation when an invariant fails.
  */
 export function runModel(
@@ -273,12 +250,7 @@ function buildInput(sizes: readonly number[], parts: InputParts): SchedulerInput
   return { runSet, edges, maxSlices: parts.maxSlices };
 }
 
-/**
- * Deep-freeze a value so any mutation of it throws.
- *
- * @param value - The value.
- * @returns The same value, frozen.
- */
+/** Deep-freeze a value so any mutation of it throws. */
 function deepFreeze<T>(value: T): T {
   freezeAll(value);
 
@@ -431,9 +403,6 @@ function applyEvent(view: View, event: SchedulerEvent): void {
 /**
  * Halt an entry in the view: its unstarted issues (waiting, ready, or parked
  * for a restart) settle and will never start.
- *
- * @param view - The view.
- * @param epic - The halted entry's epic key.
  */
 function haltEntry(view: View, epic: number | null): void {
   view.halted.add(epic);
@@ -476,8 +445,6 @@ function applyAction(view: View, action: SchedulerAction): void {
       break;
   }
 }
-
-// ---------------------------------------------------------------- checker
 
 function checkStep(
   view: View,
@@ -561,13 +528,7 @@ function checkSkipOnlyDependents(
   }
 }
 
-/**
- * Every issue reachable from `root` along blocker → dependent edges, root excluded.
- *
- * @param view - The view (its input edges).
- * @param root - The starting issue.
- * @returns The reached issues.
- */
+/** Every issue reachable from `root` along blocker → dependent edges, root excluded. */
 function closure(view: View, root: number): Set<number> {
   const reached = new Set<number>();
   const queue = [root];
@@ -668,8 +629,6 @@ function checkFinalSkips(view: View): void {
   if (got !== want) violate('skip-closure-complete (final)', `skipped [${got}], want [${want}]`);
 }
 
-// ---------------------------------------------------------------- mutants
-
 /** A must-fail twin: a fault around the real scheduler, and the invariant it trips first. */
 interface Mutant {
   readonly name: string;
@@ -726,11 +685,9 @@ function skipNonDependent(
 }
 
 /**
- * A second death retried like the first: feed the real scheduler a
+ * A mutant retrying a second death like the first: feed the real scheduler a
  * harvest-conflict instead (so its state stays consistent) and relabel the
  * `requeue` it answers with as a `retry`.
- *
- * @returns The mutant machine factory.
  */
 function secondRetry(): MachineFactory {
   return (view) => ({
@@ -751,10 +708,8 @@ function secondRetry(): MachineFactory {
 }
 
 /**
- * A halt that leaves the entry's ready issues startable: the real scheduler
+ * A mutant whose halt leaves the entry's ready issues startable: the real scheduler
  * halts, then one of the entry's ready issues is started anyway.
- *
- * @returns The mutant machine factory.
  */
 function startAfterHalt(): MachineFactory {
   return (view) => ({

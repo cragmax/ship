@@ -1,5 +1,5 @@
 /**
- * `staged-guard <worktree> <file>…` — the staged set of a worktree must
+ * `staged-guard <worktree> <file>…`: the staged set of a worktree must
  * equal a caller's list exactly, before a commit, so no stray path rides
  * along and no intended one is left out. Read-only, so it runs in any
  * worktree, the main checkout included, and has no self-hosted guard.
@@ -28,7 +28,6 @@ interface SetDifference {
  * slashes and a leading `./` is dropped. Case and absolute paths are left
  * alone, to fail loudly as `missing`.
  *
- * @param path - Path as the caller gave it.
  * @returns The path in git's spelling.
  */
 export function normaliseRepoPath(path: string): string {
@@ -41,7 +40,6 @@ export function normaliseRepoPath(path: string): string {
 /**
  * Render a {@link SetDifference} for an error message.
  *
- * @param diff - The two one-sided differences.
  * @returns `missing: [..]; unexpected: [..]`, each list comma-separated.
  */
 export function formatDifference(diff: SetDifference): string {
@@ -52,7 +50,6 @@ export function formatDifference(diff: SetDifference): string {
  * The staged paths of a checkout. `--no-renames` lists a rename as both
  * endpoints, so it matches a list that names both.
  *
- * @param dir - The checkout.
  * @param step - Step name reported on failure.
  * @returns The staged paths, sorted and distinct.
  * @throws StepFailure for `step` when git fails.
@@ -64,9 +61,7 @@ export function stagedPaths(dir: string, step: string): string[] {
 /**
  * Compare two path sets by exact code unit (see the file header).
  *
- * @param expected - The paths that should be present.
- * @param actual - The paths that are present.
- * @returns Both one-sided differences, sorted and distinct; both empty when
+ * @returns Both one-sided differences, sorted and distinct, both empty when
  *   the sets are equal.
  */
 export function compareSets(expected: readonly string[], actual: readonly string[]): SetDifference {

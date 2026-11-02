@@ -3,13 +3,13 @@
  * from the epic's branch head, its stages ending in a landing through the epic's commit queue.
  *
  * **Every attempt ends the same way**: its slice, when one was cut, is torn down first, then it
- * reports how the slice left it and the halt it called for — no issue settles while its slice
+ * reports how the slice left it and the halt it called for: no issue settles while its slice
  * exists. **A halting entry stops its attempts** at the next stage boundary, and its queued landing
  * never runs: such an attempt ends with `epic-halt`. A landing that calls for a halt (or throws)
- * marks the entry inside its queue task, before the queue releases the next landing; a teardown
+ * marks the entry inside its queue task, before the queue releases the next landing. A teardown
  * runs outside the queue, so its halt is marked as it returns and a landing already released still
  * runs. An agent answering no object is `agent-died` at its {@link DeathStage} (retried once,
- * in a fresh slice); a stage that cannot proceed, or throws, is `blocked`, never a rejection.
+ * in a fresh slice). A stage that cannot proceed, or throws, is `blocked`, never a rejection.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -48,7 +48,7 @@ import {
 
 /** One run-set entry, cut and provisioned: its batch and report directory. */
 export interface EntrySetup {
-  /** The entry's `epic` key; `null` for an explicit list. */
+  /** The entry's `epic` key, `null` for an explicit list. */
   readonly epic: number | null;
   /** What tells the entry's calls from other entries' (`epic-1025`, `list`). */
   readonly tag: string;
@@ -64,7 +64,7 @@ export interface EntrySetup {
   readonly reportDir: string;
   /** The trimmed pool registry. */
   readonly registry: string;
-  /** An attached run's number and open PR; `null` for an unattached run. */
+  /** An attached run's number and open PR, `null` for an unattached run. */
   readonly attached: AttachedRun | null;
 }
 
@@ -96,7 +96,7 @@ type SliceOutcome =
       readonly work: SliceWork;
       /** The batch commit. */
       readonly commit: string;
-      /** The `land` envelope's `at`; `null` when it had none. */
+      /** The `land` envelope's `at`, `null` when it had none. */
       readonly committedAt: string | null;
       /** `null` unless the `land` envelope carried `files` and `lines`. */
       readonly size: SliceSize | null;
@@ -109,20 +109,20 @@ type SliceOutcome =
 
 /** How an attempt ended, for the drive loop to settle: its slice's outcome, then its teardown's. */
 export type AttemptEnding = SliceOutcome & {
-  /** The halt it called for: an unlanded `epic-halt` primary, else its teardown's; or `null`. */
+  /** The halt it called for: an unlanded `epic-halt` primary, else its teardown's, or `null`. */
   readonly halt: EpicHaltEvent | null;
-  /** What the teardown left behind; `null` when it was clean or had nothing to tear down. */
+  /** What the teardown left behind, `null` when it was clean or had nothing to tear down. */
   readonly residue: string | null;
-  /** What the teardown kept of an unlanded slice's work; `null` when it answered no `kept`. */
+  /** What the teardown kept of an unlanded slice's work, `null` when it answered no `kept`. */
   readonly kept: KeptWork | null;
-  /** When the slice was cut (the `cut-slice` envelope's `at`); `null` when no cut gave one. */
+  /** When the slice was cut (the `cut-slice` envelope's `at`), `null` when no cut gave one. */
   readonly startedAt: string | null;
 };
 
 /** An attempt's note to the drive loop. */
 export type AttemptNote =
   | {
-      /** Authoring finished; the landing settles later; the issue keeps its slot. */
+      /** Authoring finished. The landing settles later, and the issue keeps its slot. */
       readonly kind: 'authored';
       /** The issue. */
       readonly issue: number;
@@ -138,12 +138,12 @@ export type AttemptNote =
       readonly ending: AttemptEnding;
     };
 
-/** Who an attempt is — its entry, issue, number and call place; nothing in it changes. */
+/** Who an attempt is: its entry, issue, number, and call place. Nothing in it changes. */
 interface AttemptId {
   readonly ctx: EntryContext;
   readonly issue: number;
   readonly attempt: number;
-  /** The previous attempt's kept patch, handed to the tdd; `null` for none. */
+  /** The previous attempt's kept patch, handed to the tdd, `null` for none. */
   readonly previousPatch: string | null;
   /** `<issue>-<attempt>`: the attempt's label detail and file-name stem. */
   readonly tag: string;
@@ -168,7 +168,7 @@ type ReviewStage = 'spec-review' | 'test-review' | 'standards-review' | 'script-
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
 type Step<T> = { readonly next: T } | { readonly stop: SchedulerEvent };
 
-/** What a cut named, a failed cut's too: the slice to tear down, and when; `null`s for none. */
+/** What a cut named, a failed cut's too: the slice to tear down, and when, `null`s for none. */
 interface CutTrace {
   readonly slice: string | null;
   readonly startedAt: string | null;
@@ -198,7 +198,7 @@ interface ProvisionedSlice extends CutSlice {
   readonly projectDir: string;
 }
 
-/** A built slice: the tdd's answer; `sha` its commit. */
+/** A built slice: the tdd's answer, `sha` its commit. */
 interface BuiltSlice extends ProvisionedSlice {
   readonly tdd: TddOutput;
   readonly sha: string;
@@ -212,23 +212,23 @@ interface BuiltSlice extends ProvisionedSlice {
   readonly amended: readonly string[];
 }
 
-/** A spec-reviewed slice: the spec review's answer; `sha` its amend. */
+/** A spec-reviewed slice: the spec review's answer, `sha` its amend. */
 interface SpecReviewedSlice extends BuiltSlice {
   readonly specReview: ReviewOutput;
 }
 
-/** A test-reviewed slice: the test review's answer, or why it was skipped; `sha` its amend. */
+/** A test-reviewed slice: the test review's answer, or why it was skipped, `sha` its amend. */
 interface TestReviewedSlice extends SpecReviewedSlice {
   readonly testReview: ReviewOutput | TestReviewSkip;
 }
 
-/** A reviewed slice: the standards review's answer too; `sha` its amend. */
+/** A reviewed slice: the standards review's answer too, `sha` its amend. */
 interface ReviewedSlice extends TestReviewedSlice {
   readonly standardsReview: ReviewOutput;
 }
 
 /**
- * An authored slice, ready to land: the Script API TSDoc review's answer, or why it was skipped;
+ * An authored slice, ready to land: the Script API TSDoc review's answer, or why it was skipped,
  * `sha` its last amend.
  */
 interface AuthoredSlice extends ReviewedSlice {
@@ -237,8 +237,8 @@ interface AuthoredSlice extends ReviewedSlice {
 
 /**
  * Run attempt `attempt` (1 for the first) of an issue, up to its authored slice, its tdd handed
- * `previousPatch` when not `null`. Resolves to the attempt's first note — for an authored slice,
- * one carrying the queued landing; never rejects.
+ * `previousPatch` when not `null`. Resolves to the attempt's first note (for an authored slice,
+ * one carrying the queued landing). Never rejects.
  */
 export async function runAttempt(
   ctx: EntryContext,
@@ -296,7 +296,7 @@ async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   return atBoundary(reviewed, at, scriptApiTsdocStage);
 }
 
-/** Pass a stop on; else stop for a halting entry; else run the next stage. */
+/** Pass a stop on, else stop for a halting entry, else run the next stage. */
 async function atBoundary<I, O>(
   step: Step<I>,
   at: AttemptId,
@@ -308,7 +308,7 @@ async function atBoundary<I, O>(
   return stage(step.next);
 }
 
-/** Re-check the issue is still open and labelled; `label-removed` when not. */
+/** Re-check the issue is still open and labelled, `label-removed` when not. */
 async function recheckStage(at: AttemptId): Promise<Step<AttemptId>> {
   const out = await runTool(at.ctx.hooks, 'check', [String(at.issue)], at.place);
   if (out === null) return { stop: runnerDied(at, 'runner:check') };
@@ -321,7 +321,7 @@ async function recheckStage(at: AttemptId): Promise<Step<AttemptId>> {
 }
 
 /**
- * Cut the attempt's slice from the batch head; a stop carries the slice a
+ * Cut the attempt's slice from the batch head. A stop carries the slice a
  * failed cut named, for the teardown.
  */
 async function cutStage(at: AttemptId): Promise<Opened> {
@@ -353,7 +353,7 @@ async function cutStage(at: AttemptId): Promise<Opened> {
 
 /**
  * An unlanded slice's kept dir: `<main>/reports/kept/<slice dir name>-<startedAt made path-safe>`,
- * outside every run root `retire-run` removes; `startedAt` tells a re-run's same-named slice apart.
+ * outside every run root `retire-run` removes. `startedAt` tells a re-run's same-named slice apart.
  */
 function keptDir(main: string, slice: string, startedAt: string | null): string {
   const name = slice.slice(slice.lastIndexOf('/') + 1);
@@ -367,7 +367,7 @@ function attachedRunArgs(entry: Pick<EntrySetup, 'attached'>): string[] {
   return entry.attached === null ? [] : ['--attached-run', String(entry.attached.run)];
 }
 
-/** Provision the slice, its integration config included; its `PH_PROJECT_DIR` goes on. */
+/** Provision the slice, its integration config included. Its `PH_PROJECT_DIR` goes on. */
 async function provisionStage(cut: CutSlice): Promise<Step<ProvisionedSlice>> {
   const { at } = cut;
   const argv = [cut.slice, '--batch', at.ctx.batch, '--server'];
@@ -382,7 +382,7 @@ async function provisionStage(cut: CutSlice): Promise<Step<ProvisionedSlice>> {
   return { next: { ...cut, projectDir } };
 }
 
-/** Author the slice's one commit; a tdd that committed goes on. */
+/** Author the slice's one commit. A tdd that committed goes on. */
 async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   const { at } = s;
   const values = {
@@ -409,7 +409,7 @@ async function tddStage(s: ProvisionedSlice): Promise<Step<BuiltSlice>> {
   return { next: { ...s, tdd, sha: tdd.sha, files: tdd.files, amended: [] } };
 }
 
-/** Hold the slice to its issue, amending its commit with any fix; `sha` its amend. */
+/** Hold the slice to its issue, amending its commit with any fix, `sha` its amend. */
 async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> {
   const { at } = s;
   const out = await AGENT_CALLS.specReview(
@@ -423,7 +423,7 @@ async function specReviewStage(s: BuiltSlice): Promise<Step<SpecReviewedSlice>> 
 
 /**
  * Hold the slice's tests to the claims it makes, amending its commit with any test fix, unless
- * {@link testSkip} names a reason; `sha` its amend.
+ * {@link testSkip} names a reason, `sha` its amend.
  */
 async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedSlice>> {
   const { at } = s;
@@ -447,7 +447,7 @@ const TEST_PREFIXES: readonly string[] = [
 
 /**
  * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files
- * change no code; else, none under {@link TEST_PREFIXES}, `'comment-only'` when `comment-only.ts`
+ * change no code. Else, none under {@link TEST_PREFIXES}, `'comment-only'` when `comment-only.ts`
  * proves its commit comment-only, leaving no code path uncompared. A failed proof reviews them.
  */
 async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
@@ -465,7 +465,7 @@ async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
   return proven ? 'comment-only' : null;
 }
 
-/** Hold the slice to the repo's rules, amending its commit with any fix; `sha` its amend. */
+/** Hold the slice to the repo's rules, amending its commit with any fix, `sha` its amend. */
 async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<ReviewedSlice>> {
   const { at } = s;
   const out = await AGENT_CALLS.standardsReview(
@@ -482,7 +482,7 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
 
 /**
  * Review the Script API TSDoc the slice reaches, amending its commit with any fix, when the slice
- * changes a path under `src/`; `sha` its amend.
+ * changes a path under `src/`, `sha` its amend.
  */
 async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
@@ -533,7 +533,7 @@ function stageLabel(stage: ReviewStage): string {
 
 /**
  * {@link afterReview}, then for a `fixed` answer its `files` and `amended`, re-read from git. A
- * runner that returns nothing stops the slice as died; a failed re-read stops it blocked, naming
+ * runner that returns nothing stops the slice as died. A failed re-read stops it blocked, naming
  * the read, never keeping the stale list.
  */
 async function afterAmend<T extends BuiltSlice>(
@@ -581,7 +581,7 @@ async function reread(
 }
 
 /**
- * Land the authored slice on the batch — run inside the commit queue — its message file first
+ * Land the authored slice on the batch, run inside the commit queue, its message file first
  * rewritten per {@link commitMessage} from the tdd's commit line and cite.
  */
 async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
@@ -634,9 +634,9 @@ function landThrew(at: AttemptId, err: unknown): SchedulerEvent {
 }
 
 /**
- * End the attempt: tear down the slice the cut named — an unlanded slice the cut made keeping its
- * work in its kept dir — then report; never rejects. A teardown call that rejects is read as the
- * runner returning nothing — residue, not a halt.
+ * End the attempt: tear down the slice the cut named (an unlanded slice the cut made keeping its
+ * work in its kept dir), then report. Never rejects. A teardown call that rejects is read as the
+ * runner returning nothing: residue, not a halt.
  */
 async function endAttempt(
   at: AttemptId,
@@ -676,12 +676,7 @@ function leaseValues(s: ProvisionedSlice): LeaseValues {
   return { main: s.at.ctx.main, projectDir: s.projectDir, registry: s.at.ctx.registry };
 }
 
-/**
- * The slice's one commit as the stages after the tdd are handed it.
- *
- * @returns The issue, the slice, its base, the report dir, the current
- *   commit and its changed paths.
- */
+/** The slice's one commit as the stages after the tdd are handed it. */
 function sliceCommitValues(s: BuiltSlice): SliceCommitValues {
   return {
     issue: s.at.issue,
@@ -714,9 +709,8 @@ function tddReportPath(at: AttemptId): string {
 }
 
 /**
- * The attempt's commit message file: the tdd fills it from its template; the landing rewrites it.
+ * The attempt's commit message file: the tdd fills it from its template. The landing rewrites it.
  *
- * @param at - The attempt.
  * @returns `<reportDir>/commit-<issue>-<attempt>.txt`.
  */
 function messagePath(at: AttemptId): string {
@@ -726,7 +720,6 @@ function messagePath(at: AttemptId): string {
 /**
  * The event of an attempt stopped for its halting entry.
  *
- * @param at - The attempt.
  * @returns `epic-halt` for the entry.
  */
 function haltedStop(at: AttemptId): SchedulerEvent {
@@ -753,12 +746,7 @@ function stageThrew(at: AttemptId, err: unknown): SchedulerEvent {
   return blocked(at, `a stage threw: ${errorText(err)}`);
 }
 
-/**
- * A throw's message.
- *
- * @param err - The throw.
- * @returns Its message.
- */
+/** A throw's message. */
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }

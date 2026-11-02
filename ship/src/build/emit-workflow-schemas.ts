@@ -2,7 +2,7 @@
  * Build-time script: emit the saved workflows' schema module
  * (`ship/src/workflow/schemas.generated.ts`) from its zod sources under
  * `ship/src/schemas/`. The module is committed and never
- * hand-edited; `ship/src/build/check-codegen.ts` (`npm run gate:codegen`) is its
+ * hand-edited. `ship/src/build/check-codegen.ts` (`npm run gate:codegen`) is its
  * drift check. The emit itself is `ship/src/build/workflow-schemas.ts`.
  *
  * Run via `npm run codegen`, which runs it before `ship/src/build/render-workflows.ts`:

@@ -11,7 +11,7 @@ On win32 an `execaSync` `timeout` kill reaches only the direct child. (1) `npm r
 
 ## Implication
 
-A budget timeout on a spawned tool chain does not reap descendants: report survivors rather than assuming the kill cleaned up. The header of `ship/src/cli/git/exec.ts` says survivors are reported, not reaped (`outputOf`, `orphanWarning`).
+A budget timeout on a spawned tool chain does not reap descendants: report survivors rather than assuming the kill cleaned up. The TSDoc of `runCaptured` in `ship/src/cli/git/exec.ts` says survivors are reported, not reaped (`outputOf`, `orphanWarning`).
 
 ## Scope
 

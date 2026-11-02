@@ -1,5 +1,5 @@
 /**
- * `fakeHooks` answers for driving `runResync` — the TS source in
+ * `fakeHooks` answers for driving `runResync`, the TS source in
  * `resync.test.ts`, a fresh render in `resync-rendered.test.ts`: the
  * run branch's batch reused, the push `ok`, and a merge that lands.
  */
@@ -31,7 +31,6 @@ export const attachOk = (created: boolean) => ({
 /**
  * An `ok` push-only publish.
  *
- * @param pushed - Whether it pushed.
  * @returns The `publish --push-only` answer.
  */
 export const publishOk = (pushed: boolean) => ({
@@ -63,7 +62,6 @@ export const MERGED = {
  * Fake hooks answering the resync defaults, then `responses`.
  *
  * @param responses - Per-label overrides.
- * @returns The fake run.
  */
 export function resyncHooks(responses: Readonly<Record<string, unknown>> = {}): FakeRun {
   return fakeHooks({ ...RESYNC_OK, ...responses });

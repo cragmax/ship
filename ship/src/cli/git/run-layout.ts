@@ -1,12 +1,12 @@
 /**
- * The run layout of an unattended run (Ship ADR-0001 decision 3) — the one home of its naming rules
+ * The run layout of an unattended run (Ship ADR-0001 decision 3): the one home of its naming rules
  * but the slug's (`ship/src/core/run-slug.ts`, render-safe for the workflow). Every tool that names
  * a run's branch or directory derives it here, never by re-spelling the rule.
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run
  * check keys on, and nothing else may use it: slice branches (`slice/<slug>/…`) never sit under it.
  * Every worktree of a run is a direct child of the main checkout's {@link WORKTREES_DIR}, named
- * from the batch's `ship-<head>`, and its report dir is `reports/ship-<head>/`; both lie in the
+ * from the batch's `ship-<head>`, and its report dir is `reports/ship-<head>/`. Both lie in the
  * main checkout's gitignored paths (Ship ADR-0001 decision 3). An attached run R's names sit beside
  * the run's own, prefixed `a<R>-` ({@link nextAttachedRun} picks R).
  *
@@ -39,7 +39,7 @@ const WORKTREES_DIR = '.claude/worktrees';
 /** Where every run's report dir lives, relative to the main checkout. */
 export const REPORTS_DIR = 'reports';
 
-/** Where a run lives; paths absolute with forward slashes. */
+/** Where a run lives: paths absolute with forward slashes. */
 export interface RunLayout {
   /** The batch worktree, `<main>/.claude/worktrees/ship-<head>`. */
   readonly batch: string;
@@ -96,7 +96,7 @@ export function sliceBranchPrefix(slug: string): string {
  *
  * @param batch - The batch worktree ({@link RunLayout.batch}).
  * @param attempt - The attempt number, 1 for the first.
- * @param run - The attached run's number; `null` (the default) for an
+ * @param run - The attached run's number, or `null` (the default) for an
  *   unattached run.
  * @returns The slice worktree path and branch: id `<N>-<K>`, or
  *   `a<run>-<N>-<K>` for an attached run.
@@ -161,7 +161,7 @@ export function nextAttachedRun(left: {
  * The slug of a run branch.
  *
  * @param ref - A full branch ref (`refs/heads/…`).
- * @returns The part after {@link RUN_BRANCH_PREFIX}; `null` when `ref` is
+ * @returns The part after {@link RUN_BRANCH_PREFIX}, or `null` when `ref` is
  *   not a run branch or the part is empty.
  */
 export function runSlugOf(ref: string): string | null {
@@ -172,7 +172,7 @@ export function runSlugOf(ref: string): string | null {
 }
 
 /**
- * An epic slug is its own head; any other's is its text before the first `-` (a list's lowest
+ * An epic slug is its own head. Any other's is its text before the first `-` (a list's lowest
  * issue: `runSlug` sorts) or the whole slug. Slug-only: `cut-batch --attach` knows only the
  * branch. Not `ship-<slug>`: Windows' 260-character path limit (Ship ADR-0001 decision 3).
  */

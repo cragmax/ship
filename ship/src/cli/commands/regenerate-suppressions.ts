@@ -14,7 +14,7 @@ type Suppressions = Record<string, Record<string, { count: number }>>;
  *
  * @param batch - The batch worktree, mid-pick, with `eslint-suppressions.json`
  *   its only unmerged path.
- * @throws StepFailure `suppressions` when git or ESLint fails — ESLint fails
+ * @throws StepFailure `suppressions` when git or ESLint fails. ESLint fails
  *   on an unsuppressed lint error in a file whose entries the sides disagree on.
  */
 export function regenerateSuppressions(batch: string): void {

@@ -46,11 +46,11 @@ const RESTART_SWITCH = 'PH_TSSERVER_RESTART';
 /**
  * Kill every semantic tsserver (a `node` running `tsserver.js`, never with
  * `--serverMode partialSemantic`) among the descendants of the nearest
- * {@link RestartDeps.sessionImage} ancestor of {@link RestartDeps.selfPid}; no other process is
+ * {@link RestartDeps.sessionImage} ancestor of {@link RestartDeps.selfPid}. No other process is
  * touched.
  *
  * @silences A failed process lookup (`lookup-failed`) and failed kills (`kill-failed` when none
- *   succeeded; a partial failure records only the pids killed): the restart is best effort.
+ *   succeeded, a partial failure recording only the pids killed): the restart is best effort.
  */
 export function restartSessionTsserver(deps: Partial<RestartDeps> = {}): TsserverRestart {
   const { disabled, platform, selfPid, sessionImage, listProcesses, kill } = {
