@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { gitPathList } from '../../../../tooling/test/helpers/worktree-fixture-git.js';
+import { gitPathList } from '../../helpers/worktree-fixture-git.js';
 import { PROMPTS } from '../../../src/workflow/calls/prompts.js';
 import { TOOL_COMMANDS } from '../../../src/workflow/calls/tool-calls.js';
 

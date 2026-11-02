@@ -12,18 +12,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createJunction } from '../../src/cli/git/links.js';
 import type { RetireRunResult, TeardownResult } from '../../src/cli/envelope/types.js';
 import type { CutBatchResult } from '../../src/cli/envelope/types-run.js';
-import {
-  commitChanges,
-  makeBareOrigin,
-  makeGitRepo,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { commitChanges, makeBareOrigin, makeGitRepo } from '../helpers/worktree-fixture-git.js';
 import {
   isRegistered,
   makeTempRoot,
   removeTempDirs,
   runCli,
 } from '../helpers/worktree-cli-fixture.js';
-import { addWorktree, mustRun, runIn } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { addWorktree, mustRun, runIn } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 

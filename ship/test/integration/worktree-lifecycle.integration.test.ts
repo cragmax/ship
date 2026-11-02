@@ -47,13 +47,8 @@ import {
   runCli,
   seedBatch,
 } from '../helpers/worktree-cli-fixture.js';
-import {
-  addWorktree,
-  mustRun,
-  porcelain,
-  runIn,
-} from '../../../tooling/test/helpers/worktree-fixture.js';
-import { commitChanges, headSha } from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { addWorktree, mustRun, porcelain, runIn } from '../helpers/worktree-fixture.js';
+import { commitChanges, headSha } from '../helpers/worktree-fixture-git.js';
 
 const WIN32 = process.platform === 'win32';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

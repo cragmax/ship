@@ -21,8 +21,7 @@ import {
   stagedNames,
   untrackedNames,
   type Changes,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
-import { linkNodeModules } from '../../../tooling/test/helpers/hooked-run.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   expectUsageFailure,
   makeTempRoot,
@@ -31,10 +30,11 @@ import {
 } from '../helpers/worktree-cli-fixture.js';
 import {
   addWorktree,
+  linkNodeModules,
   mustRun,
   porcelain,
   runIn,
-} from '../../../tooling/test/helpers/worktree-fixture.js';
+} from '../helpers/worktree-fixture.js';
 
 const WIN32 = process.platform === 'win32';
 const TIMEOUT = { timeout: 60_000 };

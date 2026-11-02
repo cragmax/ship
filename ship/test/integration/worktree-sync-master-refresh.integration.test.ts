@@ -20,7 +20,7 @@ import {
   snapshot,
   withOriginAndBatch,
   type FixtureRun,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   makeFixtureRepo,
   makeTempRoot,
@@ -28,7 +28,7 @@ import {
   removeTempDirs,
   runSyncMaster,
 } from '../helpers/worktree-cli-fixture.js';
-import { mustRun, porcelain } from '../../../tooling/test/helpers/worktree-fixture.js';
+import { mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const HOOK_SAYS = 'fixture hook: commit refused';

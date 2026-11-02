@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { toPosix } from '../../src/core/strings.js';
-import { prependPath, writeFakeGh } from '../../../tooling/test/helpers/worktree-fixture-git.js';
+import { prependPath, writeFakeGh } from '../helpers/worktree-fixture-git.js';
 import { runCli } from '../helpers/worktree-cli-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };

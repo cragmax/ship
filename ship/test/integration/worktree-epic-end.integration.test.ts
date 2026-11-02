@@ -29,7 +29,7 @@ import {
   setFakePrEditExit,
   writeFakeGh,
   type FakePrComment,
-} from '../../../tooling/test/helpers/worktree-fixture-git.js';
+} from '../helpers/worktree-fixture-git.js';
 import {
   expectUsageFailure,
   makeTempRoot,
