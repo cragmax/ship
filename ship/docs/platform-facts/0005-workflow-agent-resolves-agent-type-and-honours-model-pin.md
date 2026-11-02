@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
-relied-on-by: [Ship ADR-0001, ship/src/workflow/stages.ts, .claude/agents, ship/src/workflow/runtime.types.ts]
+relied-on-by: [Ship ADR-0002, Ship ADR-0016, ship/src/workflow/stages.ts, .claude/agents, ship/src/workflow/runtime.types.ts]
 ---
 
 # Ship PF-5: A workflow `agent()` resolves a project agent by `agentType` and composes it with `schema`, and honours a frontmatter `model` pin when no per-call `model` is passed
@@ -11,7 +11,7 @@ relied-on-by: [Ship ADR-0001, ship/src/workflow/stages.ts, .claude/agents, ship/
 
 ## Implication
 
-A stage is a project agent file plus an output schema. An agent file that pins a model can silently override the tier table, so agent files carry none. Ship ADR-0001 decisions 1 and 15 rest on this, as do `ship/src/workflow/stages.ts`, which names an `agentType` per stage, and the pin-free `.claude/agents/` files.
+A stage is a project agent file plus an output schema. An agent file that pins a model can silently override the tier table, so agent files carry none. Ship ADR-0002 decision 4 and Ship ADR-0016 rest on this, as do `ship/src/workflow/stages.ts`, which names an `agentType` per stage, and the pin-free `.claude/agents/` files.
 
 ## Scope
 

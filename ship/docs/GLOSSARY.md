@@ -25,7 +25,7 @@ _Avoid_: "workflow engine"; "CI workflow" (a GitHub Actions file, unrelated).
 ### Runs
 
 **Unattended run**:
-A run that ships a **Run set** from launch to pull request: pre-flight while the maintainer is present, then one commit per landed issue on the run's branch, then the PR, its only human gate (Ship ADR-0001).
+A run that ships a **Run set** from launch to pull request: pre-flight while the maintainer is present, then one commit per landed issue on the run's branch, then the PR, its only human gate (Ship ADR-0002).
 _Avoid_: "batch" for the run (collides with the `batch:N` labels and RCON batching).
 
 **Run set**:
@@ -33,11 +33,11 @@ The issues one **Unattended run** ships: an epic's open children (never the epic
 _Avoid_: "epic" for the set (a set may span several epics, or none).
 
 **Run gate**:
-The launch check that every **Run set** issue is open and `ready-for-agent`, each `blocked_by` closed, inside the set in the same epic, or landed on an **Attached run**'s target branch. A failure refuses the launch (Ship ADR-0001).
+The launch check that every **Run set** issue is open and `ready-for-agent`, each `blocked_by` closed, inside the set in the same epic, or landed on an **Attached run**'s target branch. A failure refuses the launch (Ship ADR-0006).
 _Avoid_: "pre-flight" for it (pre-flight is the whole launch phase, and the gate is one check in it).
 
 **Overlap edge**:
-A scheduler edge pre-flight adds between two issues of one epic likely to touch the same files, so they land in sequence. An `unsure` pair is reported, not ordered, and an overlap across epics refuses the launch (Ship ADR-0001).
+A scheduler edge pre-flight adds between two issues of one epic likely to touch the same files, so they land in sequence. An `unsure` pair is reported, not ordered, and an overlap across epics refuses the launch (Ship ADR-0007).
 _Avoid_: "dependency" for it (a dependency is a declared `blocked_by`).
 
 **Warm set**:
@@ -45,7 +45,7 @@ The four registry servers, two Paper and two Folia, that a batch's registry trim
 _Avoid_: "the pool" for it (the pool is the whole registry, and the warm set is Ship's subset).
 
 **Batch worktree**:
-The per-epic worktree on the run's `ship/<slug>` branch at `.claude/worktrees/ship-<head>/`, where the **Commit queue** lands and the epic end merges, bumps, and pushes. It lives while its PR is open (Ship ADR-0001).
+The per-epic worktree on the run's `ship/<slug>` branch at `.claude/worktrees/ship-<head>/`, where the **Commit queue** lands and the epic end merges, bumps, and pushes. It lives while its PR is open (Ship ADR-0011).
 _Avoid_: "main tree" (the maintainer's own checkout); "batch" as a live concept (a historical name).
 
 **Slice worktree**:
@@ -53,15 +53,15 @@ The throwaway worktree one issue attempt is authored and reviewed in, cut from t
 _Avoid_: bare "worktree" wherever the two kinds could be confused.
 
 **Commit queue**:
-The per-epic serialisation point that lands one **Slice worktree**'s commit at a time into the **Batch worktree** under lefthook, the staged set guarded to the slice's files. A conflict requeues the slice (Ship ADR-0001).
+The per-epic serialisation point that lands one **Slice worktree**'s commit at a time into the **Batch worktree** under lefthook, the staged set guarded to the slice's files. A conflict requeues the slice (Ship ADR-0011, Ship ADR-0008).
 _Avoid_: "harvest" for the whole thing (harvest is its cherry-pick step).
 
 **Resync**:
-Bringing an open run branch level with `origin/master` through the epic end's merge step and a lefthook-gated, never-forced push. It also retires spent **Batch worktrees** (Ship ADR-0001).
+Bringing an open run branch level with `origin/master` through the epic end's merge step and a lefthook-gated, never-forced push. It also retires spent **Batch worktrees** (Ship ADR-0013 decision 5).
 _Avoid_: "update branch" (GitHub's server-side merge, which lefthook never gates); rebase.
 
 **Attached run**:
-An **Unattended run** of issues, never epics, launched with `--attach ship/<slug>`. It lands them on an open PR's run branch, reusing its **Batch worktree**, and pushes onto that PR instead of raising one (Ship ADR-0001 decision 16).
+An **Unattended run** of issues, never epics, launched with `--attach ship/<slug>`. It lands them on an open PR's run branch, reusing its **Batch worktree**, and pushes onto that PR instead of raising one (Ship ADR-0017).
 _Avoid_: "follow-up run"; "fixup run"; "onto run".
 
 **Stage agent**:
@@ -70,4 +70,4 @@ _Avoid_: "container" (the Minecraft window); "ship agent" (the `ship-` prefix is
 
 ## Flagged ambiguities
 
-- **"Workflow": source, render, or runtime** (resolved 2026-10-16, Ship ADR-0001). "The workflow" named the sources, the rendered JS, and Claude Code's tool. Now the **Workflow source** renders into the **Saved workflow**, which the **Workflow tool** runs in the **Workflow runtime**.
+- **"Workflow": source, render, or runtime** (resolved 2026-10-16, Ship ADR-0002). "The workflow" named the sources, the rendered JS, and Claude Code's tool. Now the **Workflow source** renders into the **Saved workflow**, which the **Workflow tool** runs in the **Workflow runtime**.

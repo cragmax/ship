@@ -11,7 +11,7 @@ A workflow `agent()` call with an `agentType` whose agent file lists `skills:` s
 
 ## Implication
 
-A stage agent loads its skill by `skills:` preload, with no read by path and no Skill-tool step. The skill's relative links reach the main checkout's copies, as Ship ADR-0001 decision 3 wants. A preloaded skill must not set `disable-model-invocation`, and no personal skill may share its name. `.claude/agents/tdd.md` preloads `tdd` and `unattended-agent` by `skills:`, and `unattended-agent` sets `user-invocable: false`.
+A stage agent loads its skill by `skills:` preload, with no read by path and no Skill-tool step. The skill's relative links reach the main checkout's copies, as Ship ADR-0004 wants. A preloaded skill must not set `disable-model-invocation`, and no personal skill may share its name. `.claude/agents/tdd.md` preloads `tdd` and `unattended-agent` by `skills:`, and `unattended-agent` sets `user-invocable: false`.
 
 ## Scope
 
