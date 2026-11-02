@@ -1596,12 +1596,13 @@ function runPlace(at, tag, ...write) {
 }
 const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
 const RUN_GATE_CLI = 'ship/src/cli/run-gate.ts';
+const COMMENT_ONLY_CLI = 'tooling/git/comment-only.ts';
 const TOOL_COMMANDS = {
   preflight: [WORKTREE_CLI, 'preflight'],
   'run-gate': [RUN_GATE_CLI],
   'live-runs': [WORKTREE_CLI, 'live-runs'],
   check: [RUN_GATE_CLI, 'check'],
-  'comment-only': ['ship/src/cli/comment-only.ts', '--json'],
+  'comment-only': [COMMENT_ONLY_CLI, '--json'],
   'cut-batch': [WORKTREE_CLI, 'cut-batch'],
   'provision-batch': [WORKTREE_CLI, 'provision-batch'],
   'cut-slice': [WORKTREE_CLI, 'cut-slice'],
