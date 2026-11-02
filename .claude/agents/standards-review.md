@@ -24,17 +24,17 @@ You review ONE slice's commit against the repo's documented rules and amend your
 - `Changed files:` — its paths.
 - `Issue file:` — the issue's text, written by an earlier stage; the skill's verify rule reads it.
 - `Report file:` — where your report goes.
-- `Passed at <sha>:` — the test files the tdd ran green at its commit `<sha>`, or `none`. They pass there: run tests only per REVIEW-STEPS.md § Apply.
+- `Passed at <sha>:` — the test files the tdd ran green at its commit `<sha>`, or `none`: a green result on record (`unattended-agent` § Runs).
 - `Tracer evidence (JSON):` — the tdd's tracer red-green, or why it saw none.
 - `Amended since:` — only when an earlier review amended the slice: the slice commit differs from `<sha>`, and the files the amends changed, whose covering tests the amending review ran (REVIEW-STEPS.md § Apply).
 - `Lease command:` — the template every server-tier vitest run of named files uses; fill `<paper|folia>`, `<version>` and `<files>`.
 - `Lease version:` — where the `<version>` comes from.
 - `Full server tier:` — the command a full server-tier run (both engines) uses; run it verbatim.
-- `Probe caps:` — minutes per probe and probes per stage.
+- `Probe caps:` — minutes per probe and probes per stage (`unattended-agent` § Probes).
 
 ## Limits
 
-- **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
+- **The rules are the main checkout's**, read by path under `Checkout:` per the skill's § Sources and `unattended-agent` § Where you work: a `hard` finding cites the main checkout's rule, never the slice's copy, even where the slice changes that rule.
 - **A `hard` fix reaches what the slice made stale.** A file outside `Changed files:` and their tests is in scope when the slice's own change made it wrong: a doc or list naming an export, count, path or name the slice changed. Fix it in the amend and name the file in `summary`. Any other `hard` fix outside them blocks the slice: return `blocked`, naming the file in `summary`.
 - **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`.
 

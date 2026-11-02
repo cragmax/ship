@@ -27,11 +27,13 @@ You are a **Stage agent** of an unattended run (Ship ADR-0002). Your agent file 
 - **Unit runs** are `npx vitest run --config vitest.worktree.config.ts <files>`, from the worktree: a bare `npx vitest` writes into the shared, linked `node_modules/.vite`.
 - **Standalone integration files** (`@integrationTier standalone`) need no server: run them as `npx vitest run --config vitest.worktree.integration.config.ts --fileParallelism <files>`, in parallel, never through the `Lease command:`.
 - **Server-tier runs go through your prompt's `Lease command:` or `Full server tier:` only**, never raw vitest against a fixed port: a run of named server files is the `Lease command:`, its placeholders filled; a full server-tier run (both engines) is the `Full server tier:` line, run from the worktree, which shards the tier across the run's servers. Copy each `with-lease: waited … held …` line either prints into your report and your answer, verbatim.
+- **A `Passed at <sha>:` line is a green result on record.** The test files it lists passed at commit `<sha>`, so a slice review runs none of them green again: a mutant goes straight onto the tree, and other test runs follow REVIEW-STEPS.md § Apply.
 - **A command that may run past 10 minutes** runs in the background, and you keep the turn open with chained foreground `timeout 570 bash -c 'until …; do sleep 5; done'` polls until it exits.
 
 ## Probes
 
 - **Probes follow the `probe` skill within your prompt's `Probe caps:`.** Time each probe: `date +%s` before and after each run of its claim, the deltas summed across its re-runs; a killed or capped run counts up to the kill. A cap hit or an inconclusive probe stamps no verdict: record it with a follow-up and carry on.
+- **Each probe run sits under the Bash tool's `timeout` at the cap.** A probe's own tree-kill can miss a descendant outside the process tree, and the caller-side timeout is what holds the probe to its cap.
 - **The rig stays as it is.** A probe that would reconfigure it (a plugin jar swap, a compose or `server.properties` change, a Docker restart) is not run: return your blocked verdict instead.
 - **Each probe gets one entry under your report's Probes**: its claim, verdict, follow-up and `duration: <dur>`, its summed seconds as `42s` below 60 and `11m 04s` from 60 up, the fixed token a cap review greps the reports for.
 

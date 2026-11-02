@@ -44,4 +44,5 @@ decision 3):
 Not Ship's, though its stage agents wrap them: every skill a stage agent
 preloads but `unattended-agent` (`tdd`, the three reviews, `epic-review`,
 `retro`, `pr` and the rest), since each is used by hand too, and the `github`
-agent. They are the repo's.
+agent. They are the repo's, and they carry no run text: what a run adds to
+one lives in `unattended-agent` or in the stage agent's file.
