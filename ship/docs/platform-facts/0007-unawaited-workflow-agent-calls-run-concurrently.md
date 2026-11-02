@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-29
-relied-on-by: [Ship ADR-0001, ship/src/workflow/drive.ts]
+relied-on-by: [Ship ADR-0001, ship/src/workflow/drive.ts, ship/src/workflow/runtime.types.ts]
 ---
 
 # Ship PF-7: Un-awaited workflow `agent()` calls run concurrently, and `Promise.race` over them resolves in completion order

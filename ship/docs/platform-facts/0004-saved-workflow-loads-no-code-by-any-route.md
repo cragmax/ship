@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
-relied-on-by: [Ship ADR-0001, ship/src/build/workflow-render.ts, ship/src/build/check-codegen.ts]
+relied-on-by: [Ship ADR-0001, ship/src/build/workflow-render.ts, ship/src/build/check-codegen.ts, ship/src/core/scheduler/run-scheduler.ts, ship/test/unit/build/workflow-render.test.ts, ship/test/unit/workflow/_render.ts]
 ---
 
 # Ship PF-4: A saved workflow loads no code by any route: no `import`, no `require`, `process`, or `fetch`, and no `eval` or `new Function`

@@ -2,7 +2,7 @@
 status: current
 platform: [node 24.19.0, tsx 4.21.0, bash 5.3.15, msys2-runtime 3.6.10, windows 10.0.26300]
 last-verified: 2026-10-15
-relied-on-by: [ship/src/workflow/calls/tool-calls.ts]
+relied-on-by: [ship/src/workflow/calls/tool-calls.ts, ship/src/cli/commands/tsserver-restart.ts]
 ---
 
 # Ship PF-16: In Git Bash, a tool run through `npx tsx` is orphaned from the session's process tree, and `node --import tsx` stays a descendant

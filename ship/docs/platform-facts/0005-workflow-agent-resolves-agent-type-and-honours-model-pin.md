@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
-relied-on-by: [Ship ADR-0001, ship/src/workflow/stages.ts, .claude/agents]
+relied-on-by: [Ship ADR-0001, ship/src/workflow/stages.ts, .claude/agents, ship/src/workflow/runtime.types.ts]
 ---
 
 # Ship PF-5: A workflow `agent()` resolves a project agent by `agentType` and composes it with `schema`, and honours a frontmatter `model` pin when no per-call `model` is passed
