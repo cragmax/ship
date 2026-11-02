@@ -35,7 +35,7 @@ export async function renderFresh(name: string): Promise<string> {
 
 /** Run a rendered workflow over a fake run's hooks. */
 export function runRendered(js: string, run: FakeRun, args: string): Promise<unknown> {
-  // The runtime's wrapper: the file as a function body (Ship PF-4), `export` dropped,
+  // The runtime's wrapper: the file as a function body, `export` dropped,
   // hooks + `args` as globals (unprobed).
   const script = `(async function () {\n${js.replace(/^export /, '')}\n})()`;
 

@@ -1,5 +1,5 @@
 /**
- * One issue attempt of the `ship` workflow (Ship ADR-0001 decisions 7–8), in a slice worktree cut
+ * One issue attempt of the `ship` workflow, in a slice worktree cut
  * from the epic's branch head, its stages ending in a landing through the epic's commit queue.
  *
  * **Every attempt ends the same way**: its slice, when one was cut, is torn down first, then it

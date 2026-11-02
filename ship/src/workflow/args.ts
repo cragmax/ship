@@ -1,6 +1,6 @@
 /**
  * The `ship` workflow's launch arguments. `args` is whatever the launching Workflow call passed,
- * verbatim: the main-loop model writes that call, so a string is possible (Ship ADR-0001). Two
+ * verbatim: the main-loop model writes that call, so a string is possible. Two
  * shapes are accepted: the object (also as its JSON text) and the string, its numbers space- or
  * comma-separated, each with an optional leading `#`:
  *

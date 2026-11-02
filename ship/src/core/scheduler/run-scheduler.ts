@@ -9,7 +9,7 @@
  * **Fail loud, pure.** Every throw an `Error` prefixed `run scheduler:` naming the offender; no
  * I/O, clock or randomness; input never mutated; issue-keyed records never iterated (integer-like
  * keys enumerate numerically, and input order decides). **Render-ready, a contract** (the `ship`
- * workflow loads no module, Ship PF-4): one value import (`../run-set.js`), the rest type-only;
+ * workflow loads no module): one value import (`../run-set.js`), the rest type-only;
  * built-ins only (the renderer's `FORBIDDEN_TOKENS`); no top-level side effect or name `run-set.ts`
  * declares (the renderer refuses a repeat); erasable syntax only. A text guard test enforces it.
  */

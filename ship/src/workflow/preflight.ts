@@ -1,5 +1,5 @@
 /**
- * The `ship` workflow's pre-flight (Ship ADR-0001 decision 4): everything a run must hold before
+ * The `ship` workflow's pre-flight: everything a run must hold before
  * it cuts anything. In order: `worktree.ts preflight` (master level, `gh` logged in, the warm set,
  * always checked, as server-tier tdd runs lease it), the run gate, `live-runs`, then, once each,
  * `issue-readiness` on the run set and `issue-overlap` on the rest and unspent live runs' files.
@@ -139,10 +139,7 @@ export interface OverlapRecord {
   readonly added: readonly OverlapEdge[];
   /** The pairs the declared edges already order: nothing added. */
   readonly sequenced: readonly OverlapPair[];
-  /**
-   * The `unsure` pairs within one entry, in `issue-overlap`'s order: reported, never ordered (Ship
-   * ADR-0001 decision 6).
-   */
+  /** The `unsure` pairs within one entry, in `issue-overlap`'s order: reported, never ordered. */
   readonly unsure: readonly UnsurePair[];
   /** Whether `issue-overlap` could read the area map. */
   readonly areaMap: 'read' | 'unavailable';
@@ -320,7 +317,7 @@ function generatedOnly(pair: EstimatedPair): boolean {
 
 /**
  * The `unsure` pairs joining two distinct issues of one entry that neither the declared edges
- * order nor a `likely` pair names: such a pair orders no slices (Ship ADR-0001 decision 6), while
+ * order nor a `likely` pair names: such a pair orders no slices, while
  * one across entries still refuses the launch and the merge records the others.
  */
 function unsureWithinEntry(graph: RunGraph, pairs: readonly EstimatedPair[]): EstimatedPair[] {

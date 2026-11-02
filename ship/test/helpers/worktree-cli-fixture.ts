@@ -3,8 +3,7 @@
  * it provisions and tears down. Each repo holds the real `.gitignore` (so clean-status checks run
  * against the actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci`
  * installs offline, and fake `build` / `test` scripts. The plain process and template-copy helpers
- * they build on are tooling's `tooling/test/helpers/worktree-fixture.ts` (Framework ADR-0045
- * decision 4).
+ * they build on are tooling's `tooling/test/helpers/worktree-fixture.ts`.
  */
 
 import {

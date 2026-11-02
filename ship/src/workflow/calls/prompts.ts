@@ -245,7 +245,7 @@ export interface PrWriterValues {
 /**
  * Hooks bound to the run's main checkout: every agent prompt, runner and judgment stage alike,
  * starts with a `Checkout: <checkout>` line, so an agent works from it, never from its start
- * directory, which a session `cd` moves mid-run (Ship PF-2). A run binds once, from its first
+ * directory, which a session `cd` moves mid-run. A run binds once, from its first
  * call's envelope. Only that call runs unbound.
  *
  * @param checkout - The main checkout, absolute.

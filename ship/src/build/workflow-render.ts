@@ -1,14 +1,14 @@
 /**
  * Renders a workflow's typed sources into the one plain-JS file the runtime loads (it loads no
- * module) and checks a committed copy against a fresh render (Ship ADR-0001 decision 1).
+ * module) and checks a committed copy against a fresh render.
  *
  * **Render contract.** The closure: the entry plus its transitive relative value imports (type-only
  * ones erased and never followed, a non-relative value import an error), each transpiled (ES2022,
  * comments removed, module syntax dropped), concatenated in dependency post-order into one scope: a
  * top-level name is unique across it and never a {@link HOOK_NAMES} member, and no
  * {@link FORBIDDEN_TOKENS} / {@link FORBIDDEN_WORDS} member appears. Every guard throws an `Error`
- * prefixed `workflow render:` naming the files. The runtime runs the file as an async function body
- * (Ship PF-4), hooks and `args` as globals (so the tail `return` works at top level, and the ES2022
+ * prefixed `workflow render:` naming the files. The runtime runs the file as an async function
+ * body, hooks and `args` as globals (so the tail `return` works at top level, and the ES2022
  * built-in `Object.hasOwn` runs too), accepting a leading `export const meta` but not a second
  * top-level `export`, a SyntaxError (unprobed).
  */

@@ -1,6 +1,6 @@
 /**
  * The run-set vocabulary: the single declaration of an unattended run's issue set and its
- * dependency edges (Ship ADR-0001 decision 5). The run gate (`ship/src/core/gate/run-gate.ts`)
+ * dependency edges. The run gate (`ship/src/core/gate/run-gate.ts`)
  * produces a {@link RunGraph}, and the run scheduler consumes it. Neither re-declares these shapes.
  *
  * **Edge semantics.** A {@link RunEdge} `{ blocker, dependent }` means `dependent` waits for

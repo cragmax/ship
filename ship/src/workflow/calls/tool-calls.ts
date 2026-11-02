@@ -399,8 +399,7 @@ export function envelopeProblem(
 
 /**
  * A tool call's command words, as the runner runs them from the main checkout: `node --import tsx`,
- * never `npx tsx`, whose Git Bash shim orphans the tool from the session's process tree
- * (Ship PF-16).
+ * never `npx tsx`, whose Git Bash shim orphans the tool from the session's process tree.
  */
 function toolWords(name: ToolName, argv: readonly string[]): string[] {
   return ['node', '--import', 'tsx', ...TOOL_COMMANDS[name], ...argv];
