@@ -1,7 +1,6 @@
 /**
  * `land <batch> <slice-sha> --base <cut-sha> --message-file <f> --log <l>`: the commit queue's
- * one deterministic step: a slice commit becomes exactly one batch commit, or nothing (Ship
- * ADR-0001 decision 10).
+ * one deterministic step: a slice commit becomes exactly one batch commit, or nothing.
  *
  * Invariant: nothing is mutated before four guards pass: harvest's linked-worktree and clean-batch
  * guards, cut-slice's `ship/` run-branch guard, and a slice of exactly one commit whose parent is
@@ -118,7 +117,7 @@ const BUILD_FILES: readonly string[] = [
  * Whether a change touches a path the batch's `dist/` is built from: the
  * pre-commit tests read `dist/` (the bin, the runtime `.d.ts`), which the
  * gate's `gate:build` re-emits in parallel with them, so the build makes it
- * current first. Only `src/` builds into `dist/` (Framework ADR-0045 decision 6).
+ * current first. Only `src/` builds into `dist/`.
  * `sync-master` asks it of what the merge brings.
  *
  * @param files - Repository-relative paths changed.
@@ -129,8 +128,7 @@ export function needsBuild(files: readonly string[]): boolean {
 }
 
 /**
- * Require the staged set to equal the harvest's `files`, a rename as both endpoints
- * (Ship ADR-0001 decision 10).
+ * Require the staged set to equal the harvest's `files`, a rename as both endpoints.
  *
  * @throws Refusal `staged-mismatch` naming both differences.
  */

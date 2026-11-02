@@ -1,6 +1,6 @@
 /**
  * Trim a pool registry to the warm set: the servers every concurrent
- * unattended run on the machine may lease (Pool ADR-0001). Lease runs in a batch
+ * unattended run on the machine may lease. Lease runs in a batch
  * worktree and its slices read the trimmed copy (`PH_POOL_REGISTRY`), so a
  * cold-but-registered server never enters candidate selection.
  */
@@ -14,7 +14,8 @@ import { StepFailure, type WarmMember } from '../envelope/types.js';
 /**
  * The fixed, machine-wide warm set: two Paper and two Folia servers (the
  * compose services `minecraft`, `minecraft-2`, `minecraft-folia` and
- * `minecraft-folia-2`, sized by Pool PF-1). Pinned, never derived from the
+ * `minecraft-folia-2`). Four is what fits in Docker's memory at about 4.2 GiB
+ * per server under suite load. Pinned, never derived from the
  * registry, so concurrent runs agree on it without coordinating, and registry
  * drift fails {@link trimRegistry} loudly.
  */

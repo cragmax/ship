@@ -1,6 +1,6 @@
 /**
  * `bump <batch>`: reconcile the run branch's version to its one net bump
- * over `master` (Ship ADR-0001 decision 14). The kind is `minor` when any of the batch's own
+ * over `master`. The kind is `minor` when any of the batch's own
  * non-merge commits since it left `origin/master` is a `feat`, else
  * `patch`. The target is `origin/master`'s version bumped by that kind. A
  * batch already at the target gets no commit. Otherwise one commit of

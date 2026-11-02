@@ -27,7 +27,7 @@ type RunGateArgs =
       readonly kind: 'gate';
       readonly spec: LaunchSpec;
       readonly mode: GateMode;
-      /** An attached run's target, `ship/<slug>` (Ship ADR-0001 decision 16). Absent otherwise. */
+      /** An attached run's target, `ship/<slug>`. Absent otherwise. */
       readonly attach?: string;
     }
   | { readonly kind: 'check'; readonly issue: number };

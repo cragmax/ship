@@ -1,6 +1,6 @@
 /**
  * `preflight <main> [--attach ship/<slug>] [--slug <slug>,…]`: the checks an unattended run holds
- * before it cuts anything (Ship ADR-0001 decision 4): local `master` level with `origin/master`
+ * before it cuts anything: local `master` level with `origin/master`
  * after a fetch, `gh` logged in, every warm-set server answering RCON; with `--slug`, no leftover
  * slice branch of each run slug ({@link checkSliceBranches}); with `--attach`, the target branch's
  * checks ({@link checkAttachTarget}). It snapshots the main checkout's `HEAD`, its dirtiness, and

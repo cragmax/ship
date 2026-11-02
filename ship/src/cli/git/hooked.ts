@@ -68,7 +68,7 @@ export function runHooked(run: HookedRun): void {
 
 /**
  * The crash a failed hook run's output shows: the highest `exit status` lefthook printed, one per
- * failed job (Ship PF-20), when every one is {@link SIGNAL_STATUS} or above.
+ * failed job, when every one is {@link SIGNAL_STATUS} or above.
  *
  * @returns `null` when the output names no exit status, or any below {@link SIGNAL_STATUS}.
  */
@@ -88,7 +88,7 @@ export function retryLog(logFile: string): string {
 
 /**
  * Run one attempt and record it on `run.attempts`. A budget kill or spawn failure (exit `-1`) is
- * never a crash: a killed run's hooks may still be running (Ship PF-10).
+ * never a crash: a killed run's hooks may still be running.
  */
 function attempt(run: HookedRun, log: string): { r: Captured; crash: number | null } {
   const r = run.spawn(log);

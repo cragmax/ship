@@ -127,7 +127,7 @@ export function attachSlug(branch: string): string {
 
 /**
  * Refuse a branch holding commits of its own `origin` lacks: a stopped
- * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
+ * attached run's fixes, which must be recovered before a new run attaches. An
  * unpushed merge alone passes.
  *
  * @param branch - Short branch name.

@@ -1,6 +1,6 @@
 /**
  * `harvest <batch> <slice-sha>`: stage one slice commit's change (`sha^..sha`) in the batch,
- * uncommitted, via `git cherry-pick --no-commit` (Ship ADR-0001 decision 7).
+ * uncommitted, via `git cherry-pick --no-commit`.
  *
  * Invariant: nothing is mutated before two guards pass (a registered non-primary worktree root,
  * clean, no merge, cherry-pick, or revert in progress). Once the pick starts, every non-`ok`
@@ -8,7 +8,7 @@
  * unclean rollback reports `failed` with a `rollback` entry after the triggering error, never
  * `conflict` over a dirty batch, which a scheduler would requeue onto.
  *
- * The rollback is `git reset --hard HEAD`, Ship ADR-0001 decision 10's approved exception: the
+ * The rollback is `git reset --hard HEAD`, the one hard reset a run may make: the
  * guards verified a clean linked worktree, so it discards only the failed pick's changes.
  */
 

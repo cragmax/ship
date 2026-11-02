@@ -1,6 +1,6 @@
 /**
  * `append-pr-body <batch> --pr N --section-file F`: append an attached run's section to its
- * open PR's body (Ship ADR-0001 decision 16). The command reads the body and sets it back with the
+ * open PR's body. The command reads the body and sets it back with the
  * section after it. The first failed step ends the command `failed` ({@link appendPrBody}).
  *
  * The body as `gh` read it is the new body's prefix byte for byte ({@link appendSection}), so a

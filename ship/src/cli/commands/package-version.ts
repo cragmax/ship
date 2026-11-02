@@ -2,8 +2,7 @@
  * Version arithmetic for `sync-master`'s version-line rule: when both the
  * batch and `origin/master` moved the `package.json` version since their
  * merge-base, the merge takes master's version bumped by the branch's own
- * bump. That keeps the PR's net at one bump over `master`
- * (Ship ADR-0001 decision 14).
+ * bump. That keeps the PR's net at one bump over `master`.
  * The rule intervenes only when both sides moved ({@link bothMoved}):
  * without it an identical bump, both sides at the same number, merges
  * clean in git (unprobed), and the PR's net bump is zero. {@link bumpVersion} also

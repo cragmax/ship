@@ -290,7 +290,7 @@ export function assertMainWorktree(path: string, step: string): void {
  * Refuse when the running CLI's own file lies inside the worktree a
  * command mutates: its tsx loader keeps `esbuild.exe` running from that
  * checkout's `node_modules`, so an `npm ci` or removal there would hit a
- * running executable, which win32 refuses to delete or overwrite (Ship PF-11).
+ * running executable, which win32 refuses to delete or overwrite.
  *
  * @throws Refusal `self-hosted` when `selfPath` is inside `target`.
  */
