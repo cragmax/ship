@@ -19,6 +19,7 @@ import { delimiter, dirname, join } from 'node:path';
 
 import { compareStrings, toPosix } from '../../src/core/strings.js';
 
+import { fixtureGitignore } from './fixtures.js';
 import {
   addWorktree,
   configureFixtureRepo,
@@ -26,7 +27,6 @@ import {
   copyTemplateRepo,
   mustRun,
   porcelain,
-  realGitignore,
   runIn,
 } from './worktree-fixture.js';
 
@@ -34,7 +34,7 @@ import {
 interface GitRepoOptions {
   /** Directory name under the root. Defaults to `main`. */
   readonly name?: string;
-  /** `.gitignore` content. Defaults to the real repository's file. */
+  /** `.gitignore` content. Defaults to {@link fixtureGitignore}. */
   readonly gitignore?: string;
 }
 
@@ -72,7 +72,7 @@ export function makeGitRepo(
   options: GitRepoOptions = {},
 ): string {
   const dir = join(root, options.name ?? 'main');
-  const all = { '.gitignore': options.gitignore ?? realGitignore(), ...files };
+  const all = { '.gitignore': options.gitignore ?? fixtureGitignore(), ...files };
   copyTemplateRepo(JSON.stringify(['git', all]), dir, (template) => {
     writeFiles(template, all);
   });

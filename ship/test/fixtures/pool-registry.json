@@ -1,0 +1,68 @@
+[
+  {
+    "host": "localhost",
+    "port": 25700,
+    "rconPort": 25701,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "paper",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/paper-phase2/latest.log"
+  },
+  {
+    "host": "localhost",
+    "port": 25702,
+    "rconPort": 25703,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "paper",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/paper-pool-2/latest.log"
+  },
+  {
+    "host": "localhost",
+    "port": 25704,
+    "rconPort": 25705,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "paper",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/paper-pool-3/latest.log"
+  },
+  {
+    "host": "localhost",
+    "port": 25710,
+    "rconPort": 25711,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "folia",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/folia-phase2/latest.log"
+  },
+  {
+    "host": "localhost",
+    "port": 25712,
+    "rconPort": 25713,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "folia",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/folia-pool-2/latest.log"
+  },
+  {
+    "host": "localhost",
+    "port": 25714,
+    "rconPort": 25715,
+    "rconPassword": "testpassword",
+    "mcVersion": "1.21.11",
+    "type": "folia",
+    "version": "1.21.11",
+    "resetCapability": "rcon-only",
+    "logPath": "server-logs/folia-pool-3/latest.log"
+  }
+]

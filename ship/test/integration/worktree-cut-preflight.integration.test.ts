@@ -9,13 +9,14 @@
  */
 
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { compareStrings } from '../../src/core/strings.js';
 import { preflight, type WarmProbe } from '../../src/cli/commands/preflight.js';
 import type { PreflightResult } from '../../src/cli/envelope/types-run.js';
+import { FIXTURE_REGISTRY } from '../helpers/fixtures.js';
 import {
   addWorktreeAt,
   advanceOrigin,
@@ -39,7 +40,6 @@ import { addWorktree, mustRun } from '../helpers/worktree-fixture.js';
 
 const TIMEOUT = { timeout: 60_000 };
 const REGISTRY = 'server-pool/src/registry/pool-registry.json';
-const REAL_REGISTRY = resolve(import.meta.dirname, '../../..', REGISTRY);
 
 let root: string;
 let main: string;
@@ -57,7 +57,7 @@ describe('preflight (in-process)', () => {
   beforeEach(() => {
     main = makeGitRepo(
       root,
-      { 'base.txt': 'base\n', [REGISTRY]: readFileSync(REAL_REGISTRY, 'utf8') },
+      { 'base.txt': 'base\n', [REGISTRY]: readFileSync(FIXTURE_REGISTRY, 'utf8') },
       {
         name: 'pf-main',
       },

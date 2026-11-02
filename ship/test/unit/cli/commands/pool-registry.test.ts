@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { loadPoolRegistry } from '../../../../src/cli/commands/pool-registry.js';
 import { StepFailure } from '../../../../src/cli/envelope/types.js';
+import { compareStrings } from '../../../../src/core/strings.js';
+import { FIXTURE_REGISTRY } from '../../../helpers/fixtures.js';
 
 const ENTRY = {
   host: 'localhost',
@@ -29,6 +31,26 @@ afterEach(() => {
 });
 
 describe('loadPoolRegistry', () => {
+  it('reads the registry fixture as six entries, each carrying every contract field', () => {
+    const contract = [
+      'host',
+      'logPath',
+      'mcVersion',
+      'port',
+      'rconPassword',
+      'rconPort',
+      'resetCapability',
+      'type',
+      'version',
+    ];
+
+    const entries = loadPoolRegistry(FIXTURE_REGISTRY);
+
+    expect(entries.map((entry) => Object.keys(entry).sort(compareStrings))).toEqual(
+      Array(6).fill(contract),
+    );
+  });
+
   it('returns the entries in file order, an optional logPath kept and an unknown field dropped', () => {
     const second = { ...ENTRY, port: 25710, rconPort: 25711, type: 'folia', logPath: 'a/b.log' };
     const path = registry(JSON.stringify([{ ...ENTRY, extra: 1 }, second]));

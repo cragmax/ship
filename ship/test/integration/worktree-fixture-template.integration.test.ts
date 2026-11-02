@@ -23,6 +23,7 @@ import { copyTemplateRepo, mustRun, porcelain } from '../helpers/worktree-fixtur
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');
+const TEMPLATE_DIR = join(import.meta.dirname, '..', 'fixtures', 'worktree-fixture-template');
 const TIMEOUT = { timeout: 60_000 };
 const CHILD_SPAWN_TIMEOUT_MS = 60_000;
 // The child's git-repo build outruns vitest's 5 s default under spawn load. Below the spawn cap,
@@ -115,15 +116,13 @@ describe('the template repos', () => {
         VITEST_BIN,
         'run',
         '--config',
-        'config/vitest.config.ts',
-        '--dir',
-        'ship/test/fixtures/worktree-fixture-template',
+        join(TEMPLATE_DIR, 'vitest.config.ts'),
         '--reporter=dot',
         '--no-cache',
         `--testTimeout=${CHILD_TEST_TIMEOUT_MS}`,
       ],
       {
-        cwd: REPO_ROOT,
+        cwd: TEMPLATE_DIR,
         env: { ...env, TEMP: temp, TMP: temp, TMPDIR: temp },
         encoding: 'utf8',
         timeout: CHILD_SPAWN_TIMEOUT_MS,

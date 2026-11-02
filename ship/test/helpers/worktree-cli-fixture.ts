@@ -1,7 +1,7 @@
 /**
  * The worktree CLI's test helpers: its envelope-typed runner, and the npm-template fixture repos
- * it provisions and tears down. Each repo holds the real `.gitignore` (so clean-status checks run
- * against the actual patterns), the real pool registry, a `file:` tarball dependency that `npm ci`
+ * it provisions and tears down. Each repo holds the main checkout's `.gitignore` (so clean-status
+ * checks run against its patterns), a pool registry, a `file:` tarball dependency that `npm ci`
  * installs offline, and fake `build` / `test` scripts. The plain process and template-copy helpers
  * they build on are the sibling `worktree-fixture.ts`.
  */
@@ -26,14 +26,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execaSync } from 'execa';
 import { beforeAll, expect, onTestFinished } from 'vitest';
 
-import {
-  copyTemplateRepo,
-  fixtureEnv,
-  mustRun,
-  realGitignore,
-  runIn,
-  templatesRoot,
-} from './worktree-fixture.js';
+import { FIXTURE_REGISTRY, fixtureGitignore } from './fixtures.js';
+import { copyTemplateRepo, fixtureEnv, mustRun, runIn, templatesRoot } from './worktree-fixture.js';
 import { makeGitRepo } from './worktree-fixture-git.js';
 import { compareStrings, toPosix } from '../../src/core/strings.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
@@ -92,7 +86,7 @@ export function prebuildNpmTemplate(): void {
 
 /** Options for {@link makeFixtureRepo}. */
 export interface FixtureRepoOptions {
-  /** `.gitignore` content, by default the real repository's file. */
+  /** `.gitignore` content, by default {@link fixtureGitignore}. */
   readonly gitignore?: string;
 }
 
@@ -104,7 +98,7 @@ export interface FixtureRepoOptions {
  */
 export function makeFixtureRepo(root: string, options: FixtureRepoOptions = {}): string {
   const main = join(root, 'main');
-  const gitignore = options.gitignore ?? realGitignore();
+  const gitignore = options.gitignore ?? fixtureGitignore();
   copyTemplateRepo(JSON.stringify(['fixture', gitignore]), main, (dir) => {
     writeRepoFiles(dir, npmTemplate(), gitignore);
   });
@@ -323,10 +317,7 @@ function writeRepoFiles(main: string, template: string, gitignore: string): void
   writeFileSync(join(main, '.gitignore'), gitignore);
   const registryDir = join(main, 'server-pool', 'src', 'registry');
   mkdirSync(registryDir, { recursive: true });
-  copyFileSync(
-    join(REPO_ROOT, 'server-pool', 'src', 'registry', 'pool-registry.json'),
-    join(registryDir, 'pool-registry.json'),
-  );
+  copyFileSync(FIXTURE_REGISTRY, join(registryDir, 'pool-registry.json'));
 }
 
 /**

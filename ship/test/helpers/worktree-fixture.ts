@@ -7,7 +7,7 @@
  * inherited repository-location variable would point a fixture command at another repository.
  */
 
-import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { cpSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +83,6 @@ const templates = new Map<string, RepoTemplate>();
 /** The template each copy came from, by the copy's resolved path. */
 const copies = new Map<string, RepoTemplate>();
 let templateRoot: string | undefined;
-let gitignoreText: string | undefined;
 
 afterAll(() => {
   if (templateRoot !== undefined) rmSync(templateRoot, { recursive: true, force: true });
@@ -149,13 +148,6 @@ export function copyTemplateOrigin(repo: string, bare: string): boolean {
   mustRun('git', ['update-ref', 'refs/remotes/origin/master', template.sha], repo);
 
   return true;
-}
-
-/** The real repository's `.gitignore` content. */
-export function realGitignore(): string {
-  gitignoreText ??= readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8');
-
-  return gitignoreText;
 }
 
 /** Set a fixture repo's identity, signing and line endings in its own local config only. */

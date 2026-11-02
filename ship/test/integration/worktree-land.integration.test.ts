@@ -49,7 +49,7 @@ const TIMEOUT = { timeout: 60_000 };
 const WIN32 = process.platform === 'win32';
 const MESSAGE = 'feat(build): land one slice\n\nBody line of the slice commit.\n';
 const HOOK_SAYS = 'fixture hook: commit refused';
-// `dist/` is ignored by the real .gitignore, so the build leaves the batch clean.
+// `dist/` is ignored by the main checkout's .gitignore, so the build leaves the batch clean.
 const BUILD_MARKER = 'dist/built.txt';
 const BUILD_SCRIPT = `require('fs').mkdirSync('dist', { recursive: true });\nrequire('fs').writeFileSync('${BUILD_MARKER}', 'built\\n');\n`;
 const FIXTURE_PACKAGE = `${JSON.stringify({ name: 'land-fixture', private: true, scripts: { build: 'node build.js' } })}\n`;
