@@ -8,8 +8,7 @@
  * links ({@link assertNothingLive}). Then the slice branches are deleted, the run root removed, and
  * the run branch deleted, in that order, so a failed slice deletion leaves the run retirable again.
  * A missing run root skips the folder guard and the removal. The branches still go.
- * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream
- * (Ship PF-8).
+ * `git branch -d` is never the guard: it accepts a branch merged only to its own upstream.
  */
 
 import { lstatSync, rmSync } from 'node:fs';

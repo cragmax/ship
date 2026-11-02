@@ -1,5 +1,5 @@
 /**
- * The epic end's merge step (Ship ADR-0001 decision 12): the one workflow home
+ * The epic end's merge step: the one workflow home
  * of the `origin/master` merge, which the `resync` workflow reuses, passing
  * `{ batch, reportDir, tag: 'resync' }`.
  *

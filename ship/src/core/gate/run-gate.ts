@@ -136,7 +136,7 @@ interface RunGateInput {
   readonly blockerStates: ReadonlyMap<number, IssueState>;
   /**
    * An attached run's landed set: the issues its target branch carries `fixes #N` for, not yet on
-   * `origin/master` (Ship ADR-0001 decision 5). Absent for a run without an attach target.
+   * `origin/master`. Absent for a run without an attach target.
    */
   readonly landed?: ReadonlySet<number>;
   /** The gate mode. */

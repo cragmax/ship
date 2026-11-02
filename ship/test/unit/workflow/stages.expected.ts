@@ -1,5 +1,5 @@
 /**
- * The `STAGES` oracle: Ship ADR-0001 decision 15's tier per stage, written out by hand and never
+ * The `STAGES` oracle: the tier each stage runs at, written out by hand and never
  * imported from `ship/src/workflow/stages.ts`, as expected values come from the contract. It holds
  * nothing else, so a clone check can ignore this one intended copy without hiding any other.
  */

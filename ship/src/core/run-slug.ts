@@ -1,5 +1,5 @@
 /**
- * The slug of an unattended run (Ship ADR-0001 decision 3): the name its run branch, run root, and
+ * The slug of an unattended run: the name its run branch, run root, and
  * slice branches share. Apart from `ship/src/cli/git/run-layout.ts`, which spells the rest of the
  * layout, so the `ship` workflow can name a run before it is cut.
  *

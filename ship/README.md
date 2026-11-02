@@ -2,7 +2,7 @@
 
 The application that performs **Unattended runs**: it takes epics or an issue
 list from launch to one pull request per epic, with the PR as the only human
-gate ([Ship ADR-0001](docs/adr/0001-unattended-runs-rendered-scheduler-reviewed-slices-pr-gate.md)).
+gate ([Ship ADR-0002](docs/adr/0002-unattended-runs-are-rendered-saved-workflows-behind-one-pr-gate.md)).
 
 ## Launching
 
@@ -14,7 +14,7 @@ Both are Saved workflows, which Claude Code also lists as skills.
 
 ## What the folder holds
 
-Folders follow where the code runs (Ship ADR-0001 decision 2):
+Folders follow where the code runs (Ship ADR-0003):
 
 | Folder          | Runs                                  | Holds                                                                      |
 | --------------- | ------------------------------------- | -------------------------------------------------------------------------- |
@@ -29,7 +29,7 @@ Tests live in `test/`, under the subfolder of the file they test; the helpers th
 ## What Ship owns under `.claude/`
 
 Claude Code finds these only under `.claude/`, so they stay there (Framework ADR-0045
-decision 4):
+decision 3):
 
 - **Rendered:** `.claude/workflows/ship.js` and `resync.js`, the Saved
   workflows. `npm run codegen` renders them from `src/workflow/`;

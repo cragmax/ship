@@ -1,7 +1,7 @@
 /**
  * `publish <batch> --title T --body-file F --log L [--draft]`: push the run's
- * feature branch and open its pull request, as a draft with `--draft`
- * (Ship ADR-0001 decision 12: the PR is the sole human gate).
+ * feature branch and open its pull request, as a draft with `--draft`.
+ * The PR is the run's sole human gate.
  *
  * Order: the guards (a linked run batch, no open PR for the branch, a body
  * file within {@link GH_BODY_LIMIT}), then `npm run build`, so the
@@ -112,7 +112,7 @@ export function publishableBranch(batch: string, selfPath: string): string {
 }
 
 /**
- * Push the branch to `origin`, setting its upstream, through the pre-push hook (Tooling ADR-0002),
+ * Push the branch to `origin`, setting its upstream, through the pre-push hook,
  * and once more when that hook crashed: `hooked.ts`'s {@link runHooked}, the retry's output in its
  * own log beside `logFile`. Never forced: a push `origin` would have to lose commits for fails,
  * and is reported, never retried with force. `publish` and `publish --push-only` both push

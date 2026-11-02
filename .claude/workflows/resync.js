@@ -1,9 +1,9 @@
 export const meta = {
   name: 'resync',
   description:
-    "Bring an open run branch level with origin/master (Ship ADR-0001 decision 12): the epic end's merge step in its batch worktree, then a push through the pre-push gate, never forced; spent batch worktrees are torn down first.",
+    "Bring an open run branch level with origin/master by the epic end's merge step in its batch worktree, then a push through the pre-push gate, never forced; spent batch worktrees are torn down first.",
   whenToUse:
-    "Launch with the open run branch `ship/<slug>` (e.g. `ship/epic-1025`), or the object { branch }, after another PR merged into master — never GitHub's Update branch, which lefthook never gates. It refuses while the branch has commits of its own origin lacks (a stopped attached run's fixes): recover them first (Ship ADR-0001 decision 17).",
+    "Launch with the open run branch `ship/<slug>` (e.g. `ship/epic-1025`), or the object { branch }, after another PR merged into master — never GitHub's Update branch, which lefthook never gates. It refuses while the branch has commits of its own origin lacks (a stopped attached run's fixes): push them first from a continuation epic end (`publish --push-only`).",
   phases: [
     {
       title: 'Pre-flight',

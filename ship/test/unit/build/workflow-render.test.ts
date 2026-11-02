@@ -60,7 +60,7 @@ const fixture = (files: Readonly<Record<string, string>>) => {
 
 /**
  * A thunk compiling a render, meta `export` dropped, as the body of the
- * runtime's async workflow function, compiled only, never run (Ship PF-4).
+ * runtime's async workflow function, compiled only, never run.
  */
 const compileAsBody = (out: string) => (): vm.Script =>
   // eslint-disable-next-line sonarjs/code-eval -- test-owned render output, compiled not run

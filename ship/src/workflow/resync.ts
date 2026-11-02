@@ -1,5 +1,5 @@
 /**
- * The `resync` workflow's entry (Ship ADR-0001 decision 12): bring an open run branch level with
+ * The `resync` workflow's entry: bring an open run branch level with
  * `origin/master`, after another PR merged into `master`, through the epic end's own merge step
  * (`epic-end/sync-master-step.ts`) and a lefthook-gated, never-forced push, never a rebase, never
  * GitHub's server-side "Update branch". Rendered into `.claude/workflows/resync.js` by

@@ -2,7 +2,7 @@
  * `cut-batch <main> (--epic E | --issues N,…)` and
  * `cut-slice <batch> --issue N --attempt K [--attached-run R]`: cut an
  * unattended run's feature branch and batch worktree, and one slice worktree, at the places
- * `run-layout.ts` names (Ship ADR-0001 decision 3).
+ * `run-layout.ts` names.
  *
  * Invariant, both commands: every guard runs before the first mutation, a `git worktree add -b`,
  * so a refusal leaves the repository's branches, worktree list, and every checkout as they were.

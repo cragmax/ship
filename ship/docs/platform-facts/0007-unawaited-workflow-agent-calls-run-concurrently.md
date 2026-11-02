@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-29
-relied-on-by: [Ship ADR-0001, ship/src/workflow/drive.ts]
+relied-on-by: [Ship ADR-0008, Ship ADR-0018, ship/src/workflow/drive.ts, ship/src/workflow/runtime.types.ts]
 ---
 
 # Ship PF-7: Un-awaited workflow `agent()` calls run concurrently, and `Promise.race` over them resolves in completion order
@@ -11,7 +11,7 @@ In a workflow script, `agent()` promises left un-awaited run concurrently. `Prom
 
 ## Implication
 
-A scheduler can keep a set of in-flight slices and start the next as soon as any settles, with no worker-pool fallback. The call order then follows real settle timing, which is why a resumed run with more than one flight replays out of order (Ship ADR-0001 decision 17). Ship ADR-0001 decision 7 and the race loop in `ship/src/workflow/drive.ts` rest on this.
+A scheduler can keep a set of in-flight slices and start the next as soon as any settles, with no worker-pool fallback. The call order then follows real settle timing, which is why a resumed run with more than one flight replays out of order (Ship ADR-0018). Ship ADR-0008 decision 1 and the race loop in `ship/src/workflow/drive.ts` rest on this.
 
 ## Scope
 

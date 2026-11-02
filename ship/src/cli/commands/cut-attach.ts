@@ -127,7 +127,7 @@ export function attachSlug(branch: string): string {
 
 /**
  * Refuse a branch holding commits of its own `origin` lacks: a stopped
- * attached run's fixes, which Ship ADR-0001 decision 17 recovers first. An
+ * attached run's fixes, which must be recovered before a new run attaches. An
  * unpushed merge alone passes.
  *
  * @param branch - Short branch name.
@@ -141,7 +141,7 @@ export function assertPublished(main: string, branch: string): void {
   throw new Refusal(
     'unpublished-commits',
     'preconditions',
-    `${branch} has ${String(n)} commit(s) of its own origin lacks; recover them first (Ship ADR-0001 decision 17)`,
+    `${branch} has ${String(n)} commit(s) of its own origin lacks; push them first from a continuation epic end (publish --push-only)`,
   );
 }
 

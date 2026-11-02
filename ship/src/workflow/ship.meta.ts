@@ -11,7 +11,7 @@ import { MAX_SLICES, SHIP_PHASES } from './stages.js';
 export const SHIP_META: WorkflowMeta = {
   name: 'ship',
   description:
-    'Ship epics or issue lists unattended (Ship ADR-0001): pre-flight, then each issue built from its ' +
+    'Ship epics or issue lists unattended: pre-flight, then each issue built from its ' +
     'brief, reviewed and landed on its epic branch in dependency order, then the epic end ' +
     'and one pull request per epic.',
   // The main-loop model writes the launch call (given a bare `/ship 92`, it chose `issues 92`)
@@ -26,6 +26,7 @@ export const SHIP_META: WorkflowMeta = {
     'Given bare numbers, ask: epics or issues? Never choose. ' +
     'Resume (`resumeFromRunId`) only a one-epic or one-list `--max-slices 1` run ' +
     'whose script is unchanged; recover others by hand. ' +
-    'While it runs, never `cd` in the session: use absolute paths (Ship PF-2).',
+    'While it runs, never `cd` in the session: each run agent starts in the session directory, ' +
+    'so a `cd` moves it. Use absolute paths.',
   phases: SHIP_PHASES,
 };

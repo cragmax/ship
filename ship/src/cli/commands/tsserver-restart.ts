@@ -1,9 +1,9 @@
 /**
  * Restart the semantic tsserver of the Claude Code session a `teardown` runs under. On Windows a
  * tsserver that watched a now-deleted worktree burns about one core until its session ends, and
- * killing it is the recovery: Claude Code respawns the language server without the dead projects
- * (Ship PF-17). The session is found up the process tree, which reaches `claude.exe` only when the
- * CLI runs under `node --import tsx`, never `npx tsx` from Git Bash (Ship PF-16).
+ * killing it is the recovery: Claude Code respawns the language server without the dead projects.
+ * The session is found up the process tree, which reaches `claude.exe` only when the
+ * CLI runs under `node --import tsx`, never `npx tsx` from Git Bash.
  */
 
 import { tmpdir } from 'node:os';

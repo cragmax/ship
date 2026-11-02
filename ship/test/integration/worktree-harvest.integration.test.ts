@@ -3,7 +3,7 @@
  * suppressions-regeneration cases borrow this checkout's `node_modules`),
  * each holding a batch worktree and the slice worktrees whose commits it
  * harvests, never this repository's own worktrees. Case-collision and case-rename cases are
- * win32-only: that filesystem behaviour has been observed there alone (Framework PF-88).
+ * win32-only: that filesystem behaviour has been observed there alone.
  *
  * @integrationTier standalone
  */

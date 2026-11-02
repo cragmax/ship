@@ -1,7 +1,7 @@
 /**
  * `post-issue-comment <main> --issue N --comment-file F`: post a file as
  * one comment on an issue. An unattended run's epic end tells each issue it
- * blocked why (Ship ADR-0001 decision 12), so the reason sits where the next
+ * blocked why, so the reason sits where the next
  * triage or `/to-tickets` reads it. The run changes no label.
  *
  * Order and failures: {@link postCommentFile} (`gh-comment.ts`), the

@@ -1,6 +1,6 @@
 /**
- * The workflow runtime's vocabulary, as the workflow sources see it
- * (Ship ADR-0001 decision 1): the hooks a saved workflow's body is given, the
+ * The workflow runtime's vocabulary, as the workflow sources see it:
+ * the hooks a saved workflow's body is given, the
  * options of one `agent()` call, and the `meta` export. The runtime binds
  * the hooks as globals (unprobed). The sources take them as one object instead, so a
  * test can drive the body with fakes, and only the rendered tail
@@ -20,11 +20,11 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 /**
  * The options of one `agent()` call. The runtime honours a per-call `model`
- * and `effort`, `effort` with a non-default model included (Ship PF-3).
+ * and `effort`, `effort` with a non-default model included.
  *
  * **No working directory.** Every agent starts in the session's current
  * working directory, which a session `cd` moves mid-run, whatever worktree it
- * works in (Ship PF-2). No option here sets another (unprobed), and none can be
+ * works in. No option here sets another (unprobed), and none can be
  * probed inside an unattended run. So a worktree agent reaches its worktree
  * by absolute path (`cd`, `git -C`), and the CLAUDE.md, rules and skills its
  * session loads are the main checkout's. Each worktree agent's file has it
@@ -49,11 +49,11 @@ export interface AgentOptions {
 /** The hooks the workflow body is given. */
 export interface WorkflowHooks {
   /**
-   * Run one agent. Resolves to its structured output (Ship PF-5), or `null` when it returned none
+   * Run one agent. Resolves to its structured output, or `null` when it returned none
    * (unprobed).
    */
   readonly agent: (prompt: string, options: AgentOptions) => Promise<unknown>;
-  /** Run thunks concurrently (Ship PF-7). A thunk that threw yields `null` (unprobed). */
+  /** Run thunks concurrently. A thunk that threw yields `null` (unprobed). */
   readonly parallel: <T>(thunks: readonly (() => Promise<T>)[]) => Promise<(T | null)[]>;
   /** Run `step` over each item. */
   readonly pipeline: <T, R>(items: readonly T[], step: (item: T) => Promise<R>) => Promise<R[]>;

@@ -1,6 +1,6 @@
 /**
  * `post-pr-comment <batch> --pr N --comment-file F`: post a file as one
- * comment on an open PR (Ship ADR-0001 decision 16). An attached run posts its
+ * comment on an open PR. An attached run posts its
  * run report this way, so the report never grows the PR's body.
  *
  * Order and failures: {@link postCommentFile} (`gh-comment.ts`), the

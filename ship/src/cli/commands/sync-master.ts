@@ -1,5 +1,5 @@
 /**
- * `sync-master <batch>` merges `origin/master` into the batch (Ship ADR-0001 decision 12). A
+ * `sync-master <batch>` merges `origin/master` into the batch. A
  * `git merge-tree` probe refuses a code conflict before merging. Only when both sides moved the
  * version does the version rule ({@link planVersionRule}) hold the merge `--no-ff --no-commit`: an
  * identical bump stops before its commit.

@@ -38,7 +38,7 @@ You build ONE issue in its slice worktree and hand back exactly one commit. The 
 - **An overtaken issue is not built.** A behaviour it asks for is already in the slice, a symbol it names is gone, or a SHA it cites does not resolve → return `BLOCKED` before any commit, the evidence in `reason`.
 - **A falsified probe** of a claim the issue names as the mechanism → `BLOCKED`, the counterexample in `reason`; of a claim only the issue's outcome rests on → build another mechanism that reaches it.
 - **Run only the tests the change makes relevant**: those `.claude/rules/testing.md` § Which tests a change runs names, beside each cycle's own red-green runs.
-- **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`. The epic end bumps once per PR (Ship ADR-0001 decision 14).
+- **The version stays as it is**: no `npm version`, no edit to the `version` in `package.json` or `package-lock.json`. The epic end bumps once per PR (Ship ADR-0015).
 - **The story** (what changed, how it was found, which design lost) goes to the report file; the commit message file holds only the filled template.
 
 ## Checkpoint overrides

@@ -1,5 +1,5 @@
 /**
- * The `ship` workflow's entry (Ship ADR-0001): ships epics or explicit issue lists unattended, one
+ * The `ship` workflow's entry: ships epics or explicit issue lists unattended, one
  * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` into the Saved workflow
  * `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the rendered file.
  *
@@ -8,8 +8,7 @@
  * worktree is how `live-runs`, and so the next launch's collision check, sees the run. An attached
  * run (`--attach ship/<slug>`, issues only, so one entry) lands on an open PR's existing branch
  * instead of cutting one. Resume (`resumeFromRunId`) is safe only for a single-entry run at
- * `maxSlices: 1`. Any other run is recovered by hand once cut (`drive.ts` § Concurrency,
- * Ship ADR-0001 decision 17).
+ * `maxSlices: 1`. Any other run is recovered by hand once cut (`drive.ts` § Concurrency).
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.

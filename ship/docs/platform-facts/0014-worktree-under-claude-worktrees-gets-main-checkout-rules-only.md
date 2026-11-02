@@ -11,7 +11,7 @@ A sub-agent whose working directory is the main checkout (a workflow `agent()` o
 
 ## Implication
 
-A run worktree must be a direct child of `.claude/worktrees/` for its agents to follow the main checkout's instructions (Ship ADR-0001 decision 3). `WORKTREES_DIR` in `ship/src/cli/git/run-layout.ts` places every run worktree there.
+A run worktree must be a direct child of `.claude/worktrees/` for its agents to follow the main checkout's instructions (Ship ADR-0004). `WORKTREES_DIR` in `ship/src/cli/git/run-layout.ts` places every run worktree there.
 
 ## Scope
 

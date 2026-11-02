@@ -13,7 +13,7 @@
  * {@link complete} before it is read.
  *
  * **Same-repo assumption.** A native link's node carries no repository, so its number is read
- * as a same-repo issue (Ship PF-1).
+ * as a same-repo issue.
  */
 
 import { z } from 'zod';

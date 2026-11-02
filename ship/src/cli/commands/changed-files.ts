@@ -1,6 +1,6 @@
 /**
  * `changed-files <worktree> <sha> --base <base>`: the paths a range changes (`base..sha`), as the
- * slice chain re-reads them after a review amends the slice commit (Ship ADR-0001 decision 8).
+ * slice chain re-reads them after a review amends the slice commit.
  *
  * Read-only: no self-hosted guard.
  */
