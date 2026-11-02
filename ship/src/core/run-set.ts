@@ -1,17 +1,17 @@
 /**
- * The run-set vocabulary — the single declaration of an unattended run's issue set and its
+ * The run-set vocabulary: the single declaration of an unattended run's issue set and its
  * dependency edges (Ship ADR-0001 decision 5). The run gate (`ship/src/core/gate/run-gate.ts`)
- * produces a {@link RunGraph}; the run scheduler consumes it. Neither re-declares these shapes.
+ * produces a {@link RunGraph}, and the run scheduler consumes it. Neither re-declares these shapes.
  *
  * **Edge semantics.** A {@link RunEdge} `{ blocker, dependent }` means `dependent` waits for
  * `blocker`'s commit, so a walk along edges reaches everything a blocker holds up.
  *
- * **Zero imports, pure — a contract, not a style.** This module is rendered into the workflow
+ * **Zero imports, pure: a contract, not a style.** This module is rendered into the workflow
  * script with the scheduler, and that script permits no module system and no ambient runtime. So
  * it carries no `import` of any kind and no `export … from` re-export, and uses no `eval` /
  * `new Function`, no clock or randomness, no Node globals and no I/O (the renderer's
- * `FORBIDDEN_TOKENS` lists the names); erasable syntax only. Never pull a helper in from
- * elsewhere — sort numbers inline with `(a, b) => a - b`. A text guard test enforces it.
+ * `FORBIDDEN_TOKENS` lists the names). It uses erasable syntax only. Never pull a helper in from
+ * elsewhere: sort numbers inline with `(a, b) => a - b`. A text guard test enforces it.
  */
 
 /** One entry of a run set: one epic's issues, or an explicit issue list (`epic: null`). */
@@ -57,7 +57,7 @@ export function runSetIssues(runSet: RunSet): number[] {
  * more than one issue, plus each self-loop as a singleton.
  *
  * An edge with an endpoint outside `issues` is ignored. `[]` means the graph
- * is acyclic — the scheduler's construction-time check.
+ * is acyclic: the scheduler's construction-time check.
  *
  * @returns The cycles, each ascending, ordered by first member.
  */
@@ -74,7 +74,7 @@ export function findCycles(issues: readonly number[], edges: readonly RunEdge[])
 }
 
 /**
- * Every issue reachable from `roots` along blocker → dependent edges — what
+ * Every issue reachable from `roots` along blocker → dependent edges: what
  * dropping the roots would hold up.
  *
  * @returns The reached issues, roots excluded, each once, ascending.
@@ -132,7 +132,7 @@ interface TarjanNode {
 /**
  * Tarjan's strongly connected components over an adjacency map.
  *
- * @param adj - The adjacency map; its keys are the nodes.
+ * @param adj - The adjacency map, whose keys are the nodes.
  * @returns Every component (singletons included), members unordered.
  */
 function stronglyConnected(adj: ReadonlyMap<number, readonly number[]>): number[][] {

@@ -3,7 +3,6 @@
 /**
  * Describe an error: its message, plus its errno `code` when it carries one.
  *
- * @param error - Anything thrown or reported.
  * @returns `message [CODE]`, `message`, or `String(error)` for a non-Error.
  */
 export function describeError(error: unknown): string {

@@ -1,5 +1,5 @@
 /**
- * The slug of an unattended run (Ship ADR-0001 decision 3) — the name its run branch, run root and
+ * The slug of an unattended run (Ship ADR-0001 decision 3): the name its run branch, run root, and
  * slice branches share. Apart from `ship/src/cli/git/run-layout.ts`, which spells the rest of the
  * layout, so the `ship` workflow can name a run before it is cut.
  *
@@ -16,7 +16,7 @@ export const EPIC_SLUG_PREFIX = 'epic-';
 /**
  * The slug of a run.
  *
- * @param selection - The epic, or the explicit issue list (any order; the
+ * @param selection - The epic, or the explicit issue list (any order, and the
  *   caller has checked each is a positive integer).
  * @returns `epic-<E>`, or the numbers ascending joined with `-`.
  */

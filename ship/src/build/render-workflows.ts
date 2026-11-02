@@ -2,7 +2,7 @@
  * Build-time script: render each saved workflow in {@link WORKFLOWS} from its
  * typed sources under `ship/src/workflow/` into `.claude/workflows/`
  * (Ship ADR-0001 decision 1). The rendered files are committed and never
- * hand-edited; `ship/src/build/check-codegen.ts` (`npm run gate:codegen`) is their
+ * hand-edited. `ship/src/build/check-codegen.ts` (`npm run gate:codegen`) is their
  * drift check. The render itself is `ship/src/build/workflow-render.ts`.
  *
  * Run via `npm run codegen`.
