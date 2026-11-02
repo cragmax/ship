@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.281]
 last-verified: 2026-09-28
-relied-on-by: [Ship ADR-0010, .claude/skills/unattended-agent/SKILL.md]
+relied-on-by: [Ship ADR-0010, ship/skills/unattended-agent/SKILL.md]
 ---
 
 # Ship PF-6: A workflow agent's single foreground command is capped at 10 minutes, and a longer one runs only in the background, polled by chained foreground calls
@@ -11,7 +11,7 @@ Inside a workflow `agent()`, a foreground Bash command runs to just under the to
 
 ## Implication
 
-A stage whose command can outlast 10 minutes backgrounds it and polls in the foreground, never ending its turn while it runs (the background-and-poll idiom). Ship ADR-0010 decision 2 and the 10-minute rule in `.claude/skills/unattended-agent/SKILL.md` rest on this.
+A stage whose command can outlast 10 minutes backgrounds it and polls in the foreground, never ending its turn while it runs (the background-and-poll idiom). Ship ADR-0010 decision 2 and the 10-minute rule in `ship/skills/unattended-agent/SKILL.md` rest on this.
 
 ## Scope
 

@@ -4662,3 +4662,4 @@ function refusedReport(refusals, dropped) {
 }
 
 return await runShip({ agent, parallel, pipeline, phase, log }, args);
+// Ship's workflow: change it upstream under ship/src/workflow/, then run `npm run codegen`.

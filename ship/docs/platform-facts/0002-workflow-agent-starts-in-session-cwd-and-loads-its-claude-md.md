@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.296]
 last-verified: 2026-10-15
-relied-on-by: [ship/src/workflow/runtime.types.ts, ship/src/workflow/calls/prompts.ts, .claude/skills/unattended-agent/SKILL.md, ship/src/workflow/ship.meta.ts]
+relied-on-by: [ship/src/workflow/runtime.types.ts, ship/src/workflow/calls/prompts.ts, ship/skills/unattended-agent/SKILL.md, ship/src/workflow/ship.meta.ts]
 ---
 
 # Ship PF-2: A workflow `agent()` call starts in the launching session's current working directory and loads its CLAUDE.md

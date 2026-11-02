@@ -1,4 +1,5 @@
 ---
+# Ship's skill: change it upstream under ship/skills/, then run `npm run codegen`.
 name: unattended-agent
 description: Shared rules for the stage agents of an unattended `/ship` run. For run agents only, which preload it; never for an interactive session.
 user-invocable: false

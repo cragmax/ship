@@ -2,9 +2,9 @@
  * The `resync` workflow's entry: bring an open run branch level with
  * `origin/master`, after another PR merged into `master`, through the epic end's own merge step
  * (`epic-end/sync-master-step.ts`) and a lefthook-gated, never-forced push, never a rebase, never
- * GitHub's server-side "Update branch". Rendered into `.claude/workflows/resync.js` by
- * `ship/src/build/render-workflows.ts`: edit this source and run `npm run fix`, never the rendered
- * file.
+ * GitHub's server-side "Update branch". Rendered by `ship/src/build/render-workflows.ts` and
+ * installed as `.claude/workflows/resync.js`: edit this source and run `npm run fix`, never the
+ * installed file.
  *
  * The attach refuses a branch holding commits of its own `origin` lacks (`unpublished-commits`:
  * a stopped attached run's fixes, recovered first), so nothing merges or pushes. An unpushed merge

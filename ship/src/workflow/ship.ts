@@ -1,7 +1,8 @@
 /**
  * The `ship` workflow's entry: ships epics or explicit issue lists unattended, one
- * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` into the Saved workflow
- * `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the rendered file.
+ * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` and installed as the
+ * Saved workflow `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the
+ * installed file.
  *
  * Every refusal (the arguments, pre-flight, or a `source-shrank` spent-run teardown) ends the run
  * before anything is cut. The epic end never tears down its own batch: while its PR is open, that
