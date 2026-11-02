@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadPoolRegistry } from '../../../server-pool/src/index.js';
+import { loadPoolRegistry } from '../../src/cli/commands/pool-registry.js';
 import { toPosix } from '../../src/core/strings.js';
 import { unlinkLink } from '../../src/cli/git/links.js';
 import { provisionBatch } from '../../src/cli/commands/provision-batch.js';
@@ -202,8 +202,6 @@ describe('provision-batch', () => {
       expect(lstatSync(join(batch, 'paper-harness', 'tests')).isDirectory()).toBe(true);
       const registry = toPosix(join(reportDir, 'pool-registry.batch.json'));
       expect(run.json.registry).toBe(registry);
-      const loaded = loadPoolRegistry(registry);
-      expect(loaded.ok).toBe(true);
       const servers = [
         { type: 'paper', host: 'localhost', rconPort: 25701 },
         { type: 'paper', host: 'localhost', rconPort: 25703 },
@@ -212,7 +210,7 @@ describe('provision-batch', () => {
       ];
 
       expect(
-        (loaded.ok ? loaded.value : []).map((e) => ({
+        loadPoolRegistry(registry).map((e) => ({
           type: e.type,
           host: e.host,
           rconPort: e.rconPort,

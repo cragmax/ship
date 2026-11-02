@@ -13,7 +13,7 @@
  * registry failure stops the command.
  */
 
-import { loadPoolRegistry, type PoolEntry } from '../../../../server-pool/src/index.js';
+import { loadPoolRegistry, type PoolEntry } from './pool-registry.js';
 import { probeRcon, type RconProbeResult, type RconProbeTarget } from './rcon-probe.js';
 
 import { assertPublished, attachSlug } from './cut-attach.js';
@@ -165,10 +165,9 @@ function checkGhAuth(main: string): PreflightProblem[] {
  * @throws StepFailure `registry` when the registry fails to load.
  */
 async function checkWarmSet(main: string, probe: WarmProbe): Promise<PreflightProblem[]> {
-  const loaded = loadPoolRegistry(`${main}/${REGISTRY_PATH}`);
-  if (!loaded.ok) throw new StepFailure('registry', loaded.error.message);
+  const registry = loadPoolRegistry(`${main}/${REGISTRY_PATH}`);
   const outcomes = await Promise.all(
-    WARM_SET.map((member) => probeMember(member, loaded.value, probe)),
+    WARM_SET.map((member) => probeMember(member, registry, probe)),
   );
 
   return outcomes.flatMap((reason, i) => {

@@ -233,7 +233,7 @@ describe('the render closure', () => {
     const at = (file: string): number => files.indexOf(file);
 
     expect(files).toContain('ship/src/core/scheduler/run-scheduler.ts');
-    expect(files).toContain('server-pool/src/lease-timings.ts');
+    expect(files).toContain('ship/src/workflow/pr/lease-timings.ts');
     expect(files).not.toContain('ship/src/core/scheduler/run-scheduler.types.ts');
     expect(files.filter((f) => f.startsWith('ship/src/cli/'))).toEqual([]);
     expect(at('ship/src/core/run-set.ts')).toBeLessThan(

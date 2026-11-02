@@ -202,6 +202,26 @@ describe('preflight (in-process)', () => {
   });
 
   it(
+    'fails at step registry with the loader’s message when the registry is not JSON',
+    TIMEOUT,
+    async () => {
+      writeFileSync(join(main, REGISTRY), '[{');
+
+      const r = await preflightWith({});
+
+      expect(r).toMatchObject({
+        status: 'failed',
+        errors: [
+          {
+            step: 'registry',
+            message: expect.stringMatching(/^loadPoolRegistry: could not read pool registry /u),
+          },
+        ],
+      });
+    },
+  );
+
+  it(
     'refuses a slice branch of a --slug run as stale-slice-branch, naming it',
     TIMEOUT,
     async () => {

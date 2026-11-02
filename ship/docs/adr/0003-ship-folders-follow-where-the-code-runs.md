@@ -11,7 +11,7 @@ Ship's source is split by where each part runs, and a dependency-cruiser (depcru
    - `schemas/` holds the zod sources for codegen.
    - `build/` renders, emits, and checks.
 2. **The import rule.** A depcruise rule lets `workflow/` and `core/` value-import only each other, plus two carve-outs that the render inlines. Neither carve-out imports anything:
-   - `server-pool/src/lease-timings.ts`, for `workflow/` only, in place of the pool barrel (Pool ADR-0003 decision 2).
+   - `server-pool/src/lease-timings.ts`, for `workflow/` only, in place of the pool barrel (Pool ADR-0003 decision 2). (amended 2026-11-02: this carve-out is gone. The epic end and the PR body read Ship's own copy, `ship/src/workflow/pr/lease-timings.ts`, under the contract of Pool ADR-0004, so neither carve-out remains and `workflow/` and `core/` value-import only each other.)
    - `tooling/hooks/lib/platform-wide.ts`, for the pull request (PR) body's full-tiers line. (amended 2026-11-02: this carve-out is gone. The PR body reads Ship's own copy, `ship/src/workflow/pr/push-scope.ts`, since Ship imports nothing from tooling.)
 
    Type-only imports are free, since the render erases them.

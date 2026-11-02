@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { trimRegistry } from '../../../../src/cli/commands/pool-registry-trim.js';
+import { StepFailure } from '../../../../src/cli/envelope/types.js';
 
 const REAL_REGISTRY = resolve(
   import.meta.dirname,
@@ -38,5 +39,23 @@ describe('trimRegistry', () => {
 
     const kept = JSON.parse(readFileSync(dest, 'utf8')) as { rconPort: number }[];
     expect(kept.map((e) => e.rconPort)).toEqual([25701, 25703, 25711, 25713]);
+  });
+
+  it('fails the registry step with the loader’s message on an unreadable source, writing no dest', () => {
+    const dest = join(dir, 'dest.json');
+    let thrown: unknown;
+
+    try {
+      trimRegistry(join(dir, 'absent.json'), dest);
+    } catch (err: unknown) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(StepFailure);
+    expect(thrown).toMatchObject({
+      step: 'registry',
+      message: expect.stringMatching(/^loadPoolRegistry: could not read pool registry /u),
+    });
+    expect(existsSync(dest)).toBe(false);
   });
 });

@@ -11,16 +11,12 @@
  * section is appended to is never neutralised again.
  *
  * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
- * effect. `server-pool/src/lease-timings.ts`, which parses the lease lines, joins the closure.
+ * effect.
  */
 
 import { CO_AUTHOR_TRAILER } from '../../core/commit-trailer.js';
 import { GH_BODY_LIMIT } from '../../core/gh-body-limit.js';
-import {
-  parseLeaseLines,
-  type LeaseAggregate,
-  type LeaseTiming,
-} from '../../../../server-pool/src/lease-timings.js';
+import { parseLeaseLines, type LeaseAggregate, type LeaseTiming } from './lease-timings.js';
 import { isPlatformWide, MAX_RELATED_FILES, type PushedChanges } from './push-scope.js';
 
 import type {

@@ -1,7 +1,4 @@
-/**
- * The render-safety check for a source file a render step copies verbatim, shared by the pool's
- * and Ship's unit tests.
- */
+/** The render-safety check for a source file the workflow render copies verbatim. */
 
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
