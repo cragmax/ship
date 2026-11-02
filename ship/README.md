@@ -31,16 +31,15 @@ Tests live in `test/`, under the subfolder of the file they test; the helpers th
 
 ## What Ship owns under `.claude/`
 
-Claude Code finds these only under `.claude/`, so they stay there (Framework ADR-0045
-decision 3):
+Claude Code finds these only under `.claude/`, so Ship installs them there
+(Framework ADR-0045 decision 3). The three installed locations each hold
+installed copies of sources under `ship/`. `npm run codegen` copies each
+source with a header line saying it is Ship's, and removes a copy with that
+header whose source is gone; `gate:codegen` checks they match. Edit the
+source, never the copy.
 
-Each but the run layout is an installed copy. `npm run codegen` copies each from its
-source under `ship/`, with a header line saying it is Ship's, and removes a
-copy with that header whose source is gone; `gate:codegen` checks they
-match. Edit the source, never the copy.
-
-- **The Saved workflows:** `.claude/workflows/ship.js` and `resync.js`.
-  `npm run codegen` renders them from `src/workflow/` into `workflows/`, a
+- **The Saved workflows:** `.claude/workflows/ship.js` and `resync.js`, from
+  `src/workflow/`. `npm run codegen` renders them into `workflows/`, a
   gitignored build output like `dist/`, and installs each with the header
   as its last line.
 - **The stage agent files** in `.claude/agents/` (`tdd`, `spec-review`,
@@ -48,12 +47,20 @@ match. Edit the source, never the copy.
   `issue-overlap`, `epic-review`, `retro`, `pr`, `runner`), from `agents/`.
   The repo's own `github` agent carries no header, and the install leaves
   it alone.
-- **The run-only `unattended-agent` skill,** from `skills/`.
-- **The run layout,** gitignored: `.claude/worktrees/ship-*` (batch and slice
-  worktrees) and `reports/ship-*` (run roots), `reports/kept/`.
+- **The run-only `unattended-agent` skill** in `.claude/skills/`, from
+  `skills/`.
 
-Not Ship's, though its stage agents wrap them: every skill a stage agent
-preloads but `unattended-agent` (`tdd`, the three reviews, `epic-review`,
-`retro`, `pr` and the rest), since each is used by hand too, and the `github`
-agent. They are the repo's, and they carry no run text: what a run adds to
-one lives in `unattended-agent` or in the stage agent's file.
+The run layout is Ship's too, though not installed: `.claude/worktrees/ship-*`
+(batch and slice worktrees), `reports/ship-*` (run roots), and `reports/kept/`,
+all gitignored.
+
+## What Ship requires
+
+The consumer skills: each skill a stage agent preloads but `unattended-agent`
+(`tdd`, `spec-review`, `standards-review`, `test-review`, `epic-review`, `pr`,
+`retro`, `issue-overlap`, `issue-readiness`, `script-api-tsdoc` and `probe`).
+Ship ships none of them: each is used by hand too, and carries no run text,
+since what a run adds lives in `unattended-agent` or in the stage agent's
+file. The install reads their names from the agent sources' `skills:` front
+matter and refuses, naming each, while one lacks its
+`.claude/skills/<name>/SKILL.md`. The `github` agent is the repo's as well.

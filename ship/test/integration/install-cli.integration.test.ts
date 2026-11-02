@@ -110,6 +110,33 @@ it(
   },
 );
 
+it(
+  'the install exits non-zero naming a skill an agent source preloads that .claude/skills/ lacks, and installs once it is there',
+  TIMEOUT,
+  () => {
+    write(
+      'ship/agents/spec-review.md',
+      '---\nname: spec-review\nskills:\n  - spec-review\n  - unattended-agent\n  - probe\n---\n\nReviews.\n',
+    );
+    mkdirSync(join(root, '.claude/skills/spec-review'));
+    write('.claude/skills/spec-review/SKILL.md', '---\nname: spec-review\n---\n');
+
+    const refused = run();
+
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain(
+      'install: no .claude/skills/probe/SKILL.md, which ship/agents/spec-review.md preloads',
+    );
+    expect(existsSync(join(root, '.claude/agents/spec-review.md'))).toBe(false);
+
+    mkdirSync(join(root, '.claude/skills/probe'));
+    write('.claude/skills/probe/SKILL.md', '---\nname: probe\n---\n');
+
+    expect(run().status).toBe(0);
+    expect(existsSync(join(root, '.claude/agents/spec-review.md'))).toBe(true);
+  },
+);
+
 it('the install reports each stale copy it removes', TIMEOUT, () => {
   write('.claude/agents/gone.md', `---\n${AGENT_HEADER}\nname: gone\n---\n\nOld.\n`);
 

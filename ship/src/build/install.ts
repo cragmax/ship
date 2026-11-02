@@ -87,8 +87,11 @@ interface CopyDrift {
  *   does not open with a frontmatter `---` line), naming it, before any copy is written.
  * @throws {@link Error} when a part's source folder is missing, or its install folder is missing
  *   and the part has no source.
+ * @throws {@link Error} when a skill an agent source preloads is neither under `.claude/skills/`
+ *   nor installed from `ship/skills/`, one line per agent and skill, before any copy is written.
  */
 export function install(root: string): InstallReport {
+  requireConsumerSkills(root);
   const copies = PARTS.flatMap((part) =>
     part.names(join(root, part.sources)).map((name) => ({
       file: `${part.installs}/${name}`,
@@ -118,8 +121,11 @@ export function install(root: string): InstallReport {
  * @returns One entry per drifted copy, empty when none drifted.
  * @throws {@link Error} when a source has no place for its header, naming it.
  * @throws {@link Error} when a part's source or install folder is missing.
+ * @throws {@link Error} when a skill an agent source preloads is missing, as {@link install} does.
  */
 export function checkInstall(root: string): CopyDrift[] {
+  requireConsumerSkills(root);
+
   return PARTS.flatMap((part) => {
     const drifted = part.names(join(root, part.sources)).flatMap((name): CopyDrift[] => {
       const file = `${part.installs}/${name}`;
@@ -138,6 +144,42 @@ export function checkInstall(root: string): CopyDrift[] {
 
     return [...drifted, ...stale];
   });
+}
+
+/**
+ * Throw, one line per agent source and skill, when a source's `skills:` front matter names a skill
+ * with no `.claude/skills/<name>/SKILL.md` that `ship/skills/` does not install: Claude Code skips
+ * a missing preloaded skill with only a debug-log warning.
+ */
+function requireConsumerSkills(root: string): void {
+  const installed = new Set(skillNames(join(root, 'ship/skills')).map((name) => dirname(name)));
+  const missing = namesEndingIn(join(root, 'ship/agents'), '.md').flatMap((agent) =>
+    preloadedSkills(readLf(join(root, 'ship/agents', agent)))
+      .filter((skill) => !installed.has(skill))
+      .filter((skill) => !existsSync(join(root, '.claude/skills', skill, 'SKILL.md')))
+      .map(
+        (skill) =>
+          `install: no .claude/skills/${skill}/SKILL.md, which ship/agents/${agent} preloads`,
+      ),
+  );
+
+  if (missing.length > 0) throw new Error(missing.join('\n'));
+}
+
+/** The names an agent file's front matter lists under `skills:` as a block sequence, in order. */
+function preloadedSkills(agent: string): string[] {
+  const lines = agent.split('\n');
+  const close = lines.indexOf('---', 1);
+  const frontmatter = lines[0] === '---' && close !== -1 ? lines.slice(1, close) : [];
+  const start = frontmatter.indexOf('skills:');
+  if (start === -1) return [];
+  const item = /^[ \t]+- /u;
+  const items = frontmatter.slice(start + 1);
+  const end = items.findIndex((line) => !item.test(line));
+
+  return items
+    .slice(0, end === -1 ? items.length : end)
+    .map((line) => line.replace(item, '').trim());
 }
 
 /** The names under `dir` ending in `extension`, sorted. */

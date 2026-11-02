@@ -208,3 +208,40 @@ describe('install of the skills and the rendered workflows', () => {
     expect(read('.claude/skills/tdd/SKILL.md')).toBe(REPO_SKILL);
   });
 });
+
+describe('the consumer skills the agent sources preload', () => {
+  const TDD_PRELOADING =
+    '---\nname: tdd\nskills:\n  - tdd\n  - unattended-agent\ntools: Read\n---\n\nBuilds.\n';
+
+  beforeEach(() => {
+    write('ship/agents/tdd.md', TDD_PRELOADING);
+    // A skills list in the body is prose, not a preload.
+    write('ship/agents/pr.md', '---\nname: pr\n---\n\nskills:\n  - ghost\n');
+    mkdirSync(at('ship/skills/unattended-agent'));
+    write('ship/skills/unattended-agent/SKILL.md', '---\nname: unattended-agent\n---\n');
+    write('.claude/skills/tdd/SKILL.md', '---\nname: tdd\n---\n');
+  });
+
+  it('installs when each preloaded skill is under .claude/skills/ or installed from ship/skills/', () => {
+    expect(install(root).written).toEqual([
+      '.claude/agents/pr.md',
+      '.claude/agents/tdd.md',
+      '.claude/skills/unattended-agent/SKILL.md',
+    ]);
+    expect(checkInstall(root)).toEqual([]);
+  });
+
+  it('refuses a skill name added to one agent source with no SKILL.md, naming each, and writes no copy', () => {
+    write('ship/agents/tdd.md', TDD_PRELOADING.replace('tools:', '  - grill\n  - triage\ntools:'));
+    // A folder without SKILL.md holds no skill.
+    mkdirSync(at('.claude/skills/grill'));
+    const refusal = new Error(
+      'install: no .claude/skills/grill/SKILL.md, which ship/agents/tdd.md preloads\n' +
+        'install: no .claude/skills/triage/SKILL.md, which ship/agents/tdd.md preloads',
+    );
+
+    expect(() => checkInstall(root)).toThrow(refusal);
+    expect(() => install(root)).toThrow(refusal);
+    expect(existsSync(at('.claude/agents/pr.md'))).toBe(false);
+  });
+});
