@@ -1,0 +1,37 @@
+# A push to master publishes package.json's version, once: the commit-msg hook has already
+# required a fix to bump the patch and a feat the minor, and a version npm has stays as it is.
+name: publish
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # The suite was written and proven on Windows, where its consumer runs.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: |
+          git config --global user.name "ship-ci"
+          git config --global user.email "ship-ci@users.noreply.github.com"
+      - run: npm ci
+      - run: npm run gate
+      - name: publish unless npm already has this version
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@cragmax/ship@${version}" version >/dev/null 2>&1; then
+            echo "@cragmax/ship@${version} is already published"
+          else
+            npm publish --access public
+          fi
