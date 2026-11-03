@@ -1,5 +1,5 @@
 // regression: resync's runner calls named no checkout, so a session `cd` mid-run moved the
-// directory every later call resolved `ship/src/cli/worktree.ts` against
+// directory every later call resolved `node_modules/@cragmax/ship/dist/cli/worktree.js` against
 import { describe, expect, it } from 'vitest';
 
 import { runResync } from '../../../src/workflow/resync.js';

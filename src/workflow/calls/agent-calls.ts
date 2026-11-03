@@ -6,11 +6,11 @@
  * returned none (it died, or answered no object).
  *
  * The output shapes are the zod sources in
- * `ship/src/schemas/agent-outputs.ts`, the canonical home of each
+ * `src/schemas/agent-outputs.ts`, the canonical home of each
  * field and its doc. Each type here is its `z.infer`, and each schema is its
  * `schemas.generated.ts` emission ({@link AGENT_OUTPUT_SCHEMAS}).
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect. The zod sources are imported for their types
  * only.
  */

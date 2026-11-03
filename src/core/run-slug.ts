@@ -1,9 +1,9 @@
 /**
  * The slug of an unattended run: the name its run branch, run root, and
- * slice branches share. Apart from `ship/src/cli/git/run-layout.ts`, which spells the rest of the
+ * slice branches share. Apart from `src/cli/git/run-layout.ts`, which spells the rest of the
  * layout, so the `ship` workflow can name a run before it is cut.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

@@ -10,7 +10,7 @@ import { WORKFLOWS } from '../../../src/build/render-workflows.js';
 
 import type { FakeRun } from './_fake-hooks.js';
 
-const ROOT = resolve(import.meta.dirname, '../../../..');
+const ROOT = resolve(import.meta.dirname, '../../..');
 
 /**
  * The `WORKFLOWS` row named `name`.

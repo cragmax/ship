@@ -1,31 +1,45 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { gitPathList } from '../../helpers/worktree-fixture-git.js';
 import { PROMPTS } from '../../../src/workflow/calls/prompts.js';
 import { TOOL_COMMANDS } from '../../../src/workflow/calls/tool-calls.js';
 
 // A stale literal surfaces only in the first run after a move, as a pre-flight failure of every
 // runner call. These read the paths from the Workflow source, never from a copied list.
 
-const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
-const TRACKED = new Set(gitPathList(ROOT, ['ls-files', '-z']));
+/** Where the consumer's main checkout holds this package's build. */
+const OWN_DIST = 'node_modules/@cragmax/ship/dist/';
+
+/** The README names every consumer path a run invokes, as its contract with the consumer. */
+const README = readFileSync(join(ROOT, 'README.md'), 'utf8');
+
+/** Whether a main-checkout path resolves: this package's build to its source, else the README. */
+function known(path: string): boolean {
+  if (path.startsWith(OWN_DIST)) {
+    return existsSync(join(ROOT, 'src', path.slice(OWN_DIST.length).replace(/\.js$/u, '.ts')));
+  }
+
+  return README.includes(`\`${path}\``);
+}
 
 /** A main checkout no real path starts with, so each tool path it prefixes is found by it. */
 const MAIN = 'Z:/main-checkout';
 
 describe('the main-checkout paths the Saved workflow invokes', () => {
-  it('names a tracked script first in every tool command', () => {
+  it("names this package's build or a README-listed consumer script first in every tool command", () => {
     const untracked = Object.entries(TOOL_COMMANDS)
-      .filter(([, words]) => !TRACKED.has(words[0] ?? ''))
+      .filter(([, words]) => !known(words[0] ?? ''))
       .map(([tool, words]) => `${tool}: ${words[0] ?? '(no words)'}`);
 
     expect(untracked).toEqual([]);
   });
 
-  it('names a tracked tool in each lease line of a slice prompt', () => {
+  it('names a README-listed consumer tool in each lease line of a slice prompt', () => {
     const prompt = PROMPTS.tdd({
       issue: 7,
       attempt: 1,
@@ -58,7 +72,7 @@ describe('the main-checkout paths the Saved workflow invokes', () => {
       ['Full server tier', 1],
     ]);
     const untracked = toolPaths.flatMap(({ label, paths }) =>
-      paths.filter((path) => !TRACKED.has(path)).map((path) => `${label}: ${path}`),
+      paths.filter((path) => !known(path)).map((path) => `${label}: ${path}`),
     );
 
     expect(untracked).toEqual([]);

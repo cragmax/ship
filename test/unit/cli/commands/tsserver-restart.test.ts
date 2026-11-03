@@ -15,7 +15,8 @@ const SEMANTIC_CMD =
 const SYNTAX_CMD =
   '"C:\\nodejs\\node.exe" C:/repo/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic';
 const LSP_CMD = '"C:\\nodejs\\node.exe" C:/npm/typescript-language-server/lib/cli.mjs --stdio';
-const TEARDOWN_CMD = 'node --import tsx ship/src/cli/worktree.ts teardown C:/wt';
+const TEARDOWN_CMD =
+  'node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js teardown C:/wt';
 
 /** One session's LSP subtree, as Claude Code spawns it: `cmd.exe → language server → tsservers`. */
 function lspTree(session: number, base: number): ProcessEntry[] {

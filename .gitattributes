@@ -1,0 +1,6 @@
+# Every text file checks out LF, whatever core.autocrlf says. A CRLF checkout
+# breaks scripted multi-line edits and mutation restores, reads codegen output
+# as modified after every `npm run codegen`, and feeds the lefthook `sh`
+# launchers a CR as part of each command; the Workflow tool refuses an inline
+# script holding one (unprobed).
+* text=auto eol=lf

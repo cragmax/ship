@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Worktree lifecycle CLI: checks, cuts, provisions, lands into, and tears down an
  * unattended run's batch and slice worktrees, retires a merged run, and lists the live runs.
@@ -12,11 +13,10 @@
  *
  * Exit codes: `0` ok, `1` failed, refused or conflict (read `status`), `2` usage
  * ({@link UsageError}: `worktree: <reason>` on stderr, the `usage` envelope on stdout): the runner
- * rule shared with `ship/src/cli/run-gate.ts`, which leaves stdout empty on `2`.
+ * rule shared with `src/cli/run-gate.ts`, which leaves stdout empty on `2`.
  */
 
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import type { z } from 'zod';
 
@@ -635,7 +635,13 @@ function assertArity(count: number, rest: CommandSpec['rest']): void {
 }
 
 // Entry-point guard: run only when executed as a script, not when imported.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (import.meta.main && process.argv[2] === '--help') {
+  process.stdout.write(
+    `usage: ship-worktree <command> <worktree> [flags]
+commands: ${Object.keys(COMMANDS).join(', ')}
+`,
+  );
+} else if (import.meta.main) {
   const { result, exitCode } = await runWorktreeCli(process.argv.slice(2));
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (exitCode === 2) process.stderr.write(`worktree: ${result.errors[0]?.message ?? 'usage'}\n`);

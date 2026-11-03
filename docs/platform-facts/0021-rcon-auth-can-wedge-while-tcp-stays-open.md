@@ -2,7 +2,7 @@
 status: current
 platform: [paper 1.21.11]
 last-verified: 2026-06-10
-relied-on-by: [ship/src/cli/commands/rcon-probe.ts, ship/src/cli/commands/preflight.ts]
+relied-on-by: [src/cli/commands/rcon-probe.ts, src/cli/commands/preflight.ts]
 ---
 
 # Ship PF-21: RCON AUTH can wedge, timing out on packet id 0, while TCP stays open
@@ -11,7 +11,7 @@ Under Java virtual machine (JVM) starvation from host memory exhaustion, a serve
 
 ## Implication
 
-A liveness check must complete an RCON AUTH round trip, as `ship/src/cli/commands/rcon-probe.ts` does, never just a TCP connect or a check that the container is running. The pool pre-flight (`ship/src/cli/commands/preflight.ts`) checks every warm server with that AUTH round trip. If a lease or reset layer sees storms of `RESET_FAILED` or auth timeouts, suspect host memory pressure before retrying (#833). A wedged server's reset failure is slow, not connection-refused.
+A liveness check must complete an RCON AUTH round trip, as `src/cli/commands/rcon-probe.ts` does, never just a TCP connect or a check that the container is running. The pool pre-flight (`src/cli/commands/preflight.ts`) checks every warm server with that AUTH round trip. If a lease or reset layer sees storms of `RESET_FAILED` or auth timeouts, suspect host memory pressure before retrying (#833). A wedged server's reset failure is slow, not connection-refused.
 
 ## Scope
 

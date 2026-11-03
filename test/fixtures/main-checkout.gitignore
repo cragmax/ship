@@ -1,7 +1,5 @@
 node_modules
 dist/
-# The rendered saved workflows: a build output, installed into .claude/workflows/.
-/ship/workflows/
 pack/
 ph-plugin/build/
 ph-plugin/.gradle/

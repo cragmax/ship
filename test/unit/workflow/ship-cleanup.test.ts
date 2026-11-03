@@ -30,12 +30,12 @@ describe('runShip — spent-run cleanup at launch', () => {
       'runner:cut-batch:list',
     ]);
     expect(run.calls.find((c) => c.label === 'runner:teardown:spent-1')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
+      'node_modules/@cragmax/ship/dist/cli/worktree.js',
       'teardown',
       SPENT_BATCH,
     ]);
     expect(run.calls.find((c) => c.label === 'runner:retire-run:spent-1')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
+      'node_modules/@cragmax/ship/dist/cli/worktree.js',
       'retire-run',
       '.',
       '--branch',

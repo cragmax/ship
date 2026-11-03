@@ -1,7 +1,7 @@
 /**
  * The run gate's pure decision core: resolve a launch spec into a
  * run set, decide whether the run may start, and derive its dependency edges.
- * No I/O: `ship/src/cli/run-gate-gh.ts` gathers the inputs, and the rules
+ * No I/O: `src/cli/run-gate-gh.ts` gathers the inputs, and the rules
  * below are the oracle the unit tests pin.
  *
  * **What an `ok` verdict guarantees the scheduler.** Every edge has both ends
@@ -286,9 +286,11 @@ function exclusions(analysis: Analysis): Exclusion[] {
 
   return [
     ...[...failed].map((issue): Exclusion => ({ issue, cause: 'failed' })),
-    ...dependents.map(
-      (issue): Exclusion => ({ issue, cause: 'dependent', blockers: droppedBlockersOf(issue) }),
-    ),
+    ...dependents.map((issue): Exclusion => ({
+      issue,
+      cause: 'dependent',
+      blockers: droppedBlockersOf(issue),
+    })),
   ].sort((a, b) => a.issue - b.issue);
 }
 

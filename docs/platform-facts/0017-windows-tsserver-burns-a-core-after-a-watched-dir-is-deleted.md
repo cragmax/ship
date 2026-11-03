@@ -2,7 +2,7 @@
 status: current
 platform: [node 24.19.0, typescript 5.9.3, typescript-language-server 6.0.2, claude-code 2.1.300, windows 10.0.26300]
 last-verified: 2026-10-15
-relied-on-by: [ship/src/cli/commands/tsserver-restart.ts, ship/src/cli/commands/teardown.ts]
+relied-on-by: [src/cli/commands/tsserver-restart.ts, src/cli/commands/teardown.ts]
 ---
 
 # Ship PF-17: On Windows, a session's semantic tsserver burns about one core once a directory it watched is deleted, and killing it makes Claude Code respawn its language server clean
@@ -16,7 +16,7 @@ Four observations make one chain:
 
 ## Implication
 
-Deleting a worktree whose files a session's LSP opened starts the burn. Nothing in the worktree or `tsconfig.json` prevents it: `TSC_WATCHDIRECTORY` and `watchOptions` were probed, and neither helps. The recovery is to kill the session's semantic tsserver after the deletion. `useClientFileWatcher: true` also stops the burn but blinds tsserver to on-disk changes, because Claude Code never registers `workspace/didChangeWatchedFiles`. `restartSessionTsserver` in `ship/src/cli/commands/tsserver-restart.ts` does the kill, run by `teardown` after it removes a worktree.
+Deleting a worktree whose files a session's LSP opened starts the burn. Nothing in the worktree or `tsconfig.json` prevents it: `TSC_WATCHDIRECTORY` and `watchOptions` were probed, and neither helps. The recovery is to kill the session's semantic tsserver after the deletion. `useClientFileWatcher: true` also stops the burn but blinds tsserver to on-disk changes, because Claude Code never registers `workspace/didChangeWatchedFiles`. `restartSessionTsserver` in `src/cli/commands/tsserver-restart.ts` does the kill, run by `teardown` after it removes a worktree.
 
 ## Scope
 

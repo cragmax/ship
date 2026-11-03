@@ -4,7 +4,7 @@
  * or that object's JSON text. Anything else is refused, never guessed: an
  * extra word or key must never launch a merge and push.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 

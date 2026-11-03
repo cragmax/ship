@@ -9,7 +9,7 @@
  * the halting issue itself, so the issue settles as halted and the entry can drain
  * ({@link settleEvents}).
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

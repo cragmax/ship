@@ -585,7 +585,7 @@ describe('harvest (in-process)', () => {
   it('refuses a CLI hosted inside the batch and stages nothing', TIMEOUT, () => {
     const { batch, sha } = slicePair({}, { write: { 'slice-added.txt': 'slice\n' } });
 
-    const run = harvest({ batch, sha, selfPath: `${batch}/ship/src/cli/worktree.ts` });
+    const run = harvest({ batch, sha, selfPath: `${batch}/src/cli/worktree.ts` });
 
     expect(run.status).toBe('refused');
     expect(run.reason).toBe('self-hosted');

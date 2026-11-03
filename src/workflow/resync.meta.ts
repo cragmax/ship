@@ -1,6 +1,6 @@
 /**
  * The `resync` workflow's `meta` export, rendered as the literal that opens
- * `.claude/workflows/resync.js`. Read by `ship/src/build/render-workflows.ts`, not
+ * `.claude/workflows/resync.js`. Read by `src/build/render-workflows.ts`, not
  * part of the render closure.
  */
 

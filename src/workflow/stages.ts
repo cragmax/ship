@@ -4,7 +4,7 @@
  * each workflow's phase titles. No other workflow source spells a tier:
  * each `agent()` call takes its options from {@link agentOptions}.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 
@@ -60,14 +60,7 @@ export const PROBE_CAP_MINUTES = 15;
 /** The most probes one stage of one slice (its tdd or one slice review) may run. */
 export const PROBES_PER_STAGE = 3;
 
-const CODE_PREFIXES: readonly string[] = [
-  'src/',
-  'tooling/',
-  'test/',
-  'server-pool/',
-  'ship/src/',
-  'ship/test/',
-];
+const CODE_PREFIXES: readonly string[] = ['src/', 'tooling/', 'test/', 'server-pool/'];
 
 /**
  * Whether any path starts with one of the prefixes.

@@ -12,7 +12,7 @@
  * Bare numbers (epic or issue would be a guess) and unknown keys or flags are refused: a typo must
  * never launch a full run. `--attach` (`attach`), an open PR's run branch, takes `issues` only.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

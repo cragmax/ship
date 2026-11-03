@@ -698,8 +698,8 @@ function secondRetry(): MachineFactory {
       }
 
       const t = advance(state, { kind: 'harvest-conflict', issue: event.issue });
-      const actions = t.actions.map(
-        (a): SchedulerAction => (a.kind === 'requeue' ? { kind: 'retry', issue: a.issue } : a),
+      const actions = t.actions.map((a): SchedulerAction =>
+        a.kind === 'requeue' ? { kind: 'retry', issue: a.issue } : a,
       );
 
       return { state: t.state, actions };
@@ -801,9 +801,8 @@ export const MUTANTS: readonly Mutant[] = [
     name: 'end a halted entry with epic-done',
     trips: 'one-terminal-per-entry',
     machine: mapActions((_view, _event, actions) =>
-      actions.map(
-        (a): SchedulerAction =>
-          a.kind === 'epic-halted' ? { kind: 'epic-done', epic: a.epic } : a,
+      actions.map((a): SchedulerAction =>
+        a.kind === 'epic-halted' ? { kind: 'epic-done', epic: a.epic } : a,
       ),
     ),
   },

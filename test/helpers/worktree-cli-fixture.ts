@@ -33,8 +33,8 @@ import { compareStrings, toPosix } from '../../src/core/strings.js';
 import type { SyncMasterResult } from '../../src/cli/envelope/types-run.js';
 import type { ResultBase } from '../../src/cli/envelope/types.js';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const CLI_PATH = join(REPO_ROOT, 'ship', 'src', 'cli', 'worktree.ts');
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const CLI_PATH = join(REPO_ROOT, 'src', 'cli', 'worktree.ts');
 const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 const FAKE_DEP_TARBALL = 'fake-dep-1.0.0.tgz';
 
@@ -156,7 +156,7 @@ export function listTree(dir: string): string[] {
 }
 
 /**
- * Spawn the worktree CLI from this repository's `ship/src/cli/` under the tsx
+ * Spawn the worktree CLI from this repository's `src/cli/` under the tsx
  * loader (by absolute URL, so any `cwd` works). The default cwd is the OS
  * temp dir, so a relative or defaulted path can never resolve into a real
  * checkout. `options.env` is laid over the fixture env: a key must match the existing spelling to

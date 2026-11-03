@@ -401,7 +401,7 @@ describe('runShip — the retro', () => {
         {
           message: 'publish failed: the pre-push gate failed',
           recovery: [
-            `node --import tsx ship/src/cli/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+            `node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
           ],
         },
       ],
@@ -519,7 +519,7 @@ describe('runShip — the tests at push', () => {
     await runShip(run.hooks, 'issues 7');
 
     expect(run.calls.find((c) => c.label === 'runner:changed-files:list')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
+      'node_modules/@cragmax/ship/dist/cli/worktree.js',
       'changed-files',
       BATCH,
       'HEAD',
@@ -935,7 +935,7 @@ describe('runShip — the PR body limit', () => {
     const posts = run.calls.filter((c) => c.label === 'runner:post-pr-comment:list');
     expect(posts.map((c) => c.argv)).toEqual(
       ['pr-comment-schedule.md', 'pr-comment-retro-findings.md'].map((file) => [
-        'ship/src/cli/worktree.ts',
+        'node_modules/@cragmax/ship/dist/cli/worktree.js',
         'post-pr-comment',
         BATCH,
         '--pr',
@@ -1051,9 +1051,9 @@ describe('runShip — a failed publish’s recovery', () => {
       message: 'publish failed: the pre-push gate failed',
     });
     expect(recovery).toEqual([
-      `node --import tsx ship/src/cli/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
-      `node --import tsx ship/src/cli/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
-      `node --import tsx ship/src/cli/worktree.ts post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
+      `node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log`,
+      `node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-schedule.md`,
+      `node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js post-pr-comment ${BATCH} --pr <pr> --comment-file ${REPORT_DIR}/pr-comment-retro-findings.md`,
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')[1]).toBe(
       `Command: ${recovery[0] ?? ''}`,
@@ -1088,7 +1088,7 @@ describe('runShip — a failed publish’s recovery', () => {
 
     const recovery = report.epics[0]?.recovery ?? [];
     expect(recovery).toEqual([
-      `node --import tsx ship/src/cli/worktree.ts publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
+      `node --import tsx node_modules/@cragmax/ship/dist/cli/worktree.js publish ${BATCH} --title 'feat(build): add the x tool' --body-file ${REPORT_DIR}/pr-body.md --log ${REPORT_DIR}/publish.log --draft`,
     ]);
     expect(promptOf(run, 'runner:publish:list').split('\n')[1]).toBe(
       `Command: ${recovery[0] ?? ''}`,
@@ -1148,12 +1148,12 @@ describe('runShip — a nothing-landed run cleans up after itself', () => {
       labels(run).filter((l) => /^(retro|runner:(teardown|retire-run)):list$/.test(l)),
     ).toEqual(['retro:list', 'runner:teardown:list', 'runner:retire-run:list']);
     expect(run.calls.find((c) => c.label === 'runner:teardown:list')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
+      'node_modules/@cragmax/ship/dist/cli/worktree.js',
       'teardown',
       BATCH,
     ]);
     expect(run.calls.find((c) => c.label === 'runner:retire-run:list')?.argv).toEqual([
-      'ship/src/cli/worktree.ts',
+      'node_modules/@cragmax/ship/dist/cli/worktree.js',
       'retire-run',
       '.',
       '--branch',

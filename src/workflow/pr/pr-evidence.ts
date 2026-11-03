@@ -5,10 +5,10 @@
  *
  * **Guarded at render time.** Nothing upstream tells a complete tracer from a
  * half-filled one (the evidence's shape: `TddEvidenceSchema` in
- * `ship/src/schemas/agent-outputs.ts`), so this render does: an
+ * `src/schemas/agent-outputs.ts`), so this render does: an
  * empty claim never reads as evidence.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 

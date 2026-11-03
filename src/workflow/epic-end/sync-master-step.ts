@@ -6,7 +6,7 @@
  * A code conflict or any failure stops the epic before its bump and push.
  * The caller reads {@link SyncStepResult.verdict}.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 

@@ -2,7 +2,7 @@
  * The `resync` workflow's entry: bring an open run branch level with
  * `origin/master`, after another PR merged into `master`, through the epic end's own merge step
  * (`epic-end/sync-master-step.ts`) and a lefthook-gated, never-forced push, never a rebase, never
- * GitHub's server-side "Update branch". Rendered by `ship/src/build/render-workflows.ts` and
+ * GitHub's server-side "Update branch". Rendered by `src/build/render-workflows.ts` and
  * installed as `.claude/workflows/resync.js`: edit this source and run `npm run fix`, never the
  * installed file.
  *
@@ -11,7 +11,7 @@
  * of its own still goes through. An `up-to-date` merge still reaches the push, so a rerun pushes a
  * merge an earlier resync made but never pushed.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

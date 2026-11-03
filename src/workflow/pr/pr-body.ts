@@ -10,7 +10,7 @@
  * moved section included, passes through {@link neutralText}. The body a
  * section is appended to is never neutralised again.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

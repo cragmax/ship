@@ -1,8 +1,7 @@
 /**
- * Drift gate, first half: `schemas.generated.ts` must equal a fresh emission, line endings
- * normalised ({@link checkSchemaModule}), and every saved workflow is rendered afresh into
- * `ship/workflows/` ({@link writeRenderedWorkflows}). The second half,
- * `ship/src/build/install.ts --check`, then compares each committed copy with the current sources.
+ * Drift gate: `schemas.generated.ts` must equal a fresh emission, line endings normalised
+ * ({@link checkSchemaModule}), and every saved workflow is rendered afresh into `workflows/`
+ * ({@link writeRenderedWorkflows}), so a source the render rejects fails here.
  *
  * On drift, prints a failure line and the hint "Run `npm run codegen` to regenerate." then exits 1.
  *
@@ -15,7 +14,7 @@ import { WORKFLOWS } from './render-workflows.js';
 import { writeRenderedWorkflows } from './workflow-render.js';
 import { checkSchemaModule } from './workflow-schemas.js';
 
-const ROOT_DIR = resolve(import.meta.dirname, '../../..');
+const ROOT_DIR = resolve(import.meta.dirname, '../..');
 
 async function main(): Promise<void> {
   const schema = await checkSchemaModule(ROOT_DIR);

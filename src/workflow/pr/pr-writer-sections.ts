@@ -4,7 +4,7 @@
  * ({@link mergeDangerLines}). A writer that returned nothing gets a fallback
  * line in each, so the body still says what is missing.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 

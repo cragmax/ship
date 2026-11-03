@@ -11,11 +11,11 @@ The application that performs **Unattended runs**: the `ship/` subproject, its *
 _Avoid_: "the ship machine"; "the workflow" (for the whole application).
 
 **Workflow source**:
-The typed TypeScript under `ship/src/workflow/` that renders into a **Saved workflow**: the entry plus every file its relative value imports reach.
+The typed TypeScript under `src/workflow/` that renders into a **Saved workflow**: the entry plus every file its relative value imports reach.
 _Avoid_: bare "the workflow" (ambiguous with the **Saved workflow** and the **Workflow runtime**).
 
 **Saved workflow**:
-A rendered, import-free JS script in `.claude/workflows/` that the **Workflow tool** runs by name: `ship.js` and `resync.js`. Rendered from its **Workflow source** into `ship/workflows/`, then installed there, never edited by hand.
+A rendered, import-free JS script in `.claude/workflows/` that the **Workflow tool** runs by name: `ship.js` and `resync.js`. Rendered from its **Workflow source** into `workflows/`, then installed there, never edited by hand.
 _Avoid_: "workflow script" (Claude Code's term for any script); bare "the workflow".
 
 **Workflow tool**:

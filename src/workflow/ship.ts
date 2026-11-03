@@ -1,6 +1,6 @@
 /**
  * The `ship` workflow's entry: ships epics or explicit issue lists unattended, one
- * pull request per epic. Rendered by `ship/src/build/render-workflows.ts` and installed as the
+ * pull request per epic. Rendered by `src/build/render-workflows.ts` and installed as the
  * Saved workflow `.claude/workflows/ship.js`: edit this source and run `npm run fix`, never the
  * installed file.
  *
@@ -11,7 +11,7 @@
  * instead of cutting one. Resume (`resumeFromRunId`) is safe only for a single-entry run at
  * `maxSlices: 1`. Any other run is recovered by hand once cut (`drive.ts` § Concurrency).
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

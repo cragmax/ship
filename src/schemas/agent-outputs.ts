@@ -1,12 +1,12 @@
 /**
  * The zod source of each `ship` judgment agent's output schema: the
- * canonical home of the answer shapes `ship/src/workflow/calls/agent-calls.ts`
+ * canonical home of the answer shapes `src/workflow/calls/agent-calls.ts`
  * types as their `z.infer`. Every field is required, the tdd's `reason`
  * alone optional, so a verdict never reaches the workflow without what
  * backs it.
  *
- * Emitted, never rendered: `ship/src/build/emit-workflow-schemas.ts` writes it as
- * JSON Schema into `ship/src/workflow/schemas.generated.ts`, which the
+ * Emitted, never rendered: `src/build/emit-workflow-schemas.ts` writes it as
+ * JSON Schema into `src/workflow/schemas.generated.ts`, which the
  * render inlines. No file in a render closure may value-import this one.
  */
 

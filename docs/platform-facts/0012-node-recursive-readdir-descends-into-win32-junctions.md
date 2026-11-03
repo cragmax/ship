@@ -2,7 +2,7 @@
 status: current
 platform: [node 24.19.0, windows 10.0.26300]
 last-verified: 2026-10-10
-relied-on-by: [ship/src/cli/git/links.ts]
+relied-on-by: [src/cli/git/links.ts]
 ---
 
 # Ship PF-12: `fs.readdirSync(dir, { recursive: true })` descends into directory junctions on win32
@@ -11,7 +11,7 @@ On win32, `readdirSync(dir, { recursive: true })` lists the entries beneath a di
 
 ## Implication
 
-A recursive walk or count over a tree that holds junctions sees the link target's contents, and a cleanup would reach them. Walk manually with `lstat` and stop at links. Every walk in `ship/src/cli/git/links.ts` is a manual `lstat` walk.
+A recursive walk or count over a tree that holds junctions sees the link target's contents, and a cleanup would reach them. Walk manually with `lstat` and stop at links. Every walk in `src/cli/git/links.ts` is a manual `lstat` walk.
 
 ## Scope
 

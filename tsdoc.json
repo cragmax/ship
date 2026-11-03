@@ -1,0 +1,13 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/tsdoc/v0/tsdoc.schema.json",
+  "tagDefinitions": [
+    {
+      "tagName": "@silences",
+      "syntaxKind": "block"
+    },
+    {
+      "tagName": "@integrationTier",
+      "syntaxKind": "block"
+    }
+  ]
+}

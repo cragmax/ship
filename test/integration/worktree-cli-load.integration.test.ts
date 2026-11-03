@@ -1,5 +1,5 @@
 /**
- * Which `ship/src/cli/` command modules one CLI invocation loads, read from a resolve hook the
+ * Which `src/cli/` command modules one CLI invocation loads, read from a resolve hook the
  * spawned CLI registers through `NODE_OPTIONS`. Each command runs against a missing target, so it
  * fails at its first step and touches nothing.
  *
@@ -180,7 +180,7 @@ function loadedCommandModules(args: readonly string[]): { code: number; modules:
   const loaded = new Set(
     readFileSync(log, 'utf8')
       .split('\n')
-      .map((url) => /\/ship\/src\/cli\/(?:commands|git)\/([a-z-]+)\.ts$/u.exec(url)?.[1])
+      .map((url) => /\/src\/cli\/(?:commands|git)\/([a-z-]+)\.ts$/u.exec(url)?.[1])
       .filter((name) => name !== undefined),
   );
 

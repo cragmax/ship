@@ -10,7 +10,7 @@
  * `maxSlices: 1`) it does not, so only such a run resumes, as resume replays calls by position.
  *
  * **One halt state per entry** ({@link HaltState}): once it leaves `running`, the entry's attempts
- * stop and its queued landings never run. Render-safe (`ship/src/build/workflow-render.ts`):
+ * stop and its queued landings never run. Render-safe (`src/build/workflow-render.ts`):
  * ECMAScript built-ins only, no top-level side effect.
  */
 
@@ -66,8 +66,7 @@ export interface DriveInput {
 
 /** A settled flight. */
 type Note =
-  | AttemptNote
-  | { readonly kind: 'epic-end'; readonly entry: number; readonly report: EpicReport };
+  AttemptNote | { readonly kind: 'epic-end'; readonly entry: number; readonly report: EpicReport };
 
 /** An issue's final attempt, as its schedule reports it. */
 type Timing = Pick<ScheduleEntry, 'attempts' | 'startedAt' | 'committedAt' | 'size'>;
@@ -260,17 +259,15 @@ function endUnshipped(d: Drive, i: number, outcome: 'halted' | 'nothing-landed')
     schedule: scheduleOf(d, i),
     residue: d.residue.get(i) ?? [],
   };
-  const report = unshippedEpicEnd(input, outcome).catch(
-    (): EpicReport => ({
-      epic: entry.epic,
-      branch: entry.branch,
-      outcome,
-      issues: input.issues,
-      schedule: input.schedule,
-      residue: input.residue,
-      retro: null,
-    }),
-  );
+  const report = unshippedEpicEnd(input, outcome).catch((): EpicReport => ({
+    epic: entry.epic,
+    branch: entry.branch,
+    outcome,
+    issues: input.issues,
+    schedule: input.schedule,
+    residue: input.residue,
+    retro: null,
+  }));
 
   startEnd(d, i, report);
 }
@@ -316,17 +313,15 @@ function endEpic(d: Drive, i: number): void {
     launch: d.input.launch,
     repoLock: d.repoLock,
     overlap: entryOverlap(d, i),
-  }).catch(
-    (err: unknown): EpicReport => ({
-      epic: entry.epic,
-      branch: entry.branch,
-      outcome: 'stopped',
-      message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
-      issues,
-      schedule,
-      residue,
-    }),
-  );
+  }).catch((err: unknown): EpicReport => ({
+    epic: entry.epic,
+    branch: entry.branch,
+    outcome: 'stopped',
+    message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+    issues,
+    schedule,
+    residue,
+  }));
 
   startEnd(d, i, report);
 }
@@ -542,7 +537,7 @@ function newDrive(input: DriveInput): Drive {
 
 /**
  * One graph edge's blocker and its source: an edge both declared and estimated reads `declared`,
- * since `mergeOverlapEdges` (`ship/src/core/run-overlap.ts`) adds no edge for a pair the declared
+ * since `mergeOverlapEdges` (`src/core/run-overlap.ts`) adds no edge for a pair the declared
  * edges already order, so a graph edge absent from `overlap.added` is declared.
  */
 function scheduleBlocker(

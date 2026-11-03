@@ -1,6 +1,6 @@
 /**
  * The run layout of an unattended run: the one home of its naming rules
- * but the slug's (`ship/src/core/run-slug.ts`, render-safe for the workflow). Every tool that names
+ * but the slug's (`src/core/run-slug.ts`, render-safe for the workflow). Every tool that names
  * a run's branch or directory derives it here, never by re-spelling the rule.
  *
  * The `ship/` namespace is the feature branch's (`ship/<slug>`), the one pre-flight's live-run

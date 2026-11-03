@@ -1,5 +1,5 @@
 /**
- * The repo-level files Ship's tests stand on, each a fixture under `ship/test/fixtures/`: a Ship
+ * The repo-level files Ship's tests stand on, each a fixture under `test/fixtures/`: a Ship
  * test reads none of this repository's own root files.
  */
 

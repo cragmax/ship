@@ -140,7 +140,7 @@ export interface ReleasedEdge {
 export type SchedulerAction =
   | {
       /**
-       * Cut a slice from the epic head, re-check readiness with `ship/src/cli/run-gate.ts check`,
+       * Cut a slice from the epic head, re-check readiness with `src/cli/run-gate.ts check`,
        * then author the issue. Feed a not-ready result, a missing label or a closed issue, as
        * `label-removed`.
        */

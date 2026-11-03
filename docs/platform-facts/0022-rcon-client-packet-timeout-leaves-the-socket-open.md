@@ -2,7 +2,7 @@
 status: current
 platform: [rcon-client 4.2.5, node 24.19.0]
 last-verified: 2026-10-10
-relied-on-by: [ship/src/cli/commands/rcon-probe.ts]
+relied-on-by: [src/cli/commands/rcon-probe.ts]
 ---
 
 # Ship PF-22: An rcon-client packet timeout, in auth or on a command, leaves the socket open
@@ -11,7 +11,7 @@ A packet timeout in rcon-client 4.2 only rejects the pending promise (`Timeout f
 
 ## Implication
 
-A caller that gives up on a timed-out probe must destroy `rcon.socket` itself, or the connection leaks. `ship/src/cli/commands/rcon-probe.ts` destroys the socket on a failed probe.
+A caller that gives up on a timed-out probe must destroy `rcon.socket` itself, or the connection leaks. `src/cli/commands/rcon-probe.ts` destroys the socket on a failed probe.
 
 ## Established
 

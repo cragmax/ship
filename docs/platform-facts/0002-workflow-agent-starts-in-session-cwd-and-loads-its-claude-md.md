@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.296]
 last-verified: 2026-10-15
-relied-on-by: [ship/src/workflow/runtime.types.ts, ship/src/workflow/calls/prompts.ts, ship/skills/unattended-agent/SKILL.md, ship/src/workflow/ship.meta.ts]
+relied-on-by: [src/workflow/runtime.types.ts, src/workflow/calls/prompts.ts, skills/unattended-agent/SKILL.md, src/workflow/ship.meta.ts]
 ---
 
 # Ship PF-2: A workflow `agent()` call starts in the launching session's current working directory and loads its CLAUDE.md
@@ -11,7 +11,7 @@ A workflow `agent()` call starts with its working directory set to the launching
 
 ## Implication
 
-An agent must `cd` by absolute path to the directory it works in, the main checkout included. It cannot rely on its starting working directory. `ship/src/workflow/runtime.types.ts` records this. `withCheckout` in `ship/src/workflow/calls/prompts.ts` adds the `Checkout:` line every agent prompt after a run's first call carries, and every worktree agent works by absolute path (`unattended-agent` § Where you work).
+An agent must `cd` by absolute path to the directory it works in, the main checkout included. It cannot rely on its starting working directory. `src/workflow/runtime.types.ts` records this. `withCheckout` in `src/workflow/calls/prompts.ts` adds the `Checkout:` line every agent prompt after a run's first call carries, and every worktree agent works by absolute path (`unattended-agent` § Where you work).
 
 ## Established
 

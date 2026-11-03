@@ -12,7 +12,7 @@ import { fakeHooks, labels, masterMoved, PREFLIGHT_OK, type FakeRun } from './_f
  * @returns The words after `node --import tsx`.
  */
 const checkMasterArgv = (synced: string): string[] => [
-  'ship/src/cli/worktree.ts',
+  'node_modules/@cragmax/ship/dist/cli/worktree.js',
   'check-master',
   'C:/src/main',
   '--local',

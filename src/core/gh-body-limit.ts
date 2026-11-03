@@ -1,6 +1,6 @@
 /**
- * Render-safe (`ship/src/build/workflow-render.ts`): it joins the `ship` workflow's render
- * closure through `pr-body.ts`, so the PR body and the `ship/src/cli/` guards share one limit.
+ * Render-safe (`src/build/workflow-render.ts`): it joins the `ship` workflow's render
+ * closure through `pr-body.ts`, so the PR body and the `src/cli/` guards share one limit.
  */
 
 /** GitHub's limit on a PR body and on a comment body, counted as the JS string's `length`. */

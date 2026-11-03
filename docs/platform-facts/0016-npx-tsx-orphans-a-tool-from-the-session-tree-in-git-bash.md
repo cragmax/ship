@@ -2,7 +2,7 @@
 status: current
 platform: [node 24.19.0, tsx 4.21.0, bash 5.3.15, msys2-runtime 3.6.10, windows 10.0.26300]
 last-verified: 2026-10-15
-relied-on-by: [ship/src/workflow/calls/tool-calls.ts, ship/src/cli/commands/tsserver-restart.ts]
+relied-on-by: [src/workflow/calls/tool-calls.ts, src/cli/commands/tsserver-restart.ts]
 ---
 
 # Ship PF-16: In Git Bash, a tool run through `npx tsx` is orphaned from the session's process tree, and `node --import tsx` stays a descendant
@@ -11,7 +11,7 @@ From Claude Code's Bash tool (Git Bash) on win32, a script run as `npx tsx <scri
 
 ## Implication
 
-Anything that finds a tool's Claude Code session by walking its Windows ancestors never finds it under `npx tsx`. Launch the tool with `node --import tsx` instead. `toolWords` in `ship/src/workflow/calls/tool-calls.ts` has the runner launch every tool with `node --import tsx`.
+Anything that finds a tool's Claude Code session by walking its Windows ancestors never finds it under `npx tsx`. Launch the tool with `node --import tsx` instead. `toolWords` in `src/workflow/calls/tool-calls.ts` has the runner launch every tool with `node --import tsx`.
 
 ## Scope
 

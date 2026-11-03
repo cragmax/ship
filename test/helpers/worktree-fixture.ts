@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { execaSync } from 'execa';
 import { afterAll } from 'vitest';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** Output of one fixture child process. */
 interface ChildRun {

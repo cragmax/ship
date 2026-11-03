@@ -11,7 +11,7 @@
  * runs. An agent answering no object is `agent-died` at its {@link DeathStage} (retried once,
  * in a fresh slice). A stage that cannot proceed, or throws, is `blocked`, never a rejection.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 
@@ -190,8 +190,7 @@ interface CutSlice extends CutTrace {
 
 /** The re-check and cut's answer: the cut slice, or the stop and what the cut named. */
 type Opened =
-  | { readonly next: CutSlice }
-  | { readonly stop: SchedulerEvent; readonly cut: CutTrace };
+  { readonly next: CutSlice } | { readonly stop: SchedulerEvent; readonly cut: CutTrace };
 
 /** A provisioned slice: the project dir its server-tier runs lease against. */
 interface ProvisionedSlice extends CutSlice {
@@ -247,9 +246,10 @@ export async function runAttempt(
   previousPatch: string | null,
 ): Promise<AttemptNote> {
   const at = attemptId(ctx, issue, attempt, previousPatch);
-  const opened = await openSlice(at).catch(
-    (err: unknown): Opened => ({ stop: stageThrew(at, err), cut: NO_CUT }),
-  );
+  const opened = await openSlice(at).catch((err: unknown): Opened => ({
+    stop: stageThrew(at, err),
+    cut: NO_CUT,
+  }));
 
   if ('stop' in opened) return endAttempt(at, opened.cut, notLanded(opened.stop));
   const cut = opened.next;
@@ -438,12 +438,7 @@ async function testReviewStage(s: SpecReviewedSlice): Promise<Step<TestReviewedS
   return afterAmend(s, 'test-review', out, (testReview) => ({ ...s, testReview }));
 }
 
-const TEST_PREFIXES: readonly string[] = [
-  'test/',
-  'tooling/test/',
-  'server-pool/test/',
-  'ship/test/',
-];
+const TEST_PREFIXES: readonly string[] = ['test/', 'tooling/test/', 'server-pool/test/'];
 
 /**
  * Why a slice's tests go unreviewed, `null` when they are: `'trivial surface'` when its files

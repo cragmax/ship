@@ -9,7 +9,7 @@
  * with its current sha, is a failure: a deleted, rewound, or undecidable ref, a failed or refused
  * check, and a runner that returned nothing. "Could not tell" never passes.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 

@@ -1,6 +1,6 @@
 /**
- * Runs `gate:codegen`'s two steps, `ship/src/build/check-codegen.ts` then
- * `ship/src/build/install.ts --check`, from a copy of `ship/src/` under a temp root: each script
+ * Runs `gate:codegen`'s two steps, `src/build/check-codegen.ts` then
+ * `src/build/install.ts --check`, from a copy of `src/` under a temp root: each script
  * finds the repository from its own location.
  *
  * @integrationTier standalone
@@ -27,24 +27,18 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { FIXTURE_PRETTIER_CONFIG } from '../helpers/fixtures.js';
 import { linkNodeModules } from '../helpers/worktree-fixture.js';
 
-const CHECK = 'ship/src/build/check-codegen.ts';
-const INSTALL = 'ship/src/build/install.ts';
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+const CHECK = 'src/build/check-codegen.ts';
+const INSTALL = 'src/build/install.ts';
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 
 let root: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'check-codegen-cli-'));
-  cpSync(join(REPO_ROOT, 'ship/src'), join(root, 'ship/src'), { recursive: true });
+  cpSync(join(REPO_ROOT, 'src'), join(root, 'src'), { recursive: true });
 
-  for (const dir of [
-    'ship/agents',
-    'ship/skills',
-    '.claude/agents',
-    '.claude/skills',
-    '.claude/workflows',
-  ]) {
+  for (const dir of ['agents', 'skills', '.claude/agents', '.claude/skills', '.claude/workflows']) {
     mkdirSync(join(root, dir), { recursive: true });
   }
 
@@ -60,38 +54,35 @@ afterEach(() => {
 });
 
 it(
-  'fails naming the workflow whose source under ship/src changed since the last codegen run',
+  'fails naming the workflow whose source under src changed since the last codegen run',
   { timeout: 120_000 },
   () => {
     expect(run(CHECK).status).toBe(0);
-    expect(existsSync(join(root, 'ship/workflows/ship.js'))).toBe(true);
+    expect(existsSync(join(root, 'workflows/ship.js'))).toBe(true);
     expect(run(INSTALL).status).toBe(0);
     expect(run(INSTALL, '--check').status).toBe(0);
 
     // A declaration, since the render drops a trailing comment.
-    appendFileSync(
-      join(root, 'ship/src/workflow/ship.ts'),
-      '\nfunction uninstalledEdit(): void {}\n',
-    );
+    appendFileSync(join(root, 'src/workflow/ship.ts'), '\nfunction uninstalledEdit(): void {}\n');
 
     expect(run(CHECK).status).toBe(0);
     const drifted = run(INSTALL, '--check');
 
     expect(drifted.status).toBe(1);
     expect(drifted.stderr).toContain(
-      'FAIL: .claude/workflows/ship.js — differs from ship/workflows/ship.js',
+      'FAIL: .claude/workflows/ship.js — differs from workflows/ship.js',
     );
     expect(drifted.stderr).not.toContain('resync.js');
   },
 );
 
 it('fails naming a hand-edited schema module', { timeout: 60_000 }, () => {
-  appendFileSync(join(root, 'ship/src/workflow/schemas.generated.ts'), '\n// Hand edit.\n');
+  appendFileSync(join(root, 'src/workflow/schemas.generated.ts'), '\n// Hand edit.\n');
 
   const drifted = run(CHECK);
 
   expect(drifted.status).toBe(1);
-  expect(drifted.stderr).toContain('FAIL: ship/src/workflow/schemas.generated.ts');
+  expect(drifted.stderr).toContain('FAIL: src/workflow/schemas.generated.ts');
 });
 
 function run(script: string, ...args: string[]): { status: number | null; stderr: string } {

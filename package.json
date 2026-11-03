@@ -1,0 +1,79 @@
+{
+  "name": "@cragmax/ship",
+  "version": "1.0.0",
+  "description": "Unattended Claude Code runs over a GitHub epic or issue list: pre-flight, one reviewed slice per issue, one pull request per epic.",
+  "author": "cragmax",
+  "license": "UNLICENSED",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cragmax/ship.git"
+  },
+  "bin": {
+    "ship-install": "dist/build/install.js",
+    "ship-worktree": "dist/cli/worktree.js",
+    "ship-run-gate": "dist/cli/run-gate.js"
+  },
+  "files": [
+    "dist",
+    "agents",
+    "skills",
+    "workflows"
+  ],
+  "engines": {
+    "node": ">=24.22.0"
+  },
+  "scripts": {
+    "build": "tsc -p config/tsconfig.build.json && tsx src/build/render-workflows.ts",
+    "codegen": "tsx src/build/emit-workflow-schemas.ts && tsx src/build/render-workflows.ts",
+    "gate:codegen": "tsx src/build/check-codegen.ts",
+    "gate:types": "tsc",
+    "gate:lint": "eslint --config config/eslint.config.js .",
+    "gate:format": "prettier --check . --cache --cache-location .prettiercache",
+    "gate:deps": "depcruise --config config/dependency-cruiser.cjs src test hooks",
+    "gate": "npm run gate:types && npm run gate:lint && npm run gate:format && npm run gate:deps && npm run gate:codegen && npm test && npm run test:integration",
+    "format": "prettier --write .",
+    "test": "vitest run --config config/vitest.config.ts",
+    "test:integration": "vitest run --config config/vitest.integration.config.ts",
+    "prepack": "npm run build",
+    "prepare": "lefthook install"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 100,
+    "semi": true,
+    "endOfLine": "auto",
+    "overrides": [
+      {
+        "files": "**/platform-facts/*.md",
+        "options": {
+          "printWidth": 10000
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "execa": "^9.6.1",
+    "rcon-client": "^4.2.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/node": "^22.20.5",
+    "@typescript-eslint/parser": "^8.72.1",
+    "dependency-cruiser": "^17.4.3",
+    "eslint": "^10.14.0",
+    "eslint-plugin-jsdoc": "^62.9.0",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "eslint-plugin-tsdoc": "^0.5.4",
+    "fast-check": "^4.10.2",
+    "lefthook": "^2.2.2",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.1.12"
+  }
+}

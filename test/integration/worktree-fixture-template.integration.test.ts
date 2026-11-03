@@ -21,7 +21,7 @@ import {
 import { makeFixtureRepo, prebuildNpmTemplate } from '../helpers/worktree-cli-fixture.js';
 import { copyTemplateRepo, mustRun, porcelain } from '../helpers/worktree-fixture.js';
 
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const VITEST_BIN = join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs');
 const TEMPLATE_DIR = join(import.meta.dirname, '..', 'fixtures', 'worktree-fixture-template');
 const TIMEOUT = { timeout: 60_000 };

@@ -12,7 +12,7 @@
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
  * at once. The epic review, the bump, the retro, and the PR writer run outside it.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 
@@ -54,12 +54,7 @@ import {
 
 /** How an issue ended. */
 export type IssueOutcome =
-  | 'landed'
-  | 'landed-then-halted'
-  | 'blocked'
-  | 'skipped'
-  | 'removed'
-  | 'halted';
+  'landed' | 'landed-then-halted' | 'blocked' | 'skipped' | 'removed' | 'halted';
 
 /** One issue's line of the run report. */
 export interface IssueReport {
@@ -209,12 +204,10 @@ type Published = Pick<
  */
 export async function epicEnd(input: EpicEndInput): Promise<EpicReport> {
   const state: EndState = {};
-  const published = await shipSteps(input, state).catch(
-    (err: unknown): Published => ({
-      outcome: 'stopped',
-      message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
-    }),
-  );
+  const published = await shipSteps(input, state).catch((err: unknown): Published => ({
+    outcome: 'stopped',
+    message: `the epic end threw: ${err instanceof Error ? err.message : String(err)}`,
+  }));
   const issueComments = await commentBlockedStep(input, published.pr);
   const retro =
     published.outcome === 'pr' && state.retro !== undefined

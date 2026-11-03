@@ -57,7 +57,7 @@ describe('ship.js — a fresh render of the current sources', () => {
   });
 
   it('reviews the tests of a slice changing only Ship, unproven, as the source does', async () => {
-    const files = ['ship/src/core/run-set.ts', 'ship/test/unit/core/run-set.test.ts'];
+    const files = ['src/core/run-set.ts', 'test/unit/core/run-set.test.ts'];
     const both = await runBoth('issues 7', { tdd: { ...TDD_GREEN, files } });
 
     const sliceCalls = both.rendered.calls

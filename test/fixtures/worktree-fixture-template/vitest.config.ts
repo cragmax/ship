@@ -2,5 +2,5 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  test: { root: import.meta.dirname, include: ['ship/test/unit/**/*.test.ts'] },
+  test: { root: import.meta.dirname, include: ['test/unit/**/*.test.ts'] },
 });

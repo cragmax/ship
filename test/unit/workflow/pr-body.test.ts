@@ -1480,7 +1480,7 @@ describe('fitPrBody', () => {
       retro: [{ title: 'pad', evidence: 'e'.repeat(n), kind: 'genuine', suggestion: 's' }],
     });
     const fill = 65_536 - renderPrBody(padded(0)).length;
-    expect(renderPrBody(padded(fill)).length).toBe(65_536);
+    expect(renderPrBody(padded(fill))).toHaveLength(65_536);
 
     expect(fitPrBody(padded(fill)).comments).toEqual([]);
     expect(fitPrBody(padded(fill + 1)).comments.map((c) => c.file)).toEqual([

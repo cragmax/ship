@@ -11,7 +11,7 @@
  * for bash by {@link shellWord}, so the agent runs the line as given. An issue's text reaches
  * an agent as a file its `Issue command:` line writes ({@link issueLines}).
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 

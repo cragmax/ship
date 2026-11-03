@@ -414,7 +414,7 @@ describe.skipIf(!WIN32)('teardown gate (in-process, unlink seam)', () => {
     const { main, batch, slice } = provisioned();
 
     const down = teardownWorktree(toPosix(slice), {
-      selfPath: toPosix(join(slice, 'ship', 'src', 'cli', 'worktree.ts')),
+      selfPath: toPosix(join(slice, 'src', 'cli', 'worktree.ts')),
     });
 
     expect(down.status).toBe('refused');
@@ -527,7 +527,7 @@ describe('self-hosted guard on the provision commands (in-process)', () => {
     const batch = toPosix(addWorktree(main, join(root, 'batch'), 'ship/batch'));
     const reportDir = toPosix(join(root, 'reports'));
 
-    const run = provisionBatch({ batch, reportDir, selfPath: `${batch}/ship/src/cli/worktree.ts` });
+    const run = provisionBatch({ batch, reportDir, selfPath: `${batch}/src/cli/worktree.ts` });
     expect(run.status).toBe('refused');
     expect(run.reason).toBe('self-hosted');
     expect(existsSync(join(batch, 'node_modules'))).toBe(false);
@@ -544,7 +544,7 @@ describe('self-hosted guard on the provision commands (in-process)', () => {
       slice,
       batch,
       server: false,
-      selfPath: `${slice}/ship/src/cli/worktree.ts`,
+      selfPath: `${slice}/src/cli/worktree.ts`,
     });
 
     expect(run.status).toBe('refused');

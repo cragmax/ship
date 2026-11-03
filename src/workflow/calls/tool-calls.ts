@@ -6,11 +6,11 @@
  *
  * **Types.** Each output type is shallow-`Partial`, required fields included: a command
  * that exits 2 prints no verdict, one that threw or failed its envelope
- * schema prints only the base fields (`ship/src/cli/worktree.ts`
+ * schema prints only the base fields (`src/cli/worktree.ts`
  * `runWorktreeCli`), so a reader treats a missing field as a failure,
  * never as a pass.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only,
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect. The zod sources are imported for types only.
  */
 
@@ -200,11 +200,11 @@ export interface ToolOutputs {
   'changed-files': ChangedFilesOutput;
 }
 
-/** The worktree CLI's entry, relative to the main checkout. */
-const WORKTREE_CLI = 'ship/src/cli/worktree.ts';
+/** The worktree CLI's entry, relative to the main checkout: the installed package's build. */
+const WORKTREE_CLI = 'node_modules/@cragmax/ship/dist/cli/worktree.js';
 
-/** The run gate's entry, relative to the main checkout. */
-const RUN_GATE_CLI = 'ship/src/cli/run-gate.ts';
+/** The run gate's entry, relative to the main checkout: the installed package's build. */
+const RUN_GATE_CLI = 'node_modules/@cragmax/ship/dist/cli/run-gate.js';
 
 /** The comment-only proof's entry, relative to the main checkout: the consumer's own command. */
 const COMMENT_ONLY_CLI = 'tooling/git/comment-only.ts';
@@ -264,10 +264,10 @@ const RUN_GRAPH = {
 
 /**
  * Each tool's output schema: only what the workflow reads. A worktree tool's row is
- * `schemas.generated.ts`' emission of its pick in `ship/src/schemas/tool-envelopes.ts`,
+ * `schemas.generated.ts`' emission of its pick in `src/schemas/tool-envelopes.ts`,
  * the one source of the consumed fields, their schema and their type, and of which are required,
  * plus the runner's own fields ({@link toolSchema}). The `run-gate` and `check` rows are
- * hand-written from `ship/src/core/gate/run-gate.ts`' types: every consumed field required,
+ * hand-written from `src/core/gate/run-gate.ts`' types: every consumed field required,
  * save those a failure or exclusion kind may lack. The `comment-only` row is hand-written from
  * the `--json` object `tooling/git/comment-only.ts` prints, its consumed field required.
  */

@@ -11,7 +11,7 @@
  * - **A shrunk link target stops the caller** (teardown's `source-shrank` refusal): something
  *   outside the batch lost files. Other teardown failures are residue. The next run is still tried.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level
  * effect.
  */
 

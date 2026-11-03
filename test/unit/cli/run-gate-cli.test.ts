@@ -157,7 +157,7 @@ describe('main', () => {
     expect(stdout).toEqual([]);
     expect(stderr.join('')).toContain("'abc'");
     expect(stderr.join('')).toContain(
-      'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] [--attach ship/<slug>] | check N',
+      'usage: ship-run-gate epics|issues N... [--exclude] [--attach ship/<slug>] | check N',
     );
   });
 

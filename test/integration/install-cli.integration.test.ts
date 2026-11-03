@@ -1,5 +1,5 @@
 /**
- * Runs `ship/src/build/install.ts` as `npm run codegen` and `gate:codegen` do, from a copy at the
+ * Runs `src/build/install.ts` as `npm run codegen` and `gate:codegen` do, from a copy at the
  * same path under a temp root: the script finds the repository from its own location.
  *
  * @integrationTier standalone
@@ -22,15 +22,15 @@ import { pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
-const SCRIPT = 'ship/src/build/install.ts';
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+const SCRIPT = 'src/build/install.ts';
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 const TIMEOUT = { timeout: 60_000 };
 
 const AGENT_HEADER =
-  "# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.";
+  "# Ship's agent file, installed from @cragmax/ship by ship-install: change it in cragmax/ship.";
 const WORKFLOW_HEADER =
-  "// Ship's workflow: change it upstream under ship/src/workflow/, then run `npm run codegen`.";
+  "// Ship's workflow, installed from @cragmax/ship by ship-install: change it in cragmax/ship.";
 
 const RENDER = "export const meta = { name: 'ship' };\n\nreturn await runShip();\n";
 
@@ -44,10 +44,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'install-cli-'));
 
   for (const dir of [
-    'ship/src/build',
-    'ship/agents',
-    'ship/skills/unattended-agent',
-    'ship/workflows',
+    'src/build',
+    'agents',
+    'skills/unattended-agent',
+    'workflows',
     '.claude/agents',
     '.claude/skills',
     '.claude/workflows',
@@ -59,9 +59,9 @@ beforeEach(() => {
   // The script reads import.meta, which only an ES module has.
   write('package.json', '{ "type": "module" }\n');
 
-  write('ship/agents/pr.md', '---\nname: pr\n---\n\nWrites the body.\n');
-  write('ship/skills/unattended-agent/SKILL.md', '---\nname: unattended-agent\n---\n\nRules.\n');
-  write('ship/workflows/ship.js', RENDER);
+  write('agents/pr.md', '---\nname: pr\n---\n\nWrites the body.\n');
+  write('skills/unattended-agent/SKILL.md', '---\nname: unattended-agent\n---\n\nRules.\n');
+  write('workflows/ship.js', RENDER);
 });
 
 afterEach(() => {
@@ -85,7 +85,7 @@ it(
 
     expect(drifted.status).toBe(1);
     expect(drifted.stderr).toContain(
-      'FAIL: .claude/workflows/ship.js — differs from ship/workflows/ship.js',
+      'FAIL: .claude/workflows/ship.js — differs from workflows/ship.js',
     );
 
     expect(run().status).toBe(0);
@@ -115,7 +115,7 @@ it(
   TIMEOUT,
   () => {
     write(
-      'ship/agents/spec-review.md',
+      'agents/spec-review.md',
       '---\nname: spec-review\nskills:\n  - spec-review\n  - unattended-agent\n  - probe\n---\n\nReviews.\n',
     );
     mkdirSync(join(root, '.claude/skills/spec-review'));
@@ -125,7 +125,7 @@ it(
 
     expect(refused.status).not.toBe(0);
     expect(refused.stderr).toContain(
-      'install: no .claude/skills/probe/SKILL.md, which ship/agents/spec-review.md preloads',
+      'install: no .claude/skills/probe/SKILL.md, which agents/spec-review.md preloads',
     );
     expect(existsSync(join(root, '.claude/agents/spec-review.md'))).toBe(false);
 

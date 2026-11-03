@@ -337,8 +337,8 @@ describe('runShip — epics side by side', () => {
       run.calls.filter((c) => c.label.startsWith(prefix)).map((c) => [...c.argv]);
 
     expect(argvOf('runner:cut-batch')).toEqual([
-      ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '1'],
-      ['ship/src/cli/worktree.ts', 'cut-batch', '.', '--epic', '2'],
+      ['node_modules/@cragmax/ship/dist/cli/worktree.js', 'cut-batch', '.', '--epic', '1'],
+      ['node_modules/@cragmax/ship/dist/cli/worktree.js', 'cut-batch', '.', '--epic', '2'],
     ]);
     expect(argvOf('runner:publish').map((a) => a[2])).toEqual(
       expect.arrayContaining(['C:/src/ph-runs/epic-1/batch', 'C:/src/ph-runs/epic-2/batch']),

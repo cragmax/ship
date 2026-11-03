@@ -2,7 +2,7 @@
 status: current
 platform: [claude-code 2.1.296]
 last-verified: 2026-10-13
-relied-on-by: [ship/src/cli/git/run-layout.ts]
+relied-on-by: [src/cli/git/run-layout.ts]
 ---
 
 # Ship PF-14: A worktree directly under `.claude/worktrees/` gets the main checkout's path-scoped rules on a read, never its own `CLAUDE.md` or rules
@@ -11,7 +11,7 @@ A sub-agent whose working directory is the main checkout (a workflow `agent()` o
 
 ## Implication
 
-A run worktree must be a direct child of `.claude/worktrees/` for its agents to follow the main checkout's instructions (Ship ADR-0004). `WORKTREES_DIR` in `ship/src/cli/git/run-layout.ts` places every run worktree there.
+A run worktree must be a direct child of `.claude/worktrees/` for its agents to follow the main checkout's instructions (Ship ADR-0004). `WORKTREES_DIR` in `src/cli/git/run-layout.ts` places every run worktree there.
 
 ## Scope
 

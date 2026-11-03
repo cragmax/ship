@@ -2,7 +2,7 @@
 status: current
 platform: [git 2.56.0.windows.1]
 last-verified: 2026-10-09
-relied-on-by: [ship/src/cli/commands/retire-run.ts]
+relied-on-by: [src/cli/commands/retire-run.ts]
 ---
 
 # Ship PF-8: `git branch -d` deletes a branch merged to its upstream even when it is not merged to `HEAD`
@@ -11,7 +11,7 @@ relied-on-by: [ship/src/cli/commands/retire-run.ts]
 
 ## Implication
 
-`-d` is no "unmerged" guard for a branch that has been pushed with an upstream, and every `ship/` run branch is. Guard by ancestry against the target ref instead, with `git merge-base --is-ancestor <branch> refs/remotes/origin/master`, then delete with `git branch -D`. The run-branch retire guard, `assertMerged` in `ship/src/cli/commands/retire-run.ts`, uses `merge-base --is-ancestor` + `git branch -D` for this reason.
+`-d` is no "unmerged" guard for a branch that has been pushed with an upstream, and every `ship/` run branch is. Guard by ancestry against the target ref instead, with `git merge-base --is-ancestor <branch> refs/remotes/origin/master`, then delete with `git branch -D`. The run-branch retire guard, `assertMerged` in `src/cli/commands/retire-run.ts`, uses `merge-base --is-ancestor` + `git branch -D` for this reason.
 
 ## Scope
 

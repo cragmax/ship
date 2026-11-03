@@ -1,14 +1,14 @@
 /**
  * The zod source of each worktree tool's output schema: the envelope fields the saved workflows
- * consume, `.pick`ed from the envelope schemas in `ship/src/cli/envelope/`, so a renamed or
+ * consume, `.pick`ed from the envelope schemas in `src/cli/envelope/`, so a renamed or
  * dropped envelope field breaks the pick at compile time. Every consumed field is
  * required, except `reason`, which the envelope carries only when `refused`. A runner answer that
  * lacks one fails its schema, and the workflow reads a missing answer as a failure. `at`,
  * optional on an in-process envelope, is required where consumed, since the CLI stamps every
  * envelope it prints.
  *
- * Emitted, never rendered: `ship/src/build/emit-workflow-schemas.ts` writes it as JSON Schema into
- * `ship/src/workflow/schemas.generated.ts`, which the render inlines. No file in a render
+ * Emitted, never rendered: `src/build/emit-workflow-schemas.ts` writes it as JSON Schema into
+ * `src/workflow/schemas.generated.ts`, which the render inlines. No file in a render
  * closure may value-import this one.
  */
 

@@ -1,0 +1,33 @@
+# A generated hook that finds no lefthook exits 0, an ungated commit: fail closed instead.
+assert_lefthook_installed: true
+
+# The commit gate: the whole-program checks, and the unit tests related to the staged code.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: types
+      run: npm run gate:types
+    - name: lint
+      glob: '{src,test,hooks,config}/**.{ts,mts,cts,js,mjs}'
+      run: npx eslint --config config/eslint.config.js --no-warn-ignored {staged_files}
+    - name: format
+      run: npm run gate:format
+    - name: deps
+      run: npm run gate:deps
+    - name: codegen
+      run: npm run gate:codegen
+    - name: test
+      glob: '{src,test,hooks}/**.{ts,mts}'
+      run: npx vitest related --run --config config/vitest.config.ts {staged_files}
+
+# The format and the version bump its type needs; the rules live in hooks/lib/commit-msg.ts.
+commit-msg:
+  jobs:
+    - name: commit-msg
+      run: node --import tsx hooks/commit-msg.ts {1}
+
+# The push gate: every check, the whole unit suite and the integration tests.
+pre-push:
+  jobs:
+    - name: gate
+      run: npm run gate

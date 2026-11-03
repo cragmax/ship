@@ -1,7 +1,7 @@
 /**
  * What the consuming repo's pre-push runs, as the PR body's full-tiers line reports it: a copy,
  * kept by hand, of the repo's Platform-wide list and `vitest related` cap
- * (`tooling/hooks/lib/platform-wide.ts`). Render-safe (`ship/src/build/workflow-render.ts`):
+ * (`tooling/hooks/lib/platform-wide.ts`). Render-safe (`src/build/workflow-render.ts`):
  * ECMAScript built-ins only, no value import, no top-level side effect.
  */
 

@@ -2,7 +2,7 @@
 status: current
 platform: [lefthook 2.1.4, node 24.19.0, git 2.56.0]
 last-verified: 2026-10-24
-relied-on-by: [ship/src/cli/git/hooked.ts]
+relied-on-by: [src/cli/git/hooked.ts]
 ---
 
 # Ship PF-20: lefthook prints one `exit status N` per failed job, and on Windows a Node crash's N depends on its exception

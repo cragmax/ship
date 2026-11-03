@@ -1,7 +1,8 @@
+#!/usr/bin/env node
 /**
  * Decides whether an unattended run may start and derives its dependency edges: a shell over
- * the pure core `ship/src/core/gate/run-gate.ts` and its `gh` boundary
- * `ship/src/cli/run-gate-gh.ts`.
+ * the pure core `src/core/gate/run-gate.ts` and its `gh` boundary
+ * `src/cli/run-gate-gh.ts`.
  * Usage: the `USAGE` line. Numbers may be space- or comma-separated, each with an optional leading
  * `#`. Quote a `#N` token. `check N` is the mid-run re-check: OPEN and labelled, never blockers.
  *
@@ -11,8 +12,6 @@
  * (stdout empty, read stderr). Never `process.exit()`: `main` sets `process.exitCode` and
  * returns, so the stdout JSON a caller parses is flushed in full.
  */
-
-import { pathToFileURL } from 'node:url';
 
 import { execa } from 'execa';
 
@@ -32,8 +31,7 @@ type RunGateArgs =
     }
   | { readonly kind: 'check'; readonly issue: number };
 
-const USAGE =
-  'usage: npx tsx ship/src/cli/run-gate.ts epics|issues N... [--exclude] [--attach ship/<slug>] | check N';
+const USAGE = 'usage: ship-run-gate epics|issues N... [--exclude] [--attach ship/<slug>] | check N';
 
 /** The flags after the subcommand: each the token it came from, or the attach target. */
 interface Flags {
@@ -282,6 +280,9 @@ function parseFlag(token: string): string {
 
 // Entry-point guard: run `main()` only when executed as a script, not when
 // the unit test imports the argv parser.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (import.meta.main && process.argv[2] === '--help') {
+  process.stdout.write(`${USAGE}
+`);
+} else if (import.meta.main) {
   await main(process.argv.slice(2), ghJson);
 }

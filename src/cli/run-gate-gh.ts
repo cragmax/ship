@@ -1,7 +1,7 @@
 /**
  * The run gate's `gh` boundary: fetch, validate and normalise the issue data
- * the pure core (`ship/src/core/gate/run-gate.ts`) decides over, through an injected
- * {@link GhJson} port. The real port lives only in the CLI (`ship/src/cli/run-gate.ts`).
+ * the pure core (`src/core/gate/run-gate.ts`) decides over, through an injected
+ * {@link GhJson} port. The real port lives only in the CLI (`src/cli/run-gate.ts`).
  *
  * **Three fetches, each zod-parsed**: an epic (`EPIC_FIELDS`), a run-set
  * issue (`FACTS_FIELDS`) and an out-of-set blocker (`STATE_FIELDS`). Each

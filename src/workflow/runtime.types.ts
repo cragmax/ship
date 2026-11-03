@@ -4,7 +4,7 @@
  * options of one `agent()` call, and the `meta` export. The runtime binds
  * the hooks as globals (unprobed). The sources take them as one object instead, so a
  * test can drive the body with fakes, and only the rendered tail
- * (`ship/src/build/workflow-render.ts`) names the globals.
+ * (`src/build/workflow-render.ts`) names the globals.
  *
  * Type-only: erased at render, so it adds nothing to the render closure.
  */

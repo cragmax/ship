@@ -1,22 +1,25 @@
+#!/usr/bin/env node
 /**
- * Build-time script: install Ship's part of `.claude/` from its sources under `ship/`, each
- * {@link PARTS} row a source folder and the folder Claude Code reads it from. The copies are
- * committed and never hand-edited. The install owns only the copies that carry their part's
- * header: another file there is the repository's own, never written, removed, or checked.
+ * The `ship-install` bin: install Ship's part of a consumer's `.claude/` from this package's
+ * sources, each {@link PARTS} row a source folder and the folder Claude Code reads it from. The
+ * consumer commits the copies and never hand-edits them. The install owns only the copies that
+ * carry their part's header: another file there is the consumer's own, never written, removed, or
+ * checked.
  *
- * `npm run codegen` installs. `--check` (`npm run gate:codegen`) reports drift and exits 1.
+ * Run from the consumer's root. `--check` reports drift and exits 1.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-const ROOT_DIR = resolve(import.meta.dirname, '../../..');
+/** The package root: this file is `dist/build/install.js` once built. */
+const PACKAGE_DIR = resolve(import.meta.dirname, '../..');
 
 /** One kind of installed file. */
 interface Part {
-  /** The sources' folder, repository-relative. */
+  /** The sources' folder, relative to the package root. */
   readonly sources: string;
-  /** Where Claude Code reads the copies, repository-relative. */
+  /** Where Claude Code reads the copies, relative to the consumer's root. */
   readonly installs: string;
   /** The file names under a folder this part installs, each relative to it, sorted. */
   readonly names: (dir: string) => string[];
@@ -31,31 +34,31 @@ interface Part {
 }
 
 const AGENT_HEADER =
-  "# Ship's agent file: change it upstream under ship/agents/, then run `npm run codegen`.";
+  "# Ship's agent file, installed from @cragmax/ship by ship-install: change it in cragmax/ship.";
 const SKILL_HEADER =
-  "# Ship's skill: change it upstream under ship/skills/, then run `npm run codegen`.";
+  "# Ship's skill, installed from @cragmax/ship by ship-install: change it in cragmax/ship.";
 const WORKFLOW_HEADER =
-  "// Ship's workflow: change it upstream under ship/src/workflow/, then run `npm run codegen`.";
+  "// Ship's workflow, installed from @cragmax/ship by ship-install: change it in cragmax/ship.";
 
 /**
- * Every part Ship installs. The workflows' sources are the render `npm run codegen` writes into
- * the gitignored `ship/workflows/`.
+ * Every part Ship installs. The workflows' sources are the render `npm run build` writes into the
+ * gitignored `workflows/`, which the package ships.
  */
 const PARTS: readonly Part[] = [
   {
-    sources: 'ship/agents',
+    sources: 'agents',
     installs: '.claude/agents',
     names: (dir) => namesEndingIn(dir, '.md'),
     ...inFrontmatter(AGENT_HEADER),
   },
   {
-    sources: 'ship/skills',
+    sources: 'skills',
     installs: '.claude/skills',
     names: skillNames,
     ...inFrontmatter(SKILL_HEADER),
   },
   {
-    sources: 'ship/workflows',
+    sources: 'workflows',
     installs: '.claude/workflows',
     names: (dir) => namesEndingIn(dir, '.js'),
     // Last, so nothing precedes the leading `export const meta` the runtime reads (unprobed).
@@ -64,7 +67,7 @@ const PARTS: readonly Part[] = [
   },
 ];
 
-/** What one install did, each file repository-relative. */
+/** What one install did, each file relative to the consumer's root. */
 interface InstallReport {
   /** Each copy written, part by part in {@link PARTS} order, each part's in name order. */
   readonly written: readonly string[];
@@ -73,7 +76,7 @@ interface InstallReport {
 }
 
 interface CopyDrift {
-  /** The copy, repository-relative. */
+  /** The copy, relative to the consumer's root. */
   readonly file: string;
   readonly reason: string;
 }
@@ -82,30 +85,32 @@ interface CopyDrift {
  * Overwrite every source's copy into its part's folder under `.claude/`, then remove each stale
  * copy.
  *
- * @param root - The repository root.
+ * @param source - The package root, holding the sources.
+ * @param target - The consumer's root, holding `.claude/`.
  * @throws {@link Error} when a source has no place for its header (an agent file or a skill that
  *   does not open with a frontmatter `---` line), naming it, before any copy is written.
  * @throws {@link Error} when a part's source folder is missing, or its install folder is missing
  *   and the part has no source.
  * @throws {@link Error} when a skill an agent source preloads is neither under `.claude/skills/`
- *   nor installed from `ship/skills/`, one line per agent and skill, before any copy is written.
+ *   nor installed from the package's `skills/`, one line per agent and skill, before any copy is
+ *   written.
  */
-export function install(root: string): InstallReport {
-  requireConsumerSkills(root);
+export function install(source: string, target: string): InstallReport {
+  requireConsumerSkills(source, target);
   const copies = PARTS.flatMap((part) =>
-    part.names(join(root, part.sources)).map((name) => ({
+    part.names(join(source, part.sources)).map((name) => ({
       file: `${part.installs}/${name}`,
-      text: expectedCopy(root, part, name),
+      text: expectedCopy(source, part, name),
     })),
   );
   const written = copies.map(({ file, text }) => {
-    mkdirSync(dirname(join(root, file)), { recursive: true });
-    writeFileSync(join(root, file), text, 'utf8');
+    mkdirSync(dirname(join(target, file)), { recursive: true });
+    writeFileSync(join(target, file), text, 'utf8');
 
     return file;
   });
-  const removed = PARTS.flatMap((part) => staleFiles(root, part)).map((file) => {
-    rmSync(join(root, file));
+  const removed = PARTS.flatMap((part) => staleFiles(source, target, part)).map((file) => {
+    rmSync(join(target, file));
 
     return file;
   });
@@ -117,27 +122,28 @@ export function install(root: string): InstallReport {
  * The drift check: each source's copy must equal a fresh install, line endings aside, and no
  * stale copy may remain. Writes nothing.
  *
- * @param root - The repository root.
+ * @param source - The package root, holding the sources.
+ * @param target - The consumer's root, holding `.claude/`.
  * @returns One entry per drifted copy, empty when none drifted.
  * @throws {@link Error} when a source has no place for its header, naming it.
  * @throws {@link Error} when a part's source or install folder is missing.
  * @throws {@link Error} when a skill an agent source preloads is missing, as {@link install} does.
  */
-export function checkInstall(root: string): CopyDrift[] {
-  requireConsumerSkills(root);
+export function checkInstall(source: string, target: string): CopyDrift[] {
+  requireConsumerSkills(source, target);
 
   return PARTS.flatMap((part) => {
-    const drifted = part.names(join(root, part.sources)).flatMap((name): CopyDrift[] => {
+    const drifted = part.names(join(source, part.sources)).flatMap((name): CopyDrift[] => {
       const file = `${part.installs}/${name}`;
-      const path = join(root, file);
-      const expected = expectedCopy(root, part, name);
+      const path = join(target, file);
+      const expected = expectedCopy(source, part, name);
       if (!existsSync(path)) return [{ file, reason: 'missing — never installed' }];
 
       return readLf(path) === expected
         ? []
         : [{ file, reason: `differs from ${part.sources}/${name}` }];
     });
-    const stale = staleFiles(root, part).map((file) => ({
+    const stale = staleFiles(source, target, part).map((file) => ({
       file,
       reason: `stale — no source under ${part.sources}/`,
     }));
@@ -148,18 +154,17 @@ export function checkInstall(root: string): CopyDrift[] {
 
 /**
  * Throw, one line per agent source and skill, when a source's `skills:` front matter names a skill
- * with no `.claude/skills/<name>/SKILL.md` that `ship/skills/` does not install: Claude Code skips
- * a missing preloaded skill with only a debug-log warning.
+ * with no `.claude/skills/<name>/SKILL.md` that the package's `skills/` does not install: Claude
+ * Code skips a missing preloaded skill with only a debug-log warning.
  */
-function requireConsumerSkills(root: string): void {
-  const installed = new Set(skillNames(join(root, 'ship/skills')).map((name) => dirname(name)));
-  const missing = namesEndingIn(join(root, 'ship/agents'), '.md').flatMap((agent) =>
-    preloadedSkills(readLf(join(root, 'ship/agents', agent)))
+function requireConsumerSkills(source: string, target: string): void {
+  const installed = new Set(skillNames(join(source, 'skills')).map((name) => dirname(name)));
+  const missing = namesEndingIn(join(source, 'agents'), '.md').flatMap((agent) =>
+    preloadedSkills(readLf(join(source, 'agents', agent)))
       .filter((skill) => !installed.has(skill))
-      .filter((skill) => !existsSync(join(root, '.claude/skills', skill, 'SKILL.md')))
+      .filter((skill) => !existsSync(join(target, '.claude/skills', skill, 'SKILL.md')))
       .map(
-        (skill) =>
-          `install: no .claude/skills/${skill}/SKILL.md, which ship/agents/${agent} preloads`,
+        (skill) => `install: no .claude/skills/${skill}/SKILL.md, which agents/${agent} preloads`,
       ),
   );
 
@@ -218,23 +223,25 @@ function inFrontmatter(header: string): Pick<Part, 'place' | 'carries'> {
  *
  * @throws {@link Error} when the source has no place for the header, naming the source.
  */
-function expectedCopy(root: string, part: Part, name: string): string {
-  const source = `${part.sources}/${name}`;
+function expectedCopy(source: string, part: Part, name: string): string {
+  const file = `${part.sources}/${name}`;
 
   try {
-    return part.place(readLf(join(root, source)));
+    return part.place(readLf(join(source, file)));
   } catch (error) {
-    throw new Error(`install: ${source} ${(error as Error).message}`, { cause: error });
+    throw new Error(`install: ${file} ${(error as Error).message}`, { cause: error });
   }
 }
 
-/** Each installed copy carrying its part's header that no source matches, repository-relative. */
-function staleFiles(root: string, part: Part): string[] {
-  const sources = new Set(part.names(join(root, part.sources)));
+/** Each installed copy carrying its part's header that no source matches, consumer-relative. */
+function staleFiles(source: string, target: string, part: Part): string[] {
+  const sources = new Set(part.names(join(source, part.sources)));
+  const installs = join(target, part.installs);
+  if (!existsSync(installs)) return [];
 
   return part
-    .names(join(root, part.installs))
-    .filter((name) => !sources.has(name) && part.carries(readLf(join(root, part.installs, name))))
+    .names(installs)
+    .filter((name) => !sources.has(name) && part.carries(readLf(join(installs, name))))
     .map((name) => `${part.installs}/${name}`);
 }
 
@@ -254,18 +261,18 @@ function main(argv: readonly string[]): void {
   }
 
   if (argv.length === 0) {
-    const { written, removed } = install(ROOT_DIR);
-    console.log(`[codegen] Installed ${String(written.length)} file(s).`);
-    for (const file of removed) console.log(`[codegen] Removed stale ${file}.`);
+    const { written, removed } = install(PACKAGE_DIR, process.cwd());
+    console.log(`ship-install: installed ${String(written.length)} file(s).`);
+    for (const file of removed) console.log(`ship-install: removed stale ${file}.`);
 
     return;
   }
 
-  const drift = checkInstall(ROOT_DIR);
+  const drift = checkInstall(PACKAGE_DIR, process.cwd());
 
   if (drift.length > 0) {
     for (const d of drift) console.error(`FAIL: ${d.file} — ${d.reason}`);
-    console.error('\nEdit the source under ship/, then run `npm run codegen`.');
+    console.error('\nRun `npx ship-install`, or change the source in cragmax/ship.');
     process.exit(1);
   }
 
@@ -273,6 +280,8 @@ function main(argv: readonly string[]): void {
 }
 
 // Only when invoked as a CLI: the unit tests import this module, and an import must never write.
-if (import.meta.main) {
+if (import.meta.main && process.argv[2] === '--help') {
+  console.log('usage: ship-install [--check], from the consumer root');
+} else if (import.meta.main) {
   main(process.argv.slice(2));
 }

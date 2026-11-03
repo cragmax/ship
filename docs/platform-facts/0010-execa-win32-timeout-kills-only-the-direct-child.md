@@ -2,7 +2,7 @@
 status: current
 platform: [node 24.19.0, execa 9.6.1, npm 11.17.0, git 2.56.0.windows.1, windows 10.0.26300]
 last-verified: 2026-10-10
-relied-on-by: [ship/src/cli/git/exec.ts, ship/src/cli/git/hooked.ts]
+relied-on-by: [src/cli/git/exec.ts, src/cli/git/hooked.ts]
 ---
 
 # Ship PF-10: On win32, an `execaSync` timeout kills only the direct child, and the npm chain, MSYS fork children, and git launcher and hook survive
@@ -11,7 +11,7 @@ On win32 an `execaSync` `timeout` kill reaches only the direct child. (1) `npm r
 
 ## Implication
 
-A budget timeout on a spawned tool chain does not reap descendants: report survivors rather than assuming the kill cleaned up. The TSDoc of `runCaptured` in `ship/src/cli/git/exec.ts` says survivors are reported, not reaped (`outputOf`, `orphanWarning`).
+A budget timeout on a spawned tool chain does not reap descendants: report survivors rather than assuming the kill cleaned up. The TSDoc of `runCaptured` in `src/cli/git/exec.ts` says survivors are reported, not reaped (`outputOf`, `orphanWarning`).
 
 ## Scope
 

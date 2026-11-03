@@ -2,7 +2,7 @@
 status: current
 platform: [tsx 4.21.0, esbuild 0.27.4, node 24.19.0, windows 10.0.26300]
 last-verified: 2026-10-10
-relied-on-by: [ship/src/cli/git/git.ts]
+relied-on-by: [src/cli/git/git.ts]
 ---
 
 # Ship PF-11: tsx runs `esbuild.exe` from the checkout's `node_modules`, and a running exe cannot be deleted or overwritten on win32
@@ -11,7 +11,7 @@ A script run through the checkout's `tsx` keeps `node_modules\@esbuild\win32-x64
 
 ## Implication
 
-`npm ci` or removing that `node_modules` fails, or half-applies, while a tsx-hosted CLI runs from it, so such a CLI must refuse to mutate its own checkout. `assertNotSelfHosted` in `ship/src/cli/git/git.ts` does so.
+`npm ci` or removing that `node_modules` fails, or half-applies, while a tsx-hosted CLI runs from it, so such a CLI must refuse to mutate its own checkout. `assertNotSelfHosted` in `src/cli/git/git.ts` does so.
 
 ## Scope
 

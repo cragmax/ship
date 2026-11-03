@@ -15,7 +15,7 @@ import { runTool, TOOL_SCHEMAS } from '../../../src/workflow/calls/tool-calls.js
 
 import { fakeHooks, LAND_OK } from '../workflow/_fake-hooks.js';
 
-const ROOT = resolve(import.meta.dirname, '../../../..');
+const ROOT = resolve(import.meta.dirname, '../../..');
 
 /** A schema's child node, when it is one. */
 const nodeOf = (value: unknown): JsonSchema | undefined =>

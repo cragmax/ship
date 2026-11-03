@@ -5,7 +5,7 @@
  * `with-lease: waited <W>s for <type>@<host:port>, held <H>s[, waited on <holder>]`, and a wait
  * line `with-lease: waiting for <type>@<host:port> — held by <holder details>`.
  *
- * Render-safe (`ship/src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
+ * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
  */
 
@@ -53,8 +53,7 @@ export function parseLeaseLines(text: string): LeaseTiming[] {
  * transcribed it, or a lease a tool envelope already parsed.
  */
 type LeaseSample = { readonly issue: number } & (
-  | { readonly line: string }
-  | { readonly lease: LeaseTiming }
+  { readonly line: string } | { readonly lease: LeaseTiming }
 );
 
 /** The engines an aggregate totals, in report order. */

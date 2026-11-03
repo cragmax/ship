@@ -13,4 +13,4 @@ A run's pull request (PR) body carries everything the maintainer reviews the epi
    - Whether the full tiers ran at push.
    - The run report, folded.
 2. **A missing `pr` agent result never blocks the PR.** The run still publishes it, with that agent's sections marked unavailable.
-3. **Overflow moves in a fixed order.** The report's movable sections (`MOVABLE_SECTIONS` in `ship/src/workflow/pr/pr-body.ts`) move to PR comments in that order, and each one leaves a pointer line. If the body is still over the limit, `publish` refuses it before the push.
+3. **Overflow moves in a fixed order.** The report's movable sections (`MOVABLE_SECTIONS` in `src/workflow/pr/pr-body.ts`) move to PR comments in that order, and each one leaves a pointer line. If the body is still over the limit, `publish` refuses it before the push.

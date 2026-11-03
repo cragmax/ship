@@ -12,7 +12,7 @@
  * `unpublished-commits` refuse like any check. `issue-readiness` and `issue-overlap` judge its PR
  * head. **A leftover slice branch** refuses unless its run is spent ({@link exemptSpentSlices}).
  *
- * Render-safe (ship/src/build/workflow-render.ts): ECMAScript built-ins only, no top-level effect.
+ * Render-safe (src/build/workflow-render.ts): ECMAScript built-ins only, no top-level effect.
  */
 
 import { GENERATED_FILES } from '../core/generated-files.js';
@@ -244,9 +244,11 @@ async function settleOverlap(
     ]);
   }
 
-  const live = estimate.liveOverlaps.map(
-    (o): ShipRefusal => ({ kind: 'overlap', issue: o.issue, message: `${o.branch}: ${o.reason}` }),
-  );
+  const live = estimate.liveOverlaps.map((o): ShipRefusal => ({
+    kind: 'overlap',
+    issue: o.issue,
+    message: `${o.branch}: ${o.reason}`,
+  }));
   const graph: RunGraph = { runSet: values.runSet, edges: values.edges };
   const estimated = estimate.pairs.filter((p) => !generatedOnly(p));
   const unsureWithin = unsureWithinEntry(graph, estimated);
@@ -542,13 +544,11 @@ function settleReadiness(
     ...failing.flatMap(({ issue, failures: [first] }): DroppedIssue[] =>
       first === undefined ? [] : [{ issue, ...first }],
     ),
-    ...dependents.map(
-      (n): DroppedIssue => ({
-        issue: n,
-        cause: 'dependent',
-        message: 'blocked by a dropped issue',
-      }),
-    ),
+    ...dependents.map((n): DroppedIssue => ({
+      issue: n,
+      cause: 'dependent',
+      message: 'blocked by a dropped issue',
+    })),
   ];
 
   return { ...found, refusals, dropped, graph };

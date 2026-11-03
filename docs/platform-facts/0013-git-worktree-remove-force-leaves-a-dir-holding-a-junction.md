@@ -2,7 +2,7 @@
 status: current
 platform: [git 2.56.0.windows.1]
 last-verified: 2026-10-10
-relied-on-by: [ship/src/cli/commands/teardown.ts]
+relied-on-by: [src/cli/commands/teardown.ts]
 ---
 
 # Ship PF-13: `git worktree remove --force` leaves the directory behind when it holds a live junction, and spares the junction target
@@ -11,7 +11,7 @@ On Windows, `git worktree remove --force <wt>` exits 0 and unregisters the workt
 
 ## Implication
 
-Teardown must unlink every link before `git worktree remove` and assert none remain (`assertNoLinksRemain` in `ship/src/cli/commands/teardown.ts`), because a later recursive delete of the leftover directory could follow the junction.
+Teardown must unlink every link before `git worktree remove` and assert none remain (`assertNoLinksRemain` in `src/cli/commands/teardown.ts`), because a later recursive delete of the leftover directory could follow the junction.
 
 ## Scope
 
