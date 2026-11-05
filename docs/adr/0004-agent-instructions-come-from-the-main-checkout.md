@@ -18,5 +18,5 @@ Every agent instruction (`CLAUDE.md`, `.claude/rules/`, skills, agent files, and
 
 ## Alternatives considered
 
-- **A run root outside the project, or under `tmp/` or an untracked dot-directory.** Rejected. Outside the project, no path-scoped rule loads (Framework PF-90). Inside the project but not under `.claude/worktrees/`, a worktree loads its own `CLAUDE.md` and rules (Ship PF-14).
+- **A run root outside the project, or under `tmp/` or an untracked dot-directory.** Rejected. Outside the project, no path-scoped rule loads. Inside the project but not under `.claude/worktrees/`, a worktree loads its own `CLAUDE.md` and rules (Ship PF-14).
 - **Full-slug worktree names.** Rejected, because the longest list slug puts a slice's deepest path near 300 characters, against Windows' limit of 260.
