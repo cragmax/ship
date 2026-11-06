@@ -225,13 +225,7 @@ describe('runShip — issues in flight at once', () => {
     ['testReview:8-1', [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'runner:teardown:8-1']],
     [
       'standardsReview:8-1',
-      [
-        ...UP_TO_SPEC_REVIEW,
-        'testReview:8-1',
-        'standardsReview:8-1',
-        ...REREAD,
-        'runner:teardown:8-1',
-      ],
+      [...UP_TO_SPEC_REVIEW, 'testReview:8-1', 'standardsReview:8-1', 'runner:teardown:8-1'],
     ],
   ])('stops a halting entry’s attempt at the stage boundary after its %s', async (stage, calls) => {
     const hold = holdable(new RegExp(`^${stage}$`));

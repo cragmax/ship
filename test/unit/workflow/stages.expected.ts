@@ -12,7 +12,6 @@ export const EXPECTED_STAGES = {
   specReview: { agentType: 'spec-review', model: 'opus', effort: 'high' },
   testReview: { agentType: 'test-review', model: 'opus', effort: 'high' },
   standardsReview: { agentType: 'standards-review', model: 'opus', effort: 'high' },
-  scriptApiTsdoc: { agentType: 'script-api-tsdoc', model: 'opus', effort: 'high' },
   epicReview: { agentType: 'epic-review', model: 'opus', effort: 'high' },
   retro: { agentType: 'retro', model: 'opus', effort: 'medium' },
   prWriter: { agentType: 'pr', model: 'opus', effort: 'medium' },

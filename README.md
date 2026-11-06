@@ -37,15 +37,15 @@ install never writes, removes or checks it.
 - **The Saved workflows:** `.claude/workflows/ship.js` and `resync.js`, rendered at build time
   from `src/workflow/` into the package's `workflows/`, with the header as their last line.
 - **The stage agent files** in `.claude/agents/` (`tdd`, `spec-review`, `test-review`,
-  `standards-review`, `script-api-tsdoc`, `issue-readiness`, `issue-overlap`, `epic-review`,
-  `retro`, `pr`, `runner`), from `agents/`.
+  `standards-review`, `issue-readiness`, `issue-overlap`, `epic-review`, `retro`, `pr`,
+  `runner`), from `agents/`.
 - **The run-only `unattended-agent` skill** in `.claude/skills/`, from `skills/`.
 
 ## What Ship requires of a consumer
 
 - **The consumer skills:** each skill a stage agent preloads but `unattended-agent` (`tdd`,
   `spec-review`, `standards-review`, `test-review`, `epic-review`, `pr`, `retro`,
-  `issue-overlap`, `issue-readiness`, `script-api-tsdoc` and `probe`), each at
+  `issue-overlap`, `issue-readiness` and `probe`), each at
   `.claude/skills/<name>/SKILL.md`. Ship ships none of them: each is used by hand too, and carries
   no run text. `ship-install` reads their names from the agent sources' `skills:` front matter
   and refuses, naming each, while one is missing.

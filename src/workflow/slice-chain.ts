@@ -20,8 +20,6 @@ import type { SchedulerEvent } from '../core/scheduler/run-scheduler.types.js';
 import {
   AGENT_CALLS,
   type AgentReply,
-  type ScriptApiTsdocOutput,
-  type ScriptApiTsdocSkip,
   type ReviewOutput,
   type SliceWork,
   type TddOutput,
@@ -163,7 +161,7 @@ type DeathStage =
   | 'runner:changed-files';
 
 /** An amending review stage. */
-type ReviewStage = 'spec-review' | 'test-review' | 'standards-review' | 'script-api-tsdoc';
+type ReviewStage = 'spec-review' | 'test-review' | 'standards-review';
 
 /** A stage's answer: its output for the next stage, or the event that ends the attempt. */
 type Step<T> = { readonly next: T } | { readonly stop: SchedulerEvent };
@@ -203,8 +201,8 @@ interface BuiltSlice extends ProvisionedSlice {
   readonly sha: string;
   /**
    * The slice commit's changed paths: the tdd's, then each slice review amend's, re-read
-   * ({@link afterAmend}). The Script API TSDoc review's amend is not re-read: no stage reads
-   * them after it.
+   * ({@link afterAmend}). The standards review's amend is not re-read: no stage reads them
+   * after it.
    */
   readonly files: readonly string[];
   /** The paths the slice review amends changed since the tdd's commit, re-read like `files`. */
@@ -221,17 +219,9 @@ interface TestReviewedSlice extends SpecReviewedSlice {
   readonly testReview: ReviewOutput | TestReviewSkip;
 }
 
-/** A reviewed slice: the standards review's answer too, `sha` its amend. */
-interface ReviewedSlice extends TestReviewedSlice {
+/** An authored slice, ready to land: the standards review's answer too, `sha` its last amend. */
+interface AuthoredSlice extends TestReviewedSlice {
   readonly standardsReview: ReviewOutput;
-}
-
-/**
- * An authored slice, ready to land: the Script API TSDoc review's answer, or why it was skipped,
- * `sha` its last amend.
- */
-interface AuthoredSlice extends ReviewedSlice {
-  readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
 /**
@@ -284,16 +274,15 @@ async function openSlice(at: AttemptId): Promise<Opened> {
   return cutStage(at);
 }
 
-/** Run the provision through the Script API TSDoc review, each at a boundary that sees a halt. */
+/** Run the provision through the standards review, each at a boundary that sees a halt. */
 async function authorSlice(cut: CutSlice): Promise<Step<AuthoredSlice>> {
   const { at } = cut;
   const provisioned = await atBoundary({ next: cut }, at, provisionStage);
   const built = await atBoundary(provisioned, at, tddStage);
   const specReviewed = await atBoundary(built, at, specReviewStage);
   const testReviewed = await atBoundary(specReviewed, at, testReviewStage);
-  const reviewed = await atBoundary(testReviewed, at, standardsReviewStage);
 
-  return atBoundary(reviewed, at, scriptApiTsdocStage);
+  return atBoundary(testReviewed, at, standardsReviewStage);
 }
 
 /** Pass a stop on, else stop for a halting entry, else run the next stage. */
@@ -461,7 +450,7 @@ async function testSkip(s: SpecReviewedSlice): Promise<TestReviewSkip | null> {
 }
 
 /** Hold the slice to the repo's rules, amending its commit with any fix, `sha` its amend. */
-async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<ReviewedSlice>> {
+async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<AuthoredSlice>> {
   const { at } = s;
   const out = await AGENT_CALLS.standardsReview(
     at.ctx.hooks,
@@ -469,32 +458,9 @@ async function standardsReviewStage(s: TestReviewedSlice): Promise<Step<Reviewed
     at.tag,
   );
 
-  return afterAmend(s, 'standards-review', out, (standardsReview) => ({
+  return afterReview(at, 'standards-review', out, (standardsReview) => ({
     ...s,
     standardsReview,
-  }));
-}
-
-/**
- * Review the Script API TSDoc the slice reaches, amending its commit with any fix, when the slice
- * changes a path under `src/`, `sha` its amend.
- */
-async function scriptApiTsdocStage(s: ReviewedSlice): Promise<Step<AuthoredSlice>> {
-  const { at } = s;
-
-  if (!s.files.some((path) => path.startsWith('src/'))) {
-    return { next: { ...s, scriptApiTsdoc: 'no src/ change' } };
-  }
-
-  const values = {
-    ...sliceCommitValues(s),
-    reportPath: `${at.ctx.reportDir}/script-api-tsdoc-${at.tag}.md`,
-  };
-  const out = await AGENT_CALLS.scriptApiTsdoc(at.ctx.hooks, values, at.tag);
-
-  return afterReview(at, 'script-api-tsdoc', out, (scriptApiTsdoc) => ({
-    ...s,
-    scriptApiTsdoc,
   }));
 }
 
@@ -599,11 +565,11 @@ async function landSlice(s: AuthoredSlice): Promise<SliceOutcome> {
   if (event.kind === 'epic-halt') at.ctx.markHalting();
 
   if (event.kind === 'committed' && typeof out?.commit === 'string') {
-    const { tdd, specReview, testReview, standardsReview, scriptApiTsdoc } = s;
+    const { tdd, specReview, testReview, standardsReview } = s;
 
     return {
       kind: 'landed',
-      work: { tdd, specReview, testReview, standardsReview, scriptApiTsdoc },
+      work: { tdd, specReview, testReview, standardsReview },
       commit: out.commit,
       committedAt: out.at ?? null,
       size:

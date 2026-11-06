@@ -24,7 +24,6 @@ import type {
   EstimatedPairSchema,
   IssueReadinessSchema,
   IssueOverlapSchema,
-  ScriptApiTsdocOutputSchema,
   PrWriterOutputSchema,
   ProbeRecordSchema,
   ReadinessVerdictSchema,
@@ -41,7 +40,6 @@ import {
   type EpicReviewValues,
   type IssueOverlapValues,
   type IssueReadinessValues,
-  type ScriptApiTsdocValues,
   type PrWriterValues,
   type RetroValues,
   type SliceReviewValues,
@@ -84,12 +82,6 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
  */
 export type TestReviewSkip = 'trivial surface' | 'comment-only';
 
-/** The Script API TSDoc review's answer. */
-export type ScriptApiTsdocOutput = z.infer<typeof ScriptApiTsdocOutputSchema>;
-
-/** Why a slice's Script API TSDoc review was skipped: it changed nothing under `src/`. */
-export type ScriptApiTsdocSkip = 'no src/ change';
-
 /** What a slice's agents produced by the time its commit is ready to land. */
 export interface SliceWork {
   /** The tdd's answer: its commit line and cite among it. */
@@ -100,8 +92,6 @@ export interface SliceWork {
   readonly testReview: ReviewOutput | TestReviewSkip;
   /** The standards review's answer. */
   readonly standardsReview: ReviewOutput;
-  /** The Script API TSDoc review's answer, or why it was skipped. */
-  readonly scriptApiTsdoc: ScriptApiTsdocOutput | ScriptApiTsdocSkip;
 }
 
 /**
@@ -163,12 +153,6 @@ export const AGENT_CALLS = {
       hooks,
       PROMPTS.standardsReview(values),
       agentOptions('standardsReview', tag, AGENT_OUTPUT_SCHEMAS.standardsReview),
-    ),
-  scriptApiTsdoc: (hooks: WorkflowHooks, values: ScriptApiTsdocValues, tag: string) =>
-    askReply<ScriptApiTsdocOutput>(
-      hooks,
-      PROMPTS.scriptApiTsdoc(values),
-      agentOptions('scriptApiTsdoc', tag, AGENT_OUTPUT_SCHEMAS.scriptApiTsdoc),
     ),
   epicReview: (hooks: WorkflowHooks, values: EpicReviewValues, tag: string) =>
     askAgent<EpicReviewOutput>(

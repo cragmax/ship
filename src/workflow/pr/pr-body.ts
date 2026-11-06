@@ -788,7 +788,6 @@ function issueSection(landed: LandedIssue): string[] {
     reviewLine('Spec review', landed.specReview),
     reviewLine('Test review', landed.testReview),
     reviewLine('Standards review', landed.standardsReview),
-    reviewLine('Script API TSDoc', landed.scriptApiTsdoc),
     `- Lease timings: ${sliceLeaseText(landed)}`,
     ...probeLines(landed.tdd.probes),
     '',

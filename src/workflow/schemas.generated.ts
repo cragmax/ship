@@ -1188,15 +1188,6 @@ export const AGENT_OUTPUT_SCHEMAS = {
     },
     required: ['verdict', 'sha', 'summary', 'leaseLines'],
   },
-  scriptApiTsdoc: {
-    type: 'object',
-    properties: {
-      verdict: { type: 'string', enum: ['clean', 'fixed', 'blocked'] },
-      sha: { type: 'string' },
-      summary: { type: 'string' },
-    },
-    required: ['verdict', 'sha', 'summary'],
-  },
   epicReview: {
     type: 'object',
     properties: {

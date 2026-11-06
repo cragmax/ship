@@ -69,8 +69,6 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:changed-files:7-1',
       'testReview:7-1',
       'standardsReview:7-1',
-      'runner:changed-files:7-1',
-      'runner:changed-files:7-1',
       'runner:land:7-1',
       'runner:teardown:7-1',
       'epicReview:list',

@@ -18,7 +18,6 @@ describe('workflow agents', () => {
       'pr',
       'retro',
       'runner',
-      'script-api-tsdoc',
       'spec-review',
       'standards-review',
       'tdd',

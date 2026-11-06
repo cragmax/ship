@@ -183,16 +183,6 @@ export const ReviewOutputSchema = z.object({
   leaseLines: z.array(z.string()),
 });
 
-/** The Script API TSDoc review's answer. */
-export const ScriptApiTsdocOutputSchema = z.object({
-  /** `clean`: nothing to fix; `fixed`: fixes amended in; `blocked`: the slice cannot land. */
-  verdict: z.enum(['clean', 'fixed', 'blocked']),
-  /** The slice's commit after any amend. */
-  sha: z.string(),
-  /** The outcome, one line. */
-  summary: z.string(),
-});
-
 /** One acceptance criterion as the epic review traced it. */
 const EpicCriterionSchema = z.object({
   /** The issue it belongs to. */
@@ -271,7 +261,6 @@ export const AGENT_OUTPUTS = {
   specReview: ReviewOutputSchema,
   testReview: ReviewOutputSchema,
   standardsReview: ReviewOutputSchema,
-  scriptApiTsdoc: ScriptApiTsdocOutputSchema,
   epicReview: EpicReviewOutputSchema,
   retro: RetroOutputSchema,
   prWriter: PrWriterOutputSchema,

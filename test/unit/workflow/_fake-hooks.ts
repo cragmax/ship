@@ -356,8 +356,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     summary: 'renamed a helper',
     leaseLines: [],
   },
-  // Clean: no amend, so the standards review's sha stands.
-  scriptApiTsdoc: { verdict: 'clean', sha: 'slice2', summary: 'nothing to fix' },
   'runner:land': LAND_OK,
   'runner:teardown': { ...OK, removed: true, registered: false, kept: null },
   'runner:retire-run': OK,
