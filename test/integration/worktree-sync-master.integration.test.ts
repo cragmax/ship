@@ -128,19 +128,28 @@ describe('sync-master', () => {
     expect(r.json.conflicts[0]?.landedBy).toEqual(['Merge pull request #77 from fixture/ship-x']);
   });
 
-  it('fails step version on a prerelease bump, merging nothing', TIMEOUT, () => {
-    const pkg = (v: string): string => `{\n  "name": "p",\n  "version": "${v}"\n}\n`;
-    const run = makeRun({ 'package.json': pkg('1.0.0') });
-    const ours = commitChanges(run.batch, { write: { 'package.json': pkg('1.0.1-rc.1') } }, 'o');
-    advanceOrigin(root, run.bare, { write: { 'package.json': pkg('1.1.0') } }, 'chore: theirs');
+  it(
+    'refuses a version line the two sides changed differently, naming package.json',
+    TIMEOUT,
+    () => {
+      const pkg = (v: string): string => `{\n  "name": "p",\n  "version": "${v}"\n}\n`;
+      const run = makeRun({ 'package.json': pkg('1.0.0') });
+      commitChanges(run.batch, { write: { 'package.json': pkg('1.0.1') } }, 'ours');
+      advanceOrigin(root, run.bare, { write: { 'package.json': pkg('1.1.0') } }, 'chore: theirs');
+      const before = snapshot(run.batch);
 
-    const r = runSyncMaster(run.batch);
+      const r = runSyncMaster(run.batch);
 
-    expect(r.code).toBe(1);
-    expect(r.json).toMatchObject({ status: 'failed', outcome: null });
-    expect(r.json.errors.map((e) => e.step)).toEqual(['version']);
-    expect(snapshot(run.batch)).toMatchObject({ head: ours, porcelain: '', merging: false });
-  });
+      expect(r.code).toBe(1);
+      expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict', outcome: null });
+      expect(r.json.conflicts).toEqual([
+        { path: 'package.json', kind: 'code', landedBy: ['chore: theirs'] },
+      ]);
+      expect(r.json).not.toHaveProperty('version');
+      expect(snapshot(run.batch)).toEqual(before);
+      expect(show(run.batch, 'package.json')).toBe(pkg('1.0.1'));
+    },
+  );
 
   it.each([
     { name: 'beside a version-line conflict', ours: '1.0.1', theirs: '1.1.0' },

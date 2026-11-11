@@ -30,7 +30,6 @@ import type {
   PreflightResultSchema,
   PublishResultSchema,
   SyncMasterResultSchema,
-  VersionLineSchema,
 } from './schemas-run.js';
 
 /** Envelope of `cut-batch <main> (--epic E | --issues N,… | --attach ship/<slug>)`. */
@@ -59,9 +58,6 @@ export type ConflictKind = z.infer<typeof ConflictKindSchema>;
 
 /** One path the `origin/master` merge conflicts on. */
 export type ConflictPath = z.infer<typeof ConflictPathSchema>;
-
-/** The `package.json` versions a merge saw, and the one it ends on. */
-export type VersionLine = z.infer<typeof VersionLineSchema>;
 
 /** Envelope of `sync-master <batch>`. */
 export type SyncMasterResult = z.infer<typeof SyncMasterResultSchema>;

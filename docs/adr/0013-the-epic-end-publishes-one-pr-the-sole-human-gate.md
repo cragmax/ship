@@ -6,7 +6,7 @@ Once an epic's last slice settles, the epic end runs a fixed sequence that ends 
 
 1. **The steps, in order.**
    1. The epic review over the batch.
-   2. The master sync, under the run's repo lock. If `origin/master` moved, the sync merges it, and never rebases. Any conflict stops the epic, except a conflict in the lockfile or the version line.
+   2. The master sync, under the run's repo lock. If `origin/master` moved, the sync merges it, and never rebases. Any conflict stops the epic, except a conflict in the lockfile, which is regenerated. A version-line conflict is an ordinary conflict (Ship ADR-0015).
    3. The retro and the `pr` agent, concurrently.
    4. The publish task, under the repo lock: a look at the main checkout, a forward-only check of `master` since launch, the push, and the PR.
    5. A comment on each issue that the run blocked, giving the reason and the PR or branch.

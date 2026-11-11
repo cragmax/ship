@@ -362,7 +362,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     commit: null,
     upstream: 'origin0',
     conflicts: [],
-    version: null,
   },
   'runner:check-master': {
     ...OK,

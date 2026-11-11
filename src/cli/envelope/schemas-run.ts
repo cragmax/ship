@@ -176,11 +176,10 @@ export const LandResultSchema = ResultBaseSchema.extend({
 });
 
 /**
- * How `sync-master` treats a conflicted path: `lockfile` is regenerated,
- * `package`, a `package.json` conflict confined to the top-level version
- * line, is resolved by the version rule, `code` refuses the merge.
+ * How `sync-master` treats a conflicted path: `lockfile` is regenerated, `code`, any other path
+ * (`package.json` included), refuses the merge.
  */
-export const ConflictKindSchema = z.enum(['lockfile', 'package', 'code']);
+export const ConflictKindSchema = z.enum(['lockfile', 'code']);
 
 /** One path the `origin/master` merge conflicts on. */
 export const ConflictPathSchema = z.object({
@@ -194,22 +193,6 @@ export const ConflictPathSchema = z.object({
    * `Merge pull request #N …`.
    */
   landedBy: z.array(z.string()),
-});
-
-/** A `package.json` version at the merge-base and on each side. */
-export const VersionTripleSchema = z.object({
-  /** At the merge-base of the batch and `origin/master`. */
-  base: z.string(),
-  /** On the batch's `HEAD`. */
-  ours: z.string(),
-  /** On `origin/master`. */
-  theirs: z.string(),
-});
-
-/** The `package.json` versions a merge saw, and the one it ends on. */
-export const VersionLineSchema = VersionTripleSchema.extend({
-  /** The version the version rule gives the merge (`package-version.ts` `targetVersion`). */
-  result: z.string(),
 });
 
 /** Envelope of `sync-master <batch>`. `worktree` is the batch. */
@@ -230,12 +213,6 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
   upstream: z.string().nullable(),
   /** Every path the merge conflicts on, classified. */
   conflicts: z.array(ConflictPathSchema),
-  /**
-   * The versions the merge saw, once the merge-base is known. `null` when
-   * any of the three `package.json` copies is missing or has no top-level
-   * version line.
-   */
-  version: VersionLineSchema.nullable(),
   /** Which batch refreshes ran on the merged tree. */
   refreshed: z.object({ ci: z.boolean(), build: z.boolean() }),
   /** The log files the merge and commit output went to, in the order written. */

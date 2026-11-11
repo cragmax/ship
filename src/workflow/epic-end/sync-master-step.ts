@@ -3,14 +3,14 @@
  * of the `origin/master` merge, which the `resync` workflow reuses, passing
  * `{ batch, reportDir, tag: 'resync' }`.
  *
- * A code conflict or any failure stops the epic before its bump and push.
+ * A code conflict or any failure stops the epic before its push.
  * The caller reads {@link SyncStepResult.verdict}.
  *
  * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only,
  * no top-level side effect.
  */
 
-import type { ConflictPath, VersionLine } from '../../cli/envelope/types-run.js';
+import type { ConflictPath } from '../../cli/envelope/types-run.js';
 
 import type { WorkflowHooks } from '../runtime.types.js';
 import { envelopeProblem, runPlace, runTool, type SyncMasterOutput } from '../calls/tool-calls.js';
@@ -36,8 +36,6 @@ export interface SyncStepResult {
    * named none.
    */
   readonly conflicts: readonly ConflictPath[];
-  /** The versions its merge saw and ended on, `null` when it named none. */
-  readonly version: VersionLine | null;
 }
 
 /** How the step ended, before `sync-master`'s findings are added. */
@@ -56,8 +54,7 @@ interface SyncStepContext {
 /**
  * Merge `origin/master` into the batch.
  *
- * @returns Resolves to the step's result, carrying `sync-master`'s `conflicts`
- *   and `version` on every path. Never rejects on a tool's outcome.
+ * @returns Resolves to the step's result, carrying `sync-master`'s `conflicts` on every path. Never rejects on a tool's outcome.
  */
 export async function syncMasterStep(
   hooks: WorkflowHooks,
@@ -65,7 +62,7 @@ export async function syncMasterStep(
 ): Promise<SyncStepResult> {
   const out = await runTool(hooks, 'sync-master', [ctx.batch], runPlace(ctx, ctx.tag));
 
-  return { ...syncVerdict(out), conflicts: out?.conflicts ?? [], version: out?.version ?? null };
+  return { ...syncVerdict(out), conflicts: out?.conflicts ?? [] };
 }
 
 /**

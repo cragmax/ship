@@ -40,7 +40,6 @@ const SYNC_MERGED = {
   commit: 'merge1',
   upstream: 'origin1',
   conflicts: [],
-  version: null,
 };
 
 describe('runShip — the master check', () => {
@@ -303,7 +302,6 @@ describe('runShip — the master check', () => {
         commit: null,
         upstream: null,
         conflicts: [],
-        version: null,
       },
       'runner:preflight:list': {
         ...PREFLIGHT_OK,

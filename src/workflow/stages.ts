@@ -128,9 +128,7 @@ export const RESYNC_PHASES: readonly WorkflowPhase[] = [
   },
   {
     title: RESYNC_PHASE_TITLES.merge,
-    detail:
-      "the epic end's merge step: the lockfile regenerated, the version line re-bumped, " +
-      'any other conflict stops',
+    detail: "the epic end's merge step: the lockfile regenerated, any other conflict stops",
   },
   {
     title: RESYNC_PHASE_TITLES.push,

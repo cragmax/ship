@@ -65,7 +65,7 @@ export const RefusalReasonSchema = z.enum([
   'preflight-failed',
   // Sync-master: another worktree's `node_modules` links into the batch's. The message names each.
   'slices-live',
-  // Sync-master: the merge would conflict beyond the lockfile and version line. Nothing merged.
+  // Sync-master: the merge would conflict beyond the lockfile. Nothing merged.
   'code-conflict',
   // Publish: the run branch already has an open PR. The message names it.
   'pr-exists',

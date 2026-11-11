@@ -54,7 +54,6 @@ export const MERGED = {
     commit: 'merge1',
     upstream: 'origin1',
     conflicts: [],
-    version: null,
   },
 };
 

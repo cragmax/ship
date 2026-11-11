@@ -117,7 +117,6 @@ export const TOOL_ENVELOPES = {
     commit: true,
     upstream: true,
     conflicts: true,
-    version: true,
   }).extend({ errors: ERRORS }),
   publish: PublishResultSchema.pick({ ...STATUS, pushed: true, pr: true, mergeable: true }).extend({
     errors: ERRORS,

@@ -1,6 +1,6 @@
 /**
  * Plain-repo builders for the worktree CLI's `harvest`, `staged-guard`,
- * `live-runs`, `land`, `cut-*`, `preflight`, `sync-master`, `bump` and
+ * `live-runs`, `land`, `cut-*`, `preflight`, `sync-master` and
  * `publish` tests: small git repos with no npm template, commits built from a
  * change list, a bare `origin`, an independent staged-set reader, and a fake
  * `gh` the spawned CLI finds first on its `PATH`.

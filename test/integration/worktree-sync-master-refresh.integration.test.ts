@@ -78,13 +78,16 @@ describe('sync-master batch refresh', () => {
     return sha;
   }
 
-  /** An npm run whose batch and `origin/master` each bumped `patch` from the same base. */
-  function identicalBumps(): { run: FixtureRun; ours: string; theirs: string } {
+  /** An npm run whose batch and `origin/master` each renamed the lockfile's package differently. */
+  function lockfileConflict(): { run: FixtureRun; lock: string; ours: string; theirs: string } {
     const run = makeNpmRun();
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+    const lock = readFileSync(join(run.batch, LOCKFILE), 'utf8');
+    const renamed = (name: string): string =>
+      lock.replace('"name": "wt-fixture"', `"name": "${name}"`);
+    const ours = commitChanges(run.batch, { write: { [LOCKFILE]: renamed('ours') } }, 'ours');
+    const theirs = advanceOrigin(root, run.bare, { write: { [LOCKFILE]: renamed('theirs') } });
 
-    return { run, ours, theirs };
+    return { run, lock, ours, theirs };
   }
 
   /**
@@ -126,12 +129,7 @@ describe('sync-master batch refresh', () => {
   });
 
   it('regenerates a conflicted lockfile, merges, and reinstalls', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const lock = readFileSync(join(run.batch, LOCKFILE), 'utf8');
-    const renamed = (name: string): string =>
-      lock.replace('"name": "wt-fixture"', `"name": "${name}"`);
-    const ours = commitChanges(run.batch, { write: { [LOCKFILE]: renamed('ours') } }, 'ours');
-    const theirs = advanceOrigin(root, run.bare, { write: { [LOCKFILE]: renamed('theirs') } });
+    const { run, lock, ours, theirs } = lockfileConflict();
 
     const r = runSyncMaster(run.batch);
 
@@ -147,46 +145,48 @@ describe('sync-master batch refresh', () => {
     expect(porcelain(run.batch)).toBe('');
   });
 
-  it('resolves a version-line conflict to master bumped by the branch bump', TIMEOUT, () => {
-    const run = makeNpmRun();
-    const baseLock = lockOf(run.batch);
-    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
-    const theirs = bumpOrigin(run, 'minor', 'chore: theirs');
-
-    const r = runSyncMaster(run.batch);
-
-    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
-    expect(r.json.conflicts).toEqual([
-      { path: LOCKFILE, kind: 'lockfile', landedBy: ['chore: theirs'] },
-      { path: 'package.json', kind: 'package', landedBy: ['chore: theirs'] },
-    ]);
-    expect(r.json.version).toEqual({
-      base: '1.0.0',
-      ours: '1.0.1',
-      theirs: '1.1.0',
-      result: '1.1.1',
-    });
-    expect(r.json.upstream).toBe(theirs);
-    expect(versionsOf(run.batch)).toEqual({ pkg: '1.1.1', lock: '1.1.1', lockRoot: '1.1.1' });
-    expect(lockOf(run.batch).packages['node_modules/fake-dep']).toEqual(
-      baseLock.packages['node_modules/fake-dep'],
-    );
-    expect(parents(run.batch)).toEqual([ours, theirs]);
-    expect(porcelain(run.batch)).toBe('');
-  });
-
-  it('re-bumps an identical bump, committing the merge through the hooks', TIMEOUT, () => {
-    const { run, ours, theirs } = identicalBumps();
+  it('commits a merge stopped on the lockfile through the hooks', TIMEOUT, () => {
+    const { run, theirs } = lockfileConflict();
     const hookLog = recordCommits(run.main);
 
     const r = runSyncMaster(run.batch);
 
     expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
-    expect(r.json.version?.result).toBe('1.0.2');
-    expect(versionsOf(run.batch)).toEqual({ pkg: '1.0.2', lock: '1.0.2', lockRoot: '1.0.2' });
-    expect(parents(run.batch)).toEqual([ours, theirs]);
     // The hook saw MERGE_HEAD: it ran for this merge's own commit.
     expect(readFileSync(hookLog, 'utf8').trim()).toBe(theirs);
+    expect(porcelain(run.batch)).toBe('');
+  });
+
+  it('refuses a version-line conflict as code, setting no version', TIMEOUT, () => {
+    const run = makeNpmRun();
+    bumpIn(run.batch, 'patch', 'chore: ours');
+    bumpOrigin(run, 'minor', 'chore: theirs');
+    const before = snapshot(run.batch);
+
+    const r = runSyncMaster(run.batch);
+
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ status: 'refused', reason: 'code-conflict', outcome: null });
+    expect(r.json.conflicts).toEqual([
+      { path: LOCKFILE, kind: 'lockfile', landedBy: ['chore: theirs'] },
+      { path: 'package.json', kind: 'code', landedBy: ['chore: theirs'] },
+    ]);
+    expect(r.json).not.toHaveProperty('version');
+    expect(snapshot(run.batch)).toEqual(before);
+    expect(versionsOf(run.batch)).toEqual({ pkg: '1.0.1', lock: '1.0.1', lockRoot: '1.0.1' });
+  });
+
+  it('merges a version both sides bumped alike as git merges it', TIMEOUT, () => {
+    const run = makeNpmRun();
+    const ours = bumpIn(run.batch, 'patch', 'chore: ours');
+    const theirs = bumpOrigin(run, 'patch', 'chore: theirs');
+
+    const r = runSyncMaster(run.batch);
+
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', conflicts: [] });
+    expect(r.json).not.toHaveProperty('version');
+    expect(versionsOf(run.batch)).toEqual({ pkg: '1.0.1', lock: '1.0.1', lockRoot: '1.0.1' });
+    expect(parents(run.batch)).toEqual([ours, theirs]);
     expect(porcelain(run.batch)).toBe('');
   });
 
@@ -197,14 +197,7 @@ describe('sync-master batch refresh', () => {
 
     const r = runSyncMaster(run.batch);
 
-    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged' });
-    expect(r.json.version).toEqual({
-      base: '1.0.0',
-      ours: '1.0.0',
-      theirs: '1.0.1',
-      result: '1.0.1',
-    });
-    expect(r.json.conflicts.filter((c) => c.kind === 'package')).toEqual([]);
+    expect(r.json).toMatchObject({ status: 'ok', outcome: 'merged', conflicts: [] });
     expect(versionsOf(run.batch).pkg).toBe('1.0.1');
   });
 
@@ -227,7 +220,7 @@ describe('sync-master batch refresh', () => {
   });
 
   it('aborts its held merge when the refresh before the commit fails', TIMEOUT, () => {
-    const { run, ours } = identicalBumps();
+    const { run, ours } = lockfileConflict();
     advanceOrigin(root, run.bare, {
       write: { 'src/feature.ts': 'master\n', [FAIL_BUILD]: '' },
     });
@@ -236,7 +229,7 @@ describe('sync-master batch refresh', () => {
   });
 
   it('aborts its held merge when the commit hook fails', TIMEOUT, () => {
-    const { run, ours } = identicalBumps();
+    const { run, ours } = lockfileConflict();
     installHook(root, run.main, 'pre-commit', `#!/bin/sh\necho "${HOOK_SAYS}"\nexit 1\n`);
 
     const r = expectHeldMergeAborted(run.batch, ours, 'commit');

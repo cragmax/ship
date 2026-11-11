@@ -186,7 +186,6 @@ const INPUT: PrBodyInput = {
     upstream: 'o0',
     message: 'merged origin/master as m1',
     conflicts: [],
-    version: null,
   },
   masterCheck: {
     passed: true,

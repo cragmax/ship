@@ -1197,7 +1197,6 @@ describe('runShip — an attempt that does not land', () => {
         commit: null,
         upstream: null,
         conflicts: [],
-        version: null,
       },
     });
 
@@ -2066,7 +2065,6 @@ describe('runShip — the epic end', () => {
         commit: 'merge1',
         upstream: 'origin1',
         conflicts: [],
-        version: null,
       },
     });
 

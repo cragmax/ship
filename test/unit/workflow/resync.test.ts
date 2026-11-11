@@ -76,23 +76,21 @@ describe('runResync — merge and push', () => {
     expect(report.message).toBe('pushed; PR #9 mergeable unconfirmed (CONFLICTING)');
   });
 
-  it('carries the merge start version into the report', async () => {
-    const version = { base: '1.0.0', ours: '1.0.1', theirs: '1.1.0', result: '1.1.1' };
+  it('carries the merge into the report with no version', async () => {
     const run = resyncHooks({
       'runner:sync-master:resync': {
         ...OK,
         outcome: 'merged',
         commit: 'merge1',
         upstream: 'origin1',
-        conflicts: [{ path: 'package.json', kind: 'package', landedBy: ['chore: theirs'] }],
-        version,
+        conflicts: [],
       },
     });
 
     const report = await runResync(run.hooks, BRANCH);
 
     expect(report).toMatchObject({ status: 'done', sync: { verdict: 'merged', commit: 'merge1' } });
-    expect(report.sync?.version).toEqual(version);
+    expect(report.sync).not.toHaveProperty('version');
   });
 
   const CODE_CONFLICT = {
@@ -114,7 +112,6 @@ describe('runResync — merge and push', () => {
           commit: null,
           upstream: null,
           conflicts: [CODE_CONFLICT],
-          version: null,
           errors: [{ step: 'probe', message: 'would conflict in code: src/x.ts' }],
         },
       },
@@ -131,7 +128,6 @@ describe('runResync — merge and push', () => {
           commit: null,
           upstream: null,
           conflicts: [],
-          version: null,
           errors: [{ step: 'build', message: 'npm run build exited 1' }],
         },
       },

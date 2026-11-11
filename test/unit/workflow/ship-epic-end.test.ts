@@ -60,7 +60,6 @@ const SYNC_CODE_CONFLICT = {
     commit: null,
     upstream: null,
     conflicts: [],
-    version: null,
   },
 };
 
@@ -75,7 +74,6 @@ const SYNC_NO_UPSTREAM = {
   commit: null,
   upstream: null,
   conflicts: [],
-  version: null,
 };
 
 /**
@@ -469,7 +467,6 @@ describe('runShip — no bump', () => {
         commit: 'merge1',
         upstream: 'origin0',
         conflicts: [],
-        version: null,
       },
     });
 

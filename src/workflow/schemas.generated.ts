@@ -600,24 +600,14 @@ export const TOOL_ENVELOPE_SCHEMAS = {
           type: 'object',
           properties: {
             path: { type: 'string' },
-            kind: { type: 'string', enum: ['lockfile', 'package', 'code'] },
+            kind: { type: 'string', enum: ['lockfile', 'code'] },
             landedBy: { type: 'array', items: { type: 'string' } },
           },
           required: ['path', 'kind', 'landedBy'],
         },
       },
-      version: {
-        type: ['object', 'null'],
-        properties: {
-          base: { type: 'string' },
-          ours: { type: 'string' },
-          theirs: { type: 'string' },
-          result: { type: 'string' },
-        },
-        required: ['base', 'ours', 'theirs', 'result'],
-      },
     },
-    required: ['status', 'errors', 'outcome', 'commit', 'upstream', 'conflicts', 'version'],
+    required: ['status', 'errors', 'outcome', 'commit', 'upstream', 'conflicts'],
   },
   publish: {
     type: 'object',

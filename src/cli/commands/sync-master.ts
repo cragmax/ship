@@ -1,8 +1,9 @@
 /**
  * `sync-master <batch>` merges `origin/master` into the batch. A
- * `git merge-tree` probe refuses a code conflict before merging. Only when both sides moved the
- * version does the version rule ({@link planVersionRule}) hold the merge `--no-ff --no-commit`: an
- * identical bump stops before its commit.
+ * `git merge-tree` probe refuses a code conflict before merging: a conflict on any path but the
+ * lockfile, `package.json`'s version line included. No version is set: a version line both sides
+ * changed alike merges as git merges it. A merge that stops on the lockfile alone regenerates it
+ * ({@link regenerateLockfile}) before its commit.
  *
  * Invariant: a `failed` envelope never leaves a merge this call started in progress: it is
  * aborted. A failed abort adds an `abort` error. `refused` leaves the batch as found. Nothing is
@@ -35,19 +36,14 @@ import { assertBatchClean, assertLinkedWorktree } from './harvest.js';
 import { needsBuild } from './land.js';
 import { linkTarget } from '../git/links.js';
 import { RUN_UPSTREAM } from '../git/run-layout.js';
-import {
-  applyVersionRule,
-  LOCKFILE,
-  PACKAGE_JSON,
-  planVersionRule,
-  regenerateLockfile,
-  type VersionRule,
-} from './sync-master-version.js';
-import type { ConflictKind, ConflictPath, SyncMasterResult } from '../envelope/types-run.js';
+import type { ConflictPath, SyncMasterResult } from '../envelope/types-run.js';
 import { Refusal, recordFailure, StepFailure } from '../envelope/types.js';
 
 /** How many subjects a conflict's `landedBy` carries at most. */
 const LANDED_BY_LIMIT = 5;
+
+/** The lockfile, regenerated rather than merged by hand. */
+const LOCKFILE = 'package-lock.json';
 
 /** Inputs of {@link syncMaster}. */
 interface SyncMasterInput {
@@ -90,7 +86,6 @@ export function syncMaster(input: SyncMasterInput): SyncMasterResult {
       commit: null,
       upstream: null,
       conflicts: [],
-      version: null,
       refreshed: { ci: false, build: false },
       logs: [],
     },
@@ -139,10 +134,9 @@ export function assertNoLiveSlices(dir: string, batch: string): void {
 }
 
 /**
- * Fetch, probe, merge. A held merge is settled, refreshed, then committed.
+ * Fetch, probe, merge. A merge stopped on the lockfile is settled, refreshed, then committed.
  *
- * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; StepFailure per failed step,
- *   {@link planVersionRule}'s before merging.
+ * @throws Refusal `batch-dirty`, `slices-live` or `code-conflict`; StepFailure per failed step.
  */
 function start(run: Run): void {
   const { batch, result } = run;
@@ -159,48 +153,56 @@ function start(run: Run): void {
   }
 
   const mergeBase = git(batch, ['merge-base', 'HEAD', RUN_UPSTREAM], 'probe');
-  const { version, rule } = planVersionRule(batch, mergeBase);
-  result.version = version;
   result.conflicts = probeConflicts(batch).map((path) => ({
     path,
-    kind: conflictKind(path, rule !== null),
+    kind: path === LOCKFILE ? 'lockfile' : 'code',
     landedBy: landedBy(batch, mergeBase, path),
   }));
   assertNoCodeConflict(result.conflicts);
   run.owned = true;
 
-  if (merge(run, rule !== null)) {
+  if (merge(run)) {
     recordMerged(run, upstream);
     refresh(run, mergeBase);
 
     return;
   }
 
-  settleStoppedMerge(batch, rule);
+  settleStoppedMerge(batch);
   refresh(run, mergeBase);
   commitMerge(run);
   recordMerged(run, upstream);
 }
 
 /**
- * Settle a stopped merge: the version rule's `package.json` and lockfile, or a conflicted lockfile
- * regenerated. Throws StepFailure `merge` for any other unmerged path, one the probe missed;
- * `version` or `lockfile` when settling fails.
+ * Settle a merge stopped on the lockfile by regenerating it. Throws StepFailure `merge` for any
+ * other unmerged path, one the probe missed; `lockfile` when regenerating fails.
  */
-function settleStoppedMerge(batch: string, rule: VersionRule | null): void {
+function settleStoppedMerge(batch: string): void {
   const unmerged = unmergedPaths(batch, 'merge');
-  const settled = rule === null ? [LOCKFILE] : [LOCKFILE, PACKAGE_JSON];
-  const other = unmerged.filter((path) => !settled.includes(path));
+  const other = unmerged.filter((path) => path !== LOCKFILE);
 
   if (other.length > 0) {
     throw new StepFailure('merge', `merge conflicted beyond the probe: ${other.join(', ')}`);
   }
 
-  if (rule !== null) {
-    applyVersionRule(batch, rule.merged, rule.target, unmerged.includes(LOCKFILE));
-  } else if (unmerged.includes(LOCKFILE)) {
-    regenerateLockfile(batch, true);
-  }
+  if (unmerged.includes(LOCKFILE)) regenerateLockfile(batch);
+}
+
+/**
+ * Resolve the conflicted lockfile by regeneration, never by hand: take `origin/master`'s, let npm
+ * rewrite it against the merged `package.json`, and stage it by name.
+ *
+ * @param batch - The batch worktree, mid-merge.
+ * @throws StepFailure `lockfile` when git or npm fails.
+ */
+function regenerateLockfile(batch: string): void {
+  git(batch, ['checkout', '--theirs', '--', LOCKFILE], 'lockfile');
+  runStep('lockfile', 'npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
+    cwd: batch,
+    timeoutMs: NPM_TIMEOUT_MS,
+  });
+  git(batch, ['add', '--', LOCKFILE], 'lockfile');
 }
 
 /**
@@ -252,13 +254,6 @@ function probeConflicts(batch: string): string[] {
   );
 }
 
-/** A conflicted path's kind. A `package.json` conflict the version rule can't resolve is `code`. */
-function conflictKind(path: string, packageResolved: boolean): ConflictKind {
-  if (path === LOCKFILE) return 'lockfile';
-
-  return path === PACKAGE_JSON && packageResolved ? 'package' : 'code';
-}
-
 /**
  * Up to {@link LANDED_BY_LIMIT} subjects, newest first, of `origin/master` commits since the
  * merge-base touching `path`, first-parent only so a PR landed by merge commit is named by that
@@ -300,19 +295,17 @@ function assertNoCodeConflict(conflicts: readonly ConflictPath[]): void {
 }
 
 /**
- * Merge, output logged. A clean merge commits unless `stop` holds it (`--no-ff --no-commit`, for
- * the version rule to edit the tree): `true` when it committed, `false` when it stopped with
- * `MERGE_HEAD` set. Throws StepFailure `merge` when it ends uncommitted, no merge in progress.
+ * Merge, output logged: `true` when it committed, `false` when it stopped with `MERGE_HEAD` set.
+ * Throws StepFailure `merge` when it ends uncommitted, no merge in progress.
  */
-function merge(run: Run, stop: boolean): boolean {
-  const hold = stop ? ['--no-ff', '--no-commit'] : [];
-  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', ...hold, RUN_UPSTREAM], {
+function merge(run: Run): boolean {
+  const r = runCaptured('git', ['-C', run.batch, 'merge', '--no-edit', RUN_UPSTREAM], {
     cwd: process.cwd(),
     timeoutMs: COMMIT_TIMEOUT_MS,
     logFile: logFile(run, 'merge.log'),
   });
 
-  if (r.exitCode === 0 && !stop) return true;
+  if (r.exitCode === 0) return true;
   if (refExists(run.batch, 'MERGE_HEAD')) return false;
 
   throw new StepFailure('merge', `git merge ${RUN_UPSTREAM} exited ${String(r.exitCode)}`, r.tail);
