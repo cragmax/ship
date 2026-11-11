@@ -22,7 +22,6 @@ const TIMEOUT = { timeout: 60_000 };
 /** The modules the CLI's dispatch table runs its commands from. */
 const COMMAND_MODULES = [
   'append-pr-body',
-  'bump',
   'changed-files',
   'check-master',
   'cut',
@@ -155,7 +154,6 @@ describe('worktree CLI module loading', () => {
       (m) => ['sync-master', m],
       ['cut', 'harvest', 'land', 'staged-set', 'sync-master'],
     ],
-    ['bump', (m) => ['bump', m], ['bump', 'cut', 'harvest', 'staged-set']],
     [
       'publish',
       (m) => ['publish', m, '--title', 't', '--body-file', `${m}/b.md`, '--log', `${m}/l`],

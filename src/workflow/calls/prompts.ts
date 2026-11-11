@@ -188,7 +188,7 @@ export interface UnlandedValues {
 
 /** `PROMPTS.epicReview`'s input: the run's landed change, once the last slice has landed. */
 export interface EpicReviewValues {
-  /** The batch worktree, before the `origin/master` merge and the bump. */
+  /** The batch worktree, before the `origin/master` merge. */
   readonly batch: string;
   /** The run's landed range, `<batch base>..HEAD`. */
   readonly range: string;

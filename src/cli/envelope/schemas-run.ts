@@ -2,7 +2,7 @@
  * Envelope schemas of the worktree CLI's run-branch commands (the commands
  * that cut, check and land an unattended run: `cut-batch`,
  * `cut-slice`, `preflight`, and `land`) and of its epic-end commands:
- * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
+ * `sync-master`, `check-master`, `publish`, `append-pr-body` and
  * `post-pr-comment`.
  * The canonical home of their shapes. `types-run.ts` exports each as its
  * `z.infer`. The base fields, path spelling and integer rule are
@@ -240,20 +240,6 @@ export const SyncMasterResultSchema = ResultBaseSchema.extend({
   refreshed: z.object({ ci: z.boolean(), build: z.boolean() }),
   /** The log files the merge and commit output went to, in the order written. */
   logs: z.array(z.string()),
-});
-
-/** Envelope of `bump <batch>`. `worktree` is the batch. */
-export const BumpResultSchema = ResultBaseSchema.extend({
-  /** The bump's kind, as `bump.ts`'s header derives it. */
-  kind: z.enum(['minor', 'patch']).nullable(),
-  /** The batch's version before the bump. */
-  from: z.string().nullable(),
-  /** The target version, as `bump.ts`'s header derives it. Equal to `from` on a no-op. */
-  to: z.string().nullable(),
-  /** The bump commit. `null` unless it landed, a no-op included. */
-  commit: z.string().nullable(),
-  /** The file the commit's output (its hooks' included) went to. `null` on a no-op. */
-  log: z.string().nullable(),
 });
 
 /** A pull request `publish` opened, or found open with `--push-only`. */

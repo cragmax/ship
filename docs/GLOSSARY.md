@@ -45,7 +45,7 @@ The four registry servers, two Paper and two Folia, that a batch's registry trim
 _Avoid_: "the pool" for it (the pool is the whole registry, and the warm set is Ship's subset).
 
 **Batch worktree**:
-The per-epic worktree on the run's `ship/<slug>` branch at `.claude/worktrees/ship-<head>/`, where the **Commit queue** lands and the epic end merges, bumps, and pushes. It lives while its PR is open (Ship ADR-0011).
+The per-epic worktree on the run's `ship/<slug>` branch at `.claude/worktrees/ship-<head>/`, where the **Commit queue** lands and the epic end merges and pushes. It lives while its PR is open (Ship ADR-0011).
 _Avoid_: "main tree" (the maintainer's own checkout); "batch" as a live concept (a historical name).
 
 **Slice worktree**:

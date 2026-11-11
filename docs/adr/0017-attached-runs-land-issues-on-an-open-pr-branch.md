@@ -10,8 +10,7 @@
 4. **The epic end runs these steps.** If the PR closed in the meantime, the epic stops.
    1. Epic review over this run's slices.
    2. Master sync.
-   3. Bump.
-   4. Retro, with no `pr` agent.
-   5. A push onto the open PR.
+   3. Retro, with no `pr` agent.
+   4. A push onto the open PR.
 5. **After a successful push, the run reports on the PR.** It posts its report, folded, as one PR comment. It also appends one `## Attached run <R>` section to the PR's body, with Evidence, Issues, Recorded, and a link to the comment. Everything already in the body is kept byte for byte, and the closing-keyword neutraliser runs over the new text.
 6. **Limits and failures.** A body or comment over the limit is refused before `gh` runs. A refused or failed push posts and edits nothing. A failed post or edit never fails the run.

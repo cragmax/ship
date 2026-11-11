@@ -39,7 +39,6 @@ export type ToolName =
   | 'teardown'
   | 'retire-run'
   | 'sync-master'
-  | 'bump'
   | 'check-master'
   | 'publish'
   | 'append-pr-body'
@@ -155,9 +154,6 @@ export type RetireRunOutput = EnvelopeOutput<'retire-run'>;
 /** `sync-master`'s consumed fields. */
 export type SyncMasterOutput = EnvelopeOutput<'sync-master'>;
 
-/** `bump`'s consumed fields. */
-export type BumpOutput = EnvelopeOutput<'bump'>;
-
 /** `check-master`'s consumed fields. */
 export type CheckMasterOutput = EnvelopeOutput<'check-master'>;
 
@@ -191,7 +187,6 @@ export interface ToolOutputs {
   teardown: TeardownOutput;
   'retire-run': RetireRunOutput;
   'sync-master': SyncMasterOutput;
-  bump: BumpOutput;
   'check-master': CheckMasterOutput;
   publish: PublishOutput;
   'append-pr-body': AppendPrBodyOutput;
@@ -224,7 +219,6 @@ export const TOOL_COMMANDS: Readonly<Record<ToolName, readonly string[]>> = {
   teardown: [WORKTREE_CLI, 'teardown'],
   'retire-run': [WORKTREE_CLI, 'retire-run'],
   'sync-master': [WORKTREE_CLI, 'sync-master'],
-  bump: [WORKTREE_CLI, 'bump'],
   'check-master': [WORKTREE_CLI, 'check-master'],
   publish: [WORKTREE_CLI, 'publish'],
   'append-pr-body': [WORKTREE_CLI, 'append-pr-body'],
@@ -324,7 +318,6 @@ export const TOOL_SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {
   teardown: envelopeSchema('teardown'),
   'retire-run': envelopeSchema('retire-run'),
   'sync-master': envelopeSchema('sync-master'),
-  bump: envelopeSchema('bump'),
   'check-master': envelopeSchema('check-master'),
   publish: envelopeSchema('publish'),
   'append-pr-body': envelopeSchema('append-pr-body'),

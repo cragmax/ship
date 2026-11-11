@@ -340,7 +340,6 @@ describe('runShip — one issue from launch to PR', () => {
       'runner:teardown:7-1',
       'epicReview:list',
       'runner:sync-master:list',
-      'runner:bump:list',
       'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
@@ -1171,7 +1170,7 @@ describe('runShip — an attempt that does not land', () => {
 
   it('reports an epic end whose call threw as stopped, never rejecting the run', async () => {
     const run = fakeHooks({
-      'runner:bump': () => {
+      'runner:sync-master': () => {
         throw new Error('runner crashed');
       },
     });
@@ -1186,7 +1185,7 @@ describe('runShip — an attempt that does not land', () => {
     });
   });
 
-  it('stops the epic end on a code conflict: no bump, no push', async () => {
+  it('stops the epic end on a code conflict: no push', async () => {
     const run = fakeHooks({
       'runner:sync-master': {
         exitCode: 1,
@@ -1204,7 +1203,7 @@ describe('runShip — an attempt that does not land', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^runner:(bump|publish)/.test(l))).toEqual([]);
+    expect(labels(run).filter((l) => /^runner:(changed-files:list|publish)/.test(l))).toEqual([]);
     expect(report.epics[0]).toMatchObject({
       outcome: 'stopped',
       message: expect.stringMatching(/code-conflict/),
@@ -2059,7 +2058,7 @@ describe('runShip — the slice’s changed files after an amend', () => {
 });
 
 describe('runShip — the epic end', () => {
-  it('merges origin/master before the bump, syncing the master check to its upstream', async () => {
+  it('merges origin/master before the publish, syncing the master check to its upstream', async () => {
     const run = fakeHooks({
       'runner:sync-master:list': {
         ...OK,
@@ -2073,9 +2072,8 @@ describe('runShip — the epic end', () => {
 
     const report = await runShip(run.hooks, 'issues 7');
 
-    expect(labels(run).filter((l) => /^runner:(sync-master|bump|publish)/.test(l))).toEqual([
+    expect(labels(run).filter((l) => /^runner:(sync-master|publish)/.test(l))).toEqual([
       'runner:sync-master:list',
-      'runner:bump:list',
       'runner:publish:list',
     ]);
     expect(run.calls.find((c) => c.label === 'runner:sync-master:list')?.argv).toEqual([

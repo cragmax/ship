@@ -105,7 +105,7 @@ export const SHIP_PHASES: readonly WorkflowPhase[] = [
   {
     title: PHASE_TITLES.epicEnd,
     detail:
-      'per epic: epic review, master sync, version bump, retro and PR writer ' +
+      'per epic: epic review, master sync, retro and PR writer ' +
       '(concurrently), ' +
       'master check, pull request',
   },

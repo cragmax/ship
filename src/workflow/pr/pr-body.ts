@@ -34,7 +34,7 @@ import { codeSpan, evidenceBullet, oneLine } from './pr-evidence.js';
 import type { OverlapEdge, OverlapRecord, UnsurePair } from '../preflight.js';
 import { mergeDangerLines, summaryLines } from './pr-writer-sections.js';
 import type { SyncStepResult } from '../epic-end/sync-master-step.js';
-import type { BumpOutput, KeptWork } from '../calls/tool-calls.js';
+import type { KeptWork } from '../calls/tool-calls.js';
 
 /** A closing keyword, then any colons and whitespace. */
 const CLOSING_KEYWORD = String.raw`\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([\s:]*)`;
@@ -155,8 +155,6 @@ export interface PrBodyInput {
   readonly unlanded: readonly UnlandedIssue[];
   /** The master sync. */
   readonly sync: SyncStepResult;
-  /** The bump, `null` when the runner returned none. */
-  readonly bump: BumpOutput | null;
   /** The master check, passed: a failed check opens no PR. */
   readonly masterCheck: PassedMasterCheck;
   /**
@@ -551,7 +549,6 @@ function runReportLines(
     '## Epic end',
     '',
     `- Master sync: ${input.sync.verdict}${input.sync.commit === null ? '' : ` at ${input.sync.commit}`}`,
-    `- Version bump: ${bumpText(input.bump)}`,
     `- Master check: ${masterCheckText(input.masterCheck)}`,
     `- Main checkout: ${mainCheckoutText(input.mainUntouched)}`,
     `- Report dir: \`${input.reportDir}\``,
@@ -874,12 +871,4 @@ function mainCheckoutText(untouched: boolean | null): string {
   return untouched
     ? 'untouched since pre-flight'
     : 'touched since pre-flight (HEAD or dirtiness changed)';
-}
-
-/** The bump as one phrase. An `ok` with a `null` commit found the version already at its target. */
-function bumpText(bump: BumpOutput | null): string {
-  if (bump?.status !== 'ok') return `not applied (${bump?.status ?? 'no result'})`;
-  if (bump.commit === null) return `${bump.kind ?? '?'}, already at ${bump.to ?? '?'} — no commit`;
-
-  return `${bump.kind ?? '?'}, ${bump.from ?? '?'} → ${bump.to ?? '?'}`;
 }

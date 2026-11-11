@@ -26,7 +26,6 @@ import {
 } from '../cli/envelope/schemas.js';
 import {
   AppendPrBodyResultSchema,
-  BumpResultSchema,
   ChangedFilesResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
@@ -120,9 +119,6 @@ export const TOOL_ENVELOPES = {
     conflicts: true,
     version: true,
   }).extend({ errors: ERRORS }),
-  bump: BumpResultSchema.pick({ ...STATUS, kind: true, from: true, to: true, commit: true }).extend(
-    { errors: ERRORS },
-  ),
   publish: PublishResultSchema.pick({ ...STATUS, pushed: true, pr: true, mergeable: true }).extend({
     errors: ERRORS,
   }),

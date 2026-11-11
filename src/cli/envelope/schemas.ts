@@ -30,19 +30,19 @@ export const RefusalReasonSchema = z.enum([
   // Teardown, retire-run: another registered worktree lies inside the target. The message names
   // each.
   'nested-worktree',
-  // Harvest, land, sync-master, bump: the batch has uncommitted changes, or
+  // Harvest, land, sync-master: the batch has uncommitted changes, or
   // a merge, cherry-pick or revert in progress.
   'batch-dirty',
   // Harvest: the target is missing, outside any repository, or only a subdirectory of a worktree.
   'unregistered-worktree',
-  // Staged-guard, land, bump: the staged set differs from the expected list. The message names
+  // Staged-guard, land: the staged set differs from the expected list. The message names
   // both sides.
   'staged-mismatch',
   // Land: the slice is not exactly one commit on top of its cut.
   'slice-not-single-commit',
   // Cut-batch, preflight: the target is not the repository's main worktree.
   'not-main-worktree',
-  // Cut-slice, land, bump, publish: the target is a linked worktree, but not
+  // Cut-slice, land, publish: the target is a linked worktree, but not
   // on a `ship/` run branch. Cut-batch `--attach`: the branch named is not a
   // `ship/` run branch.
   'not-run-batch',
@@ -67,8 +67,6 @@ export const RefusalReasonSchema = z.enum([
   'slices-live',
   // Sync-master: the merge would conflict beyond the lockfile and version line. Nothing merged.
   'code-conflict',
-  // Bump: the batch has no commits of its own since `origin/master`.
-  'nothing-to-bump',
   // Publish: the run branch already has an open PR. The message names it.
   'pr-exists',
   // Publish `--push-only`, cut-batch `--attach`: the branch has no open PR.

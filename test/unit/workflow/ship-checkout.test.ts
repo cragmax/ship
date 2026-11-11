@@ -49,7 +49,6 @@ describe('runShip — every runner after pre-flight runs from the main checkout'
         'runner:cut-slice:7-1',
         'runner:land:7-1',
         'runner:sync-master:list',
-        'runner:bump:list',
         'runner:preflight:list',
         'runner:check-master:list',
         'runner:publish:list',

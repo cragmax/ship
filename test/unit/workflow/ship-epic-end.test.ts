@@ -5,7 +5,6 @@ import { runShip } from '../../../src/workflow/ship.js';
 
 import {
   BATCH,
-  BUMP_NO_OP,
   EPIC_ACCEPTED,
   fakeHooks,
   GATE_OK,
@@ -107,7 +106,6 @@ describe('runShip — the epic end runs no test audit', () => {
     expect(all.slice(all.indexOf('runner:teardown:8-1') + 1)).toEqual([
       'epicReview:list',
       'runner:sync-master:list',
-      'runner:bump:list',
       'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
@@ -360,9 +358,9 @@ describe('runShip — the retro', () => {
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
     ],
     [
-      'a bump that threw',
+      'a master sync that threw',
       {
-        'runner:bump': () => {
+        'runner:sync-master': () => {
           throw new Error('runner crashed');
         },
       },
@@ -462,15 +460,24 @@ describe('runShip — the retro', () => {
   });
 });
 
-describe('runShip — the bump', () => {
-  it('goes on to the retro, the PR writer and the PR when the bump finds the version already at its target', async () => {
-    const run = fakeHooks({ 'runner:bump': BUMP_NO_OP });
+describe('runShip — no bump', () => {
+  it('goes from a merged master sync straight to the pushed-paths read and the PR, with no version line', async () => {
+    const run = fakeHooks({
+      'runner:sync-master': {
+        ...OK,
+        outcome: 'merged',
+        commit: 'merge1',
+        upstream: 'origin0',
+        conflicts: [],
+        version: null,
+      },
+    });
 
     const report = await runShip(run.hooks, 'issues 7');
 
     const all = labels(run);
-    expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
-      'runner:bump:list',
+    expect(all.slice(all.indexOf('runner:sync-master:list'))).toEqual([
+      'runner:sync-master:list',
       'runner:changed-files:list',
       'retro:list',
       'prWriter:list',
@@ -479,9 +486,7 @@ describe('runShip — the bump', () => {
       'runner:publish:list',
     ]);
     expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 42 });
-    expect(promptOf(run, 'runner:publish:list').split('\n')).toContain(
-      '- Version bump: patch, already at 1.0.1 — no commit',
-    );
+    expect(promptOf(run, 'runner:publish:list')).not.toMatch(/version bump/iu);
   });
 });
 
@@ -508,7 +513,7 @@ const testsAtPush = (run: FakeRun): string[] => {
 };
 
 describe('runShip — the tests at push', () => {
-  it('reads the pushed range after the bump and names the Platform-wide paths it changes', async () => {
+  it('reads the pushed range after the master sync and names the Platform-wide paths it changes', async () => {
     const run = fakeHooks({
       'runner:changed-files:list': {
         ...OK,
@@ -698,9 +703,9 @@ describe('runShip — the PR writer', () => {
   it.each([
     ['halted', { 'runner:land': LAND_BATCH_DIRTY }],
     [
-      'stopped at its bump',
+      'stopped at its master sync',
       {
-        'runner:bump': () => {
+        'runner:sync-master': () => {
           throw new Error('runner crashed');
         },
       },
@@ -737,7 +742,7 @@ describe('runShip — the PR writer', () => {
 describe('the epic-end phase', () => {
   it('names the epic review first and the PR writer beside the retro in its detail', () => {
     expect(SHIP_PHASES.find((p) => p.title === PHASE_TITLES.epicEnd)?.detail).toBe(
-      'per epic: epic review, master sync, version bump, retro and PR writer (concurrently), master check, pull request',
+      'per epic: epic review, master sync, retro and PR writer (concurrently), master check, pull request',
     );
   });
 });
@@ -1102,22 +1107,6 @@ describe('runShip — a stop before the publish carries no recovery', () => {
       'a master sync code conflict',
       SYNC_CODE_CONFLICT,
       'master sync code-conflict: sync-master refused (code-conflict): src/a.ts conflicts',
-    ],
-    [
-      'a failed bump',
-      {
-        'runner:bump': {
-          exitCode: 1,
-          envelopePath: 'e.json',
-          status: 'failed',
-          errors: [{ step: 'commit', message: 'the hook failed' }],
-          kind: 'minor',
-          from: '1.0.0',
-          to: '1.1.0',
-          commit: null,
-        },
-      },
-      'bump failed: the hook failed',
     ],
     [
       'a failed master check',

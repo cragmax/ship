@@ -4,7 +4,6 @@ import { runShip } from '../../../src/workflow/ship.js';
 
 import {
   BATCH,
-  BUMP_NO_OP,
   EPIC_ACCEPTED,
   fakeHooks,
   GATE_OK,
@@ -73,7 +72,6 @@ describe('runShip --attach — one attached issue from launch to the push', () =
       'runner:teardown:7-1',
       'epicReview:list',
       'runner:sync-master:list',
-      'runner:bump:list',
       'runner:changed-files:list',
       'retro:list',
       'runner:preflight:list',
@@ -329,8 +327,8 @@ describe('runShip --attach — the epic end', () => {
       ]),
     );
     const all = labels(run);
-    expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
-      'runner:bump:list',
+    expect(all.slice(all.indexOf('runner:sync-master:list'))).toEqual([
+      'runner:sync-master:list',
       'runner:changed-files:list',
       'retro:list',
       'runner:preflight:list',
@@ -584,30 +582,6 @@ describe('runShip --attach — the PR body section', () => {
     const at = lines.indexOf('### Recorded');
     expect(at).toBeGreaterThan(lines.indexOf('### Issues'));
     expect(lines.slice(at, at + 5)).toEqual(['### Recorded', '', '- #7', '  - `a`', '']);
-  });
-
-  // An attached run's usual bump: the PR is already bumped, so a fix adds no commit.
-  it('pushes and appends a section naming the bump a no-op when the version is already at its target', async () => {
-    const run = fakeHooks({ ...ATTACHED, 'runner:bump': BUMP_NO_OP });
-
-    const report = await runShip(run.hooks, ARGS);
-
-    const all = labels(run);
-    expect(all.slice(all.indexOf('runner:bump:list'))).toEqual([
-      'runner:bump:list',
-      'runner:changed-files:list',
-      'retro:list',
-      'runner:preflight:list',
-      'runner:check-master:list',
-      'runner:publish:list',
-      'runner:post-pr-comment:list',
-      'runner:append-pr-body:list',
-    ]);
-    expect(promptLines(run, 'runner:post-pr-comment:list')).toContain(
-      '- Version bump: patch, already at 1.0.1 — no commit',
-    );
-    expect(report.epics[0]).toMatchObject({ outcome: 'pr', pr: 9 });
-    expect(report.epics[0]).not.toHaveProperty('prBodyEdit');
   });
 
   it.each([

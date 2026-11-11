@@ -18,7 +18,7 @@ You judge the epic's landed issues as one change, once the last slice has landed
 ## Inputs (from the prompt)
 
 - `Checkout:` — the main checkout, absolute (`unattended-agent` § Where you work).
-- `Batch worktree:` — the epic's tree once the last slice has landed, before the `origin/master` merge and the bump. Run git only here.
+- `Batch worktree:` — the epic's tree once the last slice has landed, before the `origin/master` merge. Run git only here.
 - `Epic range:` — `<batch base>..HEAD`: every commit the run landed, the skill's range.
 - `Scope:` — `epic #E`, its criteria the epic's and its landed issues'; or `profiled`, its criteria the landed issues' alone.
 - `Epic file:`, `Epic command:` — with an epic only: where the epic's text goes, and the command that writes it; run it verbatim.

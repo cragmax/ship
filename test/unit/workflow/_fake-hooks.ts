@@ -294,9 +294,6 @@ export const LAND_BATCH_DIRTY = {
   errors: [{ step: 'preconditions', message: 'the batch has uncommitted changes' }],
 };
 
-/** A bump that found the version already at its target: `ok`, no commit. */
-export const BUMP_NO_OP = { ...OK, kind: 'patch', from: '1.0.1', to: '1.0.1', commit: null };
-
 /** A PR writer's answer: a one-line summary, a two-way door, no note and no ramifications. */
 const PR_WRITER_OK = {
   summary: 'Adds the x tool.',
@@ -367,7 +364,6 @@ const HAPPY_PATH: Readonly<Record<string, unknown>> = {
     conflicts: [],
     version: null,
   },
-  'runner:bump': { ...OK, kind: 'minor', from: '1.0.0', to: '1.1.0', commit: 'bump1' },
   'runner:check-master': {
     ...OK,
     local: { launch: 'local0', synced: null, current: 'local0', move: 'equal' },

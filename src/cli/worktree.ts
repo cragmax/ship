@@ -37,7 +37,6 @@ import {
 } from './envelope/schemas.js';
 import {
   AppendPrBodyResultSchema,
-  BumpResultSchema,
   ChangedFilesResultSchema,
   CheckMasterResultSchema,
   CutBatchResultSchema,
@@ -259,17 +258,6 @@ const COMMANDS: Readonly<Record<string, CommandSpec>> = {
       const { syncMaster } = await import('./commands/sync-master.js');
 
       return syncMaster({ batch: args.target });
-    },
-  },
-  bump: {
-    schema: BumpResultSchema,
-    valueFlags: [],
-    switchFlags: [],
-    rest: NO_REST,
-    run: async (args) => {
-      const { bump } = await import('./commands/bump.js');
-
-      return bump({ batch: args.target });
     },
   },
   'check-master': {

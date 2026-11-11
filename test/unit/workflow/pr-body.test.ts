@@ -21,8 +21,6 @@ import {
   type SliceSize,
 } from '../../../src/workflow/pr/pr-body.js';
 
-const OK = { exitCode: 0, envelopePath: 'e.json', status: 'ok', errors: [] } as const;
-
 const TRACER: TddEvidence = {
   kind: 'tracer',
   test: 'test/unit/x.test.ts › rejects a stale lease',
@@ -190,7 +188,6 @@ const INPUT: PrBodyInput = {
     conflicts: [],
     version: null,
   },
-  bump: { ...OK, errors: [], kind: 'minor', from: '2.42.0', to: '2.43.0', commit: 'b1' },
   masterCheck: {
     passed: true,
     local: { launch: 'l0', synced: null, current: 'l1', move: 'forward' },
@@ -345,7 +342,6 @@ describe('renderPrBody', () => {
       '- Probes: no probe needed',
       '  - Folia ticks x: confirmed in 42s',
       '- Master sync: merged at m1',
-      '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Report dir: `C:/runs/epic-1025/reports`',
       '- see #10 — not landed: skipped',
       '- Epic: see #1025',
@@ -355,7 +351,7 @@ describe('renderPrBody', () => {
     }
   });
 
-  it('reports the master sync, the bump, the master check, the main checkout and the report dir as the whole epic end', () => {
+  it('reports the master sync, the master check, the main checkout and the report dir as the whole epic end, no version line', () => {
     const lines = body.split('\n');
 
     expect(
@@ -363,7 +359,6 @@ describe('renderPrBody', () => {
     ).toEqual([
       '',
       '- Master sync: merged at m1',
-      '- Version bump: minor, 2.42.0 → 2.43.0',
       '- Master check: passed — local forward, l0 → l1; origin equal at o0, checked against synced o0',
       '- Main checkout: untouched since pre-flight',
       '- Report dir: `C:/runs/epic-1025/reports`',

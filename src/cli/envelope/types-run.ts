@@ -2,7 +2,7 @@
  * Envelope types of the worktree CLI's run-branch commands (the commands
  * that cut, check and land an unattended run: `cut-batch`,
  * `cut-slice`, `preflight`, and `land`), of its epic-end commands:
- * `sync-master`, `bump`, `check-master`, `publish`, `append-pr-body` and
+ * `sync-master`, `check-master`, `publish`, `append-pr-body` and
  * `post-pr-comment`, and of `changed-files`, the slice chain's re-read.
  * Each is the `z.infer` of its schema in `schemas-run.ts`, the canonical
  * home of the shapes and their field docs. The status semantics and error
@@ -13,7 +13,6 @@ import type { z } from 'zod';
 
 import type {
   AppendPrBodyResultSchema,
-  BumpResultSchema,
   ChangedFilesResultSchema,
   CheckMasterResultSchema,
   ConflictKindSchema,
@@ -66,9 +65,6 @@ export type VersionLine = z.infer<typeof VersionLineSchema>;
 
 /** Envelope of `sync-master <batch>`. */
 export type SyncMasterResult = z.infer<typeof SyncMasterResultSchema>;
-
-/** Envelope of `bump <batch>`. */
-export type BumpResult = z.infer<typeof BumpResultSchema>;
 
 /** A pull request `publish` opened, or found open with `--push-only`. */
 export type OpenedPr = z.infer<typeof OpenedPrSchema>;

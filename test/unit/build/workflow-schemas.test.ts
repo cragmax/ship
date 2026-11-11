@@ -103,7 +103,6 @@ describe('consumed fields are required', () => {
       teardown: WORKTREE_OPTIONAL,
       'retire-run': WORKTREE_OPTIONAL,
       'sync-master': WORKTREE_OPTIONAL,
-      bump: WORKTREE_OPTIONAL,
       publish: WORKTREE_OPTIONAL,
       'check-master': WORKTREE_OPTIONAL,
       'append-pr-body': WORKTREE_OPTIONAL,

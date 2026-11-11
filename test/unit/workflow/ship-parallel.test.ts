@@ -119,7 +119,7 @@ describe('runShip — issues in flight at once', () => {
   });
 
   it('keeps feeding one epic while another epic’s end is pending', async () => {
-    const hold = holdable(/^(runner:bump:epic-1|tdd:3-1)$/);
+    const hold = holdable(/^(runner:changed-files:epic-1|tdd:3-1)$/);
     const run = fakeHooks(
       epicRun(
         [
@@ -134,11 +134,11 @@ describe('runShip — issues in flight at once', () => {
     const done = runShip(run.hooks, 'epics 1 2');
     await idle();
 
-    expect(labels(run)).toContain('runner:bump:epic-1');
+    expect(labels(run)).toContain('runner:changed-files:epic-1');
     expect(run.timeline).not.toContain('log fed committed #3');
     hold.release('tdd:3-1');
     await idle();
-    expect(hold.held()).toEqual(['runner:bump:epic-1']);
+    expect(hold.held()).toEqual(['runner:changed-files:epic-1']);
     expect(when(run, 'log start #4 attempt 1')).toBeGreaterThan(when(run, 'log fed committed #3'));
     hold.releaseAll();
     const report = await done;

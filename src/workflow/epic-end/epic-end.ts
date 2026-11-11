@@ -1,16 +1,16 @@
 /**
  * The `ship` workflow's epic end. For an entry whose issues all
- * settled with at least one landed ({@link epicEnd}): the epic review, the master sync, the bump,
- * the pushed paths, the retro and PR writer concurrently, then the publish task. A halted or empty
+ * settled with at least one landed ({@link epicEnd}): the epic review, the master sync, the pushed
+ * paths, the retro and PR writer concurrently, then the publish task. A halted or empty
  * one gets its unshipped end ({@link unshippedEpicEnd}). A stop after the retro re-runs it.
  *
  * No server-tier step: pre-push runs it on a Platform-wide change, and red refuses the push.
- * A code conflict, a failed sync, a failed bump or a throwing step stops the
- * epic. A bump finding the version already at its target commits nothing, and the end goes on.
+ * A code conflict, a failed sync or a throwing step stops the epic. Nothing in a run moves the
+ * version.
  *
  * The master sync and the publish task each run as one task of the run's repo lock
  * ({@link EpicEndInput.repoLock}), so no two epic ends talk to `origin` or read the main checkout
- * at once. The epic review, the bump, the retro, and the PR writer run outside it.
+ * at once. The epic review, the retro, and the PR writer run outside it.
  *
  * Render-safe (`src/build/workflow-render.ts`): ECMAScript built-ins only, no top-level side
  * effect.
@@ -46,7 +46,6 @@ import {
   runPlace,
   runTool,
   toolCommandLine,
-  type BumpOutput,
   type KeptWork,
   type PublishOutput,
   type ToolOutputs,
@@ -337,7 +336,7 @@ async function postIssueComment(
 
 /**
  * The shipping path up to the pull request, filling in `state` as steps report: epic review, sync,
- * bump, the pushed-paths read, the retro and (unattached runs only) the PR writer concurrently,
+ * the pushed-paths read, the retro and (unattached runs only) the PR writer concurrently,
  * then the publish task.
  */
 async function shipSteps(input: EpicEndInput, state: EndState): Promise<Published> {
@@ -350,8 +349,6 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
     return { outcome: 'stopped', message: `master sync ${sync.verdict}: ${sync.message}` };
   }
 
-  const bump = await runTool(hooks, 'bump', [entry.batch], runPlace(entry, entry.tag));
-  if (bump?.status !== 'ok') return { outcome: 'stopped', message: envelopeProblem('bump', bump) };
   // Never rejects, so it can run beside the `parallel` below.
   const read = pushedPathsStep(input, sync.upstream);
   // No thunk rejects (each step catches), so `parallel`'s `null` for a throw (`runtime.types.ts`)
@@ -366,11 +363,11 @@ async function shipSteps(input: EpicEndInput, state: EndState): Promise<Publishe
     },
   ]);
 
-  return publishStep(input, { sync, bump, pushed: await read, state });
+  return publishStep(input, { sync, pushed: await read, state });
 }
 
 /**
- * The paths the push will change, read from the batch's `HEAD` after the bump, from the base
+ * The paths the push will change, read from the batch's `HEAD` after the sync, from the base
  * pre-push diffs it from: the synced `origin/master`, the merge base of a new branch, or, for an
  * attached run, the batch's cut, the open PR's tip. Never rejects: a failure is `unresolved`.
  */
@@ -400,7 +397,6 @@ async function pushedPathsStep(
 /** What the pull request body reports besides the entry's inputs. */
 interface EndFindings {
   readonly sync: SyncStepResult;
-  readonly bump: BumpOutput;
   readonly pushed: PushedChanges;
   readonly state: EndState;
 }
@@ -651,7 +647,6 @@ function bodyInput(
     landed: input.landed,
     unlanded: input.issues.filter((i) => i.outcome !== 'landed'),
     sync: found.sync,
-    bump: found.bump,
     pushed: found.pushed,
     masterCheck: checked.masterCheck,
     mainUntouched: checked.mainUntouched,

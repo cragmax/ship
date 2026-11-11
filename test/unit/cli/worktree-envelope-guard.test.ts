@@ -26,7 +26,6 @@ const REMOVED_PREFIX = /^envelope fails its schema: removed: /;
 // One mock stands in for every command module, so any command's result is the test's to choose.
 const { commandMock } = vi.hoisted(() => ({ commandMock: vi.fn() }));
 vi.mock('../../../src/cli/commands/append-pr-body.js', () => ({ appendPrBody: commandMock }));
-vi.mock('../../../src/cli/commands/bump.js', () => ({ bump: commandMock }));
 vi.mock('../../../src/cli/commands/check-master.js', () => ({ checkMaster: commandMock }));
 vi.mock('../../../src/cli/commands/cut.js', () => ({
   cutBatch: commandMock,
@@ -128,7 +127,6 @@ describe('runWorktreeCli — the envelope guard', () => {
       ['cut-batch', 'C:/main', '--attach', 'ship/epic-7'],
       ['cut-slice', 'C:/b', '--issue', '7', '--attempt', '1'],
       ['sync-master', 'C:/b'],
-      ['bump', 'C:/b'],
       ['check-master', 'C:/main', '--local', 'aaa', '--remote', 'bbb', '--synced', 'ccc'],
       ['publish', 'C:/b', '--log', 'C:/l', '--title', 't', '--body-file', 'C:/body.md'],
       ['publish', 'C:/b', '--log', 'C:/l', '--push-only'],
@@ -148,7 +146,7 @@ describe('runWorktreeCli — the envelope guard', () => {
     expect(exitCode).toBe(1);
   });
 
-  it.each([['bogus'], ['commit', '--message-file', 'C:/m', '--', 'a.ts']])(
+  it.each([['bogus'], ['bump', 'C:/b'], ['commit', '--message-file', 'C:/m', '--', 'a.ts']])(
     'keeps an unknown command’s usage envelope and exit 2: %s',
     async (...argv) => {
       const [command = ''] = argv;

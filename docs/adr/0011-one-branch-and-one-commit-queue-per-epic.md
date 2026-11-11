@@ -1,6 +1,6 @@
 # Ship ADR-0011: Each epic lands on one branch through one commit queue, without per-commit consent
 
-All of a run's work for an epic lands on the epic's `ship/<slug>` branch in its Batch worktree, without consent for each commit. That work is the issue commits, the `origin/master` merge, and the bump.
+All of a run's work for an epic lands on the epic's `ship/<slug>` branch in its Batch worktree, without consent for each commit. That work is the issue commits and the `origin/master` merge.
 
 ## Decision
 
