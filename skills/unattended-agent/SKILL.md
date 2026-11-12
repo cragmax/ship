@@ -18,8 +18,8 @@ You are a **Stage agent** of an unattended run (Ship ADR-0002). Your agent file 
 ## Git
 
 - **Never push, reset or stash, and never pass `--no-verify`.** What you commit lands only through the run's commit queue (Ship ADR-0011). A hook failure made no commit: fix forward and run the same commit again; if the hooks cannot execute at all, return your blocked verdict.
-- **Run no `gate:*` script.** The commit hooks own the gates (Ship ADR-0009 decision 7): pre-commit runs them on every slice commit and amend, and pre-push runs `gate:core` at the epic end. Your own runs are the tests your change makes relevant (§ Runs).
-- **Building `dist/`.** Before you commit or amend, when the slice changed anything under `src/`, run `npm run build`: the commit gate's tests read `dist/`, which its `gate:build` re-emits in parallel with them.
+- **Run no `gate` or `gate:*` script.** The commit hooks own the gates (Ship ADR-0009 decision 7): pre-commit runs them on every slice commit and amend, and pre-push runs `gate` at the epic end. Your own runs are the tests your change makes relevant (§ Runs).
+- **Building `dist/`.** Before you commit or amend, when the slice changed anything under `src/`, run `npm run build`: the commit gate's tests read `dist/`, which its `build:refresh` re-emits in parallel with them.
 - **Amending the slice.** A stage that fixes a built slice amends its one commit: build per the bullet above; stage your files by name (`git add -- <path>…`), never the `vitest.worktree*.config.ts` files, caches or `reports/`; `git commit --amend --no-edit`. Then `git rev-list --count <Slice base>..HEAD` is `1`.
 
 ## Runs

@@ -1,6 +1,6 @@
 {
   "name": "@cragmax/ship",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Unattended Claude Code runs over a GitHub epic or issue list: pre-flight, one reviewed slice per issue, one pull request per epic.",
   "author": "cragmax",
   "license": "UNLICENSED",
